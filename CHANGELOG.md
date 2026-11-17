@@ -10,6 +10,21 @@ Versions track the plugin's release history. `Unreleased` collects commits not y
 
 ---
 
+## [0.24.0] — 2026-11-18
+
+### Added
+
+- **Click a chart to filter (Visualize).** One click on a bar or point adds a filter for its value and re-runs; when the segment carries several values (category and breakdown, or a time bucket and breakdown), "Select filters to apply" lists them all ticked, with Cancel / Apply. Spec LENS-INTERACT-01.
+- **Legend actions.** Click a legend item to hide or show its series; ⋮ → Filter for / Filter out. Spec LENS-INTERACT-01.
+- **Brush to zoom** on time charts sets the time range, as in Discover. Spec LENS-INTERACT-01.
+- **Filter bar on the Visualize page.** The same filters as Discover (shared through the URL), editable in place.
+
+### Changed
+
+- **Bar, line and area charts on the Visualize page are drawn by the plugin** (so a single click can filter); Metric, Table and Pie still use Grafana's panels.
+
+---
+
 ## [0.23.0] — 2026-11-18
 
 ### Added
