@@ -6,7 +6,7 @@ import { FilterOp, FilterPill } from '../types';
 import { filterLabel, negateFilter, removeFilter, toggleDisabled, updateFilter } from '../sql/filters';
 import { FieldValue } from '../sql/kql/_values';
 import { FilterEditForm } from './AddFilter/FilterEditForm';
-import { syncPinnedStore } from '../state/sharedSearch';
+import { pinFilterInStore, replacePinInStore, unpinFilterInStore } from '../state/sharedSearch';
 
 const NEGATED_OPS: ReadonlySet<FilterOp> = new Set(['!=', 'not_contains', 'not_one_of', 'not_exists']);
 
@@ -14,6 +14,8 @@ interface FilterPillsProps {
   filters: FilterPill[];
   onChange: (filters: FilterPill[]) => void;
   loadValues: (sqlExpr: string) => Promise<FieldValue[]>;
+  /** `database.table` of the current view, recorded with a new pin (see state/sharedSearch.ts). */
+  pinTable: string;
 }
 
 /** Splits a pill's text into a leading "NOT" badge (the convention for negated exists/one_of
@@ -46,13 +48,15 @@ interface OpenMenu {
   rect: DOMRect;
 }
 
-export function FilterPills({ filters, onChange: onChangeProp, loadValues }: FilterPillsProps) {
+export function FilterPills({ filters, onChange, loadValues, pinTable }: FilterPillsProps) {
   const styles = useStyles2(getStyles);
-  // Every pill change also updates the per-tab pinned store (DISC-FILTER-01 / SHARED-STATE-01),
-  // so a pinned pill that is edited, excluded, disabled or deleted never comes back stale.
-  const onChange = (next: FilterPill[]) => {
-    syncPinnedStore(filters, next);
-    onChangeProp(next);
+  // Pinned store transitions (DISC-FILTER-01 / SHARED-STATE-01) happen only on explicit actions
+  // on a pinned pill: pin, unpin, edit or exclude (condition replaced), delete. Disable and
+  // "Clear all" change this page only.
+  const replaceIfPinned = (before: FilterPill, after: FilterPill) => {
+    if (before.pinned) {
+      replacePinInStore(before, after, pinTable);
+    }
   };
   const [menu, setMenu] = useState<OpenMenu | null>(null);
   const [editing, setEditing] = useState<OpenMenu | null>(null);
@@ -62,6 +66,10 @@ export function FilterPills({ filters, onChange: onChangeProp, loadValues }: Fil
   }
 
   const onRemove = (id: string) => {
+    const pill = filters.find((f) => f.id === id);
+    if (pill?.pinned) {
+      unpinFilterInStore(pill);
+    }
     onChange(removeFilter(filters, id));
   };
 
@@ -111,6 +119,7 @@ export function FilterPills({ filters, onChange: onChangeProp, loadValues }: Fil
                   setMenu(null);
                 }}
                 onToggleNegate={() => {
+                  replaceIfPinned(f, { ...f, ...negateFilter(f) });
                   onChange(updateFilter(filters, f.id, negateFilter(f)));
                   setMenu(null);
                 }}
@@ -119,6 +128,11 @@ export function FilterPills({ filters, onChange: onChangeProp, loadValues }: Fil
                   setMenu(null);
                 }}
                 onTogglePin={() => {
+                  if (f.pinned) {
+                    unpinFilterInStore(f);
+                  } else {
+                    pinFilterInStore(f, pinTable);
+                  }
                   onChange(updateFilter(filters, f.id, { pinned: !f.pinned }));
                   setMenu(null);
                 }}
@@ -136,6 +150,7 @@ export function FilterPills({ filters, onChange: onChangeProp, loadValues }: Fil
                 loadValues={loadValues}
                 onCancel={() => setEditing(null)}
                 onSubmit={(patched) => {
+                  replaceIfPinned(f, { ...f, ...patched });
                   onChange(updateFilter(filters, f.id, patched));
                   setEditing(null);
                 }}

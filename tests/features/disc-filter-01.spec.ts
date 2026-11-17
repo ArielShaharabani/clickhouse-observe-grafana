@@ -57,3 +57,36 @@ test('deleting a pinned pill unpins it', async ({ page }) => {
   await logs.open();
   await expect(logs.filterBar).toHaveCount(0);
 });
+
+test('excluding a pinned pill updates the pin; disabling it does not', async ({ page }) => {
+  const logs = new LogsPage(page);
+  await logs.open({ filters: JSON.stringify([errorPill]) });
+  await logs.pillAction('SeverityText', 'Pin across pages');
+  await logs.pillAction('SeverityText', 'Temporarily disable');
+  await logs.open();
+  // The pin is the condition, not this page's disabled state.
+  await expect(logs.pill('SeverityText')).not.toHaveAccessibleName(/\(disabled\)/);
+  await logs.expectRowCount(errors);
+
+  await logs.pillAction('SeverityText', 'Exclude results');
+  await logs.open();
+  await expect(logs.pill('SeverityText')).toHaveAccessibleName(/SeverityText ≠ error \(pinned\)/);
+  await logs.expectRowCount(total - errors);
+});
+
+test("pinned flags inside someone else's link are not adopted", async ({ page }) => {
+  const logs = new LogsPage(page);
+  await logs.open({ filters: JSON.stringify([{ ...errorPill, pinned: true }]) });
+  await expect(logs.pill('SeverityText')).not.toHaveAccessibleName(/\(pinned\)/);
+  await logs.pillAction('SeverityText', 'Temporarily disable');
+  await logs.open();
+  await expect(logs.filterBar).toHaveCount(0);
+});
+
+test('a pin applied to a view on another table arrives disabled', async ({ page }) => {
+  const logs = new LogsPage(page);
+  await logs.open({ filters: JSON.stringify([errorPill]) });
+  await logs.pillAction('SeverityText', 'Pin across pages');
+  await logs.open({ ds: 'otel-demo' });
+  await expect(logs.pill('SeverityText')).toHaveAccessibleName(/\(pinned\) \(disabled\)/);
+});
