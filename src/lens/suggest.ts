@@ -125,6 +125,10 @@ export function switchChart(state: LensState, target: ChartType, ctx: LensContex
       buckets = buckets.slice(0, 2);
       break;
     case 'bar':
+      // A bar with nothing on X is a bar over time (rule 3).
+      if (buckets.length === 0 && ctx.timeField) {
+        buckets = [dateDim(ctx.timeField.sqlExpr, ctx.timeField.label)];
+      }
       buckets = buckets.slice(0, 2);
       break;
     case 'metric':

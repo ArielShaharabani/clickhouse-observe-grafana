@@ -74,6 +74,7 @@ describe('LENS-TYPE-01 dimension remapping', () => {
     const metric = switchChart(add(RECORDS_FIELD), 'metric', ctx);
     expect(shape(metric)).toEqual({ chart: 'metric', x: undefined, breakdown: undefined, y: ['Count of records'] });
     expect(shape(switchChart(metric, 'line', ctx)).x).toBe('Timestamp');
+    expect(shape(switchChart(metric, 'bar', ctx)).x).toBe('Timestamp');
   });
 
   it('keeps dimension ids (labels/format survive) and never clears the layer', () => {
