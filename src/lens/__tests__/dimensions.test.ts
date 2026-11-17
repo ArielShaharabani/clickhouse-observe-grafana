@@ -1,5 +1,26 @@
-import { addBucket, addMetric, compatibleFields, replaceDim, withName, withOp, withSize } from '../dimensions';
-import { autoLabel, decodeLens, dimLabel, encodeLens, LensField, LensState, MetricDim, RECORDS_FIELD } from '../state';
+import {
+  addBucket,
+  addMetric,
+  compatibleFields,
+  metricForField,
+  nextBucketField,
+  queryShape,
+  replaceDim,
+  withName,
+  withOp,
+  withSize,
+} from '../dimensions';
+import {
+  autoLabel,
+  decodeLens,
+  dimLabel,
+  encodeLens,
+  LensField,
+  LensState,
+  MetricDim,
+  ordinal,
+  RECORDS_FIELD,
+} from '../state';
 import { compileLens } from '../compile';
 import { dateTime } from '@grafana/data';
 import { OTEL_COLUMN_MAPPING, SourceConfig } from '../../types';
@@ -105,5 +126,54 @@ describe('percentile in SQL and the URL (untrusted)', () => {
     expect(decodeLens(bad({ percentile: 500 }))!.metrics).toHaveLength(0);
     expect(decodeLens(bad({ name: 'x'.repeat(500) }))!.metrics).toHaveLength(0);
     expect(decodeLens(bad({ percentile: 99 }))!.metrics).toHaveLength(1);
+  });
+});
+
+describe('review fixes', () => {
+  it('ordinals', () => {
+    expect([1, 2, 3, 4, 11, 12, 13, 21, 22, 23, 50, 99].map(ordinal)).toEqual([
+      '1st',
+      '2nd',
+      '3rd',
+      '4th',
+      '11th',
+      '12th',
+      '13th',
+      '21st',
+      '22nd',
+      '23rd',
+      '50th',
+      '99th',
+    ]);
+  });
+
+  it('a new bucket never repeats a field already used', () => {
+    const s: LensState = {
+      chartType: 'bar',
+      buckets: [{ kind: 'terms', id: 'b', field: 'ServiceName', label: 'ServiceName', size: 9 }],
+      metrics: [],
+    };
+    const more = [...FIELDS, f('SeverityText', 'string')];
+    expect(nextBucketField(s, more)?.sqlExpr).not.toBe('ServiceName');
+    expect(
+      nextBucketField(
+        s,
+        FIELDS.filter((x) => x.sqlExpr !== 'SeverityNumber' && x.sqlExpr !== 'TraceFlags')
+      )
+    ).toBeUndefined();
+  });
+
+  it('a field dropped on a metric group: number → median, other → unique count, Records → count', () => {
+    expect(metricForField('m', f('SeverityNumber', 'number'))).toMatchObject({ op: 'median', numeric: true });
+    expect(metricForField('m', f('ServiceName', 'string'))).toMatchObject({ op: 'unique' });
+    expect(metricForField('m', RECORDS_FIELD)).toMatchObject({ op: 'count' });
+    expect(metricForField('m', f('LogAttributes', 'map'))).toBeUndefined();
+  });
+
+  it('names do not change the query shape', () => {
+    const s: LensState = { chartType: 'metric', buckets: [], metrics: [median] };
+    expect(JSON.stringify(queryShape(withName(median, 'x') && { ...s, metrics: [withName(median, 'x')] }))).toBe(
+      JSON.stringify(queryShape(s))
+    );
   });
 });

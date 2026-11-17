@@ -84,4 +84,3 @@ describe('LENS-TYPE-01 chart type switcher', () => {
     expect(screen.getByRole('radio', { name: 'Percentage' })).toBeTruthy();
   });
 });
-

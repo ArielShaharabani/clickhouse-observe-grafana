@@ -186,7 +186,7 @@ export function ChartTypeSwitcher({ value, subType, onChange, onSubTypeChange }:
           <div ref={popRef} className={styles.popover} style={{ top: pos.top, left: pos.left, width: pos.width }}>
             <Input
               autoFocus
-            ref={inputRef}
+              ref={inputRef}
               prefix={<Icon name="search" />}
               placeholder="Search visualizations"
               aria-label="Search visualizations"

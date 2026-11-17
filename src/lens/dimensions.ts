@@ -10,6 +10,7 @@ import {
   MAX_NAME,
   MetricDim,
   MetricOp,
+  newDimId,
 } from './state';
 import { isLensField, LensContext, switchChart } from './suggest';
 
@@ -32,8 +33,7 @@ export function bucketFields(fields: LensField[]): LensField[] {
   return fields.filter((f) => f.type !== 'records' && f.type !== 'time' && isLensField(f));
 }
 
-let seq = 0;
-const newId = (p: string) => `${p}${Date.now().toString(36)}e${(seq++).toString(36)}`;
+const newId = newDimId;
 
 /**
  * Changes a metric's function, keeping its field where the new function accepts it (LENS-DIM-02
@@ -98,4 +98,38 @@ export function addMetric(s: LensState, ctx: LensContext): { state: LensState; i
 export function addBucket(s: LensState, field: LensField, ctx: LensContext): { state: LensState; id: string } {
   const b: BucketDim = { kind: 'terms', id: newId('b'), field: field.sqlExpr, label: field.label, size: 9 };
   return { state: switchChart({ ...s, buckets: [...s.buckets, b] }, s.chartType, ctx, s.subType), id: b.id };
+}
+
+/** First field a new "Top values" bucket can use that no bucket uses yet. */
+export function nextBucketField(s: LensState, fields: LensField[]): LensField | undefined {
+  const used = new Set(s.buckets.map((b) => b.field));
+  return bucketFields(fields).find((f) => !used.has(f.sqlExpr));
+}
+
+/** A metric for a field dropped on a metric group: median of a number, else unique count. */
+export function metricForField(id: string, field: LensField): MetricDim | undefined {
+  if (field.type === 'records') {
+    return { kind: 'metric', id, op: 'count' };
+  }
+  if (!isLensField(field)) {
+    return undefined;
+  }
+  const numeric = field.type === 'number';
+  return {
+    kind: 'metric',
+    id,
+    op: numeric ? 'median' : 'unique',
+    field: field.sqlExpr,
+    fieldLabel: field.label,
+    numeric,
+  };
+}
+
+/** Display-only parts (names) removed — what the chart query actually depends on. */
+export function queryShape(s: LensState): LensState {
+  return {
+    ...s,
+    buckets: s.buckets.map(({ name: _n, ...b }) => b as BucketDim),
+    metrics: s.metrics.map(({ name: _n, ...m }) => m as MetricDim),
+  };
 }

@@ -27,8 +27,18 @@ test('metric editor: function change keeps the field, label follows until rename
   await pickField(page, 'Vertical axis', 'SeverityNumber');
   await expect(ed.getByRole('button', { name: 'Maximum' })).toHaveAttribute('aria-pressed', 'true');
   await ed.getByRole('button', { name: 'Percentile' }).click();
-  await expect(ed.getByRole('textbox', { name: 'Name' })).toHaveAttribute('placeholder', '95th percentile of SeverityNumber');
+  await expect(ed.getByRole('textbox', { name: 'Name' })).toHaveAttribute(
+    'placeholder',
+    '95th percentile of SeverityNumber'
+  );
 
+  // Free typing: clear and type 50, applied on Enter (not clamped per keystroke).
+  await ed.getByRole('spinbutton', { name: 'Percentile' }).fill('50');
+  await ed.getByRole('spinbutton', { name: 'Percentile' }).press('Enter');
+  await expect(ed.getByRole('textbox', { name: 'Name' })).toHaveAttribute(
+    'placeholder',
+    '50th percentile of SeverityNumber'
+  );
   await ed.getByRole('textbox', { name: 'Name' }).fill('Severity p95');
   await ed.getByRole('button', { name: 'Minimum' }).click();
   await ed.getByRole('button', { name: 'Close', exact: true }).click();
@@ -56,6 +66,7 @@ test('top values: number of values, and "+ Add" slots open the editor', async ({
   await viz.dimensions.getByRole('button', { name: 'Edit Top 9 values of ServiceName' }).click();
   const ed = editor(page, 'Horizontal axis');
   await ed.getByRole('spinbutton', { name: 'Number of values' }).fill('1');
+  await ed.getByRole('spinbutton', { name: 'Number of values' }).press('Enter');
   await ed.getByRole('button', { name: 'Close', exact: true }).click();
   await expect(viz.group('Horizontal axis')).toContainText('Top 1 values of ServiceName');
   await page.getByRole('button', { name: 'Chart type: Bar' }).click();

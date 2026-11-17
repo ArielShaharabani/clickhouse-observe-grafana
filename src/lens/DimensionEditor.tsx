@@ -3,7 +3,7 @@
  * the group (e.g. "Vertical axis"). Metric: Quick function grid, Field, Percentile, Name. Top
  * values: Field, Number of values, Name. Date histogram: Name (interval stays Auto).
  */
-import React, { useId } from 'react';
+import React, { useId, useState } from 'react';
 import { css, cx } from '@emotion/css';
 import { GrafanaTheme2 } from '@grafana/data';
 import { Button, Combobox, Field, IconButton, Input, useStyles2 } from '@grafana/ui';
@@ -31,6 +31,7 @@ interface Props {
 export function DimensionEditor({ dim, group, fields, onChange, onRemove, onClose }: Props) {
   const styles = useStyles2(getStyles);
   const fieldId = useId();
+  const fnLabelId = useId();
   const fieldOptions = (list: LensField[]) => list.map((f) => ({ label: f.label, value: f.sqlExpr }));
 
   return (
@@ -42,10 +43,10 @@ export function DimensionEditor({ dim, group, fields, onChange, onRemove, onClos
 
       {dim.kind === 'metric' && (
         <>
-          <div className={styles.label} id="lens-quick-functions">
+          <div className={styles.label} id={fnLabelId}>
             Quick function
           </div>
-          <div className={styles.grid} role="group" aria-labelledby="lens-quick-functions">
+          <div className={styles.grid} role="group" aria-labelledby={fnLabelId}>
             {QUICK_FUNCTIONS.map((op) => {
               const next = withOp(dim, op, fields);
               return (
@@ -67,7 +68,7 @@ export function DimensionEditor({ dim, group, fields, onChange, onRemove, onClos
             <Field label="Field" htmlFor={fieldId}>
               <Combobox
                 id={fieldId}
-                options={fieldOptions(compatibleFields(dim.op, fields))}
+                options={fieldOptions(withCurrent(compatibleFields(dim.op, fields), dim.field, fields))}
                 value={dim.field}
                 onChange={(o) => {
                   const f = fields.find((x) => x.sqlExpr === o?.value);
@@ -80,13 +81,13 @@ export function DimensionEditor({ dim, group, fields, onChange, onRemove, onClos
           )}
           {dim.op === 'percentile' && (
             <Field label="Percentile">
-              <Input
-                aria-label="Percentile"
-                type="number"
+              <NumberInput
+                key={`pct-${clampPercentile(dim.percentile)}`}
+                label="Percentile"
                 min={1}
                 max={99}
                 value={clampPercentile(dim.percentile)}
-                onChange={(e) => onChange({ ...dim, percentile: clampPercentile(e.currentTarget.value) })}
+                onCommit={(n) => onChange({ ...dim, percentile: clampPercentile(n) })}
               />
             </Field>
           )}
@@ -110,13 +111,13 @@ export function DimensionEditor({ dim, group, fields, onChange, onRemove, onClos
             />
           </Field>
           <Field label="Number of values">
-            <Input
-              aria-label="Number of values"
-              type="number"
+            <NumberInput
+              key={`size-${dim.size}`}
+              label="Number of values"
               min={1}
               max={100}
               value={dim.size}
-              onChange={(e) => onChange(withSize(dim, Number(e.currentTarget.value)))}
+              onCommit={(n) => onChange(withSize(dim, n))}
             />
           </Field>
         </>
@@ -147,6 +148,64 @@ export function DimensionEditor({ dim, group, fields, onChange, onRemove, onClos
         </Button>
       </div>
     </div>
+  );
+}
+
+/** Keeps a field set elsewhere (e.g. a shared link) selectable even if the function's list excludes it. */
+function withCurrent(list: LensField[], current: string | undefined, all: LensField[]): LensField[] {
+  if (!current || list.some((f) => f.sqlExpr === current)) {
+    return list;
+  }
+  const f = all.find((x) => x.sqlExpr === current);
+  return f ? [f, ...list] : list;
+}
+
+/**
+ * Number box that lets the user type freely (clear it, type "50") and applies the clamped value on
+ * blur or Enter — clamping every keystroke turned "" into 1 and "1"+"50" into 99.
+ */
+function NumberInput({
+  label,
+  min,
+  max,
+  value,
+  onCommit,
+}: {
+  label: string;
+  min: number;
+  max: number;
+  value: number;
+  onCommit: (n: number) => void;
+}) {
+  // Remounted (key) when the committed value changes, so the draft starts from it.
+  const [draft, setDraft] = useState(String(value));
+  const commit = () => {
+    const n = Number(draft);
+    if (draft.trim() === '' || !Number.isFinite(n)) {
+      setDraft(String(value));
+      return;
+    }
+    const clamped = Math.min(max, Math.max(min, Math.round(n)));
+    setDraft(String(clamped));
+    if (clamped !== value) {
+      onCommit(clamped);
+    }
+  };
+  return (
+    <Input
+      aria-label={label}
+      type="number"
+      min={min}
+      max={max}
+      value={draft}
+      onChange={(e) => setDraft(e.currentTarget.value)}
+      onBlur={commit}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') {
+          commit();
+        }
+      }}
+    />
   );
 }
 

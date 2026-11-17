@@ -24,7 +24,7 @@ import { compileLens, LensResult, shapeLensRows } from './compile';
 import { LensChart } from './render/LensChart';
 import { CHART_ICONS, ChartTypeSwitcher } from './ChartTypeSwitcher';
 import { DimensionEditor } from './DimensionEditor';
-import { addBucket, addMetric, bucketFields, replaceDim } from './dimensions';
+import { addBucket, addMetric, metricForField, nextBucketField, queryShape, replaceDim } from './dimensions';
 import {
   BucketDim,
   ChartType,
@@ -172,8 +172,9 @@ export function LensPage() {
 
   // Run the chart query.
   const [result, setResult] = useState<{ key: string; data?: LensResult; error?: string } | null>(null);
+  // Names are display-only: renaming a dimension must not re-run the query.
   const queryKey = JSON.stringify([
-    encodeLens(lens),
+    encodeLens(queryShape(lens)),
     config.datasourceUid,
     config.database,
     config.logsTable,
@@ -226,21 +227,27 @@ export function LensPage() {
     setLens(switchChart(next, lostTime ? chooseChart(next.buckets) : next.chartType, ctx));
   };
   const cards = useMemo(() => suggestions(lens, ctx), [lens, ctx]);
-  // Dimension being edited (LENS-DIM-02), with the group it was opened from.
-  const [editing, setEditing] = useState<{ id: string; group: string } | null>(null);
-  const editingDim = editing ? [...lens.buckets, ...lens.metrics].find((d) => d.id === editing.id) : undefined;
-  const addToGroup = (g: Group) => {
+  // Dimension being edited (LENS-DIM-02). Its group is looked up in the current state each render,
+  // so a chart change elsewhere (suggestion, type switch) retitles or closes the editor.
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const editingGroup = editingId
+    ? dimensionGroups(lens).find((g) => g.dims.some((d) => d.id === editingId))
+    : undefined;
+  const editingDim = editingGroup?.dims.find((d) => d.id === editingId);
+  const canAddTo = (g: Group) => g.role === 'metric' || !!nextBucketField(lens, lensFields);
+  const addToGroup = (g: Group, dropped?: LensField) => {
     if (g.role === 'metric') {
       const { state, id } = addMetric(lens, ctx);
-      setLens(state);
-      setEditing({ id, group: g.name });
+      const m = dropped ? metricForField(id, dropped) : undefined;
+      setLens(m ? replaceDim(state, m) : state);
+      setEditingId(id);
       return;
     }
-    const first = bucketFields(lensFields)[0];
-    if (first) {
-      const { state, id } = addBucket(lens, first, ctx);
+    const field = dropped && dropped.type !== 'records' ? dropped : nextBucketField(lens, lensFields);
+    if (field) {
+      const { state, id } = addBucket(lens, field, ctx);
       setLens(state);
-      setEditing({ id, group: g.name });
+      setEditingId(id);
     }
   };
   const [suggestionsOpen, setSuggestionsOpen] = useState(true);
@@ -417,17 +424,17 @@ export function LensPage() {
               onSubTypeChange={(sub) => setLens(switchChart(lens, lens.chartType, ctx, sub))}
             />
           )}
-          {editing && editingDim ? (
+          {editingGroup && editingDim ? (
             <DimensionEditor
               dim={editingDim}
-              group={editing.group}
+              group={editingGroup.name}
               fields={lensFields}
               onChange={(d) => setLens(replaceDim(lens, d))}
               onRemove={() => {
-                setEditing(null);
+                setEditingId(null);
                 removeDim(editingDim.id);
               }}
-              onClose={() => setEditing(null)}
+              onClose={() => setEditingId(null)}
             />
           ) : isEmptyLens(lens) ? (
             <div className={styles.emptySub}>Dimensions appear here as you add fields.</div>
@@ -441,7 +448,7 @@ export function LensPage() {
                       type="button"
                       className={styles.dimLabel}
                       aria-label={`Edit ${dimLabel(d)}`}
-                      onClick={() => setEditing({ id: d.id, group: g.name })}
+                      onClick={() => setEditingId(d.id)}
                     >
                       {dimLabel(d)}
                     </button>
@@ -458,7 +465,23 @@ export function LensPage() {
                     type="button"
                     className={styles.slot}
                     aria-label={`Add to ${g.name}`}
+                    disabled={!canAddTo(g)}
+                    title={canAddTo(g) ? undefined : 'No other field can be added here'}
                     onClick={() => addToGroup(g)}
+                    onDragOver={(e) => {
+                      if (e.dataTransfer.types.includes(FIELD_DRAG_MIME)) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                      }
+                    }}
+                    onDrop={(e) => {
+                      const f = lensFields.find((x) => x.id === e.dataTransfer.getData(FIELD_DRAG_MIME));
+                      if (f) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        addToGroup(g, f);
+                      }
+                    }}
                   >
                     + Add or drag-and-drop a field
                   </button>
@@ -657,6 +680,10 @@ const getStyles = (theme: GrafanaTheme2) => ({
     letter-spacing: 0.04em;
   `,
   slot: css`
+    &:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
     background: none;
     text-align: left;
     cursor: pointer;

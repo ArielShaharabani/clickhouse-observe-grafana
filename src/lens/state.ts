@@ -68,6 +68,20 @@ export interface LensField {
   type: FieldType | 'records';
 }
 
+let idSeq = 0;
+/** Unique-enough dimension id for this page (URL-carried ids are only compared, never trusted). */
+export function newDimId(prefix: string): string {
+  return `${prefix}${Date.now().toString(36)}${(idSeq++).toString(36)}`;
+}
+
+/** 1 → "1st", 2 → "2nd", 3 → "3rd", 11 → "11th", 23 → "23rd". */
+export function ordinal(n: number): string {
+  const tens = n % 100;
+  const suffix =
+    tens >= 11 && tens <= 13 ? 'th' : (({ 1: 'st', 2: 'nd', 3: 'rd' } as Record<number, string>)[n % 10] ?? 'th');
+  return `${n}${suffix}`;
+}
+
 export const EMPTY_LENS: LensState = { chartType: 'bar', buckets: [], metrics: [] };
 
 export const RECORDS_FIELD: LensField = { id: '__records__', sqlExpr: '', label: 'Records', type: 'records' };
@@ -110,7 +124,9 @@ export function autoLabel(d: BucketDim | MetricDim): string {
       return 'Count of records';
     }
     const what = d.fieldLabel ?? d.field;
-    return d.op === 'percentile' ? `${clampPercentile(d.percentile)}th percentile of ${what}` : `${OP_NAMES[d.op]} of ${what}`;
+    return d.op === 'percentile'
+      ? `${ordinal(clampPercentile(d.percentile))} percentile of ${what}`
+      : `${OP_NAMES[d.op]} of ${what}`;
   }
   if (d.kind === 'terms') {
     return `Top ${d.size} values of ${d.label}`;
