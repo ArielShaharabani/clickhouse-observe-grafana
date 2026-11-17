@@ -10,6 +10,15 @@ Versions track the plugin's release history. `Unreleased` collects commits not y
 
 ---
 
+## [0.23.0] — 2026-11-18
+
+### Added
+
+- **Dimension editor on the Visualize page.** Click a dimension to edit it: pick a quick function (Average, Count, Maximum, Median, Minimum, Percentile, Sum, Unique count) and a compatible field, set the percentile, rename it, or change how many top values to show. Changing the function keeps the field when it still fits; the name follows the function until you type your own. Spec LENS-DIM-02.
+- **"+ Add or drag-and-drop a field" slots** in each dimension group now add a dimension and open its editor. Spec LENS-DIM-01.
+
+---
+
 ## [0.22.0] — 2026-11-17
 
 ### Added
