@@ -1,8 +1,8 @@
 # Progress — read this first when resuming
 
-**Current item:** #11 LENS-AUTO-01 / LENS-SUGG-01 auto chart + suggestions (not started) — first Lens feature
+**Current item:** #11 LENS-AUTO-01 / LENS-SUGG-01 (in progress, branch `feat/lens-auto-01`)
 **Last completed step:** #10 DISC-DOC-01 in PR 11 (v0.20.0): pinned fields (sessionStorage, stick to top across documents), Hide null fields, type filter (reuses `FieldTypeFilter`), first/last navigation, "field present" registry action on each row, 25 rows per page
-**Next step:** branch `feat/lens-auto-01`; build the Visualize page shell first (route `visualize`, plugin.json include, shared URL search context, header with data view/time), then `src/lens/state.ts`, `suggest.ts` (fixtures from the spec LENS-AUTO-01 table, docs/spec/20-lens.md), `compile.ts` (LensState → ClickHouse SQL via `runQuery`). Bar/line/area custom-drawn (generalize VolumeHistogram), other charts via `src/lens/render/` PanelRenderer adapter. Restart Grafana after plugin.json changes.
+**Next step:** core done and tested (`src/lens/state.ts`, `suggest.ts`, `compile.ts`; 22 unit tests; compiled SQL verified on ClickHouse against fixture counts). Next: `LensPage.tsx` at route `visualize` (plugin.json include + App route; restart Grafana), reads q/filters/time/view from the URL + Lens state from param `lens`; layout = field list (⊕ "Add X to workspace", Records first) · chart (render via PanelRenderer: timeseries/barchart/stat/table/piechart from `shapeLensRows`) · dimension list; suggestions strip; empty state "Drop some fields here to start". Then e2e + docs + PR.
 **Open issues:** none. Deferred: flyout permalink + surrounding docs link (DISC-DOC-02 #20); histogram now-line/partial shading; field list Empty/Meta (D13); grid Summary column, sample size, Find, Fullscreen, Save table (#16); popover date distribution, Examples, Visualize (#15).
 
 ## Environment notes
