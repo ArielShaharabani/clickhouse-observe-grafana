@@ -1,8 +1,8 @@
 # Progress — read this first when resuming
 
-**Current item:** #3 DISC-SEARCH-02 KQL bar (not started)
-**Last completed step:** #2 SHARED-AUTOCOMPLETE merged (v0.12.0): `src/autocomplete/service.ts` (`useAutocompleteSources`, `rankFields`)
-**Next step:** branch `feat/disc-search-02`; turn the DISC-SEARCH-02 acceptance list (docs/spec/10-discover.md) into e2e checks against the existing `SearchBar.tsx`: ~300 ms suggestions, quoted values, cursor after insert, matched-term highlight in cells, dirty query → Update state. Fix gaps found.
+**Current item:** #4 DISC-FILTER-01 filter pills (not started)
+**Last completed step:** #3 DISC-SEARCH-02 merged (v0.13.0): match highlighting (`src/sql/kql/highlight.ts`), dirty-query Update button
+**Next step:** branch `feat/disc-filter-01`; e2e for pill actions (disable re-runs + struck through, exclude flips to NOT, edit, delete, count badge if any), add Pin/Unpin to the pill menu using `pinFilterInStore`/`unpinFilterInStore` (`src/state/sharedSearch.ts`), and unpin on delete of a pinned pill. Integration IT-B.
 **Open issues:** none
 
 ## Environment notes
@@ -16,4 +16,4 @@
 typecheck ✅ · lint ✅ (0 errors, 18 warnings) · test:ci ✅ 730 tests · build ✅ · e2e: original `appConfig.spec.ts` was stale scaffolding (replaced).
 
 ## Session log
-- 2026-11-17 — Forked, baseline recorded, test foundation merged (PR 1). SHARED-STATE done (PR 2). SHARED-AUTOCOMPLETE done (PR 3).
+- 2026-11-17 — Forked, baseline recorded, test foundation merged (PR 1). SHARED-STATE done (PR 2). SHARED-AUTOCOMPLETE done (PR 3). DISC-SEARCH-02 done (PR 4).

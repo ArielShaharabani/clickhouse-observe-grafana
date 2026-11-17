@@ -21,7 +21,7 @@ import React, {
 } from 'react';
 import { css } from '@emotion/css';
 import { GrafanaTheme2 } from '@grafana/data';
-import { Icon, IconButton, useStyles2 } from '@grafana/ui';
+import { Button, Icon, IconButton, useStyles2 } from '@grafana/ui';
 import { useFields } from './FieldsContext';
 import { getSuggestions, resolveValueContext, Suggestion } from '../sql/kql/suggest';
 import { FieldValue } from '../sql/kql/_values';
@@ -420,10 +420,18 @@ export function SearchBar({
         )}
       </div>
 
-      {/* Icon-only — condensed to fit the merged single-line toolbar (see LogsExplorer.tsx's
-          header row). Enter already commits the search (onKeyDown above); this is a visible
-          affordance for that, not the only way to trigger it. */}
-      <IconButton name="search" tooltip="Search (Enter)" aria-label="Search" onClick={commit} />
+      {/* Icon-only while the query is current — condensed to fit the merged single-line toolbar
+          (see LogsExplorer.tsx's header row). When the typed query differs from the one the
+          results reflect, it becomes a labelled "Update" button (Kibana's dirty-query cue,
+          DISC-SEARCH-02 / DISC-TIME-02) so it's obvious the results are stale. Enter still
+          commits either way. */}
+      {inputValue !== value ? (
+        <Button size="sm" icon="sync" variant="primary" tooltip="Run the edited query (Enter)" aria-label="Update query" onClick={commit}>
+          Update
+        </Button>
+      ) : (
+        <IconButton name="search" tooltip="Search (Enter)" aria-label="Search" onClick={commit} />
+      )}
     </div>
   );
 }

@@ -22,5 +22,8 @@ Every page reads/writes the same URL params (`q, filters, cols, sort, from, to, 
 ## D8 — One autocomplete service for every input (SHARED-AUTOCOMPLETE-01)
 `src/autocomplete/service.ts`: `useAutocompleteSources({config, query, timeRange, fieldIndex})` gives `loadValues`/`loadMapKeys` scoped to the time range, search and filters; lookups never reject or throw (failures resolve empty; an unparsable search is dropped from the scope), the scope is compiled once per change, and the cache key distinguishes before/after field discovery. `rankFields(fields, prefix, {allow})` (`src/autocomplete/rankFields.ts`, pure) is the one field ranker: name or display name, prefix-first; the KQL suggestion engine uses it too. New inputs (filter builder, Visualize field pickers, formula editor) must use it — checklist in `docs/spec/30-shared.md`.
 
+## D9 — Dirty state only for the query (DISC-SEARCH-02 / DISC-TIME-02)
+Grafana's time picker applies a range immediately (no pending state), so only the KQL bar has a dirty state: when the typed query differs from the committed one, its search icon becomes a primary "Update" button. Matched-term highlighting (`src/sql/kql/highlight.ts`) uses the committed query + enabled positive filters; negated, exists and range terms are never highlighted; bare terms apply to the body column.
+
 ## D6 — Work in a fork, PR per feature, auto-merge on green
 Fork `ArielShaharabani/clickhouse-observe-grafana` (no push access upstream). One branch + PR per feature, merged once all gates pass.

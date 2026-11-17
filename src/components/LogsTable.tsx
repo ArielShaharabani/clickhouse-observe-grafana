@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from 'react';
+import { splitHighlights } from '../sql/kql/highlight';
 import { css, cx } from '@emotion/css';
 import { GrafanaTheme2, DateTime, dateTimeFormat, toUtc } from '@grafana/data';
 import { Icon, IconButton, LoadingPlaceholder, EmptyState, useStyles2 } from '@grafana/ui';
@@ -35,6 +36,8 @@ interface LogsTableProps {
    *  when the drop lands outside any column (e.g. the empty-state area), which appends. Omit the
    *  prop entirely to disable accepting field drops. */
   onDropField?: (fieldId: string, targetId?: string) => void;
+  /** Terms to highlight per column (matched query/filter terms — DISC-SEARCH-02). */
+  highlightTermsFor?: (col: SelectedColumn) => string[];
 }
 
 /** Shared with LogDetailDrawer's header summary so the row and detail view agree on color. */
@@ -72,23 +75,35 @@ function cellTextValue(raw: unknown): string {
   return raw !== null && typeof raw === 'object' ? JSON.stringify(raw) : String(raw ?? '');
 }
 
-function renderCell(col: SelectedColumn, row: LogRow): React.ReactNode {
+/** Text with matched query/filter terms wrapped in <mark> (DISC-SEARCH-02). */
+function highlighted(text: string, terms: string[] | undefined, markClass: string): React.ReactNode {
+  if (!terms || terms.length === 0) {
+    return text;
+  }
+  return splitHighlights(text, terms).map((run, i) =>
+    run.match ? (
+      <mark key={i} className={markClass} data-testid="match-highlight">
+        {run.text}
+      </mark>
+    ) : (
+      run.text
+    )
+  );
+}
+
+function renderCell(col: SelectedColumn, row: LogRow, terms: string[] | undefined, markClass: string): React.ReactNode {
   const raw = row[col.key];
   if (col.type === 'time') {
     return String(formatTimestamp(raw));
   }
   if (col.type === 'level') {
     const s = String(raw || '');
-    return (
-      <span style={{ color: severityColor(s) }}>
-        {s.toUpperCase() || '—'}
-      </span>
-    );
+    return <span style={{ color: severityColor(s) }}>{s ? highlighted(s.toUpperCase(), terms, markClass) : '—'}</span>;
   }
   if (raw === null || raw === undefined) {
     return '—';
   }
-  return cellTextValue(raw);
+  return highlighted(cellTextValue(raw), terms, markClass);
 }
 
 export function LogsTable({
@@ -107,6 +122,7 @@ export function LogsTable({
   onToggleCompare,
   onAddFilter,
   onDropField,
+  highlightTermsFor,
 }: LogsTableProps) {
   const showCompare = compareSelection !== undefined && onToggleCompare !== undefined;
   const styles = useStyles2(getStyles);
@@ -423,7 +439,7 @@ export function LogsTable({
                             col.type === 'text' && wrapLines && styles.wrapped
                           )}
                         >
-                          {renderCell(col, row)}
+                          {renderCell(col, row, highlightTermsFor?.(col), styles.matchHighlight)}
                         </span>
                         {hoveredCell?.ri === i && hoveredCell.ci === col.id && (
                           <div className={styles.cellToolbar} style={{ opacity: 1, pointerEvents: 'auto' }}>
@@ -478,6 +494,13 @@ export function LogsTable({
 }
 
 const getStyles = (theme: GrafanaTheme2) => ({
+  matchHighlight: css({
+    background: theme.colors.warning.transparent,
+    color: 'inherit',
+    padding: 0,
+    borderRadius: theme.shape.radius.default,
+    boxShadow: `0 0 0 1px ${theme.colors.warning.border}`,
+  }),
   tableWrapper: css`
     overflow-x: auto;
     overflow-y: auto;
