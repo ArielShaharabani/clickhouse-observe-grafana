@@ -18,15 +18,16 @@ const rows: LogRow[] = [
 
 function setup(extra: Partial<React.ComponentProps<typeof LogsTable>> = {}) {
   const onAddFilter = jest.fn();
-  const onPageStep = jest.fn();
+  const onPageStep = jest.fn(() => true);
+  const onRowClick = jest.fn();
   render(
-    <LogsTable rows={rows} loading={false} columns={columns} onRowClick={jest.fn()} onAddFilter={onAddFilter} onPageStep={onPageStep} {...extra} />
+    <LogsTable rows={rows} loading={false} columns={columns} onRowClick={onRowClick} onAddFilter={onAddFilter} onPageStep={onPageStep} {...extra} />
   );
   const grid = screen.getByRole('grid', { name: 'Log results' });
   grid.focus();
   const key = (k: string, opts: object = {}) => fireEvent.keyDown(grid, { key: k, ...opts });
   const focused = () => grid.querySelector('[aria-selected="true"][data-cell]')?.getAttribute('data-cell');
-  return { grid, key, focused, onAddFilter, onPageStep };
+  return { grid, key, focused, onAddFilter, onPageStep, onRowClick };
 }
 
 describe('DISC-TABLE-01 keyboard navigation', () => {
@@ -110,5 +111,56 @@ describe('DISC-TABLE-01 display options', () => {
     setup({ display: { density: 'compact', bodyLines: 5 } });
     const body = screen.getByText('login ok');
     expect(body.style.minHeight).toBe('7.5em'); // 5 lines × 1.5 (jsdom drops -webkit-line-clamp)
+  });
+});
+
+describe('DISC-TABLE-01/02 review fixes', () => {
+  it('Shift+Enter opens the row detail; Enter expands the cell', () => {
+    const { key, onRowClick } = setup();
+    key('ArrowDown');
+    key('ArrowDown');
+    key('Enter', { shiftKey: true });
+    expect(onRowClick).toHaveBeenCalledWith(rows[1]);
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it('PgDn on the last page keeps the cursor and native scrolling', () => {
+    const { key, focused, onPageStep } = setup();
+    onPageStep.mockReturnValue(false);
+    key('ArrowDown');
+    key('ArrowDown');
+    const ev = new KeyboardEvent('keydown', { key: 'PageDown', bubbles: true, cancelable: true });
+    screen.getByRole('grid').dispatchEvent(ev);
+    expect(ev.defaultPrevented).toBe(false);
+    expect(focused()).toBe('1:0');
+  });
+
+  it('a mouse click focuses the clicked cell, and the action bar follows hover only', () => {
+    const { key, focused } = setup();
+    fireEvent.mouseDown(screen.getByText('info').closest('td')!);
+    expect(focused()).toBe('1:1');
+    expect(screen.queryByRole('button', { name: /^Filter for / })).toBeNull();
+    key('Enter');
+    expect(screen.getByRole('dialog', { name: 'Value of SeverityText' })).toBeTruthy();
+  });
+
+  it('the popover closes on an outside click and stays closed after a re-render with new rows', () => {
+    const view = render(<LogsTable rows={rows} loading={false} columns={columns} onRowClick={jest.fn()} />);
+    const grid = view.getAllByRole('grid')[0];
+    grid.focus();
+    fireEvent.keyDown(grid, { key: 'ArrowDown' });
+    fireEvent.keyDown(grid, { key: 'Enter' });
+    expect(view.getByRole('dialog')).toBeTruthy();
+    view.rerender(<LogsTable rows={[...rows]} loading={false} columns={columns} onRowClick={jest.fn()} />);
+    expect(view.queryByRole('dialog')).toBeNull();
+    view.rerender(<LogsTable rows={rows} loading={false} columns={columns} onRowClick={jest.fn()} />);
+    fireEvent.keyDown(grid, { key: 'Enter' });
+    fireEvent.mouseDown(document.body);
+    expect(view.queryByRole('dialog')).toBeNull();
+  });
+
+  it('pretty-prints JSON text without rounding big integers', () => {
+    const expected = ['{', '  "trace": 12345678901234567890,', '  "s": "a,b:{c}",', '  "e": [],', '  "o": {}', '}'].join(String.fromCharCode(10));
+    expect(expandedText('{"trace":12345678901234567890,"s":"a,b:{c}","e":[],"o":{}}')).toBe(expected);
   });
 });

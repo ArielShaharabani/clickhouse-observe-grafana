@@ -21,7 +21,7 @@ Versions track the plugin's release history. `Unreleased` collects commits not y
 ### Changed
 
 - **"Wrap lines" switch replaced by Display options** (body cell lines "Auto" = wrap). The body cell now shows 3 lines by default (was 2).
-- **Enter on the grid expands the focused cell** instead of opening the row detail panel; the row's Open detail button still does that.
+- **Enter on the grid expands the focused cell** instead of opening the row detail panel; Shift+Enter (or the row's Open detail button) opens the detail panel.
 
 ---
 

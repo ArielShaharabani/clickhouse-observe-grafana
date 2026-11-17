@@ -1263,15 +1263,21 @@ export function LogsExplorer() {
     [rows, currentPage, pageSize]
   );
 
-  // PgUp / PgDn in the grid: one page back or forward, within what exists.
+  // PgUp / PgDn in the grid: one page back or forward, within what exists. One step at a time:
+  // presses while a page is still loading are ignored, so held keys can't race duplicate fetches.
+  const pageStepBusy = useRef(false);
   const onPageStep = useCallback(
-    (delta: 1 | -1) => {
+    (delta: 1 | -1): boolean => {
       const next = currentPage + delta;
       const lastLoadedPage = Math.max(0, Math.ceil(rows.length / pageSize) - 1);
-      if (next < 0 || (delta > 0 && next > lastLoadedPage && !hasMore)) {
-        return;
+      if (pageStepBusy.current || next < 0 || (delta > 0 && next > lastLoadedPage && !hasMore)) {
+        return false;
       }
-      onPageChange(next);
+      pageStepBusy.current = true;
+      Promise.resolve(onPageChange(next)).finally(() => {
+        pageStepBusy.current = false;
+      });
+      return true;
     },
     [currentPage, rows.length, pageSize, hasMore, onPageChange]
   );
