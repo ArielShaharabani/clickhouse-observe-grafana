@@ -1,6 +1,6 @@
 # Progress — read this first when resuming
 
-**Current item:** #14 LENS-INTERACT-01 click-to-filter + chooser (not started)
+**Current item:** #14 LENS-INTERACT-01 (in progress, branch `feat/lens-interact-01`)
 **Last completed step:** #13 LENS-DIM-01/02 in PR 14 (v0.23.0): `src/lens/DimensionEditor.tsx` (Quick function grid, Field combobox of compatible fields, Percentile, Name with auto label, Top values size, Remove/Close), `src/lens/dimensions.ts` helpers, percentile op (`quantile(p/100)`, clamped 1–99), custom `name` on every dimension, "+ Add" slots per group
 **Next step:** branch `feat/lens-interact-01`; read LENS-INTERACT-01 in docs/spec/20-lens.md. Plan: custom-drawn bar/line/area (generalize VolumeHistogram drawing) so one click on a bar/point opens a chooser with the clicked bucket values (X + Breakdown) and "Filter for" per value / all (adds pills via the registry, written to the shared URL `filters`), plus time brush on date X. Table cells: filter for/out via the registry. Keep PanelRenderer for stat/pie/table where not clickable.
 **Open issues:** none. Deferred Lens items: per-group drag-and-drop (LENS-DIM-01 DnD; workspace drop works), formula (#23), advanced metric options (filter by, time shift), value format/colour/axis side (LENS-STYLE-01), date interval picker, "Other" bucket. Deferred elsewhere: DISC-DOC-02 links (#20); histogram now-line; field list Empty/Meta; grid Summary column etc. (#16); popover Visualize (#15).

@@ -1,7 +1,7 @@
 # Context snapshot — read this to restart
 
 Saved after every feature (and every review-fix round). A new session can resume from this file plus `PROGRESS.md` alone.
-Last saved: 2026-11-17, 2026-11-18, after #13 LENS-DIM-01/02 (PR 14) review + security fixes.
+Last saved: 2026-11-17, 2026-11-18, #14 LENS-INTERACT-01 started on `feat/lens-interact-01` (PR 14 merged).
 
 ## Goal
 Bring Kibana Discover + Lens style exploration to Grafana on ClickHouse by extending the **ClickHouse Observe** app plugin.
@@ -54,4 +54,4 @@ Bring Kibana Discover + Lens style exploration to Grafana on ClickHouse by exten
 41,520 rows, 2026-01-01..08 UTC; `SeverityNumber` uses OTel numbers (debug 5, info 9, warn 13, error 17); levels info 28,265 · warn 6,080 · debug 3,984 · error 3,191; services 8,064 each except payments 9,264; errors by service auth 384, checkout 445, frontend 373, inventory 414, payments 1,575; incident 2026-01-05 09:00–11:00 (1,200 payments rows, `http.status_code` 503). Latest-5,000 sample: info 3,483 · warn 792 · debug 487 · error 238 (payments-filtered: info 2,667 · error 1,370 · warn 569 · debug 394).
 
 ## Now / next
-Next: #14 LENS-INTERACT-01 (click-to-filter + chooser) — exact notes in `PROGRESS.md`.
+Now: #14 LENS-INTERACT-01 in progress on `feat/lens-interact-01` — exact notes in `PROGRESS.md`.
