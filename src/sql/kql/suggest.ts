@@ -20,6 +20,7 @@
  */
 
 import { lex } from './_lexer';
+import { rankFields } from '../../autocomplete/rankFields';
 import { FieldModel } from '../fieldModel';
 import { FieldValue } from './_values';
 import { escapeKqlIdent } from './_escape';
@@ -261,18 +262,8 @@ function fieldSuggestions(
   replaceStart: number,
   replaceEnd: number
 ): Suggestion[] {
-  const lp = prefix.toLowerCase();
-  return fields
-    .filter((f) => f.name.toLowerCase().includes(lp) || f.displayName.toLowerCase().includes(lp))
-    .sort((a, b) => {
-      // Prefix-first ranking. Checked against both the bare key and the
-      // displayed (source-column-prefixed) name — a nested Map/JSON field's `name` is just the
-      // leaf key ("k8s.namespace.name"), so typing the source column's prefix ("Resource…")
-      // would otherwise never rank it as a prefix match even though that's what's on screen.
-      const aStarts = a.name.toLowerCase().startsWith(lp) || a.displayName.toLowerCase().startsWith(lp) ? 0 : 1;
-      const bStarts = b.name.toLowerCase().startsWith(lp) || b.displayName.toLowerCase().startsWith(lp) ? 0 : 1;
-      return aStarts - bStarts || a.name.localeCompare(b.name);
-    })
+  // Shared ranking (SHARED-AUTOCOMPLETE-01): name or display name, prefix matches first.
+  return rankFields(fields, prefix)
     .map<Suggestion>((f) => {
       // A Map *container* column (source==='column', type==='map') has no single "value" of its
       // own to complete against — accepting it opens the dot-drilldown into its keys instead of
