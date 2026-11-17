@@ -45,7 +45,7 @@ import {
 import { BreakdownUrl, decodeLogsState, encodeLogsState } from '../data/urlState';
 import { carryPinnedToView, loadPinnedFilters, mergePinnedFilters } from '../state/sharedSearch';
 import { useAutocompleteSources } from '../autocomplete/service';
-import { extractHighlightTerms, termsForColumn } from '../sql/kql/highlight';
+import { compileColumnHighlighter, extractHighlightTerms } from '../sql/kql/highlight';
 import { errMsg } from '../errMsg';
 import { shiftTimeRange, zoomOutTimeRange } from '../utils/timeRangeNav';
 import { useAvailableHeight } from '../utils/useAvailableHeight';
@@ -1063,11 +1063,11 @@ export function LogsExplorer() {
   // Matched-term highlighting in the grid (DISC-SEARCH-02): terms from the committed query and
   // the enabled positive filters; bare terms apply to the body column.
   const highlightTerms = useMemo(
-    () => extractHighlightTerms(queryState.search, queryState.filters),
-    [queryState.search, queryState.filters]
+    () => extractHighlightTerms(queryState.search, queryState.filters, { config, fieldIndex }, queryState.useRawSql),
+    [queryState.search, queryState.filters, queryState.useRawSql, config, fieldIndex]
   );
-  const highlightTermsFor = useCallback(
-    (col: SelectedColumn) => termsForColumn(highlightTerms, col, config.columns.body),
+  const highlighterFor = useCallback(
+    (col: SelectedColumn) => compileColumnHighlighter(highlightTerms, col, config.columns.body),
     [highlightTerms, config.columns.body]
   );
 
@@ -1501,7 +1501,7 @@ export function LogsExplorer() {
                   wrapLines={wrapLines}
                   compareSelection={compareSelection}
                   onToggleCompare={onToggleCompare}
-                  highlightTermsFor={highlightTermsFor}
+                  highlighterFor={highlighterFor}
                   onAddFilter={onAddFilter}
                   onDropField={onDropField}
                 />

@@ -1,64 +1,110 @@
-import { extractHighlightTerms, splitHighlights, termsForColumn } from '../highlight';
-import { FilterPill, SelectedColumn } from '../../../types';
+import { compileColumnHighlighter, extractHighlightTerms, HighlightContext, splitHighlights } from '../highlight';
+import { buildFieldIndex } from '../../fields';
+import { FieldModel } from '../../fieldModel';
+import { FilterPill, OTEL_COLUMN_MAPPING, SelectedColumn, SourceConfig } from '../../../types';
 
-const col = (over: Partial<SelectedColumn>): SelectedColumn => ({
-  id: 'c',
-  key: 'k',
-  sqlExpr: 'X',
-  displayName: 'X',
+const config: SourceConfig = {
+  datasourceUid: 'ds',
+  database: 'default',
+  logsTable: 'spec_logs',
+  isOtel: true,
+  columns: { ...OTEL_COLUMN_MAPPING, partitionTimestamp: '-' },
+};
+const fields: FieldModel[] = [
+  { id: 'col:ServiceName', name: 'ServiceName', displayName: 'ServiceName', sqlExpr: 'ServiceName', type: 'string', source: 'column' },
+  { id: 'col:SeverityText', name: 'SeverityText', displayName: 'SeverityText', sqlExpr: 'SeverityText', type: 'string', source: 'column' },
+  { id: 'col:Body', name: 'Body', displayName: 'Body', sqlExpr: 'Body', type: 'string', source: 'column' },
+  {
+    id: 'map:LogAttributes:http.method',
+    name: 'http.method',
+    displayName: 'LogAttributes.http.method',
+    sqlExpr: "LogAttributes['http.method']",
+    type: 'string',
+    source: 'map',
+    mapColumn: 'LogAttributes',
+  },
+];
+const ctx: HighlightContext = { config, fieldIndex: buildFieldIndex(fields) };
+const col = (sqlExpr: string, over: Partial<SelectedColumn> = {}): SelectedColumn => ({
+  id: sqlExpr,
+  key: sqlExpr,
+  sqlExpr,
+  displayName: sqlExpr,
   type: 'string',
   isCore: false,
   ...over,
 });
 const pill = (over: Partial<FilterPill>): FilterPill => ({ id: 'p', field: 'ServiceName', op: '=', value: 'payments', ...over });
+const marked = (text: string, re: RegExp | null) =>
+  splitHighlights(text, re)
+    .filter((r) => r.match)
+    .map((r) => r.text);
 
-describe('DISC-SEARCH-02: highlight terms from the query and filters', () => {
-  it('takes field:value and bare terms, splitting wildcards into literal parts', () => {
-    expect(extractHighlightTerms('ServiceName:payments and declin* and "Order 1"', [])).toEqual([
-      { field: 'ServiceName', text: 'payments' },
-      { field: null, text: 'declin' },
-      { field: null, text: 'Order 1' },
+describe('DISC-SEARCH-02: highlight terms follow the SQL that matched', () => {
+  it('maps field terms to their resolved column and bare terms to the body', () => {
+    const terms = extractHighlightTerms('ServiceName:payments and declined', [], ctx);
+    expect(marked('payments', compileColumnHighlighter(terms, col('ServiceName'), 'Body'))).toEqual(['payments']);
+    expect(marked('Payment declined', compileColumnHighlighter(terms, col('Body'), 'Body'))).toEqual(['declined']);
+    expect(compileColumnHighlighter(terms, col('TraceId'), 'Body')).toBeNull();
+  });
+
+  it('resolves dotted Map keys like the query does', () => {
+    const terms = extractHighlightTerms('LogAttributes.http.method:POST', [], ctx);
+    expect(marked('POST', compileColumnHighlighter(terms, col("LogAttributes['http.method']"), 'Body'))).toEqual(['POST']);
+  });
+
+  it('expands field-name wildcards against discovered fields', () => {
+    const terms = extractHighlightTerms('Servi*:payments', [], ctx);
+    expect(marked('payments', compileColumnHighlighter(terms, col('ServiceName'), 'Body'))).toEqual(['payments']);
+  });
+
+  it('highlights the raw text in the body for an unresolvable field:value', () => {
+    const terms = extractHighlightTerms('http://example.com', [], ctx);
+    expect(marked('GET http://example.com ok', compileColumnHighlighter(terms, col('Body'), 'Body'))).toEqual([
+      'http://example.com',
     ]);
   });
 
-  it('skips negated, exists and range terms', () => {
-    expect(extractHighlightTerms('not level:debug and ServiceName:* and duration > 5', [])).toEqual([]);
+  it('keeps wildcard fragments in order and ignores one-character fragments', () => {
+    const terms = extractHighlightTerms('pay*d', [], ctx);
+    expect(marked('Payment declined', compileColumnHighlighter(terms, col('Body'), 'Body'))).toEqual(['Payment d']);
+    expect(extractHighlightTerms('*s*', [], ctx)).toEqual([]);
   });
 
-  it('returns no terms for an unparsable query instead of throwing', () => {
-    expect(extractHighlightTerms('level:(', [])).toEqual([]);
+  it('matches quoted phrases on word boundaries only', () => {
+    const terms = extractHighlightTerms('"req-59"', [], ctx);
+    expect(marked('req-592 then req-59 done', compileColumnHighlighter(terms, col('Body'), 'Body'))).toEqual(['req-59']);
   });
 
-  it('adds enabled positive filter values, including one_of sets', () => {
-    const terms = extractHighlightTerms('', [
-      pill({}),
-      pill({ id: 'q', op: '!=', value: 'auth' }),
-      pill({ id: 'r', disabled: true, value: 'checkout' }),
-      pill({ id: 's', field: 'SeverityText', op: 'one_of', value: '', values: ['error', 'warn'] }),
-      pill({ id: 't', field: 'Body', op: 'contains', value: 'timeout' }),
-    ]);
-    expect(terms).toEqual([
-      { field: 'ServiceName', text: 'payments' },
-      { field: 'SeverityText', text: 'error' },
-      { field: 'SeverityText', text: 'warn' },
-      { field: 'Body', text: 'timeout' },
-    ]);
+  it('skips negated, exists and range terms, and returns nothing for an unparsable query', () => {
+    expect(extractHighlightTerms('not SeverityText:debug and ServiceName:* and SeverityNumber > 5', [], ctx)).toEqual([]);
+    expect(extractHighlightTerms('level:(', [], ctx)).toEqual([]);
   });
 
-  it('assigns field terms to their column and bare terms to the body column', () => {
-    const terms = [
-      { field: 'servicename', text: 'payments' },
-      { field: null, text: 'declined' },
-    ];
-    expect(termsForColumn(terms, col({ sqlExpr: 'ServiceName', displayName: 'Service' }), 'Body')).toEqual(['payments']);
-    expect(termsForColumn(terms, col({ sqlExpr: 'Body', displayName: 'Message' }), 'Body')).toEqual(['declined']);
-    expect(termsForColumn(terms, col({ sqlExpr: 'TraceId' }), 'Body')).toEqual([]);
+  it('adds enabled positive filters, ignoring whitespace-only values', () => {
+    const terms = extractHighlightTerms(
+      '',
+      [
+        pill({}),
+        pill({ id: 'q', op: '!=', value: 'auth' }),
+        pill({ id: 'r', disabled: true, value: 'checkout' }),
+        pill({ id: 's', field: 'SeverityText', op: 'one_of', value: '', values: ['error', ' '] }),
+        pill({ id: 't', field: 'Body', op: 'contains', value: ' ' }),
+      ],
+      ctx
+    );
+    expect(terms.map((t) => t.pattern)).toEqual(['payments', 'error']);
+  });
+
+  it('returns no terms in raw SQL mode', () => {
+    expect(extractHighlightTerms('declined', [pill({})], ctx, true)).toEqual([]);
   });
 });
 
 describe('DISC-SEARCH-02: splitting cell text into highlighted runs', () => {
   it('marks every case-insensitive occurrence and keeps the original casing', () => {
-    expect(splitHighlights('Payment declined; DECLINED again', ['declined'])).toEqual([
+    const re = compileColumnHighlighter([{ sqlExprs: null, pattern: 'declined' }], col('Body'), 'Body');
+    expect(splitHighlights('Payment declined; DECLINED again', re)).toEqual([
       { text: 'Payment ', match: false },
       { text: 'declined', match: true },
       { text: '; ', match: false },
@@ -67,17 +113,7 @@ describe('DISC-SEARCH-02: splitting cell text into highlighted runs', () => {
     ]);
   });
 
-  it('treats regex characters literally and prefers the longest overlapping term', () => {
-    expect(splitHighlights('a.b(c) abc', ['a.b(c)', 'a'])).toEqual([
-      { text: 'a.b(c)', match: true },
-      { text: ' ', match: false },
-      { text: 'a', match: true },
-      { text: 'bc', match: false },
-    ]);
-  });
-
   it('returns the text unchanged when there is nothing to highlight', () => {
-    expect(splitHighlights('hello', [])).toEqual([{ text: 'hello', match: false }]);
-    expect(splitHighlights('hello', ['zzz'])).toEqual([{ text: 'hello', match: false }]);
+    expect(splitHighlights('hello', null)).toEqual([{ text: 'hello', match: false }]);
   });
 });

@@ -347,7 +347,7 @@ export function SearchBar({
   // ── Render ────────────────────────────────────────────────────────────────
 
   return (
-    <div className={styles.container}>
+    <div className={styles.container} data-testid="kql-search-bar">
       <div className={styles.inputWrapper}>
         <Icon name="search" className={styles.icon} />
         <input

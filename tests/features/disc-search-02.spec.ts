@@ -11,7 +11,7 @@ test('value suggestions appear quickly, quoted, and accepting one leaves the cur
   await logs.searchInput.click();
   await logs.searchInput.pressSequentially('ServiceName : ', { delay: 20 });
   const started = Date.now();
-  const firstValue = page.getByRole('listbox').getByRole('option').first();
+  const firstValue = logs.searchBar.getByRole('listbox').getByRole('option').first();
   await expect(firstValue).toBeVisible();
   // Spec: ~300 ms after a typing pause. 250 ms debounce + a ClickHouse lookup; 2 s bound keeps the
   // check meaningful on the shared docker VM without being flaky.
@@ -29,10 +29,10 @@ test('value suggestions appear quickly, quoted, and accepting one leaves the cur
 test('an edited, uncommitted query shows Update; running it refreshes the results', async ({ page }) => {
   const logs = new LogsPage(page);
   await logs.open();
-  await expect(page.getByRole('button', { name: 'Update query' })).toHaveCount(0);
+  await expect(logs.searchBar.getByRole('button', { name: 'Update query' })).toHaveCount(0);
   await logs.searchInput.click();
   await logs.searchInput.fill('ServiceName : "payments"');
-  const update = page.getByRole('button', { name: 'Update query' });
+  const update = logs.searchBar.getByRole('button', { name: 'Update query' });
   await expect(update).toBeVisible();
   await logs.expectRowCount(FIXTURE.counts.total); // not run yet
   await update.click();
@@ -44,7 +44,7 @@ test('matched query and filter terms are highlighted in result cells', async ({ 
   const errorPill = { id: 'e2e-error', field: 'SeverityText', op: '=', value: 'error' };
   const logs = new LogsPage(page);
   await logs.open({ q: 'declined', filters: JSON.stringify([errorPill]) });
-  const marks = page.getByTestId('match-highlight');
+  const marks = logs.grid.getByTestId('match-highlight');
   // Bare term → body column; filter value → level column.
   await expect(marks.filter({ hasText: /^declined$/i }).first()).toBeVisible();
   await expect(marks.filter({ hasText: /^error$/i }).first()).toBeVisible();
