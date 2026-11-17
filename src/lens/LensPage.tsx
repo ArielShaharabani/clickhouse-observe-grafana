@@ -1,0 +1,564 @@
+/**
+ * Visualize (Lens) page — specs LENS-START-01, LENS-AUTO-01, LENS-SUGG-01 (docs/spec/20-lens.md).
+ *
+ * Field list (left) → workspace chart (centre) + suggestions strip → dimension groups (right).
+ * Shares the search context with Discover through the URL (q, filters, from/to); the Lens state
+ * itself lives in the `lens` param so an unsaved visualization survives a refresh (IT-K).
+ */
+import React, { useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
+import { css, cx } from '@emotion/css';
+import { dateTime, GrafanaTheme2, IconName, TimeRange } from '@grafana/data';
+import { Alert, Button, Icon, IconButton, Input, LinkButton, Spinner, TimeRangePicker, useStyles2 } from '@grafana/ui';
+import { SourceConfigContext } from '../components/App/App';
+import { useFieldDiscovery } from '../components/FieldsContext';
+import { FIELD_TYPE_ICONS } from '../components/FieldSidebar/fieldIcons';
+import { FIELD_DRAG_MIME } from '../constants';
+import { decodeLogsState, encodeLogsState } from '../data/urlState';
+import { runQueryRows } from '../data/runQuery';
+import { buildFieldIndex } from '../sql/fields';
+import { buildWhereConditions } from '../sql/queryBuilder';
+import { buildAppPageUrl } from '../state/sharedSearch';
+import { DEFAULT_LOGS_QUERY_STATE } from '../types';
+import { compileLens, LensResult, shapeLensRows } from './compile';
+import { LensChart } from './render/LensChart';
+import {
+  BucketDim,
+  ChartType,
+  decodeLens,
+  dimLabel,
+  EMPTY_LENS,
+  encodeLens,
+  isEmptyLens,
+  LensField,
+  LensState,
+  MetricDim,
+  RECORDS_FIELD,
+} from './state';
+import { addField, chartTitle, isLensField, LensContext, suggestions, switchChart } from './suggest';
+
+const CHART_ICONS: Record<ChartType, IconName> = {
+  line: 'chart-line',
+  area: 'chart-line',
+  bar: 'graph-bar',
+  metric: 'calculator-alt',
+  table: 'table',
+  pie: 'circle',
+};
+
+function defaultRange(): TimeRange {
+  return { from: dateTime(Date.now() - 3600 * 1000), to: dateTime(Date.now()), raw: { from: 'now-1h', to: 'now' } };
+}
+
+interface Group {
+  name: string;
+  dims: Array<BucketDim | MetricDim>;
+}
+
+/** Dimension groups as each chart type names them (LENS-DIM-01). */
+export function dimensionGroups(s: LensState): Group[] {
+  const [b0, b1] = s.buckets;
+  const opt = (d?: BucketDim) => (d ? [d] : []);
+  switch (s.chartType) {
+    case 'line':
+    case 'area':
+    case 'bar':
+      return [
+        { name: 'Horizontal axis', dims: opt(b0) },
+        { name: 'Vertical axis', dims: s.metrics },
+        { name: 'Breakdown', dims: opt(b1) },
+      ];
+    case 'table':
+      return [
+        { name: 'Rows', dims: s.buckets },
+        { name: 'Metrics', dims: s.metrics },
+      ];
+    case 'metric':
+      return [
+        { name: 'Primary metric', dims: s.metrics.slice(0, 1) },
+        { name: 'Secondary metric', dims: s.metrics.slice(1, 2) },
+        { name: 'Break down by', dims: opt(b0) },
+      ];
+    case 'pie':
+      return [
+        { name: 'Slice by', dims: s.buckets },
+        { name: 'Size by', dims: s.metrics },
+      ];
+  }
+}
+
+export function LensPage() {
+  const styles = useStyles2(getStyles);
+  const config = useContext(SourceConfigContext);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const paramsKey = searchParams.toString();
+
+  // Shared search context from the URL (same params as Discover).
+  const urlState = useMemo(() => decodeLogsState(new URLSearchParams(paramsKey)), [paramsKey]);
+  const search = urlState.search ?? '';
+  const filters = useMemo(() => urlState.filters ?? [], [urlState]);
+  const timeRange = useMemo(() => urlState.timeRange ?? defaultRange(), [urlState]);
+  const lens = useMemo(() => decodeLens(new URLSearchParams(paramsKey).get('lens')) ?? EMPTY_LENS, [paramsKey]);
+
+  const setLens = useCallback(
+    (next: LensState) => {
+      setSearchParams(
+        (prev) => {
+          const sp = new URLSearchParams(prev);
+          if (isEmptyLens(next)) {
+            sp.delete('lens');
+          } else {
+            sp.set('lens', encodeLens(next));
+          }
+          return sp;
+        },
+        { replace: true }
+      );
+    },
+    [setSearchParams]
+  );
+  const setTimeRange = useCallback(
+    (r: TimeRange) => {
+      const enc = encodeLogsState({ search: '', filters: [], columns: [], timeRange: r });
+      setSearchParams(
+        (prev) => {
+          const sp = new URLSearchParams(prev);
+          sp.set('from', enc.get('from') ?? '');
+          sp.set('to', enc.get('to') ?? '');
+          return sp;
+        },
+        { replace: false }
+      );
+    },
+    [setSearchParams]
+  );
+
+  // Fields of the active data view.
+  const { fields, loading: fieldsLoading } = useFieldDiscovery(config, timeRange);
+  const fieldIndex = useMemo(() => buildFieldIndex(fields), [fields]);
+  const fieldIndexRef = useRef(fieldIndex);
+  useLayoutEffect(() => {
+    fieldIndexRef.current = fieldIndex;
+  });
+  const lensFields = useMemo<LensField[]>(
+    () => [
+      RECORDS_FIELD,
+      ...fields
+        .map((f) => ({ id: f.id, sqlExpr: f.sqlExpr, label: f.displayName, type: f.type }))
+        .filter(isLensField),
+    ],
+    [fields]
+  );
+  const ctx: LensContext = useMemo(
+    () => (config.columns.timestamp ? { timeField: { sqlExpr: config.columns.timestamp, label: config.columns.timestamp } } : {}),
+    [config.columns.timestamp]
+  );
+  const [nameFilter, setNameFilter] = useState('');
+  const shownFields = useMemo(() => {
+    const q = nameFilter.toLowerCase();
+    return q ? lensFields.filter((f) => f.label.toLowerCase().includes(q)) : lensFields;
+  }, [lensFields, nameFilter]);
+
+  // Run the chart query.
+  const [result, setResult] = useState<{ key: string; data?: LensResult; error?: string } | null>(null);
+  const queryKey = JSON.stringify([encodeLens(lens), config.datasourceUid, config.database, config.logsTable, search, filters, timeRange.from.valueOf(), timeRange.to.valueOf()]);
+  useEffect(() => {
+    if (isEmptyLens(lens) || !config.datasourceUid) {
+      return;
+    }
+    let cancelled = false;
+    const conditions = buildWhereConditions(config, { ...DEFAULT_LOGS_QUERY_STATE, search, filters }, fieldIndexRef.current);
+    const { sql } = compileLens(lens, config, conditions, timeRange);
+    runQueryRows({ datasourceUid: config.datasourceUid, sql, timeRange, op: 'lens' }).then(
+      (rows) => !cancelled && setResult({ key: queryKey, data: shapeLensRows(lens, rows) }),
+      (e) => !cancelled && setResult({ key: queryKey, error: e instanceof Error ? e.message : String(e) })
+    );
+    return () => {
+      cancelled = true;
+    };
+    // queryKey covers every input that changes the SQL.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [queryKey]);
+  const current = result?.key === queryKey ? result : null;
+
+  const onAdd = (f: LensField) => setLens(addField(lens, f, ctx));
+  const removeDim = (id: string) => {
+    const next = { ...lens, buckets: lens.buckets.filter((b) => b.id !== id), metrics: lens.metrics.filter((m) => m.id !== id) };
+    setLens(next.buckets.length === 0 && next.metrics.length === 0 ? EMPTY_LENS : switchChart(next, next.chartType, ctx));
+  };
+  const cards = useMemo(() => suggestions(lens, ctx), [lens, ctx]);
+  const [suggestionsOpen, setSuggestionsOpen] = useState(true);
+  const [dragOver, setDragOver] = useState(false);
+
+  const discoverUrl = buildAppPageUrl('logs', { search, filters, columns: [], timeRange });
+
+  return (
+    <div className={styles.page}>
+      <div className={styles.toolbar}>
+        <span className={styles.title}>Visualize</span>
+        <span className={styles.context} title={`${config.database}.${config.logsTable}`}>
+          {config.database}.{config.logsTable}
+          {search && ` · ${search}`}
+          {filters.length > 0 && ` · ${filters.length} filter${filters.length > 1 ? 's' : ''}`}
+        </span>
+        <div className={styles.spacer} />
+        <LinkButton href={discoverUrl} variant="secondary" size="sm" icon="compass" fill="outline">
+          Edit query in Discover
+        </LinkButton>
+        <TimeRangePicker
+          value={timeRange}
+          onChange={setTimeRange}
+          onChangeTimeZone={() => undefined}
+          onMoveBackward={() => undefined}
+          onMoveForward={() => undefined}
+          onZoom={() => undefined}
+          timeZone="browser"
+        />
+      </div>
+
+      <div className={styles.body}>
+        <section className={styles.fields} aria-label="Fields">
+          <Input
+            prefix={<Icon name="search" />}
+            placeholder="Search field names"
+            aria-label="Search field names"
+            value={nameFilter}
+            onChange={(e) => setNameFilter(e.currentTarget.value)}
+          />
+          {fieldsLoading && <Spinner size="sm" />}
+          <div className={styles.fieldList}>
+            {shownFields.map((f) => (
+              <div
+                key={f.id}
+                className={styles.fieldRow}
+                draggable
+                onDragStart={(e) => {
+                  e.dataTransfer.setData(FIELD_DRAG_MIME, f.id);
+                  e.dataTransfer.effectAllowed = 'copy';
+                }}
+                title={f.sqlExpr || f.label}
+              >
+                <Icon name={(f.type === 'records' ? 'list-ul' : FIELD_TYPE_ICONS[f.type] ?? 'question-circle') as IconName} size="sm" />
+                <span className={styles.fieldName}>{f.label}</span>
+                <Button size="sm" variant="secondary" fill="text" icon="plus" aria-label={`Add ${f.label} to workspace`} onClick={() => onAdd(f)} />
+              </div>
+            ))}
+          </div>
+        </section>
+
+        <section className={styles.workspace} aria-label="Workspace">
+          <div className={styles.chartHeader}>
+            <Icon name={CHART_ICONS[lens.chartType]} />
+            <span>{isEmptyLens(lens) ? 'No visualization' : chartTitle(lens)}</span>
+            {!isEmptyLens(lens) && (
+              <Button size="sm" variant="secondary" fill="text" icon="trash-alt" onClick={() => setLens(EMPTY_LENS)}>
+                Clear workspace
+              </Button>
+            )}
+          </div>
+          <div
+            className={cx(styles.chartArea, dragOver && styles.chartAreaOver)}
+            onDragOver={(e) => {
+              if (e.dataTransfer.types.includes(FIELD_DRAG_MIME)) {
+                e.preventDefault();
+                setDragOver(true);
+              }
+            }}
+            onDragLeave={() => setDragOver(false)}
+            onDrop={(e) => {
+              setDragOver(false);
+              const id = e.dataTransfer.getData(FIELD_DRAG_MIME);
+              const f = lensFields.find((x) => x.id === id);
+              if (f) {
+                e.preventDefault();
+                onAdd(f);
+              }
+            }}
+          >
+            {isEmptyLens(lens) ? (
+              <div className={styles.empty}>
+                <Icon name="chart-line" size="xxxl" />
+                <div className={styles.emptyTitle}>Drop some fields here to start</div>
+                <div className={styles.emptySub}>Visualize builds a chart from the fields you pick — no query editor needed.</div>
+              </div>
+            ) : current?.error ? (
+              <Alert severity="error" title="The chart query failed">
+                {current.error}
+              </Alert>
+            ) : current?.data ? (
+              <LensChart
+                state={lens}
+                result={current.data}
+                timeRange={timeRange}
+                onChangeTimeRange={(from, to) => setTimeRange({ from: dateTime(from), to: dateTime(to), raw: { from: dateTime(from), to: dateTime(to) } })}
+              />
+            ) : (
+              <div className={styles.empty}>
+                <Spinner />
+              </div>
+            )}
+          </div>
+
+          {cards.length > 0 && (
+            <div className={styles.suggestions}>
+              <button
+                type="button"
+                className={styles.suggestionsHeader}
+                aria-expanded={suggestionsOpen}
+                onClick={() => setSuggestionsOpen((v) => !v)}
+              >
+                <Icon name={suggestionsOpen ? 'angle-down' : 'angle-right'} />
+                Suggestions
+              </button>
+              {suggestionsOpen && (
+                <div className={styles.cards} role="group" aria-label="Suggestions">
+                  {cards.map((c) => (
+                    <button
+                      key={c.title}
+                      type="button"
+                      className={cx(styles.card, c.current && styles.cardCurrent)}
+                      title={c.title}
+                      aria-label={`Suggestion: ${c.title}`}
+                      aria-current={c.current || undefined}
+                      onClick={() => !c.current && setLens(c.state)}
+                    >
+                      <Icon name={CHART_ICONS[c.state.chartType]} size="xl" />
+                      <span className={styles.cardTitle}>{c.title}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </section>
+
+        <section className={styles.dims} aria-label="Dimensions">
+          {isEmptyLens(lens) ? (
+            <div className={styles.emptySub}>Dimensions appear here as you add fields.</div>
+          ) : (
+            dimensionGroups(lens).map((g) => (
+              <div key={g.name} className={styles.group} role="group" aria-label={g.name}>
+                <div className={styles.groupName}>{g.name}</div>
+                {g.dims.length === 0 && <div className={styles.slot}>+ Add or drag-and-drop a field</div>}
+                {g.dims.map((d) => (
+                  <div key={d.id} className={styles.dim}>
+                    <span className={styles.dimLabel}>{dimLabel(d)}</span>
+                    <IconButton name="times" size="sm" tooltip={`Remove ${dimLabel(d)}`} onClick={() => removeDim(d.id)} />
+                  </div>
+                ))}
+              </div>
+            ))
+          )}
+        </section>
+      </div>
+    </div>
+  );
+}
+
+const getStyles = (theme: GrafanaTheme2) => ({
+  page: css`
+    display: flex;
+    flex-direction: column;
+    gap: ${theme.spacing(1)};
+    height: calc(100vh - 120px);
+    min-height: 480px;
+  `,
+  toolbar: css`
+    display: flex;
+    align-items: center;
+    gap: ${theme.spacing(1)};
+    flex-wrap: wrap;
+  `,
+  title: css`
+    font-size: ${theme.typography.h4.fontSize};
+    font-weight: ${theme.typography.fontWeightMedium};
+  `,
+  context: css`
+    color: ${theme.colors.text.secondary};
+    font-family: ${theme.typography.fontFamilyMonospace};
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 50%;
+  `,
+  spacer: css`
+    flex: 1;
+  `,
+  body: css`
+    display: grid;
+    grid-template-columns: 240px minmax(0, 1fr) 260px;
+    gap: ${theme.spacing(1)};
+    flex: 1;
+    min-height: 0;
+  `,
+  fields: css`
+    display: flex;
+    flex-direction: column;
+    gap: ${theme.spacing(1)};
+    min-height: 0;
+    border-right: 1px solid ${theme.colors.border.weak};
+    padding-right: ${theme.spacing(1)};
+  `,
+  fieldList: css`
+    overflow-y: auto;
+    flex: 1;
+  `,
+  fieldRow: css`
+    display: flex;
+    align-items: center;
+    gap: ${theme.spacing(1)};
+    padding: ${theme.spacing(0.25, 0.5)};
+    border-radius: ${theme.shape.radius.default};
+    cursor: grab;
+    &:hover {
+      background: ${theme.colors.action.hover};
+    }
+  `,
+  fieldName: css`
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-family: ${theme.typography.fontFamilyMonospace};
+    font-size: ${theme.typography.bodySmall.fontSize};
+  `,
+  workspace: css`
+    display: flex;
+    flex-direction: column;
+    gap: ${theme.spacing(1)};
+    min-height: 0;
+  `,
+  chartHeader: css`
+    display: flex;
+    align-items: center;
+    gap: ${theme.spacing(1)};
+    font-weight: ${theme.typography.fontWeightMedium};
+  `,
+  chartArea: css`
+    flex: 1;
+    min-height: 240px;
+    border: 1px solid ${theme.colors.border.weak};
+    border-radius: ${theme.shape.radius.default};
+    background: ${theme.colors.background.primary};
+    padding: ${theme.spacing(1)};
+    display: flex;
+    flex-direction: column;
+  `,
+  chartAreaOver: css`
+    box-shadow: inset 0 0 0 2px ${theme.colors.primary.border};
+    background: ${theme.colors.primary.transparent};
+  `,
+  empty: css`
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: ${theme.spacing(1)};
+    color: ${theme.colors.text.secondary};
+  `,
+  emptyTitle: css`
+    font-size: ${theme.typography.h5.fontSize};
+    color: ${theme.colors.text.primary};
+  `,
+  emptySub: css`
+    color: ${theme.colors.text.secondary};
+    font-size: ${theme.typography.bodySmall.fontSize};
+  `,
+  suggestions: css`
+    display: flex;
+    flex-direction: column;
+    gap: ${theme.spacing(0.5)};
+  `,
+  suggestionsHeader: css`
+    display: flex;
+    align-items: center;
+    gap: ${theme.spacing(0.5)};
+    background: none;
+    border: none;
+    padding: 0;
+    color: ${theme.colors.text.secondary};
+    cursor: pointer;
+    font-weight: ${theme.typography.fontWeightMedium};
+    width: fit-content;
+  `,
+  cards: css`
+    display: flex;
+    gap: ${theme.spacing(1)};
+    overflow-x: auto;
+    padding-bottom: ${theme.spacing(0.5)};
+  `,
+  card: css`
+    flex: 0 0 150px;
+    height: 100px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: ${theme.spacing(1)};
+    border: 1px solid ${theme.colors.border.medium};
+    border-radius: ${theme.shape.radius.default};
+    background: ${theme.colors.background.secondary};
+    color: ${theme.colors.text.primary};
+    cursor: pointer;
+    padding: ${theme.spacing(1)};
+    &:hover {
+      border-color: ${theme.colors.primary.border};
+    }
+  `,
+  cardCurrent: css`
+    border: 2px solid ${theme.colors.primary.main};
+    cursor: default;
+  `,
+  cardTitle: css`
+    font-size: ${theme.typography.bodySmall.fontSize};
+    text-align: center;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+  `,
+  dims: css`
+    display: flex;
+    flex-direction: column;
+    gap: ${theme.spacing(2)};
+    border-left: 1px solid ${theme.colors.border.weak};
+    padding-left: ${theme.spacing(1)};
+    overflow-y: auto;
+  `,
+  group: css`
+    display: flex;
+    flex-direction: column;
+    gap: ${theme.spacing(0.5)};
+  `,
+  groupName: css`
+    font-weight: ${theme.typography.fontWeightMedium};
+    font-size: ${theme.typography.bodySmall.fontSize};
+    color: ${theme.colors.text.secondary};
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  `,
+  slot: css`
+    border: 1px dashed ${theme.colors.border.medium};
+    border-radius: ${theme.shape.radius.default};
+    padding: ${theme.spacing(0.75)};
+    color: ${theme.colors.text.secondary};
+    font-size: ${theme.typography.bodySmall.fontSize};
+  `,
+  dim: css`
+    display: flex;
+    align-items: center;
+    gap: ${theme.spacing(0.5)};
+    border: 1px solid ${theme.colors.border.medium};
+    border-radius: ${theme.shape.radius.default};
+    padding: ${theme.spacing(0.5, 0.75)};
+    background: ${theme.colors.background.secondary};
+  `,
+  dimLabel: css`
+    flex: 1;
+    font-size: ${theme.typography.bodySmall.fontSize};
+    overflow: hidden;
+    text-overflow: ellipsis;
+  `,
+});

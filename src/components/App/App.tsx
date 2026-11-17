@@ -26,6 +26,9 @@ import { decodeLogsState } from '../../data/urlState';
 import { getRememberedView, rememberView, resolveTraceLanding, TraceLanding } from '../../data/traceViewChoice';
 import { TraceViewPickerModal } from '../TraceViewPickerModal';
 
+// Visualize is its own chunk: Discover users never pay for it.
+const LensPage = React.lazy(() => import('../../lens/LensPage').then((m) => ({ default: m.LensPage })));
+
 const LogsExplorer = React.lazy(() =>
   import('../../pages/LogsExplorer').then((m) => ({ default: m.LogsExplorer }))
 );
@@ -252,6 +255,14 @@ function AppRoutes() {
   return (
     <Routes>
       <Route path="logs" element={<LogsExplorer />} />
+      <Route
+        path="visualize"
+        element={
+          <React.Suspense fallback={<LoadingPlaceholder text="Loading Visualize…" />}>
+            <LensPage />
+          </React.Suspense>
+        }
+      />
       <Route path="*" element={<Navigate to={{ pathname: prefixRoute('logs'), search: location.search }} replace />} />
     </Routes>
   );

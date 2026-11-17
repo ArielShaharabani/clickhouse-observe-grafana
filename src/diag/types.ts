@@ -27,6 +27,8 @@ export type QueryOp =
   | 'wizardTables'
   | 'wizardColumns'
   | 'wizardJsonPaths'
+  /** The Visualize (Lens) page's chart query (src/lens/compile.ts). */
+  | 'lens'
   /** The diagnostics drawer's own system.query_log lookup (see diag/serverStats.ts) — reserved so
    *  it can be excluded from log_comment tagging (it must never appear in its own results) and
    *  run untraced (see runQuery.ts's runQueryUntracedRows), so it never clutters the activity
