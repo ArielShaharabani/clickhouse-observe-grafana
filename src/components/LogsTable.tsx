@@ -1,7 +1,9 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { splitHighlights } from '../sql/kql/highlight';
 import { copyToClipboard, valueActions } from '../actions/registry';
 import { ActionIconButton } from '../actions/ActionIconButton';
+import { CellExpandPopover } from './CellExpandPopover';
+import { DEFAULT_GRID_DISPLAY, GridDisplay } from './GridDisplayOptions';
 import { css, cx } from '@emotion/css';
 import { GrafanaTheme2, DateTime, dateTimeFormat, toUtc } from '@grafana/data';
 import { Icon, IconButton, LoadingPlaceholder, EmptyState, useStyles2 } from '@grafana/ui';
@@ -22,8 +24,6 @@ interface LogsTableProps {
    *  buttons only). */
   onMoveColumnTo?: (id: string, targetId: string) => void;
   selectedRow?: LogRow | null;
-  /** Wrap the message/body cell instead of truncating with an ellipsis. */
-  wrapLines?: boolean;
   /** Rows currently checked for comparison (by index within `rows`). Omit the pair to hide the
    *  checkbox column entirely. */
   compareSelection?: Set<number>;
@@ -39,7 +39,14 @@ interface LogsTableProps {
   onDropField?: (fieldId: string, targetId?: string) => void;
   /** Matcher for a column's matched query/filter terms (DISC-SEARCH-02); null = none. */
   highlighterFor?: (col: SelectedColumn) => RegExp | null;
+  /** Density and body-cell lines (DISC-TABLE-01 display options). */
+  display?: GridDisplay;
+  /** PgUp / PgDn from the keyboard: move one page back (-1) or forward (+1). Returns whether the
+   *  page changes (false on the first/last page or while a page is loading). */
+  onPageStep?: (delta: 1 | -1) => boolean;
 }
+
+type CellPos = { ri: number; ci: number };
 
 /** Shared with LogDetailDrawer's header summary so the row and detail view agree on color. */
 export function severityColor(severity: unknown): string {
@@ -126,13 +133,16 @@ export function LogsTable({
   onMoveColumn,
   onMoveColumnTo,
   selectedRow,
-  wrapLines = false,
   compareSelection,
   onToggleCompare,
   onAddFilter,
   onDropField,
   highlighterFor,
+  display = DEFAULT_GRID_DISPLAY,
+  onPageStep,
 }: LogsTableProps) {
+  const wrap = display.bodyLines === 'auto';
+  const bodyLines = display.bodyLines === 'auto' ? 0 : display.bodyLines;
   const showCompare = compareSelection !== undefined && onToggleCompare !== undefined;
   const styles = useStyles2(getStyles);
   // One compiled matcher per column, not per cell per render (the grid re-renders on hover).
@@ -140,9 +150,31 @@ export function LogsTable({
     () => new Map(columns.map((c) => [c.id, highlighterFor ? highlighterFor(c) : null])),
     [columns, highlighterFor]
   );
-  // Roving keyboard focus, independent of `selectedRow` (which opens the detail panel).
-  // Arrow keys move this; Enter opens the row under it.
-  const [focusIndex, setFocusIndex] = useState(-1);
+  // Roving keyboard focus on one cell (row index within this page, column index), independent of
+  // `selectedRow` (which opens the detail panel). Arrows / Home / End / PgUp / PgDn move it;
+  // Enter opens the Expand popover for it (DISC-TABLE-01 keyboard model).
+  const [rawFocus, setFocusCell] = useState<CellPos>({ ri: -1, ci: 0 });
+  // Clamped to the current page, so rendering and key handling always agree after a re-query.
+  const focusCell: CellPos =
+    rawFocus.ri < 0 || rows.length === 0
+      ? { ri: -1, ci: 0 }
+      : { ri: Math.min(rawFocus.ri, rows.length - 1), ci: Math.max(0, Math.min(rawFocus.ci, columns.length - 1)) };
+  const focusIndex = focusCell.ri;
+  const [gridFocused, setGridFocused] = useState(false);
+  // The focused cell shows its action bar only while the keyboard drives the grid; a mouse click
+  // switches back to hover-only.
+  const [keyboardNav, setKeyboardNav] = useState(false);
+  // Expand popover target. Keyed by this page's `rows` array as well as the row, so it disappears
+  // when the page changes and doesn't come back when returning (pages are fresh arrays).
+  const [expanded, setExpanded] = useState<{ rows: LogRow[]; row: LogRow; colId: string } | null>(null);
+  const wrapperRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!gridFocused || focusCell.ri < 0) {
+      return;
+    }
+    const el = wrapperRef.current?.querySelector(`[data-cell="${focusCell.ri}:${focusCell.ci}"]`);
+    (el as HTMLElement | null)?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' });
+  }, [focusCell.ri, focusCell.ci, gridFocused]);
   // Which single cell's hover toolbar (filter for/out, copy, open detail) is currently mounted.
   // Previously every data cell in every row always mounted its toolbar (just opacity:0, revealed
   // by CSS :hover) — with a few hundred user-added columns that's tens of thousands of always-in-
@@ -236,25 +268,93 @@ export function LogsTable({
     );
   }
 
-  const onTableKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
-    if (e.key === 'ArrowDown') {
-      e.preventDefault();
-      setFocusIndex((i) => Math.min(rows.length - 1, i + 1));
-    } else if (e.key === 'ArrowUp') {
-      e.preventDefault();
-      setFocusIndex((i) => Math.max(0, i - 1));
-    } else if (e.key === 'Enter' && focusIndex >= 0 && focusIndex < rows.length) {
-      e.preventDefault();
-      onRowClick(rows[focusIndex]);
+  const closeExpand = (refocusGrid = true) => {
+    setExpanded(null);
+    if (refocusGrid) {
+      wrapperRef.current?.focus();
     }
   };
+
+  const onTableKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    // Only keys aimed at the grid itself: inputs/buttons inside cells keep their own keys.
+    if (e.target !== e.currentTarget) {
+      return;
+    }
+    const lastRow = rows.length - 1;
+    const lastCol = columns.length - 1;
+    const started = focusCell.ri >= 0;
+    const cur: CellPos = started ? focusCell : { ri: 0, ci: 0 };
+    const ctrl = e.ctrlKey || e.metaKey;
+    let next: CellPos | null = null;
+    switch (e.key) {
+      case 'ArrowDown':
+        next = started ? { ...cur, ri: Math.min(lastRow, cur.ri + 1) } : cur;
+        break;
+      case 'ArrowUp':
+        next = { ...cur, ri: Math.max(0, cur.ri - 1) };
+        break;
+      case 'ArrowRight':
+        next = started ? { ...cur, ci: Math.min(lastCol, cur.ci + 1) } : cur;
+        break;
+      case 'ArrowLeft':
+        next = { ...cur, ci: Math.max(0, cur.ci - 1) };
+        break;
+      case 'Home':
+        next = ctrl ? { ri: 0, ci: 0 } : { ...cur, ci: 0 };
+        break;
+      case 'End':
+        next = ctrl ? { ri: lastRow, ci: lastCol } : { ...cur, ci: lastCol };
+        break;
+      case 'PageDown':
+      case 'PageUp':
+        // Only take the key when the page really changes; otherwise leave native scrolling alone.
+        if (!onPageStep?.(e.key === 'PageDown' ? 1 : -1)) {
+          return;
+        }
+        next = { ri: 0, ci: cur.ci };
+        break;
+      case 'Enter':
+        if (started && columns[cur.ci]) {
+          e.preventDefault();
+          if (e.shiftKey) {
+            // Shift+Enter: the row's detail panel (Enter alone expands the cell, per the spec).
+            onRowClick(rows[cur.ri]);
+          } else {
+            setExpanded({ rows, row: rows[cur.ri], colId: columns[cur.ci].id });
+          }
+        }
+        return;
+      case 'Escape':
+        if (expanded) {
+          e.preventDefault();
+          closeExpand();
+        }
+        return;
+      default:
+        return;
+    }
+    e.preventDefault();
+    setKeyboardNav(true);
+    setFocusCell(next);
+  };
+  // The cell whose action bar is showing: the hovered one, else the keyboard-focused one.
+  const activeCell =
+    hoveredCell ?? (gridFocused && keyboardNav && focusCell.ri >= 0 && columns[focusCell.ci] ? { ri: focusCell.ri, ci: columns[focusCell.ci].id } : null);
 
   return (
     <div
       className={cx(styles.tableWrapper, isFieldDragOver && styles.tableWrapperDragOver)}
+      ref={wrapperRef}
       role="grid"
+      aria-label="Log results"
       tabIndex={0}
       onKeyDown={onTableKeyDown}
+      onFocus={() => setGridFocused(true)}
+      onBlur={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) {
+          setGridFocused(false);
+        }
+      }}
       onDragOver={onTableDragOver}
       onDragLeave={() => {
         setIsFieldDragOver(false);
@@ -262,7 +362,7 @@ export function LogsTable({
       }}
       onDrop={onTableDrop}
     >
-      <table className={styles.table}>
+      <table className={cx(styles.table, styles.density[display.density])}>
         <thead>
           <tr>
             {showCompare && <th className={cx(styles.th, styles.compareTh)} aria-hidden="true" />}
@@ -380,7 +480,10 @@ export function LogsTable({
                 <tr
                   className={cx(styles.tr, isSelected && styles.trSelected, isFocused && styles.trFocused)}
                   style={{ borderLeftColor: stripeColor }}
-                  onMouseDown={() => setFocusIndex(i)}
+                  onMouseDown={() => {
+                    setKeyboardNav(false);
+                    setFocusCell((c) => ({ ri: i, ci: c.ci }));
+                  }}
                   aria-selected={isSelected}
                 >
                   {showCompare && (
@@ -399,7 +502,7 @@ export function LogsTable({
                       title={isSelected ? 'Close detail' : 'Open detail'}
                       aria-pressed={isSelected}
                       onClick={() => {
-                        setFocusIndex(i);
+                        setFocusCell((c) => ({ ri: i, ci: c.ci }));
                         onRowClick(row);
                       }}
                     >
@@ -410,8 +513,10 @@ export function LogsTable({
                       />
                     </button>
                   </td>
-                  {columns.map((col) => {
+                  {columns.map((col, ci) => {
                     const rawValue = row[col.key];
+                    const isFocusedCell = gridFocused && isFocused && focusCell.ci === ci;
+                    const isExpanded = expanded?.rows === rows && expanded.row === row && expanded.colId === col.id;
                     // A raw Map/JSON *container* column (added as its own column, e.g. the whole
                     // `ResourceAttributes` blob — sqlExpr is just the bare column name, no accessor)
                     // has no sensible equality filter — comparing a Map/JSON value to a stringified
@@ -428,14 +533,18 @@ export function LogsTable({
                     return (
                       <td
                         key={col.id}
+                        data-cell={`${i}:${ci}`}
+                        aria-selected={isFocusedCell || undefined}
                         className={cx(
                           styles.td,
                           styles.dataTd,
                           col.type === 'text' && styles.bodyCell,
+                          isFocusedCell && styles.focusedCell,
                           fieldDropTargetId === col.id && styles.fieldDropTarget
                         )}
                         onDragOver={(e) => onColumnFieldDragOver(e, col.id)}
                         onDrop={(e) => onColumnFieldDrop(e, col.id)}
+                        onMouseDown={() => setFocusCell({ ri: i, ci })}
                         onMouseEnter={() => setHoveredCell({ ri: i, ci: col.id })}
                         onMouseLeave={() =>
                           setHoveredCell((prev) => (prev && prev.ri === i && prev.ci === col.id ? null : prev))
@@ -450,17 +559,34 @@ export function LogsTable({
                               : col.type === 'text'
                               ? styles.body
                               : styles.cell,
-                            col.type === 'text' && wrapLines && styles.wrapped
+                            col.type === 'text' && wrap && styles.wrapped
                           )}
+                          style={
+                            col.type === 'text' && !wrap
+                              ? { WebkitLineClamp: bodyLines, minHeight: `${bodyLines * 1.5}em` }
+                              : undefined
+                          }
                         >
                           {renderCell(col, row, matchers.get(col.id), styles.matchHighlight)}
                         </span>
-                        {hoveredCell?.ri === i && hoveredCell.ci === col.id && (
+                        {isExpanded && (
+                          <CellExpandPopover
+                            ctx={{ field: col.sqlExpr, value: cellTextValue(rawValue), filterable: !!filterable }}
+                            raw={rawValue}
+                            host={{ addFilter: onAddFilter, copyText: copyToClipboard }}
+                            onClose={closeExpand}
+                          />
+                        )}
+                        {!isExpanded && activeCell?.ri === i && activeCell.ci === col.id && (
                           <div className={styles.cellToolbar} style={{ opacity: 1, pointerEvents: 'auto' }}>
                               {valueActions(
                                 // Empty values and raw Map/JSON container cells offer copy only.
                                 { field: col.sqlExpr, value: cellTextValue(rawValue), filterable: !!filterable },
-                                { addFilter: onAddFilter, copyText: copyToClipboard }
+                                {
+                                  addFilter: onAddFilter,
+                                  copyText: copyToClipboard,
+                                  expand: () => setExpanded({ rows, row, colId: col.id }),
+                                }
                               ).map((a) => (
                                 <ActionIconButton key={a.id} action={a} />
                               ))}
@@ -470,7 +596,7 @@ export function LogsTable({
                                 tooltip="Open detail"
                                 aria-label="Open log detail"
                                 onClick={() => {
-                                  setFocusIndex(i);
+                                  setFocusCell((c) => ({ ri: i, ci: c.ci }));
                                   onRowClick(row);
                                 }}
                               />
@@ -667,6 +793,26 @@ const getStyles = (theme: GrafanaTheme2) => ({
     vertical-align: top;
     font-family: ${theme.typography.fontFamilyMonospace};
     line-height: 1.5;
+  `,
+  /** DISC-TABLE-01 density: cell padding per Compact / Normal / Expanded. */
+  density: {
+    compact: css`
+      & > tbody > tr > td {
+        padding-top: ${theme.spacing(0.25)};
+        padding-bottom: ${theme.spacing(0.25)};
+      }
+    `,
+    normal: css``,
+    expanded: css`
+      & > tbody > tr > td {
+        padding-top: ${theme.spacing(2)};
+        padding-bottom: ${theme.spacing(2)};
+      }
+    `,
+  },
+  /** Keyboard-focused cell (roving focus). */
+  focusedCell: css`
+    box-shadow: inset 0 0 0 2px ${theme.colors.primary.main} !important;
   `,
   dataTd: css`
     position: relative;

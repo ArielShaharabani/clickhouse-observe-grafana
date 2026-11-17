@@ -1,9 +1,9 @@
 # Progress — read this first when resuming
 
-**Current item:** #7 DISC-TABLE-01/02 results grid + cell actions (not started)
-**Last completed step:** #6 DISC-SIDEBAR-02 in PR 7 (v0.16.0): 5,000-row sample, numeric Top values/Distribution (`buildNumericStatsQuery`, `fetchNumericStats`), "Break down histogram by" registry action, "No field data" state
-**Next step:** branch `feat/disc-table-01`; verify the grid against DISC-TABLE-01/02 (docs/spec/10-discover.md): column sort/resize/reorder, density/row height, sample size, cell action bar (done via registry), Expand popover with full value + actions, keyboard navigation. Build the gaps.
-**Open issues:** none. Deferred popover items (spec DISC-SIDEBAR-02): date-field time distribution, text/geo "Examples" list, Visualize button (appears automatically when #15 passes `visualize` in the ActionHost).
+**Current item:** #8 DISC-SIDEBAR-01 field list (not started)
+**Last completed step:** #7 DISC-TABLE-01/02 in PR 8 (v0.17.0): cell-level keyboard navigation (arrows, Home/End, Ctrl+Home/End, PgUp/PgDn, Enter = Expand, Esc), Expand popover (registry `expand` action; full value, JSON pretty-printed, Filter for/out/Copy), Display options (density, body cell lines, remembered per viewer)
+**Next step:** branch `feat/disc-sidebar-01`; verify the field list against DISC-SIDEBAR-01 (docs/spec/10-discover.md): grouping (Selected / Popular / Available / Empty / Meta), type icons + type filter, search, counts, add/remove column buttons, keyboard. Build the gaps.
+**Open issues:** none. Deferred grid items (spec DISC-TABLE-01): Summary column with match-first ordering, sample-size control (paging fetches on demand), Find in table, Fullscreen, Save table to dashboard (→ LENS-SAVE-01 #16). Deferred popover items (DISC-SIDEBAR-02): date-field time distribution, text/geo Examples, Visualize (#15).
 
 ## Environment notes
 - Local clone: `C:\Users\Ariel\clickhouse-observe-grafana-dev` (fork `ArielShaharabani/clickhouse-observe-grafana`, `upstream` = PoorTuna).

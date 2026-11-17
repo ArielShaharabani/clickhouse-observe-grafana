@@ -21,6 +21,8 @@ export interface ActionHost {
   setBreakdown?: (ctx: FieldContext) => void;
   /** Open the field in the Visualize page (LENS hand-off, wired in #15). */
   visualize?: (ctx: FieldContext) => void;
+  /** Show the full value in an Expand popover (results grid, DISC-TABLE-02). */
+  expand?: (ctx: ValueContext) => void;
 }
 
 export interface ValueContext {
@@ -88,7 +90,7 @@ interface ActionDef<C> {
 const canFilter = (_: unknown, host: ActionHost) => !!host.addFilter;
 const canFilterValue = (c: ValueContext, host: ActionHost) => !!host.addFilter && c.filterable !== false;
 
-export type ValueActionId = 'filterFor' | 'filterOut' | 'copy';
+export type ValueActionId = 'filterFor' | 'filterOut' | 'copy' | 'expand';
 
 const VALUE_ACTIONS: Record<ValueActionId, ActionDef<ValueContext>> = {
   filterFor: {
@@ -111,6 +113,13 @@ const VALUE_ACTIONS: Record<ValueActionId, ActionDef<ValueContext>> = {
     ariaLabel: (c) => `Copy value of ${label(c)}`,
     isCompatible: () => true,
     execute: (c, h) => h.copyText(c.value),
+  },
+  expand: {
+    icon: 'expand-arrows',
+    tooltip: 'Expand value',
+    ariaLabel: (c) => `Expand value of ${label(c)}`,
+    isCompatible: (_c, h) => !!h.expand,
+    execute: (c, h) => h.expand?.(c),
   },
 };
 
@@ -164,7 +173,7 @@ function resolve<C, Id extends string>(
     }));
 }
 
-const ALL_VALUE_ACTIONS: readonly ValueActionId[] = ['filterFor', 'filterOut', 'copy'];
+const ALL_VALUE_ACTIONS: readonly ValueActionId[] = ['filterFor', 'filterOut', 'copy', 'expand'];
 const ALL_FIELD_ACTIONS: readonly FieldActionId[] = ['exists', 'notExists'];
 
 /** Actions that apply to a value on this surface, in the requested order (default: all). */

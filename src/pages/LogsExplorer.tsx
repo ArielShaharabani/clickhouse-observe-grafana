@@ -2,7 +2,8 @@ import React, { useCallback, useContext, useEffect, useLayoutEffect, useMemo, us
 import { css, cx } from '@emotion/css';
 import { dateTime, GrafanaTheme2, PageLayoutType, rangeUtil, TimeRange } from '@grafana/data';
 import { PluginPage } from '@grafana/runtime';
-import { Button, Icon, Spinner, Switch, useStyles2, TimeRangePicker, RefreshPicker, useSplitter } from '@grafana/ui';
+import { Button, Icon, Spinner, useStyles2, TimeRangePicker, RefreshPicker, useSplitter } from '@grafana/ui';
+import { GridDisplay, GridDisplayOptions, loadGridDisplay, saveGridDisplay } from '../components/GridDisplayOptions';
 import { useSearchParams } from 'react-router-dom';
 import { SearchBar } from '../components/SearchBar';
 import { FilterPills } from '../components/FilterPills';
@@ -358,7 +359,12 @@ export function LogsExplorer() {
   });
   const [showSqlInspect, setShowSqlInspect] = useState(false);
   const [showDiagnostics, setShowDiagnostics] = useState(false);
-  const [wrapLines, setWrapLines] = useState(false);
+  // Grid display options (DISC-TABLE-01), remembered per viewer.
+  const [gridDisplay, setGridDisplayState] = useState<GridDisplay>(loadGridDisplay);
+  const setGridDisplay = useCallback((d: GridDisplay) => {
+    setGridDisplayState(d);
+    saveGridDisplay(d);
+  }, []);
   const [histogramCollapsed, setHistogramCollapsed] = useState(false);
   // Multi-select for the "Compare" action — indices into `pageRows`. Cleared whenever the page
   // of rows changes (new query, sort, or pagination) since indices from a prior page are
@@ -1256,6 +1262,25 @@ export function LogsExplorer() {
     () => rows.slice(currentPage * pageSize, currentPage * pageSize + pageSize),
     [rows, currentPage, pageSize]
   );
+
+  // PgUp / PgDn in the grid: one page back or forward, within what exists. One step at a time:
+  // presses while a page is still loading are ignored, so held keys can't race duplicate fetches.
+  const pageStepBusy = useRef(false);
+  const onPageStep = useCallback(
+    (delta: 1 | -1): boolean => {
+      const next = currentPage + delta;
+      const lastLoadedPage = Math.max(0, Math.ceil(rows.length / pageSize) - 1);
+      if (pageStepBusy.current || next < 0 || (delta > 0 && next > lastLoadedPage && !hasMore)) {
+        return false;
+      }
+      pageStepBusy.current = true;
+      Promise.resolve(onPageChange(next)).finally(() => {
+        pageStepBusy.current = false;
+      });
+      return true;
+    },
+    [currentPage, rows.length, pageSize, hasMore, onPageChange]
+  );
   // Reference-equality lookup — pageRows are slices of the same row objects, so this holds
   // even across re-renders as long as selectedRow came from onRowClick(row).
   const selectedIndex = selectedRow ? pageRows.indexOf(selectedRow) : -1;
@@ -1487,10 +1512,7 @@ export function LogsExplorer() {
                       Compare ({compareSelection.size})
                     </Button>
                   )}
-                  <label className={styles.wrapToggleLabel}>
-                    <Switch value={wrapLines} onChange={(e) => setWrapLines(e.currentTarget.checked)} />
-                    Wrap lines
-                  </label>
+                  <GridDisplayOptions value={gridDisplay} onChange={setGridDisplay} />
                   <div className={styles.headerSpacer} />
                 </div>
                 <LogsTable
@@ -1511,7 +1533,8 @@ export function LogsExplorer() {
                   onMoveColumn={(id, direction) => dispatch({ type: 'REORDER_COLUMN', id, direction, columns: effectiveColumns })}
                   onMoveColumnTo={(id, targetId) => dispatch({ type: 'MOVE_COLUMN_TO', id, targetId, columns: effectiveColumns })}
                   selectedRow={selectedRow}
-                  wrapLines={wrapLines}
+                  display={gridDisplay}
+                  onPageStep={onPageStep}
                   compareSelection={compareSelection}
                   onToggleCompare={onToggleCompare}
                   highlighterFor={highlighterFor}
@@ -1701,15 +1724,6 @@ const getStyles = (theme: GrafanaTheme2) => ({
      * far it can be dragged. */
     min-width: 60px !important;
     overflow: hidden;
-  `,
-  wrapToggleLabel: css`
-    display: flex;
-    align-items: center;
-    gap: ${theme.spacing(0.75)};
-    font-size: ${theme.typography.body.fontSize};
-    color: ${theme.colors.text.secondary};
-    cursor: pointer;
-    white-space: nowrap;
   `,
   sidebarRail: css`
     width: 28px;
