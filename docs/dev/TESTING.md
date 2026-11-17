@@ -5,7 +5,7 @@
 docker compose up -d --build grafana clickhouse      # stack (see PROGRESS.md env notes)
 npm run typecheck && npm run lint && npm run test:ci && npm run build
 npx playwright test                                   # e2e + integration, needs the stack and a fresh `npm run build`
-                                                      # (1 worker locally, 15 s expect timeout — the stack shares a small Docker VM)
+                                                      # (1 worker, 1 retry, 15 s expect timeout locally: the stack shares a small Docker VM; retried tests show as "flaky")
 ```
 
 ## Layers
