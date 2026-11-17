@@ -5,6 +5,7 @@
 docker compose up -d --build grafana clickhouse      # stack (see PROGRESS.md env notes)
 npm run typecheck && npm run lint && npm run test:ci && npm run build
 npx playwright test                                   # e2e + integration, needs the stack and a fresh `npm run build`
+                                                      # (1 worker locally, 15 s expect timeout — the stack shares a small Docker VM)
 ```
 
 ## Layers
@@ -18,7 +19,7 @@ npx playwright test                                   # e2e + integration, needs
 
 ## Fixture (`tests/fixture.ts`)
 `default.spec_logs`, data view `spec-fixture`, window 2026-01-01..2026-01-08 UTC.
-Totals: 41,520 rows; info 28,265 · warn 6,080 · debug 3,984 · error 3,191; payments errors 1,575 (incl. 1,200 incident rows on 2026-01-05 09:00–11:00).
+Totals: 41,520 rows; info 28,265 · warn 6,080 · debug 3,984 · error 3,191; payments 9,264; payments errors 1,575 (incl. 1,200 incident rows on 2026-01-05 09:00–11:00).
 
 ## Integration matrix
 Enable a case as soon as both sides exist. Status: `—` not yet possible · `todo` · `✅`.

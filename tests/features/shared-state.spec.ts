@@ -35,10 +35,21 @@ test('interval and field breakdown come from the URL and stay in it', async ({ p
   expect(url.searchParams.get('bd')).toBe('field:col:ServiceName');
 });
 
+const seedPinnedStore = (p: object) => {
+  window.sessionStorage.setItem('clickhouse-observe.pinnedFilters', JSON.stringify([p]));
+};
+
+test("a link that carries filters ignores the recipient's pinned filters", async ({ page }) => {
+  await page.addInitScript(seedPinnedStore, { ...errorPill, pinned: true });
+  const logs = new LogsPage(page);
+  await logs.open({ filters: JSON.stringify([paymentsPill]) });
+  // payments only, not payments AND error.
+  await logs.expectRowCount(FIXTURE.counts.payments);
+  expect(JSON.parse(new URL(page.url()).searchParams.get('filters') ?? '[]')).toHaveLength(1);
+});
+
 test('a pinned filter is applied to a page opened without it', async ({ page }) => {
-  await page.addInitScript((pill) => {
-    window.sessionStorage.setItem('clickhouse-observe.pinnedFilters', JSON.stringify([pill]));
-  }, { ...errorPill, pinned: true });
+  await page.addInitScript(seedPinnedStore, { ...errorPill, pinned: true });
   const logs = new LogsPage(page);
   await logs.open();
   await logs.expectRowCount(FIXTURE.counts.byLevel.error);

@@ -1,7 +1,16 @@
 import { dateTime, rangeUtil } from '@grafana/data';
 import { decodeLogsState, encodeLogsState } from '../../data/urlState';
 import { FilterPill } from '../../types';
-import { buildAppPageUrl, loadPinnedFilters, mergePinnedFilters, savePinnedFilters, PINNED_FILTERS_KEY } from '../sharedSearch';
+import {
+  buildAppPageUrl,
+  carryPinnedToView,
+  loadPinnedFilters,
+  mergePinnedFilters,
+  pinFilterInStore,
+  savePinnedFilters,
+  unpinFilterInStore,
+  PINNED_FILTERS_KEY,
+} from '../sharedSearch';
 
 const range = rangeUtil.convertRawToRange({ from: 'now-7d', to: 'now' });
 const pill = (id: string, extra: Partial<FilterPill> = {}): FilterPill => ({ id, field: 'SeverityText', op: '=', value: id, ...extra });
@@ -60,6 +69,32 @@ describe('SHARED-STATE-01: pinned filters follow the user across pages', () => {
     const merged = mergePinnedFilters(urlFilters, pinned);
     expect(merged.map((f) => f.value)).toEqual(['error', 'warn']);
     expect(merged.find((f) => f.value === 'error')?.pinned).toBe(true);
+  });
+
+  it('treats one_of value sets as equal regardless of order', () => {
+    const url = [pill('x', { op: 'one_of', value: '', values: ['a', 'b'] })];
+    const pinned = [pill('y', { op: 'one_of', value: '', values: ['b', 'a'], pinned: true })];
+    expect(mergePinnedFilters(url, pinned)).toHaveLength(1);
+  });
+
+  it('gives an appended pinned pill a fresh id when its id collides with a URL pill', () => {
+    const merged = mergePinnedFilters([pill('same', { value: 'error' })], [pill('same', { value: 'warn', pinned: true })]);
+    expect(merged).toHaveLength(2);
+    expect(new Set(merged.map((f) => f.id)).size).toBe(2);
+  });
+
+  it('pin and unpin change the store by condition, not id', () => {
+    pinFilterInStore(pill('a'));
+    pinFilterInStore(pill('a-again', { value: 'a' }));
+    expect(loadPinnedFilters()).toHaveLength(1);
+    unpinFilterInStore(pill('other-id', { value: 'a' }));
+    expect(loadPinnedFilters()).toEqual([]);
+  });
+
+  it('carries pins disabled into a view on a different table, enabled on the same table', () => {
+    const pins = [pill('a', { pinned: true })];
+    expect(carryPinnedToView(pins, true)[0].disabled).toBeUndefined();
+    expect(carryPinnedToView(pins, false)[0].disabled).toBe(true);
   });
 });
 

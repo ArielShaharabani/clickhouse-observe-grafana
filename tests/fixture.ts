@@ -10,6 +10,7 @@ export const FIXTURE = {
   counts: {
     total: 41520,
     byLevel: { info: 28265, warn: 6080, debug: 3984, error: 3191 },
+    payments: 9264, // 8,064 base + 1,200 incident rows
     paymentsErrors: 1575,
   },
 } as const;

@@ -5,11 +5,14 @@
  * interval, breakdown) — the same model as Kibana's `_g`/`_a` params — so any page can be opened
  * from a link and every hand-off between pages is just a URL built here. The one exception is
  * *pinned* filters: like Kibana's global filters they follow the user to pages opened without
- * them, so they are also kept in per-tab session storage and merged in on load.
+ * them, so they are also kept in per-tab session storage. The store changes only on explicit
+ * pin/unpin/delete actions, and pins are merged only into pages whose URL has no `filters` param,
+ * so a shared link with filters always reproduces exactly what the sender saw.
  */
 import { EncodeLogsUrlStateInput, encodeLogsState } from '../data/urlState';
 import { prefixRoute } from '../utils/utils.routing';
 import { FilterPill } from '../types';
+import { nextId, samePill } from '../sql/filters';
 
 export const PINNED_FILTERS_KEY = 'clickhouse-observe.pinnedFilters';
 
@@ -40,26 +43,38 @@ export function savePinnedFilters(filters: FilterPill[]): void {
   }
 }
 
-/** Same condition as an existing pill — field, operator and value(s) — ignoring id/label. */
-function samePill(a: FilterPill, b: FilterPill): boolean {
-  return (
-    a.field === b.field &&
-    a.op === b.op &&
-    a.value === b.value &&
-    JSON.stringify(a.values ?? []) === JSON.stringify(b.values ?? [])
-  );
-}
-
 /**
- * URL filters plus any pinned pill not already present. An equivalent URL pill is marked pinned
- * instead of duplicated, so the pill keeps its position and id.
+ * URL filters plus any pinned pill not already present (same condition = `samePill` from
+ * sql/filters.ts: field, operator, value or value set). An equivalent URL pill is marked pinned
+ * instead of duplicated. An appended pill whose id collides with a URL pill gets a fresh id.
  */
 export function mergePinnedFilters(urlFilters: FilterPill[], pinned: FilterPill[]): FilterPill[] {
   const result = urlFilters.map((f) => (pinned.some((p) => samePill(p, f)) ? { ...f, pinned: true } : f));
   for (const p of pinned) {
     if (!result.some((f) => samePill(f, p))) {
-      result.push({ ...p, pinned: true });
+      const id = result.some((f) => f.id === p.id) ? nextId() : p.id;
+      result.push({ ...p, id, pinned: true });
     }
   }
   return result;
+}
+
+/** Add `pill` to the pinned store (explicit user action). */
+export function pinFilterInStore(pill: FilterPill): void {
+  const current = loadPinnedFilters().filter((p) => !samePill(p, pill));
+  savePinnedFilters([...current, { ...pill, pinned: true }]);
+}
+
+/** Remove `pill` (by condition) from the pinned store — on unpin or when a pinned pill is deleted. */
+export function unpinFilterInStore(pill: FilterPill): void {
+  savePinnedFilters(loadPinnedFilters().filter((p) => !samePill(p, pill)));
+}
+
+/**
+ * Pinned pills carried into another data view. Pills reference SQL expressions of the previous
+ * table, so on a different table they arrive disabled (visible, re-enable to apply) instead of
+ * breaking the first query with an unknown column.
+ */
+export function carryPinnedToView(pinned: FilterPill[], sameTable: boolean): FilterPill[] {
+  return sameTable ? pinned : pinned.map((p) => ({ ...p, disabled: true }));
 }
