@@ -124,7 +124,8 @@ export function decodeLens(raw: string | null | undefined): LensState | undefine
         str(b.id) &&
         str(b.field) &&
         str(b.label) &&
-        ((b.kind === 'date_histogram' && b.interval === 'auto') || (b.kind === 'terms' && Number.isInteger(b.size) && b.size > 0))
+        ((b.kind === 'date_histogram' && b.interval === 'auto') ||
+          (b.kind === 'terms' && Number.isInteger(b.size) && b.size > 0))
     );
     const metrics = (v.metrics as MetricDim[]).filter(
       (m) => m && m.kind === 'metric' && str(m.id) && OPS.includes(m.op) && (m.op === 'count' || str(m.field))

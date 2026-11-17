@@ -3,11 +3,12 @@
  * searchable list ("Search visualizations"); arrows move, Enter picks, Esc closes. Picking a type
  * remaps the dimensions (`switchChart`) — no query editor, no field re-selection.
  */
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { css, cx } from '@emotion/css';
 import { GrafanaTheme2, IconName } from '@grafana/data';
-import { Button, Icon, Input, RadioButtonGroup, useStyles2 } from '@grafana/ui';
+import { Button, Icon, Input, Portal, RadioButtonGroup, useStyles2 } from '@grafana/ui';
 import { CHART_LABELS, ChartType, XySubType } from './state';
+import { isXy } from './suggest';
 
 export const CHART_ICONS: Record<ChartType, IconName> = {
   line: 'chart-line',
@@ -33,7 +34,12 @@ const ORDER: ChartType[] = ['bar', 'line', 'area', 'metric', 'table', 'pie'];
 /** Types matching a search (name or description, case-insensitive), in menu order. */
 export function filterChartTypes(query: string): ChartType[] {
   const q = query.trim().toLowerCase();
-  return q ? ORDER.filter((t) => CHART_LABELS[t].toLowerCase().includes(q) || CHART_DESCRIPTIONS[t].toLowerCase().includes(q)) : ORDER;
+  if (!q) {
+    return ORDER;
+  }
+  return ORDER.filter(
+    (t) => CHART_LABELS[t].toLowerCase().includes(q) || CHART_DESCRIPTIONS[t].toLowerCase().includes(q)
+  );
 }
 
 const SUB_TYPES: Array<{ label: string; value: XySubType }> = [
@@ -55,23 +61,55 @@ export function ChartTypeSwitcher({ value, subType, onChange, onSubTypeChange }:
   const [query, setQuery] = useState('');
   const [active, setActive] = useState(0);
   const wrapRef = useRef<HTMLDivElement>(null);
+  const popRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const uid = useId();
   const options = useMemo(() => filterChartTypes(query), [query]);
+  // The active option, clamped once (an empty match list has none).
+  const activeIndex = options.length === 0 ? -1 : Math.max(0, Math.min(active, options.length - 1));
+  const activeType = activeIndex >= 0 ? options[activeIndex] : undefined;
+  // The menu renders in a portal (the dimension column scrolls and would clip it), placed under
+  // the trigger in viewport coordinates.
+  const [pos, setPos] = useState<{ top: number; left: number; width: number } | null>(null);
+  // Portal children mount after the click that opened the menu, so autoFocus doesn't stick: move
+  // focus to the search box once the menu is in the DOM.
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+    const id = requestAnimationFrame(() => inputRef.current?.focus());
+    return () => cancelAnimationFrame(id);
+  }, [open]);
 
   useEffect(() => {
     if (!open) {
       return;
     }
+    const inside = (n: Node | null) => !!n && (!!wrapRef.current?.contains(n) || !!popRef.current?.contains(n));
     const onDown = (e: MouseEvent) => {
-      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) {
+      if (!inside(e.target as Node)) {
+        setOpen(false);
+      }
+    };
+    // Keyboard users leave with Tab: close when focus moves outside the trigger and the menu.
+    const onFocusIn = (e: FocusEvent) => {
+      if (!inside(e.target as Node)) {
         setOpen(false);
       }
     };
     document.addEventListener('mousedown', onDown);
-    return () => document.removeEventListener('mousedown', onDown);
+    document.addEventListener('focusin', onFocusIn);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      document.removeEventListener('focusin', onFocusIn);
+    };
   }, [open]);
 
   const openMenu = () => {
+    // Measured here (not in an effect) so the menu and its autofocused search mount in one render.
+    const r = buttonRef.current?.getBoundingClientRect();
+    setPos(r ? { top: r.bottom + 4, left: r.left, width: Math.max(r.width, 280) } : { top: 0, left: 0, width: 280 });
     setQuery('');
     setActive(Math.max(0, ORDER.indexOf(value)));
     setOpen(true);
@@ -97,19 +135,20 @@ export function ChartTypeSwitcher({ value, subType, onChange, onSubTypeChange }:
       setActive((i) => Math.max(0, i - 1));
     } else if (e.key === 'Enter') {
       e.preventDefault();
-      const t = options[Math.min(active, options.length - 1)];
-      if (t) {
-        pick(t);
+      if (activeType) {
+        pick(activeType);
       }
     } else if (e.key === 'Escape') {
+      // Don't let Grafana's global Esc binding (exit kiosk, close drawers…) fire too.
       e.preventDefault();
+      e.stopPropagation();
       close();
     }
   };
 
-  const optionId = (t: ChartType) => `lens-chart-type-${t}`;
-  const activeType = options[Math.min(active, options.length - 1)];
-  const showSubType = value === 'bar' || value === 'area';
+  const listId = `${uid}-list`;
+  const optionId = (t: ChartType) => `${uid}-${t}`;
+  const showSubType = isXy(value);
 
   return (
     <div className={styles.wrap} ref={wrapRef}>
@@ -121,6 +160,13 @@ export function ChartTypeSwitcher({ value, subType, onChange, onSubTypeChange }:
         aria-expanded={open}
         aria-label={`Chart type: ${CHART_LABELS[value]}`}
         onClick={() => (open ? close() : openMenu())}
+        onKeyDown={(e) => {
+          if (open && e.key === 'Escape') {
+            e.preventDefault();
+            e.stopPropagation();
+            close();
+          }
+        }}
       >
         <Icon name={CHART_ICONS[value]} />
         <span className={styles.triggerLabel}>{CHART_LABELS[value]}</span>
@@ -135,50 +181,53 @@ export function ChartTypeSwitcher({ value, subType, onChange, onSubTypeChange }:
           className={styles.subType}
         />
       )}
-      {open && (
-        <div className={styles.popover}>
-          <Input
-            autoFocus
-            prefix={<Icon name="search" />}
-            placeholder="Search visualizations"
-            aria-label="Search visualizations"
-            role="combobox"
-            aria-expanded
-            aria-controls="lens-chart-type-list"
-            aria-activedescendant={activeType ? optionId(activeType) : undefined}
-            value={query}
-            onChange={(e) => {
-              setQuery(e.currentTarget.value);
-              setActive(0);
-            }}
-            onKeyDown={onKeyDown}
-          />
-          <div id="lens-chart-type-list" role="listbox" aria-label="Visualizations" className={styles.list}>
-            {options.length === 0 && <div className={styles.none}>No visualization matches</div>}
-            {options.map((t) => (
-              <div
-                key={t}
-                id={optionId(t)}
-                role="option"
-                aria-selected={t === value}
-                className={cx(styles.option, t === activeType && styles.optionActive)}
-                onMouseEnter={() => setActive(options.indexOf(t))}
-                onMouseDown={(e) => e.preventDefault()}
-                onClick={() => pick(t)}
-              >
-                <Icon name={CHART_ICONS[t]} size="lg" />
-                <div className={styles.optionText}>
-                  <span className={styles.optionName}>{CHART_LABELS[t]}</span>
-                  <span className={styles.optionDesc}>{CHART_DESCRIPTIONS[t]}</span>
+      {open && pos && (
+        <Portal>
+          <div ref={popRef} className={styles.popover} style={{ top: pos.top, left: pos.left, width: pos.width }}>
+            <Input
+              autoFocus
+            ref={inputRef}
+              prefix={<Icon name="search" />}
+              placeholder="Search visualizations"
+              aria-label="Search visualizations"
+              role="combobox"
+              aria-expanded
+              aria-controls={listId}
+              aria-activedescendant={activeType ? optionId(activeType) : undefined}
+              value={query}
+              onChange={(e) => {
+                setQuery(e.currentTarget.value);
+                setActive(0);
+              }}
+              onKeyDown={onKeyDown}
+            />
+            <div id={listId} role="listbox" aria-label="Visualizations" className={styles.list}>
+              {options.length === 0 && <div className={styles.none}>No visualization matches</div>}
+              {options.map((t) => (
+                <div
+                  key={t}
+                  id={optionId(t)}
+                  role="option"
+                  aria-selected={t === value}
+                  className={cx(styles.option, t === activeType && styles.optionActive)}
+                  onMouseEnter={() => setActive(options.indexOf(t))}
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => pick(t)}
+                >
+                  <Icon name={CHART_ICONS[t]} size="lg" />
+                  <div className={styles.optionText}>
+                    <span className={styles.optionName}>{CHART_LABELS[t]}</span>
+                    <span className={styles.optionDesc}>{CHART_DESCRIPTIONS[t]}</span>
+                  </div>
+                  {t === value && <Icon name="check" aria-hidden />}
                 </div>
-                {t === value && <Icon name="check" aria-hidden />}
-              </div>
-            ))}
+              ))}
+            </div>
+            <Button size="sm" variant="secondary" fill="text" onClick={close} className={styles.closeBtn}>
+              Close
+            </Button>
           </div>
-          <Button size="sm" variant="secondary" fill="text" onClick={close} className={styles.closeBtn}>
-            Close
-          </Button>
-        </div>
+        </Portal>
       )}
     </div>
   );
@@ -215,12 +264,8 @@ const getStyles = (theme: GrafanaTheme2) => ({
     width: 100%;
   `,
   popover: css`
-    position: absolute;
-    top: 100%;
-    left: 0;
-    right: 0;
-    z-index: 20;
-    margin-top: ${theme.spacing(0.5)};
+    position: fixed;
+    z-index: ${theme.zIndex.portal};
     padding: ${theme.spacing(1)};
     background: ${theme.colors.background.primary};
     border: 1px solid ${theme.colors.border.medium};

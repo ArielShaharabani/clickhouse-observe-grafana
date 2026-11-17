@@ -80,7 +80,14 @@ export function addField(state: LensState, field: LensField, ctx: LensContext): 
     if (metrics.some((m) => m.op === 'median' && m.field === field.sqlExpr)) {
       return state;
     }
-    metrics.push({ kind: 'metric', id: newId('m'), op: 'median', field: field.sqlExpr, fieldLabel: field.label, numeric: true });
+    metrics.push({
+      kind: 'metric',
+      id: newId('m'),
+      op: 'median',
+      field: field.sqlExpr,
+      fieldLabel: field.label,
+      numeric: true,
+    });
   } else {
     if (!buckets.some((b) => b.kind === 'terms' && b.field === field.sqlExpr)) {
       buckets.push({ kind: 'terms', id: newId('b'), field: field.sqlExpr, label: field.label, size: TERMS_SIZE });
@@ -189,12 +196,21 @@ export function suggestions(state: LensState, ctx: LensContext): Suggestion[] {
   // every time bucket into its own series.
   if (b0?.kind === 'terms' && b1?.kind === 'terms') {
     const flipped: LensState = { ...state, buckets: [b1, b0] };
-    add(`${b0.label} for each ${b1.label}`, { ...flipped, chartType: chooseChart(flipped.buckets), subType: state.subType ?? 'stacked' });
+    add(`${b0.label} for each ${b1.label}`, {
+      ...flipped,
+      chartType: chooseChart(flipped.buckets),
+      subType: state.subType ?? 'stacked',
+    });
   }
   // Drop duplicates (same state as an earlier card), keeping the first.
   const seen = new Set<string>();
   return out.filter((s) => {
-    const key = JSON.stringify({ c: s.state.chartType, t: s.state.subType, b: s.state.buckets.map((b) => b.id), m: s.state.metrics.map((m) => m.id) });
+    const key = JSON.stringify({
+      c: s.state.chartType,
+      t: s.state.subType,
+      b: s.state.buckets.map((b) => b.id),
+      m: s.state.metrics.map((m) => m.id),
+    });
     if (seen.has(key)) {
       return false;
     }

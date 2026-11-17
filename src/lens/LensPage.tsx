@@ -40,7 +40,6 @@ import {
 import { addField, chartTitle, chooseChart, isLensField, isXy, LensContext, suggestions, switchChart } from './suggest';
 import { shiftTimeRange, zoomOutTimeRange } from '../utils/timeRangeNav';
 
-
 function defaultRange(): TimeRange {
   return { from: dateTime(Date.now() - 3600 * 1000), to: dateTime(Date.now()), raw: { from: 'now-1h', to: 'now' } };
 }
@@ -138,9 +137,7 @@ export function LensPage() {
   const lensFields = useMemo<LensField[]>(
     () => [
       RECORDS_FIELD,
-      ...fields
-        .map((f) => ({ id: f.id, sqlExpr: f.sqlExpr, label: f.displayName, type: f.type }))
-        .filter(isLensField),
+      ...fields.map((f) => ({ id: f.id, sqlExpr: f.sqlExpr, label: f.displayName, type: f.type })).filter(isLensField),
     ],
     [fields]
   );
@@ -150,9 +147,15 @@ export function LensPage() {
     () => new Set([...fields.map((f) => f.sqlExpr), ...(config.columns.timestamp ? [config.columns.timestamp] : [])]),
     [fields, config.columns.timestamp]
   );
-  const lens = useMemo(() => (fieldsLoading ? urlLens : sanitizeLens(urlLens, allowedFields)), [urlLens, allowedFields, fieldsLoading]);
+  const lens = useMemo(
+    () => (fieldsLoading ? urlLens : sanitizeLens(urlLens, allowedFields)),
+    [urlLens, allowedFields, fieldsLoading]
+  );
   const ctx: LensContext = useMemo(
-    () => (config.columns.timestamp ? { timeField: { sqlExpr: config.columns.timestamp, label: config.columns.timestamp } } : {}),
+    () =>
+      config.columns.timestamp
+        ? { timeField: { sqlExpr: config.columns.timestamp, label: config.columns.timestamp } }
+        : {},
     [config.columns.timestamp]
   );
   const [nameFilter, setNameFilter] = useState('');
@@ -163,14 +166,27 @@ export function LensPage() {
 
   // Run the chart query.
   const [result, setResult] = useState<{ key: string; data?: LensResult; error?: string } | null>(null);
-  const queryKey = JSON.stringify([encodeLens(lens), config.datasourceUid, config.database, config.logsTable, search, filters, timeRange.from.valueOf(), timeRange.to.valueOf()]);
+  const queryKey = JSON.stringify([
+    encodeLens(lens),
+    config.datasourceUid,
+    config.database,
+    config.logsTable,
+    search,
+    filters,
+    timeRange.from.valueOf(),
+    timeRange.to.valueOf(),
+  ]);
   useEffect(() => {
     if (isEmptyLens(lens) || !config.datasourceUid || fieldsLoading) {
       return;
     }
     let cancelled = false;
     const abort = new AbortController();
-    const conditions = buildWhereConditions(config, { ...DEFAULT_LOGS_QUERY_STATE, search, filters }, fieldIndexRef.current);
+    const conditions = buildWhereConditions(
+      config,
+      { ...DEFAULT_LOGS_QUERY_STATE, search, filters },
+      fieldIndexRef.current
+    );
     const { sql } = compileLens(lens, config, conditions, timeRange);
     runQueryRows({ datasourceUid: config.datasourceUid, sql, timeRange, op: 'lens', signal: abort.signal }).then(
       (rows) => !cancelled && setResult({ key: queryKey, data: shapeLensRows(lens, rows) }),
@@ -187,14 +203,20 @@ export function LensPage() {
 
   const onAdd = (f: LensField) => setLens(addField(lens, f, ctx));
   const removeDim = (id: string) => {
-    const next = { ...lens, buckets: lens.buckets.filter((b) => b.id !== id), metrics: lens.metrics.filter((m) => m.id !== id) };
+    const next = {
+      ...lens,
+      buckets: lens.buckets.filter((b) => b.id !== id),
+      metrics: lens.metrics.filter((m) => m.id !== id),
+    };
     if (next.buckets.length === 0 && next.metrics.length === 0) {
       setLens(EMPTY_LENS);
       return;
     }
-    // Removing a line/area chart's time axis must stick: re-pick the chart from what remains
-    // instead of letting the time-based type add the date histogram straight back.
-    const lostTime = isXy(next.chartType) && next.chartType !== 'bar' && !next.buckets.some((b) => b.kind === 'date_histogram');
+    // A removal must stick: line/area (and a bar left with nothing on X) would add the time axis
+    // straight back, so re-pick the chart from what remains instead.
+    const lostTime =
+      isXy(next.chartType) &&
+      (next.chartType === 'bar' ? next.buckets.length === 0 : !next.buckets.some((b) => b.kind === 'date_histogram'));
     setLens(switchChart(next, lostTime ? chooseChart(next.buckets) : next.chartType, ctx));
   };
   const cards = useMemo(() => suggestions(lens, ctx), [lens, ctx]);
@@ -249,9 +271,21 @@ export function LensPage() {
                 }}
                 title={f.sqlExpr || f.label}
               >
-                <Icon name={(f.type === 'records' ? 'list-ul' : FIELD_TYPE_ICONS[f.type] ?? 'question-circle') as IconName} size="sm" />
+                <Icon
+                  name={
+                    (f.type === 'records' ? 'list-ul' : (FIELD_TYPE_ICONS[f.type] ?? 'question-circle')) as IconName
+                  }
+                  size="sm"
+                />
                 <span className={styles.fieldName}>{f.label}</span>
-                <Button size="sm" variant="secondary" fill="text" icon="plus" aria-label={`Add ${f.label} to workspace`} onClick={() => onAdd(f)} />
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  fill="text"
+                  icon="plus"
+                  aria-label={`Add ${f.label} to workspace`}
+                  onClick={() => onAdd(f)}
+                />
               </div>
             ))}
           </div>
@@ -290,7 +324,9 @@ export function LensPage() {
               <div className={styles.empty}>
                 <Icon name="chart-line" size="xxxl" />
                 <div className={styles.emptyTitle}>Drop some fields here to start</div>
-                <div className={styles.emptySub}>Visualize builds a chart from the fields you pick — no query editor needed.</div>
+                <div className={styles.emptySub}>
+                  Visualize builds a chart from the fields you pick — no query editor needed.
+                </div>
               </div>
             ) : current?.error ? (
               <Alert severity="error" title="The chart query failed">
@@ -301,7 +337,13 @@ export function LensPage() {
                 state={lens}
                 result={current.data}
                 timeRange={timeRange}
-                onChangeTimeRange={(from, to) => setTimeRange({ from: dateTime(from), to: dateTime(to), raw: { from: dateTime(from), to: dateTime(to) } })}
+                onChangeTimeRange={(from, to) =>
+                  setTimeRange({
+                    from: dateTime(from),
+                    to: dateTime(to),
+                    raw: { from: dateTime(from), to: dateTime(to) },
+                  })
+                }
               />
             ) : (
               <div className={styles.empty}>
@@ -362,7 +404,12 @@ export function LensPage() {
                 {g.dims.map((d) => (
                   <div key={d.id} className={styles.dim}>
                     <span className={styles.dimLabel}>{dimLabel(d)}</span>
-                    <IconButton name="times" size="sm" tooltip={`Remove ${dimLabel(d)}`} onClick={() => removeDim(d.id)} />
+                    <IconButton
+                      name="times"
+                      size="sm"
+                      tooltip={`Remove ${dimLabel(d)}`}
+                      onClick={() => removeDim(d.id)}
+                    />
                   </div>
                 ))}
               </div>

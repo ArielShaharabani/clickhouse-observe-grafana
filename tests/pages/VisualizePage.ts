@@ -8,7 +8,12 @@ export class VisualizePage {
   constructor(readonly page: Page) {}
 
   async open(params: Record<string, string> = {}) {
-    const qs = new URLSearchParams({ ds: FIXTURE.dataViewId, from: String(FIXTURE.from), to: String(FIXTURE.to), ...params });
+    const qs = new URLSearchParams({
+      ds: FIXTURE.dataViewId,
+      from: String(FIXTURE.from),
+      to: String(FIXTURE.to),
+      ...params,
+    });
     await this.page.goto(`/a/${pluginJson.id}/visualize?${qs.toString()}`);
     await expect(this.fields.getByRole('textbox', { name: 'Search field names' })).toBeVisible();
   }

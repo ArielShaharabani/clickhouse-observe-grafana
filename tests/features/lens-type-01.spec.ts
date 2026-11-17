@@ -51,3 +51,14 @@ test('keyboard: type to filter and press Enter; sub-type switches stacking', asy
   await page.getByRole('radio', { name: 'Percentage' }).click();
   await expect(page.getByText('Bar percentage').first()).toBeVisible();
 });
+
+test('removing the only axis of a bar chart sticks (falls back to Metric)', async ({ page }) => {
+  const viz = new VisualizePage(page);
+  await viz.open();
+  await viz.addField('ServiceName');
+  await expect(viz.chart).toHaveAttribute('data-chart-type', 'bar');
+  await viz.dimensions.getByRole('button', { name: 'Remove Top 9 values of ServiceName' }).click();
+  await expect(viz.chart).toHaveAttribute('data-chart-type', 'metric');
+  await expect(viz.group('Primary metric')).toContainText('Count of records');
+});
+

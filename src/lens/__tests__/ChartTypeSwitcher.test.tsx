@@ -55,4 +55,33 @@ describe('LENS-TYPE-01 chart type switcher', () => {
     setup('metric');
     expect(screen.queryByRole('radio', { name: 'Percentage' })).toBeNull();
   });
+
+  it('Esc does not reach Grafana global key bindings; Tab out closes; empty match list is safe', () => {
+    const outer = jest.fn();
+    const listener = (e: KeyboardEvent) => e.key === 'Escape' && outer();
+    document.addEventListener('keydown', listener);
+    setup('bar');
+    fireEvent.click(screen.getByRole('button', { name: 'Chart type: Bar' }));
+    const search = screen.getByRole('combobox', { name: 'Search visualizations' });
+    fireEvent.change(search, { target: { value: 'zzz' } });
+    fireEvent.keyDown(search, { key: 'ArrowDown' });
+    fireEvent.keyDown(search, { key: 'Enter' });
+    expect(screen.getByText('No visualization matches')).toBeTruthy();
+    fireEvent.keyDown(search, { key: 'Escape' });
+    expect(outer).not.toHaveBeenCalled();
+    document.removeEventListener('keydown', listener);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Chart type: Bar' }));
+    const outside = document.createElement('button');
+    document.body.appendChild(outside);
+    fireEvent.focusIn(outside);
+    expect(screen.queryByRole('listbox')).toBeNull();
+    outside.remove();
+  });
+
+  it('line charts get the sub-type control too', () => {
+    setup('line');
+    expect(screen.getByRole('radio', { name: 'Percentage' })).toBeTruthy();
+  });
 });
+

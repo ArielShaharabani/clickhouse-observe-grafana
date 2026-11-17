@@ -79,4 +79,3 @@ test('a shared link cannot carry its own SQL: unknown fields are dropped', async
   await expect(viz.group('Primary metric')).toContainText('Count of records');
   await expect(page.getByText('system.users')).toHaveCount(0);
 });
-
