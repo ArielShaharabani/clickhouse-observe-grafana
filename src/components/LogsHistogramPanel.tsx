@@ -10,7 +10,7 @@
  */
 import React from 'react';
 import { css } from '@emotion/css';
-import { GrafanaTheme2, TimeRange } from '@grafana/data';
+import { dateTime, GrafanaTheme2, TimeRange } from '@grafana/data';
 import { IconButton, useStyles2 } from '@grafana/ui';
 import { BreakdownSel, FilterPill, IntervalMode, VolumeDataPoint } from '../types';
 import { VolumeHistogram, ResolvedInterval, HistogramColorMode } from './VolumeHistogram';
@@ -47,6 +47,13 @@ function colorModeFor(breakdown: BreakdownSel): HistogramColorMode {
     return 'severity';
   }
   return 'single';
+}
+
+const CAPTION_FORMAT = 'MMM D, YYYY @ HH:mm:ss.SSS';
+
+/** "Jan 1, 2026 @ 00:00:00.000 - Jan 8, 2026 @ 00:00:00.000" (DISC-CHART-01 caption). */
+export function formatRangeCaption(range: TimeRange): string {
+  return `${dateTime(range.from.valueOf()).format(CAPTION_FORMAT)} - ${dateTime(range.to.valueOf()).format(CAPTION_FORMAT)}`;
 }
 
 export function LogsHistogramPanel({
@@ -101,7 +108,7 @@ export function LogsHistogramPanel({
               bucketMs={resolvedInterval.intervalMs}
             />
             <span className={styles.histogramMeta}>
-              {totalEvents.toLocaleString()} rows (count) &middot; interval: {resolvedInterval.label}
+              {totalEvents.toLocaleString()} rows (count) &middot; {formatRangeCaption(timeRange)} (interval: {resolvedInterval.label})
             </span>
           </>
         ) : (

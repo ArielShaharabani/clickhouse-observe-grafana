@@ -1,9 +1,9 @@
 # Progress — read this first when resuming
 
-**Current item:** #9 DISC-CHART-01 histogram + brush + series actions (not started)
-**Last completed step:** #8 DISC-SIDEBAR-01 in PR 9 (v0.18.0): "Search field names", type filter popover with per-type counts + active-count button, collapsible Selected / Popular / Available groups with count badges, Popular fields from per-viewer usage (`src/state/fieldUsage.ts`), "Add X as column" button names
-**Next step:** branch `feat/disc-chart-01`; verify the histogram against DISC-CHART-01 (docs/spec/10-discover.md): brush to zoom, bar click/right-click series actions (filter for/out via registry, view this bucket), interval label, hit count, toggle chart. Build the gaps.
-**Open issues:** none. Deferred: field list Empty group (needs a per-field existence query; removed in the perf plan, D13), Meta fields (none in ClickHouse), runtime "Add a field". Grid: Summary column, sample size, Find, Fullscreen, Save table (#16). Popover: date distribution, Examples, Visualize (#15).
+**Current item:** #10 DISC-DOC-01 document flyout (not started)
+**Last completed step:** #9 DISC-CHART-01 in PR 10 (v0.19.0): right-click bucket actions (`BucketActionsPopover`: Filter by time, Filter N selected series → `=` or `one_of` pill), tooltip hint, caption with absolute range + "interval: Auto - X"
+**Next step:** branch `feat/disc-doc-01`; verify the detail drawer against DISC-DOC-01 (docs/spec/10-discover.md): table/JSON tabs, field search in the flyout, per-field actions (registry), prev/next document navigation, pin field to top, toggle column, View surrounding documents link. Build the gaps.
+**Open issues:** none. Deferred: histogram "now" line and partial-bucket shading; field list Empty/Meta groups (D13); grid Summary column, sample size, Find, Fullscreen, Save table (#16); popover date distribution, Examples, Visualize (#15).
 
 ## Environment notes
 - Local clone: `C:\Users\Ariel\clickhouse-observe-grafana-dev` (fork `ArielShaharabani/clickhouse-observe-grafana`, `upstream` = PoorTuna).
