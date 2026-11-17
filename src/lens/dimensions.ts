@@ -1,7 +1,16 @@
 /**
  * Dimension editing (spec LENS-DIM-01 / LENS-DIM-02): pure helpers behind the dimension editor.
  */
-import { BucketDim, clampPercentile, DEFAULT_PERCENTILE, LensField, LensState, MAX_NAME, MetricDim, MetricOp } from './state';
+import {
+  BucketDim,
+  clampPercentile,
+  DEFAULT_PERCENTILE,
+  LensField,
+  LensState,
+  MAX_NAME,
+  MetricDim,
+  MetricOp,
+} from './state';
 import { isLensField, LensContext, switchChart } from './suggest';
 
 /** Quick functions, in the editor grid's order. */

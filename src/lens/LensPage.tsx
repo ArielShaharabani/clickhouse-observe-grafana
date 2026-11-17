@@ -23,6 +23,8 @@ import { DEFAULT_LOGS_QUERY_STATE } from '../types';
 import { compileLens, LensResult, shapeLensRows } from './compile';
 import { LensChart } from './render/LensChart';
 import { CHART_ICONS, ChartTypeSwitcher } from './ChartTypeSwitcher';
+import { DimensionEditor } from './DimensionEditor';
+import { addBucket, addMetric, bucketFields, replaceDim } from './dimensions';
 import {
   BucketDim,
   ChartType,
@@ -46,7 +48,11 @@ function defaultRange(): TimeRange {
 
 interface Group {
   name: string;
+  /** What the group's "+ Add" slot adds. */
+  role: 'metric' | 'bucket';
   dims: Array<BucketDim | MetricDim>;
+  /** Holds several dimensions (the slot stays after the first). */
+  multi?: boolean;
 }
 
 /** Dimension groups as each chart type names them (LENS-DIM-01). */
@@ -58,25 +64,25 @@ export function dimensionGroups(s: LensState): Group[] {
     case 'area':
     case 'bar':
       return [
-        { name: 'Horizontal axis', dims: opt(b0) },
-        { name: 'Vertical axis', dims: s.metrics },
-        { name: 'Breakdown', dims: opt(b1) },
+        { name: 'Horizontal axis', role: 'bucket', dims: opt(b0) },
+        { name: 'Vertical axis', role: 'metric', dims: s.metrics, multi: true },
+        { name: 'Breakdown', role: 'bucket', dims: b0 ? opt(b1) : [] },
       ];
     case 'table':
       return [
-        { name: 'Rows', dims: s.buckets },
-        { name: 'Metrics', dims: s.metrics },
+        { name: 'Rows', role: 'bucket', dims: s.buckets, multi: true },
+        { name: 'Metrics', role: 'metric', dims: s.metrics, multi: true },
       ];
     case 'metric':
       return [
-        { name: 'Primary metric', dims: s.metrics.slice(0, 1) },
-        { name: 'Secondary metric', dims: s.metrics.slice(1, 2) },
-        { name: 'Break down by', dims: opt(b0) },
+        { name: 'Primary metric', role: 'metric', dims: s.metrics.slice(0, 1) },
+        { name: 'Secondary metric', role: 'metric', dims: s.metrics.slice(1, 2) },
+        { name: 'Break down by', role: 'bucket', dims: opt(b0) },
       ];
     case 'pie':
       return [
-        { name: 'Slice by', dims: s.buckets },
-        { name: 'Size by', dims: s.metrics },
+        { name: 'Slice by', role: 'bucket', dims: s.buckets },
+        { name: 'Size by', role: 'metric', dims: s.metrics },
       ];
   }
 }
@@ -220,6 +226,23 @@ export function LensPage() {
     setLens(switchChart(next, lostTime ? chooseChart(next.buckets) : next.chartType, ctx));
   };
   const cards = useMemo(() => suggestions(lens, ctx), [lens, ctx]);
+  // Dimension being edited (LENS-DIM-02), with the group it was opened from.
+  const [editing, setEditing] = useState<{ id: string; group: string } | null>(null);
+  const editingDim = editing ? [...lens.buckets, ...lens.metrics].find((d) => d.id === editing.id) : undefined;
+  const addToGroup = (g: Group) => {
+    if (g.role === 'metric') {
+      const { state, id } = addMetric(lens, ctx);
+      setLens(state);
+      setEditing({ id, group: g.name });
+      return;
+    }
+    const first = bucketFields(lensFields)[0];
+    if (first) {
+      const { state, id } = addBucket(lens, first, ctx);
+      setLens(state);
+      setEditing({ id, group: g.name });
+    }
+  };
   const [suggestionsOpen, setSuggestionsOpen] = useState(true);
   const [dragOver, setDragOver] = useState(false);
 
@@ -386,7 +409,7 @@ export function LensPage() {
         </section>
 
         <section className={styles.dims} aria-label="Dimensions">
-          {!isEmptyLens(lens) && (
+          {!isEmptyLens(lens) && !editingDim && (
             <ChartTypeSwitcher
               value={lens.chartType}
               subType={lens.subType}
@@ -394,16 +417,34 @@ export function LensPage() {
               onSubTypeChange={(sub) => setLens(switchChart(lens, lens.chartType, ctx, sub))}
             />
           )}
-          {isEmptyLens(lens) ? (
+          {editing && editingDim ? (
+            <DimensionEditor
+              dim={editingDim}
+              group={editing.group}
+              fields={lensFields}
+              onChange={(d) => setLens(replaceDim(lens, d))}
+              onRemove={() => {
+                setEditing(null);
+                removeDim(editingDim.id);
+              }}
+              onClose={() => setEditing(null)}
+            />
+          ) : isEmptyLens(lens) ? (
             <div className={styles.emptySub}>Dimensions appear here as you add fields.</div>
           ) : (
             dimensionGroups(lens).map((g) => (
               <div key={g.name} className={styles.group} role="group" aria-label={g.name}>
                 <div className={styles.groupName}>{g.name}</div>
-                {g.dims.length === 0 && <div className={styles.slot}>+ Add or drag-and-drop a field</div>}
                 {g.dims.map((d) => (
                   <div key={d.id} className={styles.dim}>
-                    <span className={styles.dimLabel}>{dimLabel(d)}</span>
+                    <button
+                      type="button"
+                      className={styles.dimLabel}
+                      aria-label={`Edit ${dimLabel(d)}`}
+                      onClick={() => setEditing({ id: d.id, group: g.name })}
+                    >
+                      {dimLabel(d)}
+                    </button>
                     <IconButton
                       name="times"
                       size="sm"
@@ -412,6 +453,16 @@ export function LensPage() {
                     />
                   </div>
                 ))}
+                {(g.dims.length === 0 || g.multi) && (
+                  <button
+                    type="button"
+                    className={styles.slot}
+                    aria-label={`Add to ${g.name}`}
+                    onClick={() => addToGroup(g)}
+                  >
+                    + Add or drag-and-drop a field
+                  </button>
+                )}
               </div>
             ))
           )}
@@ -606,6 +657,13 @@ const getStyles = (theme: GrafanaTheme2) => ({
     letter-spacing: 0.04em;
   `,
   slot: css`
+    background: none;
+    text-align: left;
+    cursor: pointer;
+    &:hover {
+      border-color: ${theme.colors.primary.border};
+      color: ${theme.colors.text.primary};
+    }
     border: 1px dashed ${theme.colors.border.medium};
     border-radius: ${theme.shape.radius.default};
     padding: ${theme.spacing(0.75)};
@@ -623,6 +681,15 @@ const getStyles = (theme: GrafanaTheme2) => ({
   `,
   dimLabel: css`
     flex: 1;
+    background: none;
+    border: none;
+    padding: 0;
+    color: ${theme.colors.text.primary};
+    text-align: left;
+    cursor: pointer;
+    &:hover {
+      text-decoration: underline;
+    }
     font-size: ${theme.typography.bodySmall.fontSize};
     overflow: hidden;
     text-overflow: ellipsis;

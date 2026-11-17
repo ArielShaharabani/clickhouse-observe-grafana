@@ -2,7 +2,7 @@
 
 **Current item:** #13 LENS-DIM-01/02 (in progress, branch `feat/lens-dim-01`)
 **Last completed step:** #12 LENS-TYPE-01 in PR 13 (v0.22.0): `src/lens/ChartTypeSwitcher.tsx` — button "Chart type: X" opens a searchable listbox ("Search visualizations", name + description), current ticked, arrows/Enter/Esc, sub-type radio Stacked/Percentage/Unstacked for bar/area; Metric → Bar adds the time axis back
-**Next step:** model + helpers done and tested (`MetricOp` percentile, `name` on every dim, `autoLabel`, decode validation; `src/lens/dimensions.ts`: compatibleFields, withOp keeps compatible field, withName/withSize/withMetricField/withBucketField, add/replace; compile: `quantile(p/100)`). Next: `DimensionEditor.tsx` flyout in the dimension panel (click a dimension; title = group; Quick function grid; Field select; percentile input; Name; Top values size; Close), "+ Add" slots (metric → addMetric + open editor; bucket → field picker → addBucket), e2e, /security-review, docs, PR.
+**Next step:** editor UI done (`src/lens/DimensionEditor.tsx`, wired in LensPage; "+ Add" slots; Combobox fields), 3 e2e pass. Next: full gates, /code-review + /security-review (compile changed: percentile), docs, PR.
 **Open issues:** none. Lens limits for later features: no "Other" bucket for top values; no per-dimension editor (#13); query/filters edited in Discover (Lens shows them read-only with "Edit query in Discover"; #15 adds the shared bar); charts are PanelRenderer-only (custom-drawn click-to-filter is #14); heat map/treemap/waffle/mosaic/tag cloud not offered (no core Grafana panel). Deferred elsewhere: DISC-DOC-02 links (#20); histogram now-line; field list Empty/Meta; grid Summary column etc. (#16); popover Visualize (#15).
 
 ## Environment notes
