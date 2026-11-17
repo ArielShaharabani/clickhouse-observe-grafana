@@ -16,14 +16,32 @@ const to = dateTime(Date.UTC(2026, 0, 8));
 const range = { from, to, raw: { from, to } };
 const conds = ['Timestamp >= $__fromTime AND Timestamp <= $__toTime', "ServiceName = 'payments'"];
 
-const date = { kind: 'date_histogram' as const, id: 'b0', field: 'Timestamp', label: 'Timestamp', interval: 'auto' as const };
+const date = {
+  kind: 'date_histogram' as const,
+  id: 'b0',
+  field: 'Timestamp',
+  label: 'Timestamp',
+  interval: 'auto' as const,
+};
 const level = { kind: 'terms' as const, id: 'b1', field: 'SeverityText', label: 'SeverityText', size: 9 };
 const count = { kind: 'metric' as const, id: 'm0', op: 'count' as const };
-const median = { kind: 'metric' as const, id: 'm1', op: 'median' as const, field: 'SeverityNumber', fieldLabel: 'SeverityNumber', numeric: true };
+const median = {
+  kind: 'metric' as const,
+  id: 'm1',
+  op: 'median' as const,
+  field: 'SeverityNumber',
+  fieldLabel: 'SeverityNumber',
+  numeric: true,
+};
 
 describe('compileLens', () => {
   it('date histogram + top values breakdown + count', () => {
-    const { sql, intervalMs } = compileLens({ chartType: 'line', buckets: [date, level], metrics: [count] }, config, conds, range);
+    const { sql, intervalMs } = compileLens(
+      { chartType: 'line', buckets: [date, level], metrics: [count] },
+      config,
+      conds,
+      range
+    );
     expect(intervalMs).toBe(6 * 3600 * 1000); // 7 days / ~60 buckets → 6 hours
     expect(sql).toContain('toUnixTimestamp(toStartOfInterval("Timestamp", INTERVAL 21600 SECOND)) * 1000 AS b0');
     expect(sql).toContain('WITH top1 AS (SELECT toString("SeverityText") AS v FROM "default"."spec_logs" WHERE');
@@ -34,7 +52,12 @@ describe('compileLens', () => {
   });
 
   it('terms on X orders by the first metric; median is a quantile; no bucket → one row', () => {
-    const terms = compileLens({ chartType: 'bar', buckets: [level], metrics: [count, median] }, config, conds, range).sql;
+    const terms = compileLens(
+      { chartType: 'bar', buckets: [level], metrics: [count, median] },
+      config,
+      conds,
+      range
+    ).sql;
     expect(terms).toContain('quantile(0.5)("SeverityNumber") AS m1');
     expect(terms).toContain('ORDER BY m0 DESC, b0');
     const metric = compileLens({ chartType: 'metric', buckets: [], metrics: [count] }, config, conds, range).sql;
@@ -78,7 +101,9 @@ describe('shapeLensRows', () => {
   });
 
   it('several metrics without breakdown: one series per metric, named by its label', () => {
-    const r = shapeLensRows({ chartType: 'bar', buckets: [level], metrics: [count, median] }, [{ b0: 'error', m0: 3, m1: 17 }]);
+    const r = shapeLensRows({ chartType: 'bar', buckets: [level], metrics: [count, median] }, [
+      { b0: 'error', m0: 3, m1: 17 },
+    ]);
     expect(r.xIsTime).toBe(false);
     expect(r.series.map((s) => s.name)).toEqual(['Count of records', 'Median of SeverityNumber']);
   });
@@ -106,7 +131,11 @@ describe('untrusted lens URL state (security regression guard)', () => {
 
   it('discovered Map accessors still pass through as expressions', () => {
     const sql = compileLens(
-      { chartType: 'bar', buckets: [{ kind: 'terms', id: 'b', field: "LogAttributes['http.method']", label: 'm', size: 9 }], metrics: [] },
+      {
+        chartType: 'bar',
+        buckets: [{ kind: 'terms', id: 'b', field: "LogAttributes['http.method']", label: 'm', size: 9 }],
+        metrics: [],
+      },
       config,
       [],
       range
@@ -117,6 +146,10 @@ describe('untrusted lens URL state (security regression guard)', () => {
 
 describe('duplicate metric labels', () => {
   it('stay distinct so series never merge', () => {
-    expect(uniqueMetricLabels([median, median, count])).toEqual(['Median of SeverityNumber', 'Median of SeverityNumber (2)', 'Count of records']);
+    expect(uniqueMetricLabels([median, median, count])).toEqual([
+      'Median of SeverityNumber',
+      'Median of SeverityNumber (2)',
+      'Count of records',
+    ]);
   });
 });

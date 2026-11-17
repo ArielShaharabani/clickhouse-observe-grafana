@@ -3,7 +3,12 @@ import { dimLabel, EMPTY_LENS, LensField, LensState, RECORDS_FIELD } from '../st
 
 // Fixtures from the spec's LENS-AUTO-01 table (docs/spec/20-lens.md), on OTel fields.
 const ctx = { timeField: { sqlExpr: 'Timestamp', label: 'Timestamp' } };
-const f = (sqlExpr: string, type: LensField['type']): LensField => ({ id: `col:${sqlExpr}`, sqlExpr, label: sqlExpr, type });
+const f = (sqlExpr: string, type: LensField['type']): LensField => ({
+  id: `col:${sqlExpr}`,
+  sqlExpr,
+  label: sqlExpr,
+  type,
+});
 const TS = f('Timestamp', 'time');
 const DURATION = f('SeverityNumber', 'number');
 const LEVEL = f('SeverityText', 'string');
@@ -21,8 +26,16 @@ describe('LENS-AUTO-01 automatic chart selection', () => {
   it.each([
     ['Records', [RECORDS_FIELD], { chart: 'line', x: 'Timestamp', breakdown: undefined, y: ['Count of records'] }],
     ['@timestamp', [TS], { chart: 'line', x: 'Timestamp', breakdown: undefined, y: ['Count of records'] }],
-    ['number field', [DURATION], { chart: 'line', x: 'Timestamp', breakdown: undefined, y: ['Median of SeverityNumber'] }],
-    ['keyword', [LEVEL], { chart: 'bar', x: 'Top 9 values of SeverityText', breakdown: undefined, y: ['Count of records'] }],
+    [
+      'number field',
+      [DURATION],
+      { chart: 'line', x: 'Timestamp', breakdown: undefined, y: ['Median of SeverityNumber'] },
+    ],
+    [
+      'keyword',
+      [LEVEL],
+      { chart: 'bar', x: 'Top 9 values of SeverityText', breakdown: undefined, y: ['Count of records'] },
+    ],
     [
       '@timestamp then keyword',
       [TS, SERVICE],
@@ -31,13 +44,27 @@ describe('LENS-AUTO-01 automatic chart selection', () => {
     [
       'keyword then keyword',
       [LEVEL, SERVICE],
-      { chart: 'bar', x: 'Top 9 values of SeverityText', breakdown: 'Top 9 values of ServiceName', y: ['Count of records'] },
+      {
+        chart: 'bar',
+        x: 'Top 9 values of SeverityText',
+        breakdown: 'Top 9 values of ServiceName',
+        y: ['Count of records'],
+      },
     ],
-    ['@timestamp then number', [TS, DURATION], { chart: 'line', x: 'Timestamp', breakdown: undefined, y: ['Count of records', 'Median of SeverityNumber'] }],
+    [
+      '@timestamp then number',
+      [TS, DURATION],
+      { chart: 'line', x: 'Timestamp', breakdown: undefined, y: ['Count of records', 'Median of SeverityNumber'] },
+    ],
     [
       'keyword then number',
       [SERVICE, DURATION],
-      { chart: 'bar', x: 'Top 9 values of ServiceName', breakdown: undefined, y: ['Count of records', 'Median of SeverityNumber'] },
+      {
+        chart: 'bar',
+        x: 'Top 9 values of ServiceName',
+        breakdown: undefined,
+        y: ['Count of records', 'Median of SeverityNumber'],
+      },
     ],
   ])('%s', (_name, fields, expected) => {
     expect(shape(add(...fields))).toEqual(expected);
@@ -67,13 +94,19 @@ describe('LENS-TYPE-01 dimension remapping', () => {
 
   it('Table → Metric keeps the first bucket as "break down by" and drops the second', () => {
     const metric = switchChart(switchChart(bar, 'table', ctx), 'metric', ctx);
-    expect(shape(metric)).toEqual({ chart: 'metric', x: 'Top 9 values of ServiceName', breakdown: undefined, y: ['Count of records'] });
+    expect(shape(metric)).toEqual({
+      chart: 'metric',
+      x: 'Top 9 values of ServiceName',
+      breakdown: undefined,
+      y: ['Count of records'],
+    });
   });
 
   it('histogram → Metric is one big number; Metric → Line adds the date histogram back', () => {
     const metric = switchChart(add(RECORDS_FIELD), 'metric', ctx);
     expect(shape(metric)).toEqual({ chart: 'metric', x: undefined, breakdown: undefined, y: ['Count of records'] });
     expect(shape(switchChart(metric, 'line', ctx)).x).toBe('Timestamp');
+    expect(shape(switchChart(metric, 'bar', ctx)).x).toBe('Timestamp');
   });
 
   it('keeps dimension ids (labels/format survive) and never clears the layer', () => {
@@ -93,7 +126,10 @@ describe('LENS-SUGG-01 suggestions', () => {
   it('two keywords: flip swaps X and breakdown', () => {
     const s = suggestions(add(LEVEL, SERVICE), ctx);
     const flip = s.find((x) => x.title === 'SeverityText for each ServiceName')!;
-    expect(shape(flip.state)).toMatchObject({ x: 'Top 9 values of ServiceName', breakdown: 'Top 9 values of SeverityText' });
+    expect(shape(flip.state)).toMatchObject({
+      x: 'Top 9 values of ServiceName',
+      breakdown: 'Top 9 values of SeverityText',
+    });
     expect(s.map((x) => x.title)).toEqual(expect.arrayContaining(['Pie', 'Table']));
   });
 

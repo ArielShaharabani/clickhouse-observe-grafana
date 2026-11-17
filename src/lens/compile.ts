@@ -54,7 +54,12 @@ export interface CompiledLens {
   intervalMs?: number;
 }
 
-export function compileLens(state: LensState, config: SourceConfig, conditions: string[], timeRange: TimeRange): CompiledLens {
+export function compileLens(
+  state: LensState,
+  config: SourceConfig,
+  conditions: string[],
+  timeRange: TimeRange
+): CompiledLens {
   const tbl = tableRef(config, config.logsTable);
   const where = conditions.length > 0 ? conditions.join(' AND ') : '';
   let intervalMs: number | undefined;

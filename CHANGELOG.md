@@ -10,6 +10,19 @@ Versions track the plugin's release history. `Unreleased` collects commits not y
 
 ---
 
+## [0.22.0] — 2026-11-17
+
+### Added
+
+- **One-menu chart type switcher on the Visualize page.** Open "Chart type", optionally type to filter ("Search visualizations"), pick — the chart re-renders with its fields remapped; query, filters and time stay as they are. Arrow keys, Enter and Esc work. Spec LENS-TYPE-01.
+- **Stacked / Percentage / Unstacked** control for bar and area charts. Spec LENS-TYPE-01.
+
+### Changed
+
+- **Switching a single-number Metric to Bar** now draws bars over time instead of an empty axis.
+
+---
+
 ## [0.21.0] — 2026-11-17
 
 ### Added
