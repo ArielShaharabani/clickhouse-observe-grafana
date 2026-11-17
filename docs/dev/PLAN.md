@@ -51,4 +51,4 @@ Status values: `todo` · `in-progress` · `done` (with PR link) · `skipped` (wi
 4. Implement, reusing existing modules (`src/sql/*`, `src/data/runQuery.ts`, components).
 5. Add/enable integration cases in `tests/integration/` for every interaction with done features (`TESTING.md` matrix).
 6. Gates: `npm run typecheck && npm run lint && npm run test:ci && npm run build`, `npx playwright test`, `/code-review`, `/security-review` if SQL generation changed, autocomplete checklist (SHARED-AUTOCOMPLETE-01).
-7. CHANGELOG `[Unreleased]` entry + version bump (`package.json` and `src/plugin.json`), update PLAN/PROGRESS/TESTING, push, PR, merge when green, pull `master`.
+7. CHANGELOG `[Unreleased]` entry + version bump (`package.json` and `src/plugin.json`), update PLAN/PROGRESS/TESTING and refresh `CONTEXT.md`, push, PR, merge when green, pull `master`.

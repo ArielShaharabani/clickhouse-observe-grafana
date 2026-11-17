@@ -18,7 +18,7 @@ import {
 import { LogRow, FilterPill, SourceConfig, SelectedColumn } from '../types';
 import { FieldModel, FieldType } from '../sql/fieldModel';
 import { groupAttributes, flattenJson, parseJsonColumnValue, GroupedAttrRow } from '../sql/schema';
-import { copyToClipboard, valueActions } from '../actions/registry';
+import { copyToClipboard, isFilterableValue, valueActions } from '../actions/registry';
 import { ActionIconButton } from '../actions/ActionIconButton';
 import { CORE_ALIAS } from '../sql/queryBuilder';
 import { formatTimestamp } from './LogsTable';
@@ -362,12 +362,7 @@ export function LogDetailDrawer({
           </span>
         )}
         <div className={styles.attrActions}>
-          {valueActions(
-            { field: clickhouseField, fieldLabel: field, value },
-            { addFilter: onAddFilter, copyText: copyToClipboard }
-          ).map((a) => (
-            <ActionIconButton key={a.id} action={a} />
-          ))}
+          <DrawerValueActions field={clickhouseField} value={value} type={type} onAddFilter={onAddFilter} />
           {onToggleColumn && (
             <IconButton
               name="plus-square"
@@ -708,4 +703,33 @@ const getStyles = (theme: GrafanaTheme2) => ({
       }
     `
   ),
+});
+
+/** Registry actions for one drawer row, memoized so hovering/searching doesn't rebuild them. */
+const DrawerValueActions = React.memo(function DrawerValueActions({
+  field,
+  value,
+  type,
+  onAddFilter,
+}: {
+  field: string;
+  value: string;
+  type: FieldType;
+  onAddFilter: (f: FilterPill) => void;
+}) {
+  const actions = useMemo(
+    () =>
+      valueActions(
+        { field, value, filterable: isFilterableValue(value, type) },
+        { addFilter: onAddFilter, copyText: copyToClipboard }
+      ),
+    [field, value, type, onAddFilter]
+  );
+  return (
+    <>
+      {actions.map((a) => (
+        <ActionIconButton key={a.id} action={a} />
+      ))}
+    </>
+  );
 });

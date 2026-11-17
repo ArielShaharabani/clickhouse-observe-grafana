@@ -7,21 +7,28 @@ import { FIXTURE } from '../fixture';
 // IT-M: the same actions, with the same names, everywhere (SHARED-ACTION-01 registry).
 
 const { total, byLevel } = FIXTURE.counts;
-const serviceCount = (svc: string) => (svc === 'payments' ? FIXTURE.counts.payments : 8064);
+const SERVICES = Object.keys(FIXTURE.counts.byService);
+
+/** The value named in an action's accessible name, checked against the fixture's services. */
+async function serviceFrom(button: import('@playwright/test').Locator, prefix: string): Promise<string> {
+  const svc = ((await button.getAttribute('aria-label')) ?? '').replace(prefix, '');
+  expect(SERVICES).toContain(svc);
+  return svc;
+}
 
 test('grid cell: Filter for adds the value as a pill and re-queries', async ({ page }) => {
   const logs = new LogsPage(page);
   await logs.open();
   const cell = logs.grid.getByRole('cell').filter({ hasText: /^(checkout|frontend|payments|inventory|auth)$/ }).first();
   await cell.hover();
-  const filterFor = logs.grid.getByRole('button', { name: /^Filter for Service: / });
-  const name = (await filterFor.getAttribute('aria-label')) ?? '';
-  const svc = name.replace('Filter for Service: ', '');
-  await expect(logs.grid.getByRole('button', { name: /^Filter out Service: / })).toBeVisible();
-  await expect(logs.grid.getByRole('button', { name: /^Copy value of Service$/ })).toBeVisible();
+  // Same names as the drawer and field list (SHARED-ACTION-01): the field's own name.
+  const filterFor = logs.grid.getByRole('button', { name: /^Filter for ServiceName: / });
+  const svc = await serviceFrom(filterFor, 'Filter for ServiceName: ');
+  await expect(logs.grid.getByRole('button', { name: /^Filter out ServiceName: / })).toBeVisible();
+  await expect(logs.grid.getByRole('button', { name: /^Copy value of ServiceName$/ })).toBeVisible();
   await filterFor.click();
   await expect(logs.pill(`ServiceName = ${svc}`)).toBeVisible();
-  await logs.expectRowCount(serviceCount(svc));
+  await logs.expectRowCount(FIXTURE.counts.byService[svc]);
 });
 
 test('document drawer: Filter out excludes the value and re-queries', async ({ page }) => {
@@ -31,7 +38,7 @@ test('document drawer: Filter out excludes the value and re-queries', async ({ p
   await logs.grid.getByRole('cell').nth(2).hover();
   await logs.grid.getByRole('button', { name: 'Open detail' }).first().click();
   const drawerAction = page.getByRole('button', { name: /^Filter out ServiceName: / }).first();
-  const svc = ((await drawerAction.getAttribute('aria-label')) ?? '').replace('Filter out ServiceName: ', '');
+  const svc = await serviceFrom(drawerAction, 'Filter out ServiceName: ');
   await drawerAction.click();
   await expect(logs.pill(`ServiceName ≠ ${svc}`)).toBeVisible();
   // errors in every service except `svc`
@@ -43,12 +50,12 @@ test('field list: exists / does-not-exist field filters', async ({ page }) => {
   await logs.open();
   const traceRow = page.getByTitle('TraceId', { exact: true });
   await traceRow.hover();
-  await traceRow.getByRole('button', { name: 'Filter for TraceId exists' }).click();
+  await traceRow.getByRole('button', { name: 'Filter to rows where TraceId has any value' }).click();
   await expect(logs.pill('TraceId exists')).toBeVisible();
   await logs.expectRowCount(total); // every fixture row has a trace id
 
   await traceRow.hover();
-  await traceRow.getByRole('button', { name: 'Filter for TraceId does not exist' }).click();
+  await traceRow.getByRole('button', { name: 'Filter to rows where TraceId is missing' }).click();
   await expect(logs.pill('TraceId does not exist')).toBeVisible();
   await expect(logs.rowCount).toContainText('0 rows');
 });
@@ -58,7 +65,7 @@ test('field stats popover: value actions use the same names as everywhere else',
   await logs.open();
   await page.getByTitle('SeverityText', { exact: true }).click();
   const filterFor = page.getByRole('button', { name: 'Filter for SeverityText: error' });
-  await expect(filterFor).toHaveAttribute('title', 'Filter for value');
+  await expect(filterFor).toHaveAttribute('title', 'Filter for SeverityText: error');
   await filterFor.click();
   await expect(logs.pill('SeverityText = error')).toBeVisible();
   await logs.expectRowCount(byLevel.error);

@@ -458,9 +458,9 @@ export function LogsTable({
                         {hoveredCell?.ri === i && hoveredCell.ci === col.id && (
                           <div className={styles.cellToolbar} style={{ opacity: 1, pointerEvents: 'auto' }}>
                               {valueActions(
-                                { field: col.sqlExpr, fieldLabel: col.displayName, value: cellTextValue(rawValue) },
                                 // Empty values and raw Map/JSON container cells offer copy only.
-                                { addFilter: filterable ? onAddFilter : undefined, copyText: copyToClipboard }
+                                { field: col.sqlExpr, value: cellTextValue(rawValue), filterable: !!filterable },
+                                { addFilter: onAddFilter, copyText: copyToClipboard }
                               ).map((a) => (
                                 <ActionIconButton key={a.id} action={a} />
                               ))}

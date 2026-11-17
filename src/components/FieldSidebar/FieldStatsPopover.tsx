@@ -176,11 +176,11 @@ export function FieldStatsPopover({
             {/* Filter buttons — revealed on row hover via CSS */}
             <div className={`${styles.filterBtns} field-filter-btns`}>
               {valueActions(
-                { field: field.sqlExpr, fieldLabel: field.displayName, value: v.value },
+                { field: field.sqlExpr, value: v.value },
                 { addFilter: onAddFilter, copyText: copyToClipboard },
                 ['filterFor', 'filterOut']
               ).map((a) => (
-                <button key={a.id} className={styles.filterBtn} title={a.tooltip} aria-label={a.ariaLabel} onClick={a.run}>
+                <button key={a.id} className={styles.filterBtn} title={a.ariaLabel} aria-label={a.ariaLabel} onClick={a.run}>
                   <Icon name={a.icon} size="xs" />
                 </button>
               ))}

@@ -12,7 +12,7 @@ import React from 'react';
 import { css } from '@emotion/css';
 import { GrafanaTheme2, TimeRange } from '@grafana/data';
 import { IconButton, useStyles2 } from '@grafana/ui';
-import { BreakdownSel, IntervalMode, VolumeDataPoint } from '../types';
+import { BreakdownSel, FilterPill, IntervalMode, VolumeDataPoint } from '../types';
 import { VolumeHistogram, ResolvedInterval, HistogramColorMode } from './VolumeHistogram';
 import { IntervalPicker } from './HistogramControls/IntervalPicker';
 import { BreakdownPicker } from './HistogramControls/BreakdownPicker';
@@ -30,7 +30,9 @@ interface LogsHistogramPanelProps {
   totalEvents: number;
   resolvedInterval: ResolvedInterval;
   onSelectRange: (fromMs: number, toMs: number) => void;
-  onBreakdownFilter: (value: string, op: '=' | '!=') => void;
+  /** Field the breakdown splits on, as a filter target (undefined = no filtering from the chart). */
+  breakdownTarget?: { field: string };
+  onAddFilter: (pill: FilterPill) => void;
   /** Collapses the chart down to just the toolbar row (interval/breakdown pickers stay reachable)
    *  without unmounting them, so the query state they hold isn't lost while collapsed. */
   collapsed: boolean;
@@ -60,7 +62,8 @@ export function LogsHistogramPanel({
   totalEvents,
   resolvedInterval,
   onSelectRange,
-  onBreakdownFilter,
+  breakdownTarget,
+  onAddFilter,
   collapsed,
   onToggleCollapsed,
 }: LogsHistogramPanelProps) {
@@ -92,7 +95,8 @@ export function LogsHistogramPanel({
               height={120}
               loading={volLoading}
               onSelectRange={onSelectRange}
-              onBreakdownFilter={onBreakdownFilter}
+              breakdownTarget={breakdownTarget}
+              onAddFilter={onAddFilter}
               colorMode={colorModeFor(breakdown)}
               bucketMs={resolvedInterval.intervalMs}
             />

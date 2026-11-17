@@ -11,6 +11,7 @@ export const FIXTURE = {
     total: 41520,
     byLevel: { info: 28265, warn: 6080, debug: 3984, error: 3191 },
     payments: 9264, // 8,064 base + 1,200 incident rows
+    byService: { auth: 8064, checkout: 8064, frontend: 8064, inventory: 8064, payments: 9264 } as Record<string, number>,
     paymentsErrors: 1575,
     errorsByService: { auth: 384, checkout: 445, frontend: 373, inventory: 414, payments: 1575 } as Record<string, number>,
   },

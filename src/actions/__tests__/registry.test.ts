@@ -1,4 +1,4 @@
-import { ActionHost, fieldActions, valueActions } from '../registry';
+import { ActionHost, fieldActions, fieldLabelFor, isFilterableValue, valueActions } from '../registry';
 import { FilterPill } from '../../types';
 
 const host = (): ActionHost & { added: FilterPill[]; copied: string[] } => {
@@ -32,6 +32,28 @@ describe('SHARED-ACTION-01: value actions', () => {
     expect(h.copied).toEqual(['payments']);
   });
 
+  it('names fields the same way on every surface, derived from the SQL expression', () => {
+    expect(fieldLabelFor("LogAttributes['http.method']")).toBe('LogAttributes.http.method');
+    expect(fieldLabelFor('ServiceName')).toBe('ServiceName');
+    const [a] = valueActions({ field: "LogAttributes['http.method']", value: 'GET' }, host());
+    expect(a.ariaLabel).toBe('Filter for LogAttributes.http.method: GET');
+  });
+
+  it('speaks empty values as (empty) and truncates long ones', () => {
+    expect(valueActions({ field: 'Body', value: '' }, host())[0].ariaLabel).toBe('Filter for Body: (empty)');
+    const long = 'x'.repeat(500);
+    expect(valueActions({ field: 'Body', value: long }, host())[0].ariaLabel.length).toBeLessThan(90);
+  });
+
+  it('offers copy only for values that cannot be filtered on', () => {
+    expect(valueActions({ ...ctx, filterable: false }, host()).map((a) => a.id)).toEqual(['copy']);
+    expect(isFilterableValue(null)).toBe(false);
+    expect(isFilterableValue({ a: 1 })).toBe(false);
+    expect(isFilterableValue('{"k":"v"}', 'map')).toBe(false);
+    expect(isFilterableValue('{"k":"v"}', 'string')).toBe(true);
+    expect(isFilterableValue('')).toBe(true);
+  });
+
   it('only offers copy when the surface cannot add filters (read-only)', () => {
     expect(valueActions(ctx, { copyText: () => undefined }).map((a) => a.id)).toEqual(['copy']);
   });
@@ -44,7 +66,11 @@ describe('SHARED-ACTION-01: value actions', () => {
 describe('SHARED-ACTION-01: field actions', () => {
   it('offers exists / does-not-exist filters on the field', () => {
     const h = host();
-    const actions = fieldActions({ field: 'TraceId', fieldLabel: 'TraceId' }, h);
+    const actions = fieldActions({ field: 'TraceId' }, h);
+    expect(actions.map((a) => a.ariaLabel)).toEqual([
+      'Filter to rows where TraceId has any value',
+      'Filter to rows where TraceId is missing',
+    ]);
     expect(actions.map((a) => a.tooltip)).toEqual([
       'Filter to rows where this field has any value',
       'Filter to rows where this field is missing',
@@ -57,6 +83,6 @@ describe('SHARED-ACTION-01: field actions', () => {
   });
 
   it('offers nothing when the surface cannot add filters', () => {
-    expect(fieldActions({ field: 'TraceId', fieldLabel: 'TraceId' }, { copyText: () => undefined })).toEqual([]);
+    expect(fieldActions({ field: 'TraceId' }, { copyText: () => undefined })).toEqual([]);
   });
 });

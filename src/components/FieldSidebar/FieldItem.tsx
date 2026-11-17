@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import { css } from '@emotion/css';
 import { GrafanaTheme2, TimeRange } from '@grafana/data';
 import { Icon, useStyles2, useTheme2, Portal } from '@grafana/ui';
@@ -67,6 +67,11 @@ export function FieldItem({
     setPopoverOpen(true);
   };
 
+  const existsActions = useMemo(
+    () => fieldActions({ field: field.sqlExpr }, { addFilter: onAddFilter, copyText: copyToClipboard }),
+    [field.sqlExpr, onAddFilter]
+  );
+
   return (
     <>
       <div
@@ -88,10 +93,7 @@ export function FieldItem({
         />
         <span className={`${styles.name} field-item-name`}>{field.displayName}</span>
         <div className={`${styles.actions} field-item-actions`}>
-          {fieldActions(
-            { field: field.sqlExpr, fieldLabel: field.displayName },
-            { addFilter: onAddFilter, copyText: copyToClipboard }
-          ).map((a) => (
+          {existsActions.map((a) => (
             <button
               key={a.id}
               className={styles.actionBtn}
