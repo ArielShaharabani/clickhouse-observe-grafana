@@ -8,6 +8,7 @@ import {
   mergePinnedFilters,
   pinFilterInStore,
   savePinnedFilters,
+  syncPinnedStore,
   unpinFilterInStore,
   PINNED_FILTERS_KEY,
 } from '../sharedSearch';
@@ -115,5 +116,31 @@ describe('SHARED-STATE-03: building a link to another app page carries the conte
     expect(back).toMatchObject({ search: 'Body:timeout', viewId: 'spec-fixture', interval: 'hour', breakdown: { kind: 'severity' } });
     expect(back.filters?.[0].value).toBe('error');
     expect(back.timeRange?.from.valueOf()).toBe(1767225600000);
+  });
+});
+
+describe('DISC-FILTER-01: pill changes keep the pinned store in step', () => {
+  beforeEach(() => window.sessionStorage.clear());
+  const pinned = pill('error', { pinned: true });
+
+  it('stores a newly pinned pill and forgets it when unpinned', () => {
+    syncPinnedStore([pill('error')], [pinned]);
+    expect(loadPinnedFilters().map((f) => f.value)).toEqual(['error']);
+    syncPinnedStore([pinned], [{ ...pinned, pinned: false }]);
+    expect(loadPinnedFilters()).toEqual([]);
+  });
+
+  it('replaces the stored condition when a pinned pill is edited or negated', () => {
+    syncPinnedStore([], [pinned]);
+    syncPinnedStore([pinned], [{ ...pinned, op: '!=' }]);
+    expect(loadPinnedFilters()).toEqual([expect.objectContaining({ value: 'error', op: '!=' })]);
+  });
+
+  it('keeps the disabled flag of a pinned pill and forgets it on delete or clear all', () => {
+    syncPinnedStore([], [pinned]);
+    syncPinnedStore([pinned], [{ ...pinned, disabled: true }]);
+    expect(loadPinnedFilters()[0].disabled).toBe(true);
+    syncPinnedStore([{ ...pinned, disabled: true }], []);
+    expect(loadPinnedFilters()).toEqual([]);
   });
 });

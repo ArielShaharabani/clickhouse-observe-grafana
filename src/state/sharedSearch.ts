@@ -78,3 +78,25 @@ export function unpinFilterInStore(pill: FilterPill): void {
 export function carryPinnedToView(pinned: FilterPill[], sameTable: boolean): FilterPill[] {
   return sameTable ? pinned : pinned.map((p) => ({ ...p, disabled: true }));
 }
+
+/**
+ * Bring the pinned store in line after any pill change (pin, unpin, edit, exclude, disable,
+ * delete, clear all): pinned pills that disappeared, were unpinned or changed condition are
+ * removed under their old condition; every pinned pill in `next` is (re)stored as it is now.
+ */
+export function syncPinnedStore(prev: FilterPill[], next: FilterPill[]): void {
+  for (const p of prev) {
+    if (!p.pinned) {
+      continue;
+    }
+    const n = next.find((f) => f.id === p.id);
+    if (!n || !n.pinned || !samePill(n, p)) {
+      unpinFilterInStore(p);
+    }
+  }
+  for (const n of next) {
+    if (n.pinned) {
+      pinFilterInStore(n);
+    }
+  }
+}
