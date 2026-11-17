@@ -16,5 +16,8 @@ Migration cost outweighs the benefit; the app already has its own state + URL sy
 ## D5 — Deterministic fixture for tests
 `default.spec_logs` (`scripts/clickhouse-init/04_spec_fixture.sql`): fixed window 2026-01-01..2026-01-08 UTC, no TTL, 41,520 rows incl. a payments incident on 2026-01-05 09:00–11:00. Tests assert exact counts from `tests/fixture.ts`, never the Kibana numbers in the spec.
 
+## D7 — URL is the shared search context; pinned filters also in session storage (SHARED-STATE)
+Every page reads/writes the same URL params (`q, filters, cols, sort, from, to, ds, interval, bd`), like Kibana's `_g`/`_a`, so hand-offs between pages are just links built by `buildAppPageUrl` (`src/state/sharedSearch.ts`). Pinned pills (`FilterPill.pinned`) are also kept in per-tab session storage (`clickhouse-observe.pinnedFilters`) and merged into any page opened without them, and survive data view switches. A field breakdown is stored by `FieldModel.id` and resolved once discovery finishes. No React context store was added: LogsExplorer already owns its state and the Lens page will decode the same URL.
+
 ## D6 — Work in a fork, PR per feature, auto-merge on green
 Fork `ArielShaharabani/clickhouse-observe-grafana` (no push access upstream). One branch + PR per feature, merged once all gates pass.

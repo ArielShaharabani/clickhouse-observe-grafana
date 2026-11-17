@@ -10,6 +10,16 @@ Versions track the plugin's release history. `Unreleased` collects commits not y
 
 ---
 
+## [0.11.0] — 2026-11-17
+
+### Added
+
+- **Interval and breakdown are part of the shareable URL (`interval`, `bd`).** A shared link now reproduces the histogram bucket size and breakdown, not just search, filters, columns, sort and time. A field breakdown is stored by its stable field id and resolved once field discovery finishes; a field that no longer exists falls back to the view default. Spec SHARED-STATE-02.
+- **Pinned filters.** Filter pills can carry `pinned: true`; pinned pills are kept in per-tab session storage, applied to any app page opened without them, and survive switching data views — the same behaviour as Kibana's global filters. (The pin/unpin menu item arrives with DISC-FILTER-01.) Spec SHARED-STATE-01.
+- **`buildAppPageUrl` (`src/state/sharedSearch.ts`)** builds a link to another app page carrying the whole search context — the hand-off mechanism the upcoming Visualize page uses.
+
+---
+
 ## [0.10.1] — 2026-11-17
 
 ### Added
