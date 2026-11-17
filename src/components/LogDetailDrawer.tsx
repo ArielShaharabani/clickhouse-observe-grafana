@@ -20,6 +20,7 @@ import { FieldModel, FieldType } from '../sql/fieldModel';
 import { groupAttributes, flattenJson, parseJsonColumnValue, GroupedAttrRow } from '../sql/schema';
 import { copyToClipboard, fieldActions, isFilterableValue, valueActions } from '../actions/registry';
 import { FieldTypeFilter } from './FieldSidebar/FieldTypeFilter';
+import { loadDocPins, saveDocPins } from '../state/docPins';
 import { ActionIconButton } from '../actions/ActionIconButton';
 import { CORE_ALIAS } from '../sql/queryBuilder';
 import { formatTimestamp } from './LogsTable';
@@ -160,23 +161,10 @@ type DrawerTab = 'table' | 'json';
 /** Flat field list is paginated 25 rows per page (spec DISC-DOC-01). */
 const FIELDS_PAGE_SIZE = 25;
 
-/** Pinned fields stick to the top across documents for this browser tab (DISC-DOC-01). */
-const PINNED_KEY = 'clickhouse-observe.pinnedDocFields';
-function loadPinnedDocFields(): string[] {
-  try {
-    const v = JSON.parse(sessionStorage.getItem(PINNED_KEY) ?? '[]');
-    return Array.isArray(v) ? v.filter((x) => typeof x === 'string') : [];
-  } catch {
-    return [];
-  }
-}
-function savePinnedDocFields(ids: string[]): void {
-  try {
-    sessionStorage.setItem(PINNED_KEY, JSON.stringify(ids));
-  } catch {
-    // Storage blocked — pins still apply while this panel is open.
-  }
-}
+/** Values "Hide null fields" treats as empty: missing/null (rendered '') and empty containers. */
+const EMPTY_VALUES = new Set(['', '{}', '[]']);
+/** Types whose rows never get "field present": always set (time) or a whole container blob. */
+const NO_EXISTS_TYPES = new Set<FieldType>(['time', 'map', 'json', 'tuple', 'array']);
 /** Attribute values longer than this render truncated, with a "Show more" toggle. */
 const VALUE_TRUNCATE_LEN = 300;
 
@@ -212,14 +200,23 @@ export function LogDetailDrawer({
   const [selectedOnly, setSelectedOnly] = useState(false);
   const [hideNull, setHideNull] = useState(false);
   const [typeFilter, setTypeFilter] = useState<Set<FieldType>>(() => new Set());
-  // Pinned field SQL expressions, in pin order.
-  const [pinnedFields, setPinnedFields] = useState<string[]>(loadPinnedDocFields);
-  const togglePin = (sqlExpr: string) =>
-    setPinnedFields((prev) => {
-      const next = prev.includes(sqlExpr) ? prev.filter((x) => x !== sqlExpr) : [...prev, sqlExpr];
-      savePinnedDocFields(next);
-      return next;
-    });
+  // Pinned field SQL expressions for this table, in pin order (per browser tab).
+  const pinTable = `${config.database}.${config.logsTable}`;
+  const [pinState, setPinState] = useState(() => ({ table: pinTable, pins: loadDocPins(pinTable) }));
+  const pinnedFields = useMemo(
+    () => (pinState.table === pinTable ? pinState.pins : loadDocPins(pinTable)),
+    [pinState, pinTable]
+  );
+  useEffect(() => {
+    if (pinState.table === pinTable) {
+      saveDocPins(pinTable, pinState.pins);
+    }
+  }, [pinState, pinTable]);
+  const togglePin = (sqlExpr: string) => {
+    const next = pinnedFields.includes(sqlExpr) ? pinnedFields.filter((x) => x !== sqlExpr) : [...pinnedFields, sqlExpr];
+    setPinState({ table: pinTable, pins: next });
+    setFieldsPage(0); // show the pinned row at the top
+  };
   const [expandedValues, setExpandedValues] = useState<Set<string>>(new Set());
   const [fieldsPage, setFieldsPage] = useState(0);
 
@@ -303,13 +300,6 @@ export function LogDetailDrawer({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [effectiveRow, containerCols, attrGroups, c.timestamp, jsonColumns, typeByExpr]);
 
-  const typeCounts = useMemo(() => {
-    const c: Partial<Record<FieldType, number>> = {};
-    for (const r of allRows) {
-      c[r.type] = (c[r.type] ?? 0) + 1;
-    }
-    return c;
-  }, [allRows]);
 
   // Reset per-log UI state (not the search/selected-only filters, which the user likely wants to
   // keep applied while stepping through prev/next) whenever a new log is opened.
@@ -359,6 +349,17 @@ export function LogDetailDrawer({
     return key.toLowerCase().includes(q) || String(value).toLowerCase().includes(q);
   };
 
+  // Rows after search / Selected only / Hide null — the type filter's counts describe these, so a
+  // type's badge matches what picking it shows.
+  const baseRows = allRows
+    .filter((r) => filterMatch(r.key, r.value))
+    .filter((r) => !selectedOnly || isColumnSelected(r.sqlExpr))
+    .filter((r) => !hideNull || !EMPTY_VALUES.has(r.value.trim()));
+  const typeCounts: Partial<Record<FieldType, number>> = {};
+  for (const r of baseRows) {
+    typeCounts[r.type] = (typeCounts[r.type] ?? 0) + 1;
+  }
+
   const renderAttrRow = (field: string, value: string, sqlExpr: string = field, type: FieldType = 'string') => {
     const clickhouseField = sqlExpr;
     const isSelected = isColumnSelected(clickhouseField);
@@ -407,11 +408,11 @@ export function LogDetailDrawer({
         )}
         <div className={styles.attrActions}>
           <DrawerValueActions field={clickhouseField} value={value} type={type} onAddFilter={onAddFilter} />
-          {fieldActions({ field: clickhouseField, fieldLabel: field }, { addFilter: onAddFilter, copyText: copyToClipboard }, ['exists']).map(
-            (a) => (
-              <ActionIconButton key={a.id} action={a} />
-            )
-          )}
+          {!NO_EXISTS_TYPES.has(type) &&
+            !EMPTY_VALUES.has(value.trim()) &&
+            fieldActions({ field: clickhouseField, fieldLabel: field }, { addFilter: onAddFilter, copyText: copyToClipboard }, ['exists']).map(
+              (a) => <ActionIconButton key={a.id} action={a} />
+            )}
           <IconButton
             name="gf-pin"
             size="sm"
@@ -441,11 +442,11 @@ export function LogDetailDrawer({
           <div className={styles.summarySpacer} />
           {(onPrev || onNext) && (
             <div className={styles.navGroup}>
-              <IconButton name="angle-double-up" size="sm" tooltip="First log" onClick={onFirst} disabled={!onFirst} />
+              <IconButton name="angle-double-up" size="sm" tooltip="First log on this page" onClick={onFirst} disabled={!onFirst} />
               <IconButton name="angle-up" size="sm" tooltip="Previous log" onClick={onPrev} disabled={!onPrev} />
               {navLabel && <span className={styles.navLabel}>{navLabel}</span>}
               <IconButton name="angle-down" size="sm" tooltip="Next log" onClick={onNext} disabled={!onNext} />
-              <IconButton name="angle-double-down" size="sm" tooltip="Last log" onClick={onLast} disabled={!onLast} />
+              <IconButton name="angle-double-down" size="sm" tooltip="Last log on this page" onClick={onLast} disabled={!onLast} />
             </div>
           )}
           {onToggleExpanded && (
@@ -512,24 +513,33 @@ export function LogDetailDrawer({
               onChange={(e) => setSearchAttr(e.currentTarget.value)}
               className={styles.attrSearch}
             />
-            <FieldTypeFilter counts={typeCounts} selected={typeFilter} onChange={setTypeFilter} />
+            <FieldTypeFilter
+              counts={typeCounts}
+              selected={typeFilter}
+              onChange={(t) => {
+                setTypeFilter(t);
+                setFieldsPage(0);
+              }}
+            />
             <label className={styles.selectedOnlyLabel}>
               <Switch value={selectedOnly} onChange={(e) => setSelectedOnly(e.currentTarget.checked)} />
               Selected only
             </label>
             <label className={styles.selectedOnlyLabel}>
-              <Switch value={hideNull} onChange={(e) => setHideNull(e.currentTarget.checked)} />
+              <Switch
+                value={hideNull}
+                onChange={(e) => {
+                  setHideNull(e.currentTarget.checked);
+                  setFieldsPage(0);
+                }}
+              />
               Hide null fields
             </label>
           </div>
 
           {/* Flat Field | Value table — no OTel category grouping. */}
           {(() => {
-            const matched = allRows
-              .filter((r) => filterMatch(r.key, r.value))
-              .filter((r) => !selectedOnly || isColumnSelected(r.sqlExpr))
-              .filter((r) => !hideNull || (r.value !== '' && r.value !== 'null'))
-              .filter((r) => typeFilter.size === 0 || typeFilter.has(r.type));
+            const matched = baseRows.filter((r) => typeFilter.size === 0 || typeFilter.has(r.type));
             // Pinned rows first (in pin order), then the rest in their usual order.
             const pinIndex = (r: { sqlExpr: string }) => pinnedFields.indexOf(r.sqlExpr);
             const visible = [

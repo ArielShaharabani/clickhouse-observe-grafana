@@ -1,7 +1,7 @@
 # Context snapshot — read this to restart
 
 Saved after every feature (and every review-fix round). A new session can resume from this file plus `PROGRESS.md` alone.
-Last saved: 2026-11-17, after #10 DISC-DOC-01 (PR 11).
+Last saved: 2026-11-17, after #10 DISC-DOC-01 (PR 11) review fixes.
 
 ## Goal
 Bring Kibana Discover + Lens style exploration to Grafana on ClickHouse by extending the **ClickHouse Observe** app plugin.
@@ -28,7 +28,7 @@ Bring Kibana Discover + Lens style exploration to Grafana on ClickHouse by exten
 | 7 | DISC-TABLE-01/02: cell keyboard navigation, Expand popover, display options (density, body lines) | 8 | `src/components/LogsTable.tsx`, `src/components/CellExpandPopover.tsx`, `src/components/GridDisplayOptions.tsx` |
 | 8 | DISC-SIDEBAR-01: field search, type filter with counts, Selected / Popular / Available groups | 9 | `src/components/FieldSidebar/FieldSidebar.tsx`, `FieldTypeFilter.tsx`, `src/state/fieldUsage.ts` |
 | 9 | DISC-CHART-01: right-click bucket actions (filter by time, filter selected series), range caption | 10 | `src/components/BucketActionsPopover.tsx`, `VolumeHistogram.tsx`, `LogsHistogramPanel.tsx` |
-| 10 | DISC-DOC-01: pinned fields, Hide null fields, type filter, first/last navigation, field-present action | 11 | `src/components/LogDetailDrawer.tsx` |
+| 10 | DISC-DOC-01: pinned fields, Hide null fields, type filter, first/last navigation, field-present action | 11 | `src/components/LogDetailDrawer.tsx`, `src/state/docPins.ts` |
 
 ## Key decisions (details in DECISIONS.md)
 - Frontend-only; queries via grafana-clickhouse-datasource (`src/data/runQuery.ts`). Plain React + @grafana/ui, no Scenes.

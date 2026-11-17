@@ -14,9 +14,9 @@ Versions track the plugin's release history. `Unreleased` collects commits not y
 
 ### Added
 
-- **Pin fields in the log detail panel.** Pinned fields stay at the top while you step through logs (per browser tab). Spec DISC-DOC-01.
+- **Pin fields in the log detail panel.** Pinned fields stay at the top while you step through logs (per browser tab and table). Spec DISC-DOC-01.
 - **"Hide null fields" toggle and a field type filter** in the log detail panel. Spec DISC-DOC-01.
-- **First / last log buttons** next to previous / next. Spec DISC-DOC-01.
+- **First / last log on this page buttons** next to previous / next. Spec DISC-DOC-01.
 - **"Filter to rows where X has any value"** on each detail-panel field. Spec DISC-DOC-01.
 
 ### Changed

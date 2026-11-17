@@ -35,9 +35,9 @@ test('first / last navigation and Hide null fields', async ({ page }) => {
   await openFirstDocument(page, logs);
   const label = page.getByText(/^\d+ of \d+$/);
   const total = (await label.textContent())!.split(' of ')[1];
-  await page.getByRole('button', { name: 'Last log' }).click();
+  await page.getByRole('button', { name: 'Last log on this page' }).click();
   await expect(label).toHaveText(`${total} of ${total}`);
-  await page.getByRole('button', { name: 'First log' }).click();
+  await page.getByRole('button', { name: 'First log on this page' }).click();
   await expect(label).toHaveText(`1 of ${total}`);
 
   // ScopeName is empty for every fixture row.
