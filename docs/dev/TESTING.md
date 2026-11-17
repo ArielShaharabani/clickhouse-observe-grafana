@@ -19,6 +19,7 @@ npx playwright test                                   # e2e + integration, needs
 
 ## Fixture (`tests/fixture.ts`)
 `default.spec_logs`, data view `spec-fixture`, window 2026-01-01..2026-01-08 UTC.
+`SeverityNumber` = OTel numbers (debug 5, info 9, warn 13, error 17). Latest-5,000 sample (popover): info 3,483 · warn 792 · debug 487 · error 238.
 Totals: 41,520 rows; info 28,265 · warn 6,080 · debug 3,984 · error 3,191; payments 9,264; payments errors 1,575 (incl. 1,200 incident rows on 2026-01-05 09:00–11:00).
 
 ## Integration matrix
@@ -30,7 +31,7 @@ Enable a case as soon as both sides exist. Status: `—` not yet possible · `to
 | IT-B | Pill disable / negate / edit / delete / pin re-query; pin survives navigation to Lens | Logs page ✅ (`tests/features/disc-filter-01.spec.ts`; edit → #19); Lens part pending #11 |
 | IT-C | Dirty query/time → Update → all panels and highlight refresh | Query part ✅ (`tests/features/disc-search-02.spec.ts`); time has no dirty state (D9) |
 | IT-D | Time writers (brush, filter-by-time, shift/zoom, Lens brush) → URL time, interval, Empty field grouping | — |
-| IT-E | Breakdown via popover icon and toolbar; carried into Lens | — |
+| IT-E | Breakdown via popover icon and toolbar; carried into Lens | Popover icon ✅ (`tests/features/disc-sidebar-02.spec.ts`); Lens part pending #15 |
 | IT-F | Column writers (sidebar, drawer, column menu, Explore in Discover) → grid + context view | — |
 | IT-G | Discover → Lens handoff (Visualize, Edit visualization, stats tab) | — |
 | IT-H | Lens → Discover (filters, time, bucket columns, consistent counts) | — |

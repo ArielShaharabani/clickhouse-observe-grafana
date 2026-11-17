@@ -1,13 +1,9 @@
 # Progress — read this first when resuming
 
-**Current item:** #6 DISC-SIDEBAR-02 field stats popover (not started)
-**Last completed step:** #5 SHARED-ACTION-01 merged in PR 6 (v0.15.0) incl. all 10 review fixes (shared field labels via `fieldLabelFor`, `isFilterableValue` in the registry, truncated/(empty) names, copy fallback + toast, histogram `breakdownTarget`, memoized rows, `ADD_FILTER` reducer action)
-**Next step:** branch `feat/disc-sidebar-02`; see notes below.
-
-## Notes for #6 DISC-SIDEBAR-02 (next feature)
-Popover gaps vs spec: numeric stats (min/max/median, 10-bucket distribution toggle), sample size 5,000 (today `sampleSize: 500` in `src/sql/kql/_values.ts:104`) with "Calculated from N sample records", add-as-breakdown icon, "No field data" state, Visualize button (stub until #15). New registry actions `visualize` and `breakdown` go in `src/actions/registry.ts`.
-
-**Open issues:** none
+**Current item:** #7 DISC-TABLE-01/02 results grid + cell actions (not started)
+**Last completed step:** #6 DISC-SIDEBAR-02 in PR 7 (v0.16.0): 5,000-row sample, numeric Top values/Distribution (`buildNumericStatsQuery`, `fetchNumericStats`), "Break down histogram by" registry action, "No field data" state
+**Next step:** branch `feat/disc-table-01`; verify the grid against DISC-TABLE-01/02 (docs/spec/10-discover.md): column sort/resize/reorder, density/row height, sample size, cell action bar (done via registry), Expand popover with full value + actions, keyboard navigation. Build the gaps.
+**Open issues:** none. Deferred popover items (spec DISC-SIDEBAR-02): date-field time distribution, text/geo "Examples" list, Visualize button (appears automatically when #15 passes `visualize` in the ActionHost).
 
 ## Environment notes
 - Local clone: `C:\Users\Ariel\clickhouse-observe-grafana-dev` (fork `ArielShaharabani/clickhouse-observe-grafana`, `upstream` = PoorTuna).
@@ -20,4 +16,4 @@ Popover gaps vs spec: numeric stats (min/max/median, 10-bucket distribution togg
 typecheck ✅ · lint ✅ (0 errors, 18 warnings) · test:ci ✅ 730 tests · build ✅ · e2e: original `appConfig.spec.ts` was stale scaffolding (replaced).
 
 ## Session log
-- 2026-11-17 — Forked, baseline recorded, test foundation merged (PR 1). SHARED-STATE done (PR 2). SHARED-AUTOCOMPLETE done (PR 3). DISC-SEARCH-02 done (PR 4). DISC-FILTER-01 done (PR 5). SHARED-ACTION-01 done (PR 6, review fixes included). Context snapshot file `CONTEXT.md` added — refreshed after every feature.
+- 2026-11-17 — Forked, baseline recorded, test foundation merged (PR 1). SHARED-STATE done (PR 2). SHARED-AUTOCOMPLETE done (PR 3). DISC-SEARCH-02 done (PR 4). DISC-FILTER-01 done (PR 5). SHARED-ACTION-01 done (PR 6, review fixes included). Context snapshot file `CONTEXT.md` added — refreshed after every feature. DISC-SIDEBAR-02 done (PR 7).

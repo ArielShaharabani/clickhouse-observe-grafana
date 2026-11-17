@@ -1,14 +1,22 @@
 import React, { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { css } from '@emotion/css';
 import { GrafanaTheme2, TimeRange } from '@grafana/data';
-import { Icon, useStyles2, useTheme2 } from '@grafana/ui';
+import { Icon, RadioButtonGroup, useStyles2, useTheme2 } from '@grafana/ui';
 import { FieldModel } from '../../sql/fieldModel';
 import { FIELD_TYPE_ICONS } from './fieldIcons';
 import { fieldTypeColor } from './fieldTypeColors';
 import { buildWhereConditions } from '../../sql/queryBuilder';
 import { buildFieldIndex } from '../../sql/fields';
-import { buildValuesCacheKey, fetchFieldValuesWithTotal, isValuesCacheEntryFresh, valuesCache } from '../../sql/kql/_values';
-import { copyToClipboard, valueActions } from '../../actions/registry';
+import {
+  buildValuesCacheKey,
+  fetchFieldValuesWithTotal,
+  fetchNumericStats,
+  isValuesCacheEntryFresh,
+  NumericStats,
+  valuesCache,
+} from '../../sql/kql/_values';
+import { copyToClipboard, fieldActions, valueActions } from '../../actions/registry';
+import { ActionIconButton } from '../../actions/ActionIconButton';
 import { FilterPill, LogsQueryState, SourceConfig } from '../../types';
 import { errMsg } from '../../errMsg';
 import { SourceConfigContext } from '../App/App';
@@ -31,8 +39,20 @@ function toValuesOpts(config: SourceConfig, queryState: LogsQueryState, timeRang
     timeRange,
     cacheKey: JSON.stringify([queryState.search, queryState.filters]),
     limit: 10,
+    sampleSize: STATS_SAMPLE_SIZE,
   };
 }
+
+/** Rows the popover's statistics are computed from (spec DISC-SIDEBAR-02: 5,000 sample records). */
+export const STATS_SAMPLE_SIZE = 5000;
+
+/** Field types a histogram breakdown makes sense for (single scalar values). */
+const BREAKDOWN_TYPES = new Set(['string', 'number', 'boolean']);
+
+type StatsView = 'top' | 'distribution';
+
+const formatNum = (n: number) =>
+  Number.isInteger(n) ? n.toLocaleString() : n.toLocaleString(undefined, { maximumFractionDigits: 2 });
 
 interface FieldStatsPopoverProps {
   field: FieldModel;
@@ -41,6 +61,8 @@ interface FieldStatsPopoverProps {
   onAddFilter: (f: FilterPill) => void;
   onAddColumn: () => void;
   isSelected: boolean;
+  /** Break the histogram down by this field; omitted -> no breakdown action. */
+  onSetBreakdown?: (field: FieldModel) => void;
 }
 
 export function FieldStatsPopover({
@@ -50,6 +72,7 @@ export function FieldStatsPopover({
   onAddFilter,
   onAddColumn,
   isSelected,
+  onSetBreakdown,
 }: FieldStatsPopoverProps) {
   const styles = useStyles2(getStyles);
   const theme = useTheme2();
@@ -123,6 +146,48 @@ export function FieldStatsPopover({
     };
   }, [load]);
 
+  // Numeric fields: Top values | Distribution (DISC-SIDEBAR-02). Distribution loads on demand.
+  const isNumeric = field.type === 'number';
+  const [view, setView] = useState<StatsView>('top');
+  const [numeric, setNumeric] = useState<NumericStats | null>(null);
+  const [numericError, setNumericError] = useState<string | null>(null);
+  useEffect(() => {
+    if (!isNumeric || view !== 'distribution' || !config.datasourceUid) {
+      return;
+    }
+    let cancelled = false;
+    const opts = toValuesOpts(config, queryState, timeRange, fieldIndex);
+    fetchNumericStats(config, field.sqlExpr, opts).then(
+      (s) => {
+        if (!cancelled) {
+          setNumeric(s);
+          setNumericError(null);
+        }
+      },
+      (e) => {
+        if (!cancelled) {
+          setNumericError(errMsg(e));
+        }
+      }
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [isNumeric, view, config, field.sqlExpr, queryState, timeRange, fieldIndex]);
+
+  const headerActions = useMemo(
+    () =>
+      fieldActions(
+        { field: field.sqlExpr },
+        {
+          copyText: copyToClipboard,
+          setBreakdown: onSetBreakdown && BREAKDOWN_TYPES.has(field.type) ? () => onSetBreakdown(field) : undefined,
+        },
+        ['breakdown', 'visualize']
+      ),
+    [field, onSetBreakdown]
+  );
+
   const typeIcon = FIELD_TYPE_ICONS[field.type] ?? 'question-circle';
 
   return (
@@ -138,6 +203,9 @@ export function FieldStatsPopover({
           />
           <span className={styles.fieldName}>{field.displayName}</span>
         </div>
+        {headerActions.map((a) => (
+          <ActionIconButton key={a.id} action={a} />
+        ))}
         <button
           className={`${styles.colBtn} ${isSelected ? styles.colBtnActive : ''}`}
           onClick={onAddColumn}
@@ -151,16 +219,32 @@ export function FieldStatsPopover({
       {/* Field type subheader */}
       <div className={styles.typeLabel}>{field.type}</div>
 
-      {/* Top values section */}
-      <div className={styles.sectionLabel}>Top values</div>
-
-      {loading && <div className={styles.loading}>Loading…</div>}
-      {error && <div className={styles.errorText}>{error}</div>}
-      {!loading && !error && values.length === 0 && (
-        <div className={styles.empty}>No values in time range</div>
+      {isNumeric ? (
+        <RadioButtonGroup<StatsView>
+          size="sm"
+          fullWidth
+          className={styles.viewToggle}
+          options={[
+            { label: 'Top values', value: 'top' },
+            { label: 'Distribution', value: 'distribution' },
+          ]}
+          value={view}
+          onChange={setView}
+        />
+      ) : (
+        <div className={styles.sectionLabel}>Top values</div>
       )}
 
-      {!loading &&
+      {view === 'distribution' && <NumericDistribution stats={numeric} error={numericError} styles={styles} />}
+
+      {view === 'top' && loading && <div className={styles.loading}>Loading…</div>}
+      {view === 'top' && error && <div className={styles.errorText}>{error}</div>}
+      {view === 'top' && !loading && !error && values.length === 0 && (
+        <div className={styles.empty}>No field data for the current search</div>
+      )}
+
+      {view === 'top' &&
+        !loading &&
         !error &&
         values.map((v) => (
           <div key={v.value} className={styles.row} title={`${v.count.toLocaleString()} records`}>
@@ -189,14 +273,69 @@ export function FieldStatsPopover({
         ))}
 
       {/* "Calculated from N records" caption */}
-      {!loading && !error && total > 0 && (
-        <div className={styles.caption}>Calculated from {total.toLocaleString()} records.</div>
+      {view === 'top' && !loading && !error && total > 0 && (
+        <div className={styles.caption}>Calculated from {total.toLocaleString()} sample records.</div>
       )}
     </div>
   );
 }
 
+/** 10-bucket distribution + min / median / max for a numeric field. */
+function NumericDistribution({
+  stats,
+  error,
+  styles,
+}: {
+  stats: NumericStats | null;
+  error: string | null;
+  styles: ReturnType<typeof getStyles>;
+}) {
+  if (error) {
+    return <div className={styles.errorText}>{error}</div>;
+  }
+  if (!stats) {
+    return <div className={styles.loading}>Loading…</div>;
+  }
+  if (stats.count === 0) {
+    return <div className={styles.empty}>No numeric values in the sample</div>;
+  }
+  const peak = Math.max(...stats.buckets.map((b) => b.count), 1);
+  return (
+    <div data-testid="numeric-distribution">
+      <div className={styles.summary}>
+        <span>min {formatNum(stats.min)}</span>
+        <span>median {formatNum(stats.median)}</span>
+        <span>max {formatNum(stats.max)}</span>
+      </div>
+      {stats.buckets.map((b, i) => (
+        <div
+          key={i}
+          className={styles.row}
+          title={`${formatNum(b.from)} – ${formatNum(b.to)}: ${b.count.toLocaleString()} records`}
+          aria-label={`${formatNum(b.from)} to ${formatNum(b.to)}: ${b.count} records`}
+        >
+          <div className={styles.barBg} style={{ width: `${b.count > 0 ? Math.max(2, (b.count / peak) * 100) : 0}%` }} />
+          <span className={styles.value}>{formatNum(b.from)}</span>
+          <span className={styles.pct}>{b.count.toLocaleString()}</span>
+        </div>
+      ))}
+      <div className={styles.caption}>Calculated from {stats.count.toLocaleString()} sample records.</div>
+    </div>
+  );
+}
+
 const getStyles = (theme: GrafanaTheme2) => ({
+  viewToggle: css`
+    margin: ${theme.spacing(1, 0, 0.5)};
+  `,
+  summary: css`
+    display: flex;
+    justify-content: space-between;
+    font-family: ${theme.typography.fontFamilyMonospace};
+    font-size: ${theme.typography.bodySmall.fontSize};
+    color: ${theme.colors.text.secondary};
+    margin: ${theme.spacing(0.5, 0)};
+  `,
   panel: css`
     width: 300px;
     padding: ${theme.spacing(1.5)};

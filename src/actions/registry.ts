@@ -17,6 +17,10 @@ import { FilterPill } from '../types';
 export interface ActionHost {
   addFilter?: (pill: FilterPill) => void;
   copyText: (text: string) => void;
+  /** Break the histogram down by a field (DISC-SIDEBAR-02 / DISC-CHART-02). */
+  setBreakdown?: (ctx: FieldContext) => void;
+  /** Open the field in the Visualize page (LENS hand-off, wired in #15). */
+  visualize?: (ctx: FieldContext) => void;
 }
 
 export interface ValueContext {
@@ -110,7 +114,7 @@ const VALUE_ACTIONS: Record<ValueActionId, ActionDef<ValueContext>> = {
   },
 };
 
-export type FieldActionId = 'exists' | 'notExists';
+export type FieldActionId = 'exists' | 'notExists' | 'breakdown' | 'visualize';
 
 const FIELD_ACTIONS: Record<FieldActionId, ActionDef<FieldContext>> = {
   exists: {
@@ -126,6 +130,20 @@ const FIELD_ACTIONS: Record<FieldActionId, ActionDef<FieldContext>> = {
     ariaLabel: (c) => `Filter to rows where ${label(c)} is missing`,
     isCompatible: canFilter,
     execute: (c, h) => h.addFilter?.(makeFilter(c.field, '', 'not_exists')),
+  },
+  breakdown: {
+    icon: 'graph-bar',
+    tooltip: 'Break down histogram by this field',
+    ariaLabel: (c) => `Break down histogram by ${label(c)}`,
+    isCompatible: (_c, h) => !!h.setBreakdown,
+    execute: (c, h) => h.setBreakdown?.(c),
+  },
+  visualize: {
+    icon: 'chart-line',
+    tooltip: 'Visualize',
+    ariaLabel: (c) => `Visualize ${label(c)}`,
+    isCompatible: (_c, h) => !!h.visualize,
+    execute: (c, h) => h.visualize?.(c),
   },
 };
 

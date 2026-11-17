@@ -18,6 +18,7 @@ interface FieldItemProps {
   timeRange: TimeRange;
   onToggleColumn: (field: FieldModel) => void;
   onAddFilter: (f: FilterPill) => void;
+  onSetBreakdown?: (field: FieldModel) => void;
 }
 
 export function FieldItem({
@@ -27,6 +28,7 @@ export function FieldItem({
   timeRange,
   onToggleColumn,
   onAddFilter,
+  onSetBreakdown,
 }: FieldItemProps) {
   const styles = useStyles2(getStyles);
   const theme = useTheme2();
@@ -154,6 +156,14 @@ export function FieldItem({
                     queryState={queryState}
                     timeRange={timeRange}
                     isSelected={false}
+                    onSetBreakdown={
+                      onSetBreakdown
+                        ? (f) => {
+                            onSetBreakdown(f);
+                            setPopoverOpen(false);
+                          }
+                        : undefined
+                    }
                     onAddFilter={(f) => {
                       onAddFilter(f);
                       setPopoverOpen(false);
@@ -171,6 +181,14 @@ export function FieldItem({
                   queryState={queryState}
                   timeRange={timeRange}
                   isSelected={isSelected}
+                  onSetBreakdown={
+                    onSetBreakdown
+                      ? (f) => {
+                          onSetBreakdown(f);
+                          setPopoverOpen(false);
+                        }
+                      : undefined
+                  }
                   onAddFilter={(f) => {
                     onAddFilter(f);
                     setPopoverOpen(false);

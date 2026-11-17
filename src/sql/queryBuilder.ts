@@ -742,6 +742,46 @@ export function buildFieldTopValuesQuery(
   );
 }
 
+export interface NumericStatsOpts {
+  table: string;
+  /** Pre-built WHERE conditions (from buildWhereConditions). */
+  conditions: string[];
+  sampleSize: number;
+}
+
+/**
+ * Numeric field statistics for the field stats popover (DISC-SIDEBAR-02): over the most recent
+ * `sampleSize` rows, min / median / max / count of numeric values plus a 10-bucket equal-width
+ * distribution — one row per non-empty bucket, summary columns repeated on every row.
+ */
+export function buildNumericStatsQuery(config: SourceConfig, sqlExpr: string, opts: NumericStatsOpts): string {
+  const tbl = tableRef(config, opts.table);
+  const tsCol = config.columns.timestamp;
+  const condClause = opts.conditions.length > 0 ? `  WHERE ${opts.conditions.join(' AND ')}` : null;
+  return withSettings(
+    [
+      `WITH sample AS (`,
+      `  SELECT toFloat64OrNull(toString(${sqlExpr})) AS v`,
+      `  FROM ${tbl}`,
+      condClause,
+      tsCol ? `  ORDER BY ${tsCol} DESC` : null,
+      `  LIMIT ${Math.max(1, Math.floor(opts.sampleSize))}`,
+      `),`,
+      `stats AS (`,
+      `  SELECT min(v) AS lo, max(v) AS hi, quantileExact(0.5)(v) AS med, count(v) AS n FROM sample WHERE v IS NOT NULL`,
+      `)`,
+      `SELECT lo, hi, med, n,`,
+      `  if(hi > lo, least(9, toUInt32(floor((v - lo) / (hi - lo) * 10))), 0) AS bucket,`,
+      `  count() AS cnt`,
+      `FROM sample CROSS JOIN stats`,
+      `WHERE v IS NOT NULL`,
+      `GROUP BY lo, hi, med, n, bucket`,
+      `ORDER BY bucket`,
+    ],
+    configSettingsFragments(config)
+  );
+}
+
 export function buildSurroundingDocsQuery(
   config: SourceConfig,
   rowTimestamp: string,

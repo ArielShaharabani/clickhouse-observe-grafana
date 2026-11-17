@@ -11,10 +11,14 @@
  */
 
 import { TimeRange } from '@grafana/data';
-import { buildFieldTopValuesQuery } from '../queryBuilder';
+import { buildFieldTopValuesQuery, buildNumericStatsQuery } from '../queryBuilder';
 import { runQueryRows } from '../../data/runQuery';
 import { coarseTimeBucket } from '../timeBucket';
 import { SourceConfig } from '../../types';
+
+
+/** Rows sampled for value lookups unless a caller asks for more (autocomplete stays light). */
+export const DEFAULT_SAMPLE_SIZE = 500;
 
 export interface FieldValue {
   value: string;
@@ -39,6 +43,8 @@ export interface LoadFieldValuesOpts {
   /** Caller-supplied hash of current filter state, so the cache key stays scoped per-page. */
   cacheKey: string;
   limit?: number;
+  /** Rows sampled (most recent first). Default 500 for autocomplete; the stats popover uses 5,000. */
+  sampleSize?: number;
 }
 
 // Module-level cache, keyed and shared the same way regardless of caller — FieldStatsPopover and
@@ -70,7 +76,7 @@ export function isValuesCacheEntryFresh(entry: CachedFieldValues): boolean {
 
 export function buildValuesCacheKey(uid: string, sqlExpr: string, timeRange: TimeRange, opts: LoadFieldValuesOpts): string {
   const bucket = coarseTimeBucket(timeRange);
-  return `${uid}:${sqlExpr}:${opts.table}:${bucket}:${opts.cacheKey}`;
+  return `${uid}:${sqlExpr}:${opts.table}:${bucket}:${opts.cacheKey}:${opts.sampleSize ?? DEFAULT_SAMPLE_SIZE}`;
 }
 
 /** Drops every cached value list for one datasource+table — used by FieldsContext's explicit
@@ -101,7 +107,7 @@ export async function fetchFieldValuesWithTotal(
     table: opts.table,
     conditions: opts.conditions,
     limit,
-    sampleSize: 500,
+    sampleSize: opts.sampleSize ?? DEFAULT_SAMPLE_SIZE,
   });
   const rows = await runQueryRows({ datasourceUid: config.datasourceUid, sql, timeRange: opts.timeRange, op: 'fieldValues' });
   const values: FieldValue[] = rows.map((r) => ({
@@ -164,4 +170,50 @@ export async function loadFieldValues(
   opts: LoadFieldValuesOpts
 ): Promise<FieldValue[]> {
   return (await loadFieldValuesWithTotal(config, sqlExpr, opts)).values;
+}
+
+export interface NumericBucket {
+  from: number;
+  to: number;
+  count: number;
+}
+
+export interface NumericStats {
+  min: number;
+  max: number;
+  median: number;
+  /** Sampled rows with a numeric value. */
+  count: number;
+  /** 10 equal-width buckets from min to max ([] when there is no numeric value). */
+  buckets: NumericBucket[];
+}
+
+/** Numeric stats + distribution for the field stats popover (DISC-SIDEBAR-02). Throws on failure. */
+export async function fetchNumericStats(
+  config: SourceConfig,
+  sqlExpr: string,
+  opts: LoadFieldValuesOpts
+): Promise<NumericStats> {
+  const sql = buildNumericStatsQuery(config, sqlExpr, {
+    table: opts.table,
+    conditions: opts.conditions,
+    sampleSize: opts.sampleSize ?? DEFAULT_SAMPLE_SIZE,
+  });
+  const rows = await runQueryRows({ datasourceUid: config.datasourceUid, sql, timeRange: opts.timeRange, op: 'fieldValues' });
+  if (rows.length === 0) {
+    return { min: 0, max: 0, median: 0, count: 0, buckets: [] };
+  }
+  const min = Number(rows[0]['lo']);
+  const max = Number(rows[0]['hi']);
+  const width = (max - min) / 10;
+  const counts = new Array<number>(10).fill(0);
+  for (const r of rows) {
+    const b = Math.min(9, Math.max(0, Number(r['bucket'])));
+    counts[b] += Number(r['cnt'] ?? 0);
+  }
+  const buckets =
+    max > min
+      ? counts.map((count, i) => ({ from: min + i * width, to: i === 9 ? max : min + (i + 1) * width, count }))
+      : [{ from: min, to: max, count: counts[0] }, ...counts.slice(1).map(() => ({ from: max, to: max, count: 0 }))];
+  return { min, max, median: Number(rows[0]['med']), count: Number(rows[0]['n']), buckets };
 }

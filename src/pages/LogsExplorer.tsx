@@ -1059,6 +1059,12 @@ export function LogsExplorer() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fetchVolume]);
 
+  // Field stats popover "Break down histogram by this field" (DISC-SIDEBAR-02 / DISC-CHART-02).
+  const onSetFieldBreakdown = useCallback((field: FieldModel) => {
+    setPendingBreakdownFieldId(undefined);
+    setBreakdown({ kind: 'field', field });
+  }, []);
+
   // Stable identity: memoized action rows (drawer, field list) don't rebuild on every render.
   const onAddFilter = useCallback((filter: FilterPill) => dispatch({ type: 'ADD_FILTER', pill: filter }), []);
 
@@ -1406,6 +1412,7 @@ export function LogsExplorer() {
                   onToggleColumn={onToggleColumn}
                   onAddFilter={onAddFilter}
                   onCollapse={() => setSidebarCollapsed(true)}
+                  onSetBreakdown={onSetFieldBreakdown}
                 />
               </div>
               <div {...splitterProps} className={cx(splitterProps.className, styles.splitterHandle)} />
