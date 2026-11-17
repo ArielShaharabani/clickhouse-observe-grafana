@@ -10,6 +10,15 @@ Versions track the plugin's release history. `Unreleased` collects commits not y
 
 ---
 
+## [0.19.0] — 2026-11-17
+
+### Added
+
+- **Right-click actions on histogram bars.** A pinned popover shows the bucket time, a checkbox per series with its count, "Filter by time" (zoom to the bucket) and "Filter N selected series" (one "is one of" filter for several series). The hover tooltip says "Right-click to show actions". Spec DISC-CHART-01.
+- **Histogram caption with the absolute time range** and the effective interval, e.g. "(interval: Auto - 3 hours)". Spec DISC-CHART-01.
+
+---
+
 ## [0.18.0] — 2026-11-17
 
 ### Added

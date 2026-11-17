@@ -17,7 +17,7 @@ Status values: `todo` · `in-progress` · `done` (with PR link) · `skipped` (wi
 | 6 | DISC-SIDEBAR-02 | Field stats popover | 5 | Verify | done | PR 7 |
 | 7 | DISC-TABLE-01/02 | Results grid + cell actions | 5 | Verify | done | PR 8 |
 | 8 | DISC-SIDEBAR-01 | Field list | 4 | Verify | done | PR 9 |
-| 9 | DISC-CHART-01 | Histogram + brush + series actions | 4 | Verify | todo | |
+| 9 | DISC-CHART-01 | Histogram + brush + series actions | 4 | Verify | done | PR 10 |
 | 10 | DISC-DOC-01 | Document flyout | 4 | Verify | todo | |
 | 11 | LENS-AUTO-01 / LENS-SUGG-01 | Lens page, auto chart, suggestions | 4 | Build | todo | |
 | 12 | LENS-TYPE-01 | One-menu chart switching | 4 | Build | todo | |

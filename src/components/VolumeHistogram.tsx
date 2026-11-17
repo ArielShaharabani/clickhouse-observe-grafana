@@ -4,6 +4,7 @@ import { css, cx } from '@emotion/css';
 import { dateTime, formattedValueToString, getValueFormat, GrafanaTheme2, TimeRange } from '@grafana/data';
 import { Button, Portal, Spinner, useStyles2 } from '@grafana/ui';
 import { FilterPill, VolumeDataPoint } from '../types';
+import { BucketActionsPopover } from './BucketActionsPopover';
 import {
   SEVERITY_COLORS,
   SEVERITY_ORDER,
@@ -147,6 +148,8 @@ export function VolumeHistogram({
   const [isDragging, setIsDragging] = useState(false);
   const selectionRef = useRef<SVGRectElement | null>(null);
   const [hovered, setHovered] = useState<HoveredBucket | null>(null);
+  // Right-click pinned tooltip (DISC-CHART-01): which bucket, and where.
+  const [pinned, setPinned] = useState<HoveredBucket | null>(null);
   // Measured after each render so the tooltip can be clamped/flipped away from the right edge —
   // its content-driven width (level names, counts) isn't known until it's actually painted.
   const tooltipRef = useRef<HTMLDivElement | null>(null);
@@ -554,8 +557,23 @@ export function VolumeHistogram({
           width="100%"
           height={svgHeight}
           className={`${styles.svg} ${onSelectRange ? styles.svgZoomable : ''}`}
-          onMouseDown={handleMouseDown}
+          onMouseDown={(e) => {
+            // Right button opens the bucket actions instead of starting a brush.
+            if (e.button === 0) {
+              handleMouseDown(e);
+            }
+          }}
           onMouseMove={handleMouseMove}
+          onContextMenu={(e) => {
+            if (bars.length === 0 || (!onSelectRange && !canFilterBreakdown)) {
+              return;
+            }
+            e.preventDefault();
+            const pct = getXPctFromClientX(e.clientX);
+            const index = Math.max(0, Math.min(bars.length - 1, Math.floor((pct / 100) * bars.length)));
+            setHovered(null);
+            setPinned({ index, clientX: e.clientX, clientY: e.clientY });
+          }}
           onMouseLeave={() => {
             // Only clear hover state here — an active drag is tracked by the window-level
             // listeners from handleMouseDown regardless of whether the pointer is still over the
@@ -759,7 +777,30 @@ export function VolumeHistogram({
                   </span>
                 </div>
               ))}
+          {(onSelectRange || canFilterBreakdown) && <div className={styles.tooltipHint}>Right-click to show actions</div>}
         </div>
+      )}
+
+      {pinned && bars[pinned.index] && (
+        <BucketActionsPopover
+          time={bars[pinned.index].time}
+          bucketMs={bucketMs}
+          clientX={pinned.clientX}
+          clientY={pinned.clientY}
+          // Filterable series: those present in the bucket; the synthetic "other" rest-bucket of a
+          // field breakdown isn't a real value.
+          series={
+            canFilterBreakdown && colorMode !== 'single'
+              ? visibleLevels
+                  .filter((l) => (bars[pinned.index].levels[l] ?? 0) > 0 && !(colorMode === 'breakdown' && l === 'other'))
+                  .map((l) => ({ name: l, count: bars[pinned.index].levels[l], color: colorMap[l] ?? OTHER_COLOR }))
+              : []
+          }
+          field={breakdownTarget?.field}
+          onAddFilter={onAddFilter}
+          onSelectRange={onSelectRange}
+          onClose={() => setPinned(null)}
+        />
       )}
 
       {/* Breakdown-segment click popover — shown instead of instantly applying a filter, so the
@@ -1001,6 +1042,11 @@ const getStyles = (theme: GrafanaTheme2) => ({
     padding: ${theme.spacing(1)};
     min-width: 160px;
     font-size: ${theme.typography.bodySmall.fontSize};
+  `,
+  tooltipHint: css`
+    margin-top: ${theme.spacing(0.5)};
+    font-size: ${theme.typography.bodySmall.fontSize};
+    color: ${theme.colors.text.secondary};
   `,
   tooltipTime: css`
     font-weight: ${theme.typography.fontWeightMedium};
