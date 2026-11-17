@@ -25,8 +25,6 @@ import { startAction } from '../diag/tracer';
 import { SpanHandle } from '../diag/types';
 import { buildLogsQuery, buildLogDetailQuery, buildVolumeQuery, buildWhereConditions, resolveVolumeBreakdown, logRowKey, CORE_ALIAS } from '../sql/queryBuilder';
 import { buildFieldIndex } from '../sql/fields';
-import { loadFieldValues } from '../sql/kql/_values';
-import { loadColumnKeys } from '../sql/keys';
 import { addFilterPill, makeFilter } from '../sql/filters';
 import { AddFilterPopover } from '../components/AddFilter/AddFilterPopover';
 import { SourceConfigContext, DataViewContext } from '../components/App/App';
@@ -46,6 +44,7 @@ import {
 } from '../types';
 import { BreakdownUrl, decodeLogsState, encodeLogsState } from '../data/urlState';
 import { carryPinnedToView, loadPinnedFilters, mergePinnedFilters } from '../state/sharedSearch';
+import { useAutocompleteSources } from '../autocomplete/service';
 import { errMsg } from '../errMsg';
 import { shiftTimeRange, zoomOutTimeRange } from '../utils/timeRangeNav';
 import { useAvailableHeight } from '../utils/useAvailableHeight';
@@ -1060,50 +1059,14 @@ export function LogsExplorer() {
     });
   };
 
-  const logsLoadValues = useCallback(
-    (sqlExpr: string) => {
-      // queryState.search is normally already-validated (SearchBar only commits a query that
-      // parsed — see SearchBar.commit()), but a saved search or URL-restored query hasn't been
-      // re-validated yet. buildWhereConditions now throws KqlSyntaxError instead of silently
-      // degrading (see buildSearchClause), so this best-effort value lookup drops the search term
-      // rather than rejecting — a stale value list is harmless; an unhandled promise rejection on
-      // every keystroke of the value dropdown is not.
-      let conditions: string[];
-      try {
-        conditions = buildWhereConditions(config, queryState, fieldIndex);
-      } catch {
-        conditions = buildWhereConditions(config, { ...queryState, search: '' }, fieldIndex);
-      }
-      return loadFieldValues(config, sqlExpr, {
-        table: config.logsTable,
-        conditions,
-        timeRange,
-        cacheKey: JSON.stringify([queryState.search, queryState.filters]),
-      });
-    },
-    [config, queryState, timeRange, fieldIndex]
-  );
-
-  // Search bar's Map-key dot-drilldown (SearchBar.tsx) — same filter-scoped opts shape and same
-  // shared sql/keys.ts cache as the field sidebar's FieldKeysPopover, so browsing a column from
-  // either surface warms the other instead of firing a second query.
-  const logsLoadMapKeys = useCallback(
-    (mapColumn: string) => {
-      let conditions: string[];
-      try {
-        conditions = buildWhereConditions(config, queryState, fieldIndex);
-      } catch {
-        conditions = buildWhereConditions(config, { ...queryState, search: '' }, fieldIndex);
-      }
-      return loadColumnKeys(config, mapColumn, {
-        table: config.logsTable,
-        conditions,
-        timeRange,
-        cacheKey: JSON.stringify([queryState.search, queryState.filters]),
-      });
-    },
-    [config, queryState, timeRange, fieldIndex]
-  );
+  // Value / Map-key suggestions for the KQL bar and filter builder, scoped to the current time
+  // range, search and filters (shared with every other input — SHARED-AUTOCOMPLETE-01).
+  const { loadValues: logsLoadValues, loadMapKeys: logsLoadMapKeys } = useAutocompleteSources({
+    config,
+    query: queryState,
+    timeRange,
+    fieldIndex,
+  });
 
   const onToggleColumn = (col: SelectedColumn) => {
     if (effectiveColumns.some((c) => c.id === col.id)) {

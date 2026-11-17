@@ -10,6 +10,14 @@ Versions track the plugin's release history. `Unreleased` collects commits not y
 
 ---
 
+## [0.12.0] — 2026-11-17
+
+### Added
+
+- **Shared autocomplete service (`src/autocomplete/service.ts`).** Value and Map-key suggestions for every input now come from one place, scoped to the current time range, search and filters; `rankFields` provides context-filtered field suggestions (prefix matches first, type kept for the icon) for the upcoming Visualize field pickers. The Logs page's two duplicated lookup callbacks now use it. Spec SHARED-AUTOCOMPLETE-01.
+
+---
+
 ## [0.11.0] — 2026-11-17
 
 ### Added

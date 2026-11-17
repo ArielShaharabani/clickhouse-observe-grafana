@@ -38,3 +38,4 @@ Enable a case as soon as both sides exist. Status: `—` not yet possible · `to
 | IT-J | Data view switch (columns pruned, filter warnings, fields reload) | — |
 | IT-K | URL reload restores state; Lens unsaved state survives refresh | Logs page ✅ (`tests/features/shared-state.spec.ts`); Lens part pending #11 |
 | IT-M | Same actions everywhere via the action registry | — |
+| IT-N | Autocomplete scoped by filters/time (KQL bar today; filter builder, Lens pickers later) | KQL bar ✅ (`tests/features/shared-autocomplete.spec.ts`) |
