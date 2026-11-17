@@ -1,6 +1,6 @@
 import React from 'react';
 import { fireEvent, render, screen } from '@testing-library/react';
-import { BucketActionsPopover, seriesFilter } from '../BucketActionsPopover';
+import { BucketActionsPopover, bucketEnd, seriesFilter } from '../BucketActionsPopover';
 import { formatRangeCaption } from '../LogsHistogramPanel';
 import { dateTime } from '@grafana/data';
 
@@ -46,5 +46,24 @@ describe('DISC-CHART-01 right-click bucket actions', () => {
     const from = dateTime(Date.UTC(2026, 0, 1));
     const to = dateTime(Date.UTC(2026, 0, 8));
     expect(formatRangeCaption({ from, to, raw: { from, to } })).toMatch(/^\w{3} \d{1,2}, 2026 @ \d\d:\d\d:\d\d\.000 - \w{3} \d{1,2}, 2026 @ \d\d:\d\d:\d\d\.000$/);
+  });
+
+  it('month and year buckets end at the next calendar boundary', () => {
+    const jan = Date.UTC(2026, 0, 1);
+    expect(bucketEnd(jan, 30 * 86_400_000)).toBe(Date.UTC(2026, 1, 1));
+    expect(bucketEnd(Date.UTC(2026, 1, 1), 30 * 86_400_000)).toBe(Date.UTC(2026, 2, 1));
+    expect(bucketEnd(Date.UTC(2028, 0, 1), 365 * 86_400_000)).toBe(Date.UTC(2029, 0, 1));
+    expect(bucketEnd(jan, 3_600_000)).toBe(jan + 3_600_000);
+  });
+
+  it('counts only ticked series still in the bucket', () => {
+    const onAddFilter = jest.fn();
+    const props = { time: T0, bucketMs: 1, clientX: 0, clientY: 0, field: 'SeverityText', onAddFilter, onClose: jest.fn() };
+    const view = render(<BucketActionsPopover {...props} series={series} />);
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Select series error' }));
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Select series info' }));
+    view.rerender(<BucketActionsPopover {...props} series={[series[1]]} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Filter 1 selected series' }));
+    expect(onAddFilter).toHaveBeenCalledWith(expect.objectContaining({ op: '=', value: 'info' }));
   });
 });

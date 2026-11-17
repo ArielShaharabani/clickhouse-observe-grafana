@@ -9,7 +9,7 @@ test('caption shows the absolute range and the auto interval', async ({ page }) 
   const logs = new LogsPage(page);
   await logs.open();
   await logs.expectRowCount(FIXTURE.counts.total);
-  await expect(page.getByText(/2026 @ \d\d:\d\d:\d\d\.\d{3} - .*2026 @ .*\(interval: Auto - /)).toBeVisible();
+  await expect(page.getByText(/2026 @ \d\d:\d\d:\d\d\.\d{3} - .*2026 @ .*\(interval: Auto - (?!Auto)/)).toBeVisible();
 });
 
 test('right-click a bucket: filter the selected series (severity breakdown → one_of pill)', async ({ page }) => {

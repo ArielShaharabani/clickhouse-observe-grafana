@@ -1,6 +1,6 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { css } from '@emotion/css';
-import { dateTime, GrafanaTheme2 } from '@grafana/data';
+import { dateTime, GrafanaTheme2, toUtc } from '@grafana/data';
 import { Button, Checkbox, Portal, useStyles2 } from '@grafana/ui';
 import { makeFilter } from '../sql/filters';
 import { FilterPill } from '../types';
@@ -26,6 +26,23 @@ interface Props {
   onClose: () => void;
 }
 
+const DAY_MS = 86_400_000;
+
+/**
+ * End of a bucket. Month and year buckets are calendar units (ClickHouse toStartOfMonth /
+ * toStartOfYear, UTC), whose length varies, so they end at the next calendar boundary rather than
+ * after the nominal `bucketMs`.
+ */
+export function bucketEnd(start: number, bucketMs: number): number {
+  if (bucketMs >= 365 * DAY_MS) {
+    return toUtc(start).add(1, 'year').valueOf();
+  }
+  if (bucketMs >= 28 * DAY_MS) {
+    return toUtc(start).add(1, 'month').valueOf();
+  }
+  return start + bucketMs;
+}
+
 /** The filter for a set of ticked series: `field = v` for one, `field is one of [...]` for more. */
 export function seriesFilter(field: string, values: string[]): FilterPill {
   return values.length === 1 ? makeFilter(field, values[0], '=') : makeFilter(field, '', 'one_of', { values });
@@ -39,9 +56,22 @@ export function BucketActionsPopover({ time, bucketMs, series, clientX, clientY,
   const styles = useStyles2(getStyles);
   const ref = useRef<HTMLDivElement>(null);
   const [checked, setChecked] = useState<Set<string>>(() => new Set());
+  const [pos, setPos] = useState({ left: clientX, top: clientY });
   useEffect(() => {
     ref.current?.focus();
   }, []);
+  // Keep the whole popover on screen (it's position: fixed, so nothing can scroll to it).
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) {
+      return;
+    }
+    const { width, height } = el.getBoundingClientRect();
+    setPos({
+      left: Math.max(8, Math.min(clientX, window.innerWidth - width - 8)),
+      top: Math.max(8, Math.min(clientY, window.innerHeight - height - 8)),
+    });
+  }, [clientX, clientY, series.length]);
   const canFilterSeries = !!field && !!onAddFilter && series.length > 0;
   const toggle = (name: string) =>
     setChecked((c) => {
@@ -53,7 +83,9 @@ export function BucketActionsPopover({ time, bucketMs, series, clientX, clientY,
       }
       return next;
     });
-  const n = checked.size;
+  // Only ticked series still present in the bucket count (a refresh can drop one).
+  const selected = series.filter((s) => checked.has(s.name));
+  const n = selected.length;
   return (
     <Portal>
       <div className={styles.backdrop} onMouseDown={onClose} onContextMenu={(e) => e.preventDefault()} />
@@ -63,7 +95,7 @@ export function BucketActionsPopover({ time, bucketMs, series, clientX, clientY,
         aria-label="Bucket actions"
         tabIndex={-1}
         className={styles.popover}
-        style={{ left: Math.min(clientX, window.innerWidth - 280), top: clientY }}
+        style={pos}
         onKeyDown={(e) => {
           if (e.key === 'Escape') {
             e.preventDefault();
@@ -88,7 +120,7 @@ export function BucketActionsPopover({ time, bucketMs, series, clientX, clientY,
               variant="secondary"
               icon="clock-nine"
               onClick={() => {
-                onSelectRange(time, time + bucketMs);
+                onSelectRange(time, bucketEnd(time, bucketMs));
                 onClose();
               }}
             >
@@ -102,7 +134,7 @@ export function BucketActionsPopover({ time, bucketMs, series, clientX, clientY,
               icon="filter"
               disabled={n === 0}
               onClick={() => {
-                onAddFilter!(seriesFilter(field!, series.filter((s) => checked.has(s.name)).map((s) => s.name)));
+                onAddFilter!(seriesFilter(field!, selected.map((s) => s.name)));
                 onClose();
               }}
             >

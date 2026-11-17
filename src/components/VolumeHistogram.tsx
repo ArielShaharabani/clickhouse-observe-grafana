@@ -149,7 +149,8 @@ export function VolumeHistogram({
   const selectionRef = useRef<SVGRectElement | null>(null);
   const [hovered, setHovered] = useState<HoveredBucket | null>(null);
   // Right-click pinned tooltip (DISC-CHART-01): which bucket, and where.
-  const [pinned, setPinned] = useState<HoveredBucket | null>(null);
+  // Keyed by the bucket's start time, so a data refresh never retargets it to another bucket.
+  const [pinned, setPinned] = useState<{ time: number; clientX: number; clientY: number } | null>(null);
   // Measured after each render so the tooltip can be clamped/flipped away from the right edge —
   // its content-driven width (level names, counts) isn't known until it's actually painted.
   const tooltipRef = useRef<HTMLDivElement | null>(null);
@@ -253,6 +254,19 @@ export function VolumeHistogram({
   }, [data, colorMode]);
 
   const visibleLevels = useMemo(() => allLevels.filter((l) => !hiddenLevels.has(l)), [allLevels, hiddenLevels]);
+
+  // The right-clicked bucket (looked up by time) and its filterable series. The synthetic "other"
+  // rest-series of a field breakdown isn't a real value, so it's never offered.
+  const pinnedBar = useMemo(() => (pinned ? bars.find((b) => b.time === pinned.time) ?? null : null), [pinned, bars]);
+  const pinnedSeries = useMemo(
+    () =>
+      pinnedBar && canFilterBreakdown && colorMode !== 'single'
+        ? visibleLevels
+            .filter((l) => (pinnedBar.levels[l] ?? 0) > 0 && !(colorMode === 'breakdown' && l === 'other'))
+            .map((l) => ({ name: l, count: pinnedBar.levels[l], color: colorMap[l] ?? OTHER_COLOR }))
+        : [],
+    [pinnedBar, canFilterBreakdown, colorMode, visibleLevels, colorMap]
+  );
 
   // Re-derive the stacked max against only the currently-visible series, so isolating/hiding a
   // series rescales the chart to the remaining data instead of leaving dead headroom.
@@ -426,8 +440,14 @@ export function VolumeHistogram({
     }
   }
 
+  /** Bar under an x position (percent of the chart width), clamped to the bars. */
+  function barIndexAtPct(pct: number): number {
+    return Math.max(0, Math.min(bars.length - 1, Math.floor((pct / 100) * bars.length)));
+  }
+
   const handleMouseDown = (e: React.MouseEvent<SVGSVGElement>) => {
-    if (!onSelectRange) {
+    // Ctrl+click is a right-click on macOS (it fires contextmenu too): never start a brush.
+    if (!onSelectRange || e.button !== 0 || e.ctrlKey) {
       return;
     }
     dragStart.current = getSvgXPct(e);
@@ -458,7 +478,7 @@ export function VolumeHistogram({
     const pct = getSvgXPct(e);
 
     if (bars.length > 0) {
-      const idx = Math.max(0, Math.min(bars.length - 1, Math.floor((pct / 100) * bars.length)));
+      const idx = barIndexAtPct(pct);
       setHovered((prev) => {
         if (prev?.index === idx && prev.clientX === e.clientX && prev.clientY === e.clientY) {
           return prev;
@@ -511,7 +531,7 @@ export function VolumeHistogram({
     if (x2 - x1 < 0.5) {
       const t = xPctToTime(end);
       if ((colorMode === 'breakdown' || colorMode === 'severity') && canFilterBreakdown) {
-        const idx = Math.max(0, Math.min(bars.length - 1, Math.floor((end / 100) * bars.length)));
+        const idx = barIndexAtPct(end);
         const level = bars[idx] ? pickLevelAtY(bars[idx], clientY) : null;
         if (level) {
           setHovered(null);
@@ -557,22 +577,20 @@ export function VolumeHistogram({
           width="100%"
           height={svgHeight}
           className={`${styles.svg} ${onSelectRange ? styles.svgZoomable : ''}`}
-          onMouseDown={(e) => {
-            // Right button opens the bucket actions instead of starting a brush.
-            if (e.button === 0) {
-              handleMouseDown(e);
-            }
-          }}
+          onMouseDown={handleMouseDown}
           onMouseMove={handleMouseMove}
           onContextMenu={(e) => {
             if (bars.length === 0 || (!onSelectRange && !canFilterBreakdown)) {
               return;
             }
             e.preventDefault();
-            const pct = getXPctFromClientX(e.clientX);
-            const index = Math.max(0, Math.min(bars.length - 1, Math.floor((pct / 100) * bars.length)));
+            // Cancel any brush a platform started for the same gesture.
+            dragStart.current = null;
+            setIsDragging(false);
+            selectionRef.current?.setAttribute('display', 'none');
+            const bar = bars[barIndexAtPct(getXPctFromClientX(e.clientX))];
             setHovered(null);
-            setPinned({ index, clientX: e.clientX, clientY: e.clientY });
+            setPinned({ time: bar.time, clientX: e.clientX, clientY: e.clientY });
           }}
           onMouseLeave={() => {
             // Only clear hover state here — an active drag is tracked by the window-level
@@ -781,21 +799,13 @@ export function VolumeHistogram({
         </div>
       )}
 
-      {pinned && bars[pinned.index] && (
+      {pinned && pinnedBar && (
         <BucketActionsPopover
-          time={bars[pinned.index].time}
+          time={pinnedBar.time}
           bucketMs={bucketMs}
           clientX={pinned.clientX}
           clientY={pinned.clientY}
-          // Filterable series: those present in the bucket; the synthetic "other" rest-bucket of a
-          // field breakdown isn't a real value.
-          series={
-            canFilterBreakdown && colorMode !== 'single'
-              ? visibleLevels
-                  .filter((l) => (bars[pinned.index].levels[l] ?? 0) > 0 && !(colorMode === 'breakdown' && l === 'other'))
-                  .map((l) => ({ name: l, count: bars[pinned.index].levels[l], color: colorMap[l] ?? OTHER_COLOR }))
-              : []
-          }
+          series={pinnedSeries}
           field={breakdownTarget?.field}
           onAddFilter={onAddFilter}
           onSelectRange={onSelectRange}

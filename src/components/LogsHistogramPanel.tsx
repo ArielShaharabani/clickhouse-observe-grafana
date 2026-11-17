@@ -49,7 +49,6 @@ function colorModeFor(breakdown: BreakdownSel): HistogramColorMode {
   return 'single';
 }
 
-
 const CAPTION_FORMAT = 'MMM D, YYYY @ HH:mm:ss.SSS';
 
 /** "Jan 1, 2026 @ 00:00:00.000 - Jan 8, 2026 @ 00:00:00.000" (DISC-CHART-01 caption). */
@@ -109,8 +108,7 @@ export function LogsHistogramPanel({
               bucketMs={resolvedInterval.intervalMs}
             />
             <span className={styles.histogramMeta}>
-              {totalEvents.toLocaleString()} rows (count) &middot; {formatRangeCaption(timeRange)} (interval:{' '}
-              {intervalMode === 'auto' ? `Auto - ${resolvedInterval.label}` : resolvedInterval.label})
+              {totalEvents.toLocaleString()} rows (count) &middot; {formatRangeCaption(timeRange)} (interval: {resolvedInterval.label})
             </span>
           </>
         ) : (
