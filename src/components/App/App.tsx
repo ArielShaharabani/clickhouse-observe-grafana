@@ -3,6 +3,7 @@ import { startAutoEnrichment } from '../../diag/autoEnrich';
 import { AppRootProps, getDefaultTimeRange } from '@grafana/data';
 import { LoadingPlaceholder } from '@grafana/ui';
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
+import { prefixRoute } from '../../utils/utils.routing';
 import { useFieldDiscovery } from '../FieldsContext';
 import {
   AiProviderConfig,
@@ -251,7 +252,7 @@ function AppRoutes() {
   return (
     <Routes>
       <Route path="logs" element={<LogsExplorer />} />
-      <Route path="*" element={<Navigate to={{ pathname: 'logs', search: location.search }} replace />} />
+      <Route path="*" element={<Navigate to={{ pathname: prefixRoute('logs'), search: location.search }} replace />} />
     </Routes>
   );
 }
