@@ -10,7 +10,7 @@ test('field prefix suggests matching fields with their data type', async ({ page
   await logs.open();
   await logs.searchInput.click();
   await logs.searchInput.pressSequentially('Servi', { delay: 40 });
-  const options = page.getByRole('listbox').getByRole('option');
+  const options = logs.searchBar.getByRole('listbox').getByRole('option');
   await expect(options.filter({ hasText: 'ServiceName' }).first()).toBeVisible();
   // Kind badge ("field") and the field's data type ("string", ServiceName is LowCardinality(String)).
   await expect(options.filter({ hasText: 'ServiceName' }).first()).toContainText('field');
@@ -25,7 +25,7 @@ test('value suggestions are scoped by the active filters', async ({ page }) => {
   await logs.expectRowCount(1200);
   await logs.searchInput.click();
   await logs.searchInput.pressSequentially('ServiceName : ', { delay: 40 });
-  const values = page.getByRole('listbox').getByRole('option');
+  const values = logs.searchBar.getByRole('listbox').getByRole('option');
   await expect(values.filter({ hasText: 'payments' }).first()).toBeVisible();
   await expect(values.filter({ hasText: 'checkout' })).toHaveCount(0);
   await expect(values.filter({ hasText: 'frontend' })).toHaveCount(0);

@@ -19,8 +19,18 @@ export class LogsPage {
     await expect(this.searchInput).toBeVisible();
   }
 
+  /** The KQL search bar (input, suggestions, search/Update button). */
+  get searchBar() {
+    return this.page.getByTestId('kql-search-bar');
+  }
+
   get searchInput() {
-    return this.page.getByRole('textbox').first();
+    return this.searchBar.getByRole('textbox');
+  }
+
+  /** The results grid. */
+  get grid() {
+    return this.page.getByRole('grid');
   }
 
   /** The "N rows (count)" summary under the histogram. */

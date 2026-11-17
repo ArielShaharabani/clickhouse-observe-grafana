@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from 'react';
+import { splitHighlights } from '../sql/kql/highlight';
 import { css, cx } from '@emotion/css';
 import { GrafanaTheme2, DateTime, dateTimeFormat, toUtc } from '@grafana/data';
 import { Icon, IconButton, LoadingPlaceholder, EmptyState, useStyles2 } from '@grafana/ui';
@@ -35,6 +36,8 @@ interface LogsTableProps {
    *  when the drop lands outside any column (e.g. the empty-state area), which appends. Omit the
    *  prop entirely to disable accepting field drops. */
   onDropField?: (fieldId: string, targetId?: string) => void;
+  /** Matcher for a column's matched query/filter terms (DISC-SEARCH-02); null = none. */
+  highlighterFor?: (col: SelectedColumn) => RegExp | null;
 }
 
 /** Shared with LogDetailDrawer's header summary so the row and detail view agree on color. */
@@ -72,23 +75,43 @@ function cellTextValue(raw: unknown): string {
   return raw !== null && typeof raw === 'object' ? JSON.stringify(raw) : String(raw ?? '');
 }
 
-function renderCell(col: SelectedColumn, row: LogRow): React.ReactNode {
+/** Text with matched query/filter terms wrapped in <mark> (DISC-SEARCH-02). Matching runs on the
+ *  stored text; `display` only changes how each run is shown (e.g. upper-cased levels). */
+function highlighted(
+  text: string,
+  matcher: RegExp | null | undefined,
+  markClass: string,
+  display: (s: string) => string = (s) => s
+): React.ReactNode {
+  if (!matcher) {
+    return display(text);
+  }
+  return splitHighlights(text, matcher).map((run, i) =>
+    run.match ? (
+      <mark key={i} className={markClass} data-testid="match-highlight">
+        {display(run.text)}
+      </mark>
+    ) : (
+      display(run.text)
+    )
+  );
+}
+
+const upper = (s: string) => s.toUpperCase();
+
+function renderCell(col: SelectedColumn, row: LogRow, matcher: RegExp | null | undefined, markClass: string): React.ReactNode {
   const raw = row[col.key];
   if (col.type === 'time') {
     return String(formatTimestamp(raw));
   }
   if (col.type === 'level') {
     const s = String(raw || '');
-    return (
-      <span style={{ color: severityColor(s) }}>
-        {s.toUpperCase() || '—'}
-      </span>
-    );
+    return <span style={{ color: severityColor(s) }}>{s ? highlighted(s, matcher, markClass, upper) : '—'}</span>;
   }
   if (raw === null || raw === undefined) {
     return '—';
   }
-  return cellTextValue(raw);
+  return highlighted(cellTextValue(raw), matcher, markClass);
 }
 
 export function LogsTable({
@@ -107,9 +130,15 @@ export function LogsTable({
   onToggleCompare,
   onAddFilter,
   onDropField,
+  highlighterFor,
 }: LogsTableProps) {
   const showCompare = compareSelection !== undefined && onToggleCompare !== undefined;
   const styles = useStyles2(getStyles);
+  // One compiled matcher per column, not per cell per render (the grid re-renders on hover).
+  const matchers = useMemo(
+    () => new Map(columns.map((c) => [c.id, highlighterFor ? highlighterFor(c) : null])),
+    [columns, highlighterFor]
+  );
   // Roving keyboard focus, independent of `selectedRow` (which opens the detail panel).
   // Arrow keys move this; Enter opens the row under it.
   const [focusIndex, setFocusIndex] = useState(-1);
@@ -423,7 +452,7 @@ export function LogsTable({
                             col.type === 'text' && wrapLines && styles.wrapped
                           )}
                         >
-                          {renderCell(col, row)}
+                          {renderCell(col, row, matchers.get(col.id), styles.matchHighlight)}
                         </span>
                         {hoveredCell?.ri === i && hoveredCell.ci === col.id && (
                           <div className={styles.cellToolbar} style={{ opacity: 1, pointerEvents: 'auto' }}>
@@ -478,6 +507,13 @@ export function LogsTable({
 }
 
 const getStyles = (theme: GrafanaTheme2) => ({
+  matchHighlight: css({
+    background: theme.colors.warning.transparent,
+    color: 'inherit',
+    padding: 0,
+    borderRadius: theme.shape.radius.default,
+    boxShadow: `0 0 0 1px ${theme.colors.warning.border}`,
+  }),
   tableWrapper: css`
     overflow-x: auto;
     overflow-y: auto;

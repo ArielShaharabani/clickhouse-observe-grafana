@@ -10,6 +10,15 @@ Versions track the plugin's release history. `Unreleased` collects commits not y
 
 ---
 
+## [0.13.0] — 2026-11-17
+
+### Added
+
+- **Matched terms are highlighted in result cells.** Terms from the committed KQL query and the enabled positive filters are marked in the grid (bare terms in the message column, `field:value` terms in that field's column; negated, exists and range terms are never marked), so it's visible why a row matched. Spec DISC-SEARCH-02.
+- **"Update" cue for an edited query.** While the text in the KQL bar differs from the query the results reflect, the search icon becomes a labelled "Update" button. Spec DISC-SEARCH-02.
+
+---
+
 ## [0.12.0] — 2026-11-17
 
 ### Added

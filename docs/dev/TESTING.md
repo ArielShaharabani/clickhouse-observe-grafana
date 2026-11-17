@@ -28,7 +28,7 @@ Enable a case as soon as both sides exist. Status: `—` not yet possible · `to
 | --- | --- | --- |
 | IT-A | Filter producers (popover ±, exists, cell actions, drawer, legend, histogram series, patterns, stats tab, Lens click/chooser) → filter store → consumers (count, histogram, grid, popover, patterns, stats tab) refresh | — |
 | IT-B | Pill disable / negate / edit / delete / pin re-query; pin survives navigation to Lens | — |
-| IT-C | Dirty query/time → Update → all panels and highlight refresh | — |
+| IT-C | Dirty query/time → Update → all panels and highlight refresh | Query part ✅ (`tests/features/disc-search-02.spec.ts`); time has no dirty state (D9) |
 | IT-D | Time writers (brush, filter-by-time, shift/zoom, Lens brush) → URL time, interval, Empty field grouping | — |
 | IT-E | Breakdown via popover icon and toolbar; carried into Lens | — |
 | IT-F | Column writers (sidebar, drawer, column menu, Explore in Discover) → grid + context view | — |
