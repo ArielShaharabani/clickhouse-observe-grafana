@@ -10,6 +10,20 @@ Versions track the plugin's release history. `Unreleased` collects commits not y
 
 ---
 
+## [0.10.1] — 2026-11-17
+
+### Added
+
+- **Deterministic test fixture, provisioned dev datasource and data views.** `scripts/clickhouse-init/04_spec_fixture.sql` creates `default.spec_logs` (41,520 rows over a fixed 2026-01-01..08 UTC window, no TTL, with a known payments incident), and `provisioning/` now provisions the ClickHouse datasource plus two shared data views. The previous seed data was relative to container start and aged out, so e2e tests could not assert exact counts.
+- **Spec-driven development docs.** `docs/spec/` holds the feature spec split per section; `docs/dev/` holds the feature queue, progress log, decisions and test matrix so work can resume across sessions (see `CLAUDE.md`).
+- **Page routing.** `App.tsx` now routes `logs` explicitly and redirects unknown paths to it (keeping the query string), so further app pages can be added.
+
+### Fixed
+
+- **e2e suite.** `tests/appConfig.spec.ts` was create-plugin scaffolding that targeted fields this plugin never had; replaced with a real config-page test, plus a logs-page smoke test and page object (`tests/pages/LogsPage.ts`).
+
+---
+
 ## [0.10.0] — 2026-09-01
 
 ### Added

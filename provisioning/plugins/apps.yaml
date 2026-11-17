@@ -1,11 +1,40 @@
 apiVersion: 1
 
+# Dev/e2e provisioning: two shared data views against the docker ClickHouse.
+# "spec-fixture" is the deterministic table from scripts/clickhouse-init/04_spec_fixture.sql that
+# the spec-driven e2e and integration tests assert exact counts against (docs/dev/TESTING.md).
 apps:
   - type: 'poortuna-clickhouse-observe-app'
     org_id: 1
     org_name: 'Main Org.'
     disabled: false
     jsonData:
-      apiUrl: http://default-url.com
-    secureJsonData:
-      apiKey: secret-key
+      defaultDataViewId: spec-fixture
+      dataViews:
+        - id: spec-fixture
+          name: Spec fixture logs
+          origin: shared
+          createdAt: '2026-01-01T00:00:00Z'
+          datasourceUid: clickhouse-dev
+          database: default
+          logsTable: spec_logs
+          isOtel: true
+          sequentialConsistency: false
+          columns: &otel
+            timestamp: Timestamp
+            body: Body
+            severity: SeverityText
+            traceId: TraceId
+            serviceName: ServiceName
+            spanAttributes: ''
+            partitionTimestamp: TimestampTime
+        - id: otel-demo
+          name: OTel demo logs
+          origin: shared
+          createdAt: '2026-01-01T00:00:00Z'
+          datasourceUid: clickhouse-dev
+          database: default
+          logsTable: otel_logs
+          isOtel: true
+          sequentialConsistency: false
+          columns: *otel
