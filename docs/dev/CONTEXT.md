@@ -1,7 +1,7 @@
 # Context snapshot — read this to restart
 
 Saved after every feature (and every review-fix round). A new session can resume from this file plus `PROGRESS.md` alone.
-Last saved: 2026-11-17, after #5 SHARED-ACTION-01 (PR 6) merged.
+Last saved: 2026-11-17, after #6 DISC-SIDEBAR-02 (PR 7) review fixes.
 
 ## Goal
 Bring Kibana Discover + Lens style exploration to Grafana on ClickHouse by extending the **ClickHouse Observe** app plugin.
@@ -24,11 +24,13 @@ Bring Kibana Discover + Lens style exploration to Grafana on ClickHouse by exten
 | 3 | DISC-SEARCH-02: matched-term highlighting, "Update" cue | 4 | `src/sql/kql/highlight.ts`, `src/components/SearchBar.tsx`, `LogsTable.tsx` |
 | 4 | DISC-FILTER-01: pin across pages (explicit pin transitions, per-table pins) | 5 | `src/components/FilterPills.tsx`, `src/state/sharedSearch.ts` |
 | 5 | SHARED-ACTION-01: action registry (filter for/out, copy w/ HTTP fallback, exists/missing; shared field labels) | 6 | `src/actions/registry.ts`, `src/actions/ActionIconButton.tsx` |
+| 6 | DISC-SIDEBAR-02: field stats popover — 5,000-row sample, numeric distribution, breakdown action, empty state | 7 | `src/components/FieldSidebar/FieldStatsPopover.tsx`, `buildNumericStatsQuery` (`src/sql/queryBuilder.ts`), `fetchNumericStats` (`src/sql/kql/_values.ts`) |
 
 ## Key decisions (details in DECISIONS.md)
 - Frontend-only; queries via grafana-clickhouse-datasource (`src/data/runQuery.ts`). Plain React + @grafana/ui, no Scenes.
 - URL is the shared search context across pages; pinned filters also in per-tab sessionStorage, changed only by explicit pin transitions, tagged with their table.
 - One autocomplete service and one action registry for every surface; field names in actions derived from the SQL expression (`fieldLabelFor`).
+- Numeric stats: one-pass sample query (D11); `isBreakdownField` is the single breakdown rule; `chooseBreakdown` in LogsExplorer is the single breakdown setter.
 - Lens (upcoming): bar/line/area custom-drawn (one-click filter + chooser), table/stat/pie/heatmap via `PanelRenderer` in `src/lens/render/`.
 
 ## Environment / gotchas
@@ -39,7 +41,7 @@ Bring Kibana Discover + Lens style exploration to Grafana on ClickHouse by exten
 - Gates: `npm run typecheck && npm run lint && npm run test:ci && npm run build && npx playwright test`; then `/code-review medium master...<branch>`.
 
 ## Fixture facts (`tests/fixture.ts`)
-41,520 rows, 2026-01-01..08 UTC; levels info 28,265 · warn 6,080 · debug 3,984 · error 3,191; services 8,064 each except payments 9,264; errors by service auth 384, checkout 445, frontend 373, inventory 414, payments 1,575; incident 2026-01-05 09:00–11:00 (1,200 payments rows, `http.status_code` 503).
+41,520 rows, 2026-01-01..08 UTC; `SeverityNumber` uses OTel numbers (debug 5, info 9, warn 13, error 17); levels info 28,265 · warn 6,080 · debug 3,984 · error 3,191; services 8,064 each except payments 9,264; errors by service auth 384, checkout 445, frontend 373, inventory 414, payments 1,575; incident 2026-01-05 09:00–11:00 (1,200 payments rows, `http.status_code` 503). Latest-5,000 sample: info 3,483 · warn 792 · debug 487 · error 238 (payments-filtered: info 2,667 · error 1,370 · warn 569 · debug 394).
 
 ## Now / next
-Next: #6 DISC-SIDEBAR-02 (field stats popover gaps) — exact notes in `PROGRESS.md`.
+Next: #7 DISC-TABLE-01/02 (results grid) — exact notes in `PROGRESS.md`.

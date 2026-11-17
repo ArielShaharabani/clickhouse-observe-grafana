@@ -10,6 +10,20 @@ Versions track the plugin's release history. `Unreleased` collects commits not y
 
 ---
 
+## [0.16.0] — 2026-11-17
+
+### Added
+
+- **Field stats popover: numeric distribution.** Numeric fields get a "Top values | Distribution" toggle; Distribution shows min, median and max and a 10-bucket histogram of the sample. Spec DISC-SIDEBAR-02.
+- **Field stats popover: "Break down histogram by this field".** One click in the popover header stacks the histogram by that field (same as picking it in the breakdown menu). Spec DISC-SIDEBAR-02.
+
+### Changed
+
+- **Field stats are computed from the 5,000 most recent matching records** (was 500), with the caption "Calculated from N sample records."; KQL autocomplete still samples 500. An empty result now reads "No field data for the current search".
+- **Dev fixture `spec_logs` carries OTel severity numbers** (debug 5, info 9, warn 13, error 17) so numeric statistics can be tested.
+
+---
+
 ## [0.15.0] — 2026-11-17
 
 ### Added

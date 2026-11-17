@@ -1,4 +1,5 @@
 import React, { useContext, useEffect, useRef, useState } from 'react';
+import { isBreakdownField } from '../../sql/fieldModel';
 import { css } from '@emotion/css';
 import { GrafanaTheme2 } from '@grafana/data';
 import { Icon, useStyles2 } from '@grafana/ui';
@@ -64,9 +65,10 @@ export function BreakdownPicker({ value, onChange, hasSeverity }: Props) {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [open]);
 
-  const visibleFields = fields.filter((f) =>
-    f.displayName.toLowerCase().includes(search.toLowerCase()) ||
-    f.name.toLowerCase().includes(search.toLowerCase())
+  const visibleFields = fields.filter(
+    (f) =>
+      isBreakdownField(f) &&
+      (f.displayName.toLowerCase().includes(search.toLowerCase()) || f.name.toLowerCase().includes(search.toLowerCase()))
   );
 
   function select(sel: BreakdownSel) {

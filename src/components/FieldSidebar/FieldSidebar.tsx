@@ -30,6 +30,8 @@ interface FieldSidebarProps {
   onToggleColumn: (col: SelectedColumn) => void;
   onAddFilter: (f: FilterPill) => void;
   onCollapse: () => void;
+  /** Break the histogram down by a field (field stats popover action). */
+  onSetBreakdown?: (field: FieldModel) => void;
 }
 
 export function FieldSidebar({
@@ -38,6 +40,7 @@ export function FieldSidebar({
   onToggleColumn,
   onAddFilter,
   onCollapse,
+  onSetBreakdown,
 }: FieldSidebarProps) {
   const styles = useStyles2(getStyles);
   const { fields, loading, refresh } = useFields();
@@ -117,6 +120,7 @@ export function FieldSidebar({
               timeRange={timeRange}
               onToggleColumn={(field) => onToggleColumn(fieldToColumn(field))}
               onAddFilter={onAddFilter}
+              onSetBreakdown={onSetBreakdown}
             />
           ))}
         </section>
@@ -146,6 +150,7 @@ export function FieldSidebar({
                     timeRange={timeRange}
                     onToggleColumn={(field) => onToggleColumn(fieldToColumn(field))}
                     onAddFilter={onAddFilter}
+                    onSetBreakdown={onSetBreakdown}
                   />
                 </div>
               );

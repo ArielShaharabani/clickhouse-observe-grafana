@@ -11,10 +11,14 @@
  */
 
 import { TimeRange } from '@grafana/data';
-import { buildFieldTopValuesQuery } from '../queryBuilder';
+import { buildFieldTopValuesQuery, buildNumericStatsQuery } from '../queryBuilder';
 import { runQueryRows } from '../../data/runQuery';
 import { coarseTimeBucket } from '../timeBucket';
 import { SourceConfig } from '../../types';
+
+
+/** Rows sampled for value lookups unless a caller asks for more (autocomplete stays light). */
+export const DEFAULT_SAMPLE_SIZE = 500;
 
 export interface FieldValue {
   value: string;
@@ -39,6 +43,10 @@ export interface LoadFieldValuesOpts {
   /** Caller-supplied hash of current filter state, so the cache key stays scoped per-page. */
   cacheKey: string;
   limit?: number;
+  /** Rows sampled (most recent first). Default 500 for autocomplete; the stats popover uses 5,000.
+   *  Part of the cache key: the two surfaces deliberately sample different amounts (autocomplete
+   *  runs per keystroke, the popover is a one-off profile), so their entries are separate. */
+  sampleSize?: number;
 }
 
 // Module-level cache, keyed and shared the same way regardless of caller — FieldStatsPopover and
@@ -70,7 +78,7 @@ export function isValuesCacheEntryFresh(entry: CachedFieldValues): boolean {
 
 export function buildValuesCacheKey(uid: string, sqlExpr: string, timeRange: TimeRange, opts: LoadFieldValuesOpts): string {
   const bucket = coarseTimeBucket(timeRange);
-  return `${uid}:${sqlExpr}:${opts.table}:${bucket}:${opts.cacheKey}`;
+  return `${uid}:${sqlExpr}:${opts.table}:${bucket}:${opts.cacheKey}:${opts.sampleSize ?? DEFAULT_SAMPLE_SIZE}`;
 }
 
 /** Drops every cached value list for one datasource+table — used by FieldsContext's explicit
@@ -101,7 +109,7 @@ export async function fetchFieldValuesWithTotal(
     table: opts.table,
     conditions: opts.conditions,
     limit,
-    sampleSize: 500,
+    sampleSize: opts.sampleSize ?? DEFAULT_SAMPLE_SIZE,
   });
   const rows = await runQueryRows({ datasourceUid: config.datasourceUid, sql, timeRange: opts.timeRange, op: 'fieldValues' });
   const values: FieldValue[] = rows.map((r) => ({
@@ -164,4 +172,53 @@ export async function loadFieldValues(
   opts: LoadFieldValuesOpts
 ): Promise<FieldValue[]> {
   return (await loadFieldValuesWithTotal(config, sqlExpr, opts)).values;
+}
+
+export interface NumericBucket {
+  from: number;
+  to: number;
+  count: number;
+}
+
+export interface NumericStats {
+  min: number;
+  max: number;
+  median: number;
+  /** Sampled rows with a numeric value. */
+  count: number;
+  /** 10 equal-width buckets from min to max ([] when there is no numeric value). */
+  buckets: NumericBucket[];
+}
+
+/** Numeric stats + distribution for the field stats popover (DISC-SIDEBAR-02). Throws on failure. */
+export async function fetchNumericStats(
+  config: SourceConfig,
+  sqlExpr: string,
+  opts: LoadFieldValuesOpts
+): Promise<NumericStats> {
+  const sql = buildNumericStatsQuery(config, sqlExpr, {
+    table: opts.table,
+    conditions: opts.conditions,
+    sampleSize: opts.sampleSize ?? DEFAULT_SAMPLE_SIZE,
+  });
+  const rows = await runQueryRows({ datasourceUid: config.datasourceUid, sql, timeRange: opts.timeRange, op: 'fieldValues' });
+  const row = rows[0];
+  const count = row ? Number(row['n'] ?? 0) : 0;
+  if (!row || count === 0) {
+    return { min: 0, max: 0, median: 0, count: 0, buckets: [] };
+  }
+  const min = Number(row['lo']);
+  const max = Number(row['hi']);
+  const raw = row['buckets'];
+  // Array columns may arrive as an array or as JSON text depending on the datasource frame format.
+  const counts: number[] = (Array.isArray(raw) ? raw : typeof raw === 'string' ? JSON.parse(raw) : []).map(Number);
+  while (counts.length < 10) {
+    counts.push(0);
+  }
+  const width = (max - min) / 10;
+  const buckets =
+    max > min
+      ? counts.slice(0, 10).map((c, i) => ({ from: min + i * width, to: i === 9 ? max : min + (i + 1) * width, count: c }))
+      : counts.slice(0, 10).map((c, i) => ({ from: min, to: max, count: i === 0 ? c : 0 }));
+  return { min, max, median: Number(row['med']), count, buckets };
 }

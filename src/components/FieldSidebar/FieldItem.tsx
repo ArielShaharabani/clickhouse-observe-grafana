@@ -18,6 +18,7 @@ interface FieldItemProps {
   timeRange: TimeRange;
   onToggleColumn: (field: FieldModel) => void;
   onAddFilter: (f: FilterPill) => void;
+  onSetBreakdown?: (field: FieldModel) => void;
 }
 
 export function FieldItem({
@@ -27,6 +28,7 @@ export function FieldItem({
   timeRange,
   onToggleColumn,
   onAddFilter,
+  onSetBreakdown,
 }: FieldItemProps) {
   const styles = useStyles2(getStyles);
   const theme = useTheme2();
@@ -66,6 +68,18 @@ export function FieldItem({
     setDrillField(null);
     setPopoverOpen(true);
   };
+
+  // Breakdown from either popover (field or drilled Map key), then close it.
+  const onBreakdownAndClose = useMemo(
+    () =>
+      onSetBreakdown
+        ? (f: FieldModel) => {
+            onSetBreakdown(f);
+            setPopoverOpen(false);
+          }
+        : undefined,
+    [onSetBreakdown]
+  );
 
   const existsActions = useMemo(
     () => fieldActions({ field: field.sqlExpr }, { addFilter: onAddFilter, copyText: copyToClipboard }),
@@ -154,6 +168,7 @@ export function FieldItem({
                     queryState={queryState}
                     timeRange={timeRange}
                     isSelected={false}
+                    onSetBreakdown={onBreakdownAndClose}
                     onAddFilter={(f) => {
                       onAddFilter(f);
                       setPopoverOpen(false);
@@ -171,6 +186,7 @@ export function FieldItem({
                   queryState={queryState}
                   timeRange={timeRange}
                   isSelected={isSelected}
+                  onSetBreakdown={onBreakdownAndClose}
                   onAddFilter={(f) => {
                     onAddFilter(f);
                     setPopoverOpen(false);

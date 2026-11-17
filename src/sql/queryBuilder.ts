@@ -742,6 +742,46 @@ export function buildFieldTopValuesQuery(
   );
 }
 
+export interface NumericStatsOpts {
+  table: string;
+  /** Pre-built WHERE conditions (from buildWhereConditions). */
+  conditions: string[];
+  sampleSize: number;
+}
+
+/**
+ * Numeric field statistics for the field stats popover (DISC-SIDEBAR-02): over the most recent
+ * `sampleSize` rows, min / median / max / count of numeric values plus a 10-bucket equal-width
+ * distribution, returned as one row (`buckets` = array of 10 counts).
+ *
+ * The sample is read exactly once (aggregated into `vals`), so the summary and the buckets always
+ * describe the same rows even when timestamps tie at the cut-off. The bucket index guards the
+ * division itself (`if(hi > lo, …, 0)` inside floor), so a constant field never reaches a NaN.
+ */
+export function buildNumericStatsQuery(config: SourceConfig, sqlExpr: string, opts: NumericStatsOpts): string {
+  const tbl = tableRef(config, opts.table);
+  const tsCol = config.columns.timestamp;
+  const condClause = opts.conditions.length > 0 ? `    WHERE ${opts.conditions.join(' AND ')}` : null;
+  return withSettings(
+    [
+      `SELECT lo, hi, med, n,`,
+      `  arrayMap(i -> arrayCount(x -> least(9, toUInt32(floor(if(hi > lo, (x - lo) / (hi - lo), 0) * 10))) = i, vals), range(10)) AS buckets`,
+      `FROM (`,
+      `  SELECT min(v) AS lo, max(v) AS hi, quantileExact(0.5)(v) AS med, count(v) AS n, groupArray(v) AS vals`,
+      `  FROM (`,
+      `    SELECT toFloat64OrNull(toString(${sqlExpr})) AS v`,
+      `    FROM ${tbl}`,
+      condClause,
+      tsCol ? `    ORDER BY ${tsCol} DESC` : null,
+      `    LIMIT ${Math.max(1, Math.floor(opts.sampleSize))}`,
+      `  )`,
+      `  WHERE v IS NOT NULL`,
+      `)`,
+    ],
+    configSettingsFragments(config)
+  );
+}
+
 export function buildSurroundingDocsQuery(
   config: SourceConfig,
   rowTimestamp: string,

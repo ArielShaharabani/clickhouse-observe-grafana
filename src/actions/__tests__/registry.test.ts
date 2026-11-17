@@ -86,3 +86,19 @@ describe('SHARED-ACTION-01: field actions', () => {
     expect(fieldActions({ field: 'TraceId' }, { copyText: () => undefined })).toEqual([]);
   });
 });
+
+describe('DISC-SIDEBAR-02: breakdown and visualize field actions', () => {
+  it('offers them only when the surface provides the capability', () => {
+    const calls: string[] = [];
+    const full: ActionHost = {
+      copyText: () => undefined,
+      setBreakdown: (c) => calls.push(`bd:${c.field}`),
+      visualize: (c) => calls.push(`viz:${c.field}`),
+    };
+    const actions = fieldActions({ field: 'ServiceName' }, full, ['breakdown', 'visualize']);
+    expect(actions.map((a) => a.ariaLabel)).toEqual(['Break down histogram by ServiceName', 'Visualize ServiceName']);
+    actions.forEach((a) => a.run());
+    expect(calls).toEqual(['bd:ServiceName', 'viz:ServiceName']);
+    expect(fieldActions({ field: 'ServiceName' }, { copyText: () => undefined }, ['breakdown', 'visualize'])).toEqual([]);
+  });
+});
