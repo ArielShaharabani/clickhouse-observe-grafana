@@ -23,10 +23,11 @@ export function loadFieldUsage(table: string): Record<string, number> {
   return t && typeof t === 'object' ? t : {};
 }
 
-/** Records one use of a field and returns the table's updated counts. */
-export function recordFieldUse(table: string, fieldId: string): Record<string, number> {
+/** Records one use of a field and returns the table's updated counts. `base` is the caller's
+ *  current in-memory counts, so counting still works for the page view when storage is blocked. */
+export function recordFieldUse(table: string, fieldId: string, base?: Record<string, number>): Record<string, number> {
   const store = readStore();
-  const counts = { ...(store[table] ?? {}) };
+  const counts = { ...(base ?? store[table] ?? {}) };
   counts[fieldId] = (Number(counts[fieldId]) || 0) + 1;
   store[table] = counts;
   try {
@@ -37,10 +38,15 @@ export function recordFieldUse(table: string, fieldId: string): Record<string, n
   return counts;
 }
 
-/** Most-used field ids first (ties by id for a stable order), at most `limit`. */
-export function popularFieldIds(counts: Record<string, number>, limit = 5): string[] {
+/** Most-used field ids first (ties by id for a stable order), at most `limit`, considering only
+ *  ids `eligible` accepts (filter before the cut, so ineligible ids never take a slot). */
+export function popularFieldIds(
+  counts: Record<string, number>,
+  limit = 5,
+  eligible: (id: string) => boolean = () => true
+): string[] {
   return Object.entries(counts)
-    .filter(([, n]) => Number(n) > 0)
+    .filter(([id, n]) => Number(n) > 0 && eligible(id))
     .sort(([a, n], [b, m]) => Number(m) - Number(n) || a.localeCompare(b))
     .slice(0, limit)
     .map(([id]) => id);

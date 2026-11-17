@@ -51,7 +51,17 @@ export function FieldSidebar({
   const { fields, loading, refresh } = useFields();
   const config = useContext(SourceConfigContext);
   const [nameFilter, setNameFilter] = useState('');
-  const [typeFilter, setTypeFilter] = useState<Set<FieldType>>(() => new Set());
+  // Type filter belongs to one table: switching data view to another table starts unfiltered.
+  const usageTable = `${config.database}.${config.logsTable}`;
+  const [typeFilterState, setTypeFilterState] = useState<{ table: string; types: Set<FieldType> }>(() => ({
+    table: usageTable,
+    types: new Set(),
+  }));
+  const typeFilter = useMemo(
+    () => (typeFilterState.table === usageTable ? typeFilterState.types : new Set<FieldType>()),
+    [typeFilterState, usageTable]
+  );
+  const setTypeFilter = useCallback((types: Set<FieldType>) => setTypeFilterState({ table: usageTable, types }), [usageTable]);
   const [collapsed, setCollapsed] = useState<Record<Group, boolean>>({ selected: false, popular: false, available: false });
 
   const selectedIds = useMemo(
@@ -60,12 +70,20 @@ export function FieldSidebar({
   );
 
   // Popular fields (DISC-SIDEBAR-01): fields used from this list before, per viewer and table.
-  const usageTable = `${config.database}.${config.logsTable}`;
-  const [usage, setUsage] = useState(() => ({ table: usageTable, counts: loadFieldUsage(usageTable) }));
-  const counts = usage.table === usageTable ? usage.counts : loadFieldUsage(usageTable);
+  // In-memory counts per table are the source for this page view (storage only seeds them).
+  const [usageByTable, setUsageByTable] = useState<Record<string, Record<string, number>>>({});
+  const counts = useMemo(() => usageByTable[usageTable] ?? loadFieldUsage(usageTable), [usageByTable, usageTable]);
+  const listable = useMemo(() => fields.filter((f) => !(f.source === 'column' && f.type === 'json')), [fields]);
+  const listableIds = useMemo(() => new Set(listable.map((f) => f.id)), [listable]);
+  // Only fields that are rows of this list count (not drilled Map keys), so Popular never fills
+  // with ids it can't show.
   const noteUse = useCallback(
-    (fieldId: string) => setUsage({ table: usageTable, counts: recordFieldUse(usageTable, fieldId) }),
-    [usageTable]
+    (fieldId: string) => {
+      if (listableIds.has(fieldId)) {
+        setUsageByTable((u) => ({ ...u, [usageTable]: recordFieldUse(usageTable, fieldId, counts) }));
+      }
+    },
+    [listableIds, usageTable, counts]
   );
   const onToggleFromList = useCallback(
     (field: FieldModel) => {
@@ -78,13 +96,13 @@ export function FieldSidebar({
   );
   const onFilterFromList = useCallback(
     (pill: FilterPill) => {
-      const f = fields.find((x) => x.sqlExpr === pill.field);
+      const f = listable.find((x) => x.sqlExpr === pill.field);
       if (f) {
         noteUse(f.id);
       }
       onAddFilter(pill);
     },
-    [fields, noteUse, onAddFilter]
+    [listable, noteUse, onAddFilter]
   );
 
   // Single flat, filterable list split into Selected / Popular / Available, no Empty group (a
@@ -98,7 +116,6 @@ export function FieldSidebar({
   // is expensive and unreadable. It stays in `fields` regardless, because LogDetailDrawer derives
   // its JSON-column list (and therefore its dotted-path row flattening, sql/schema.ts's
   // groupAttributes) from exactly those entries.
-  const listable = useMemo(() => fields.filter((f) => !(f.source === 'column' && f.type === 'json')), [fields]);
   const nameMatched = useMemo(() => {
     const lc = nameFilter.toLowerCase();
     return nameFilter
@@ -116,7 +133,7 @@ export function FieldSidebar({
   const { selected, popular, unselected } = useMemo(() => {
     const filtered = typeFilter.size > 0 ? nameMatched.filter((f) => typeFilter.has(f.type)) : nameMatched;
     const byId = new Map(filtered.map((f) => [f.id, f]));
-    const popularIds = popularFieldIds(counts).filter((id) => byId.has(id) && !selectedIds.has(id));
+    const popularIds = popularFieldIds(counts, 5, (id) => byId.has(id) && !selectedIds.has(id));
     const popularSet = new Set(popularIds);
     return {
       selected: filtered.filter((f) => selectedIds.has(f.id)),
@@ -195,13 +212,17 @@ export function FieldSidebar({
 
       {popular.length > 0 && (
         <section className={styles.section} aria-label="Popular fields">
-          {groupHeader('popular', 'Popular fields', popular.length, 'Fields you use most often in this data view')}
+          {groupHeader('popular', 'Popular fields', popular.length, 'Fields you use most often in this table')}
           {!collapsed.popular && popular.map((f) => <FieldItem key={f.id} field={f} isSelected={false} {...itemProps} />)}
         </section>
       )}
 
       <section className={styles.availableSection} aria-label="Available fields">
-        {groupHeader('available', 'Available fields', unselected.length, 'All other fields in this data view')}
+        {groupHeader('available', 'Available fields', unselected.length, 'All other fields in this table')}
+        {!loading && fields.length === 0 && <div className={styles.empty}>No fields discovered yet</div>}
+        {!loading && fields.length > 0 && selected.length + popular.length + unselected.length === 0 && (
+          <div className={styles.empty}>No fields match</div>
+        )}
         <div ref={listScrollRef} className={styles.availableScroll} hidden={collapsed.available}>
           <div style={{ height: rowVirtualizer.getTotalSize(), position: 'relative' }}>
             {rowVirtualizer.getVirtualItems().map((vRow) => {
@@ -222,12 +243,6 @@ export function FieldSidebar({
               );
             })}
           </div>
-          {!loading && fields.length === 0 && (
-            <div className={styles.empty}>No fields discovered yet</div>
-          )}
-          {!loading && fields.length > 0 && selected.length + popular.length + unselected.length === 0 && (
-            <div className={styles.empty}>No fields match</div>
-          )}
         </div>
       </section>
     </div>

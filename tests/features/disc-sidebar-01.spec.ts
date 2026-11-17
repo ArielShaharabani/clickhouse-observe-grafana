@@ -20,6 +20,7 @@ test('search field names and filter by type with counts', async ({ page }) => {
   await expect(page.getByRole('button', { name: 'Filter by field type (1 active)' })).toBeVisible();
   await expect(available.getByTitle('SeverityNumber', { exact: true })).toBeVisible();
   await expect(available.getByTitle('ServiceName', { exact: true })).toBeHidden();
+  // Nothing selected or popular here, so Available lists exactly the Number fields.
   await expect(available.getByLabel(`${numberCount} fields`)).toBeVisible();
 
   await page.getByRole('textbox', { name: 'Search field names' }).fill('Trace');

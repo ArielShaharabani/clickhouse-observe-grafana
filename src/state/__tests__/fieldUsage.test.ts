@@ -21,6 +21,13 @@ describe('DISC-SIDEBAR-01 Popular fields usage counts', () => {
       throw new Error('blocked');
     });
     expect(recordFieldUse('t', 'x')).toEqual({ x: 1 });
+    // With storage blocked, the caller's in-memory counts keep counting.
+    expect(recordFieldUse('t', 'x', { x: 2, y: 1 })).toEqual({ x: 3, y: 1 });
     spy.mockRestore();
+  });
+
+  it('filters ineligible ids before taking the top N', () => {
+    const counts = { a: 9, b: 8, c: 7, d: 6, e: 5, f: 4 };
+    expect(popularFieldIds(counts, 5, (id) => id === 'f' || id === 'e')).toEqual(['e', 'f']);
   });
 });

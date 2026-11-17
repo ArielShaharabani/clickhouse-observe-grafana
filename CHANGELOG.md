@@ -15,7 +15,7 @@ Versions track the plugin's release history. `Unreleased` collects commits not y
 ### Added
 
 - **Field list type filter.** A filter button next to the search lists every field type with its count; the button shows how many types are active. Spec DISC-SIDEBAR-01.
-- **Popular fields.** Fields you add as columns or filter on from the list are grouped at the top, most-used first, remembered per browser and data view. Spec DISC-SIDEBAR-01.
+- **Popular fields.** Fields you add as columns or filter on from the list are grouped at the top, most-used first, remembered per browser and table. Spec DISC-SIDEBAR-01.
 - **Collapsible field groups with counts.** Selected, Popular and Available fields each collapse and show a count badge. Spec DISC-SIDEBAR-01.
 
 ### Changed
