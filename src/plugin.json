@@ -20,7 +20,7 @@
       "large": "img/logo.svg"
     },
     "screenshots": [],
-    "version": "0.20.0",
+    "version": "0.21.0",
     "updated": "%TODAY%"
   },
   "includes": [
@@ -31,6 +31,14 @@
       "addToNav": true,
       "defaultNav": false,
       "icon": "document-info"
+    },
+    {
+      "type": "page",
+      "name": "Visualize",
+      "path": "/a/poortuna-clickhouse-observe-app/visualize",
+      "addToNav": true,
+      "defaultNav": false,
+      "icon": "chart-line"
     },
     {
       "type": "page",

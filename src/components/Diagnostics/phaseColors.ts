@@ -31,6 +31,7 @@ const QUERY_OP_LABELS: Partial<Record<SpanKind, string>> = {
   wizardTables: 'Data view setup: tables',
   wizardColumns: 'Data view setup: columns',
   wizardJsonPaths: 'Data view setup: JSON paths',
+  lens: 'Visualize chart',
 };
 
 /** What each query op is for — shown as a tooltip on the plain-language label above. */
@@ -49,6 +50,7 @@ const QUERY_OP_HINTS: Partial<Record<SpanKind, string>> = {
   wizardTables: 'Lists tables while setting up a data view.',
   wizardColumns: 'Lists columns while setting up a data view.',
   wizardJsonPaths: 'Discovers JSON paths while setting up a data view.',
+  lens: 'Aggregates the data for the Visualize page chart.',
 };
 
 export type PhaseKind = 'clickhouse' | 'transport' | 'decode' | 'render' | 'build';

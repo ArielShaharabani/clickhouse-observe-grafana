@@ -10,6 +10,17 @@ Versions track the plugin's release history. `Unreleased` collects commits not y
 
 ---
 
+## [0.21.0] — 2026-11-17
+
+### Added
+
+- **Visualize page (Lens).** Add fields from the list (or drop them on the workspace) and the chart builds itself: Records or a number field → line over time, a keyword → top 9 values as stacked bars, a second keyword → breakdown, a further number → another metric (median by default). Uses the same search, filters and time range as Discover. Specs LENS-START-01, LENS-AUTO-01.
+- **Suggestions strip.** Cards under the chart switch to alternatives in one click — a single-number Metric per metric, Area, Bar percentage, Pie, Table and a flip that swaps the axis and breakdown. Spec LENS-SUGG-01.
+- **Dimension groups** named per chart (Horizontal axis / Vertical axis / Breakdown, Rows / Metrics, Primary metric / Break down by, Slice by / Size by), each dimension removable. Spec LENS-DIM-01 (display).
+- **The visualization is kept in the URL**, so a refresh or a shared link shows the same chart.
+
+---
+
 ## [0.20.0] — 2026-11-17
 
 ### Added
