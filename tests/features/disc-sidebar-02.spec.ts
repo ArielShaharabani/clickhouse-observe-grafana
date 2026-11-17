@@ -6,8 +6,6 @@ import { LogsPage } from '../pages/LogsPage';
 // DISC-SIDEBAR-02 field statistics popover (docs/spec/10-discover.md).
 // Expected numbers: the 5,000 most recent rows of the fixture (see docs/dev/TESTING.md).
 
-const popover = (page: Page) => page.getByText(/Calculated from|No field data|Loading…/).locator('xpath=ancestor::div[contains(@class,"css")][1]').first();
-
 async function openFieldStats(page: Page, field: string) {
   await page.getByTitle(field, { exact: true }).click();
 }

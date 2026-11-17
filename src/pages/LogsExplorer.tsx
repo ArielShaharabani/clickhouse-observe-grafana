@@ -1060,10 +1060,13 @@ export function LogsExplorer() {
   }, [fetchVolume]);
 
   // Field stats popover "Break down histogram by this field" (DISC-SIDEBAR-02 / DISC-CHART-02).
-  const onSetFieldBreakdown = useCallback((field: FieldModel) => {
+  // One place that applies a user-chosen breakdown (toolbar picker and field popover alike): it
+  // replaces any not-yet-resolved breakdown from the URL.
+  const chooseBreakdown = useCallback((b: BreakdownSel) => {
     setPendingBreakdownFieldId(undefined);
-    setBreakdown({ kind: 'field', field });
+    setBreakdown(b);
   }, []);
+  const onSetFieldBreakdown = useCallback((field: FieldModel) => chooseBreakdown({ kind: 'field', field }), [chooseBreakdown]);
 
   // Stable identity: memoized action rows (drawer, field list) don't rebuild on every render.
   const onAddFilter = useCallback((filter: FilterPill) => dispatch({ type: 'ADD_FILTER', pill: filter }), []);
@@ -1456,10 +1459,7 @@ export function LogsExplorer() {
                   onIntervalModeChange={setIntervalMode}
                   timeRange={timeRange}
                   breakdown={breakdown}
-                  onBreakdownChange={(b: BreakdownSel) => {
-                    setPendingBreakdownFieldId(undefined);
-                    setBreakdown(b);
-                  }}
+                  onBreakdownChange={chooseBreakdown}
                   volumeData={volumeData}
                   volLoading={volLoading}
                   totalEvents={totalEvents}

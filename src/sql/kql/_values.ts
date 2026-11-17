@@ -43,7 +43,9 @@ export interface LoadFieldValuesOpts {
   /** Caller-supplied hash of current filter state, so the cache key stays scoped per-page. */
   cacheKey: string;
   limit?: number;
-  /** Rows sampled (most recent first). Default 500 for autocomplete; the stats popover uses 5,000. */
+  /** Rows sampled (most recent first). Default 500 for autocomplete; the stats popover uses 5,000.
+   *  Part of the cache key: the two surfaces deliberately sample different amounts (autocomplete
+   *  runs per keystroke, the popover is a one-off profile), so their entries are separate. */
   sampleSize?: number;
 }
 
@@ -200,20 +202,23 @@ export async function fetchNumericStats(
     sampleSize: opts.sampleSize ?? DEFAULT_SAMPLE_SIZE,
   });
   const rows = await runQueryRows({ datasourceUid: config.datasourceUid, sql, timeRange: opts.timeRange, op: 'fieldValues' });
-  if (rows.length === 0) {
+  const row = rows[0];
+  const count = row ? Number(row['n'] ?? 0) : 0;
+  if (!row || count === 0) {
     return { min: 0, max: 0, median: 0, count: 0, buckets: [] };
   }
-  const min = Number(rows[0]['lo']);
-  const max = Number(rows[0]['hi']);
-  const width = (max - min) / 10;
-  const counts = new Array<number>(10).fill(0);
-  for (const r of rows) {
-    const b = Math.min(9, Math.max(0, Number(r['bucket'])));
-    counts[b] += Number(r['cnt'] ?? 0);
+  const min = Number(row['lo']);
+  const max = Number(row['hi']);
+  const raw = row['buckets'];
+  // Array columns may arrive as an array or as JSON text depending on the datasource frame format.
+  const counts: number[] = (Array.isArray(raw) ? raw : typeof raw === 'string' ? JSON.parse(raw) : []).map(Number);
+  while (counts.length < 10) {
+    counts.push(0);
   }
+  const width = (max - min) / 10;
   const buckets =
     max > min
-      ? counts.map((count, i) => ({ from: min + i * width, to: i === 9 ? max : min + (i + 1) * width, count }))
-      : [{ from: min, to: max, count: counts[0] }, ...counts.slice(1).map(() => ({ from: max, to: max, count: 0 }))];
-  return { min, max, median: Number(rows[0]['med']), count: Number(rows[0]['n']), buckets };
+      ? counts.slice(0, 10).map((c, i) => ({ from: min + i * width, to: i === 9 ? max : min + (i + 1) * width, count: c }))
+      : counts.slice(0, 10).map((c, i) => ({ from: min, to: max, count: i === 0 ? c : 0 }));
+  return { min, max, median: Number(row['med']), count, buckets };
 }

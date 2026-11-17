@@ -2,7 +2,7 @@ import React, { useCallback, useContext, useEffect, useMemo, useRef, useState } 
 import { css } from '@emotion/css';
 import { GrafanaTheme2, TimeRange } from '@grafana/data';
 import { Icon, RadioButtonGroup, useStyles2, useTheme2 } from '@grafana/ui';
-import { FieldModel } from '../../sql/fieldModel';
+import { FieldModel, isBreakdownField } from '../../sql/fieldModel';
 import { FIELD_TYPE_ICONS } from './fieldIcons';
 import { fieldTypeColor } from './fieldTypeColors';
 import { buildWhereConditions } from '../../sql/queryBuilder';
@@ -45,9 +45,6 @@ function toValuesOpts(config: SourceConfig, queryState: LogsQueryState, timeRang
 
 /** Rows the popover's statistics are computed from (spec DISC-SIDEBAR-02: 5,000 sample records). */
 export const STATS_SAMPLE_SIZE = 5000;
-
-/** Field types a histogram breakdown makes sense for (single scalar values). */
-const BREAKDOWN_TYPES = new Set(['string', 'number', 'boolean']);
 
 type StatsView = 'top' | 'distribution';
 
@@ -149,8 +146,14 @@ export function FieldStatsPopover({
   // Numeric fields: Top values | Distribution (DISC-SIDEBAR-02). Distribution loads on demand.
   const isNumeric = field.type === 'number';
   const [view, setView] = useState<StatsView>('top');
-  const [numeric, setNumeric] = useState<NumericStats | null>(null);
-  const [numericError, setNumericError] = useState<string | null>(null);
+  // Results are stored with the request they answer; anything for an older request renders as
+  // "Loading…", so a refetch never shows the previous query's numbers (or error) as current.
+  const numericKey = useMemo(
+    () =>
+      JSON.stringify([field.sqlExpr, config.datasourceUid, config.logsTable, queryState.search, queryState.filters, timeRange.from.valueOf(), timeRange.to.valueOf()]),
+    [field.sqlExpr, config.datasourceUid, config.logsTable, queryState.search, queryState.filters, timeRange]
+  );
+  const [numericResult, setNumericResult] = useState<{ key: string; stats?: NumericStats; error?: string } | null>(null);
   useEffect(() => {
     if (!isNumeric || view !== 'distribution' || !config.datasourceUid) {
       return;
@@ -158,22 +161,14 @@ export function FieldStatsPopover({
     let cancelled = false;
     const opts = toValuesOpts(config, queryState, timeRange, fieldIndex);
     fetchNumericStats(config, field.sqlExpr, opts).then(
-      (s) => {
-        if (!cancelled) {
-          setNumeric(s);
-          setNumericError(null);
-        }
-      },
-      (e) => {
-        if (!cancelled) {
-          setNumericError(errMsg(e));
-        }
-      }
+      (stats) => !cancelled && setNumericResult({ key: numericKey, stats }),
+      (e) => !cancelled && setNumericResult({ key: numericKey, error: errMsg(e) })
     );
     return () => {
       cancelled = true;
     };
-  }, [isNumeric, view, config, field.sqlExpr, queryState, timeRange, fieldIndex]);
+  }, [isNumeric, view, config, field.sqlExpr, queryState, timeRange, fieldIndex, numericKey]);
+  const current = numericResult?.key === numericKey ? numericResult : null;
 
   const headerActions = useMemo(
     () =>
@@ -181,9 +176,10 @@ export function FieldStatsPopover({
         { field: field.sqlExpr },
         {
           copyText: copyToClipboard,
-          setBreakdown: onSetBreakdown && BREAKDOWN_TYPES.has(field.type) ? () => onSetBreakdown(field) : undefined,
+          setBreakdown: onSetBreakdown && isBreakdownField(field) ? () => onSetBreakdown(field) : undefined,
         },
-        ['breakdown', 'visualize']
+        // 'visualize' joins here when the Visualize page provides the capability (#15).
+        ['breakdown']
       ),
     [field, onSetBreakdown]
   );
@@ -235,7 +231,9 @@ export function FieldStatsPopover({
         <div className={styles.sectionLabel}>Top values</div>
       )}
 
-      {view === 'distribution' && <NumericDistribution stats={numeric} error={numericError} styles={styles} />}
+      {view === 'distribution' && (
+        <NumericDistribution stats={current?.stats ?? null} error={current?.error ?? null} styles={styles} />
+      )}
 
       {view === 'top' && loading && <div className={styles.loading}>Loading…</div>}
       {view === 'top' && error && <div className={styles.errorText}>{error}</div>}

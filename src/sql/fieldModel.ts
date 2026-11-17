@@ -217,3 +217,11 @@ export function parseJsonTypedPaths(chType: string): Array<{ path: string; type:
   }
   return paths;
 }
+
+const CONTAINER_FIELD_TYPES: ReadonlySet<FieldType> = new Set(['map', 'json', 'tuple', 'array']);
+
+/** Whether a field can split the histogram (a single scalar per row — not a whole Map/JSON/Tuple/
+ *  Array container). Shared by the breakdown picker and the field stats popover action. */
+export function isBreakdownField(field: FieldModel): boolean {
+  return !CONTAINER_FIELD_TYPES.has(field.type);
+}

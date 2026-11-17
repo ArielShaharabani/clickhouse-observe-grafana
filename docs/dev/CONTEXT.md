@@ -1,7 +1,7 @@
 # Context snapshot — read this to restart
 
 Saved after every feature (and every review-fix round). A new session can resume from this file plus `PROGRESS.md` alone.
-Last saved: 2026-11-17, after #6 DISC-SIDEBAR-02 (PR 7).
+Last saved: 2026-11-17, after #6 DISC-SIDEBAR-02 (PR 7) review fixes.
 
 ## Goal
 Bring Kibana Discover + Lens style exploration to Grafana on ClickHouse by extending the **ClickHouse Observe** app plugin.
@@ -30,6 +30,7 @@ Bring Kibana Discover + Lens style exploration to Grafana on ClickHouse by exten
 - Frontend-only; queries via grafana-clickhouse-datasource (`src/data/runQuery.ts`). Plain React + @grafana/ui, no Scenes.
 - URL is the shared search context across pages; pinned filters also in per-tab sessionStorage, changed only by explicit pin transitions, tagged with their table.
 - One autocomplete service and one action registry for every surface; field names in actions derived from the SQL expression (`fieldLabelFor`).
+- Numeric stats: one-pass sample query (D11); `isBreakdownField` is the single breakdown rule; `chooseBreakdown` in LogsExplorer is the single breakdown setter.
 - Lens (upcoming): bar/line/area custom-drawn (one-click filter + chooser), table/stat/pie/heatmap via `PanelRenderer` in `src/lens/render/`.
 
 ## Environment / gotchas
