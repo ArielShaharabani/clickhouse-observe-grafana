@@ -1,7 +1,7 @@
 # Context snapshot — read this to restart
 
 Saved after every feature (and every review-fix round). A new session can resume from this file plus `PROGRESS.md` alone.
-Last saved: 2026-11-17, 2026-11-18, #13 LENS-DIM-01/02 started on `feat/lens-dim-01` (PR 13 merged).
+Last saved: 2026-11-17, 2026-11-18, #13 LENS-DIM-01/02 model + helpers done on `feat/lens-dim-01`; editor UI next.
 
 ## Goal
 Bring Kibana Discover + Lens style exploration to Grafana on ClickHouse by extending the **ClickHouse Observe** app plugin.
