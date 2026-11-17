@@ -16,7 +16,7 @@ test('Records → line over time with Count of records; survives a reload (IT-K)
   await viz.open();
   await viz.addField('Records');
   await expect(viz.chart).toHaveAttribute('data-chart-type', 'line');
-  await expect(viz.chart).toHaveAttribute('data-panel', 'timeseries');
+  await expect(viz.chart).toHaveAttribute('data-panel', 'xy');
   await expect(viz.group('Horizontal axis')).toContainText('Timestamp');
   await expect(viz.group('Vertical axis')).toContainText('Count of records');
   await expect(viz.suggestion('Current visualization')).toHaveAttribute('aria-current', 'true');
@@ -32,7 +32,7 @@ test('keyword × keyword → stacked bar; Table suggestion shows exact counts', 
   await viz.open();
   await viz.addField('ServiceName');
   await expect(viz.chart).toHaveAttribute('data-chart-type', 'bar');
-  await expect(viz.chart).toHaveAttribute('data-panel', 'barchart');
+  await expect(viz.chart).toHaveAttribute('data-panel', 'xy');
   await viz.addField('SeverityText');
   await expect(viz.group('Breakdown')).toContainText('Top 9 values of SeverityText');
   await expect(viz.suggestion('ServiceName for each SeverityText')).toBeVisible(); // flip
