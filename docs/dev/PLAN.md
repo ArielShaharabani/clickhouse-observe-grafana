@@ -9,7 +9,7 @@ Status values: `todo` · `in-progress` · `done` (with PR link) · `skipped` (wi
 | # | Spec ID | Feature | Imp. | Kind | Status | PR |
 | --- | --- | --- | --- | --- | --- | --- |
 | 0 | — | Test foundation: provisioning, deterministic fixture, e2e harness, router | — | Build | done | [PR 1](https://github.com/ArielShaharabani/clickhouse-observe-grafana/pull/1) |
-| 1 | SHARED-STATE-01/02 | Shared search context + URL state | 5 | Build | todo | |
+| 1 | SHARED-STATE-01/02 | Shared search context + URL state | 5 | Build | done | PR 2 |
 | 2 | SHARED-AUTOCOMPLETE-01 | Autocomplete service | 5 | Build | todo | |
 | 3 | DISC-SEARCH-02 | KQL bar + autocomplete | 5 | Verify | todo | |
 | 4 | DISC-FILTER-01 | Filter pills (+ pin) | 5 | Verify | todo | |

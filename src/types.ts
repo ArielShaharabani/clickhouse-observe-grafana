@@ -111,6 +111,9 @@ export interface FilterPill {
   values?: string[];    // one_of / not_one_of
   label?: string;       // optional custom display label
   disabled?: boolean;   // temporarily excluded from the query, kept in state/URL
+  /** Pinned across app pages (SHARED-STATE-01): kept in per-tab session storage and re-applied on
+   *  every page that opens without it, like Kibana's global `_g` filters. */
+  pinned?: boolean;
 }
 
 export type ColumnType = 'time' | 'level' | 'text' | 'number' | 'string' | 'exact' | 'map' | 'json' | 'tuple' | 'array' | 'unknown';

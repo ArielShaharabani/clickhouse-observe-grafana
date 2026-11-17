@@ -17,6 +17,11 @@ export default defineConfig<PluginOptions>({
   testDir: './tests',
   /* Run tests in files in parallel */
   fullyParallel: true,
+  /* Locally the docker Grafana + ClickHouse stack shares a small VM: one worker avoids query
+   * timeouts under load. CI keeps Playwright's default. */
+  workers: process.env.CI ? undefined : 1,
+  /* Pages run real ClickHouse queries; allow for a cold stack. */
+  expect: { timeout: 15000 },
   /* Fail the build on CI if you accidentally left test.only in the source code. */
   forbidOnly: !!process.env.CI,
   /* Retry on CI only */

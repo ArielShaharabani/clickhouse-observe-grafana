@@ -8,7 +8,13 @@
  * encodes/decodes values for us, so there's nothing base64 buys here beyond a longer URL.
  */
 import { dateTime, rangeUtil, TimeRange } from '@grafana/data';
-import { FilterPill, SelectedColumn } from '../types';
+import { FilterPill, IntervalMode, SelectedColumn } from '../types';
+
+/** Breakdown as stored in the URL: a field is referenced by its stable FieldModel id and
+ *  resolved against discovered fields once they load (SHARED-STATE-02). */
+export type BreakdownUrl = { kind: 'none' } | { kind: 'severity' } | { kind: 'field'; fieldId: string };
+
+const INTERVAL_MODES: readonly IntervalMode[] = ['auto', 'second', 'minute', 'hour', 'day', 'week', 'month', 'year'];
 
 export interface DecodedLogsUrlState {
   search?: string;
@@ -17,6 +23,8 @@ export interface DecodedLogsUrlState {
   sort?: { col: string; dir: 'asc' | 'desc' };
   timeRange?: TimeRange;
   viewId?: string;
+  interval?: IntervalMode;
+  breakdown?: BreakdownUrl;
   // traceId/dsUid: inbound-only fields carried by a trace->logs deep link from Grafana Explore's
   // ClickHouse trace view (see data/traceToLogsLink.ts) — a `traceId`/`dsUid` filter pill isn't
   // something a colleague reproduces by copying a Logs Explorer URL, so unlike every other field
@@ -33,6 +41,10 @@ export interface EncodeLogsUrlStateInput {
   sort?: { col: string; dir: 'asc' | 'desc' };
   timeRange: TimeRange;
   viewId?: string;
+  /** Omitted from the URL when 'auto' (the default). */
+  interval?: IntervalMode;
+  /** Only set when the user explicitly chose a breakdown; undefined = view default. */
+  breakdown?: BreakdownUrl;
 }
 
 export function encodeLogsState(state: EncodeLogsUrlStateInput): URLSearchParams {
@@ -62,7 +74,23 @@ export function encodeLogsState(state: EncodeLogsUrlStateInput): URLSearchParams
   if (state.viewId) {
     sp.set('ds', state.viewId);
   }
+  if (state.interval && state.interval !== 'auto') {
+    sp.set('interval', state.interval);
+  }
+  if (state.breakdown) {
+    sp.set('bd', state.breakdown.kind === 'field' ? `field:${state.breakdown.fieldId}` : state.breakdown.kind);
+  }
   return sp;
+}
+
+function decodeBreakdown(raw: string | null): BreakdownUrl | undefined {
+  if (raw === 'none' || raw === 'severity') {
+    return { kind: raw };
+  }
+  if (raw?.startsWith('field:') && raw.length > 'field:'.length) {
+    return { kind: 'field', fieldId: raw.slice('field:'.length) };
+  }
+  return undefined;
 }
 
 function safeParseArray<T>(raw: string | null): T[] | undefined {
@@ -120,6 +148,16 @@ export function decodeLogsState(searchParams: URLSearchParams): DecodedLogsUrlSt
   const ds = searchParams.get('ds');
   if (ds) {
     result.viewId = ds;
+  }
+
+  const interval = searchParams.get('interval') as IntervalMode | null;
+  if (interval && INTERVAL_MODES.includes(interval)) {
+    result.interval = interval;
+  }
+
+  const breakdown = decodeBreakdown(searchParams.get('bd'));
+  if (breakdown) {
+    result.breakdown = breakdown;
   }
 
   const traceId = searchParams.get('traceId');

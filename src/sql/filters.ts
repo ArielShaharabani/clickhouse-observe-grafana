@@ -6,7 +6,8 @@
 import { FilterPill, FilterOp } from '../types';
 
 let _idCounter = 0;
-function nextId(): string {
+/** Fresh unique pill id. */
+export function nextId(): string {
   return `f${Date.now()}_${_idCounter++}`;
 }
 
@@ -20,7 +21,7 @@ function nextId(): string {
  * `values` (one_of/not_one_of) compared order-insensitively — the same set typed/clicked in a
  * different order is still the same filter.
  */
-function samePill(
+export function samePill(
   a: Pick<FilterPill, 'field' | 'op' | 'value' | 'values'>,
   b: Pick<FilterPill, 'field' | 'op' | 'value' | 'values'>
 ): boolean {

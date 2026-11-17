@@ -1,8 +1,8 @@
 # Progress — read this first when resuming
 
-**Current item:** #1 SHARED-STATE-01/02 (not started)
-**Last completed step:** #0 test foundation merged (v0.10.1)
-**Next step:** branch `feat/shared-state`; write the LogsExplorer state-characterisation tests (URL round-trip, filters/time/columns/sort) BEFORE extracting the shared search-context store.
+**Current item:** #2 SHARED-AUTOCOMPLETE-01 (not started)
+**Last completed step:** #1 SHARED-STATE merged (v0.11.0): interval/breakdown/pinned in URL, `src/state/sharedSearch.ts`
+**Next step:** branch `feat/shared-autocomplete`; build `src/autocomplete/service.ts` around `src/sql/kql/suggest.ts` + `_values.ts`, with tests from the SHARED-AUTOCOMPLETE-01 checklist.
 **Open issues:** none
 
 ## Environment notes
@@ -16,4 +16,4 @@
 typecheck ✅ · lint ✅ (0 errors, 18 warnings) · test:ci ✅ 730 tests · build ✅ · e2e: original `appConfig.spec.ts` was stale scaffolding (replaced).
 
 ## Session log
-- 2026-11-17 — Forked, baseline recorded, test foundation started.
+- 2026-11-17 — Forked, baseline recorded, test foundation merged (PR 1). SHARED-STATE done (PR 2).

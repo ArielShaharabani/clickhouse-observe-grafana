@@ -44,7 +44,8 @@ import {
   SourceConfig,
   VolumeDataPoint,
 } from '../types';
-import { decodeLogsState, encodeLogsState } from '../data/urlState';
+import { BreakdownUrl, decodeLogsState, encodeLogsState } from '../data/urlState';
+import { carryPinnedToView, loadPinnedFilters, mergePinnedFilters } from '../state/sharedSearch';
 import { errMsg } from '../errMsg';
 import { shiftTimeRange, zoomOutTimeRange } from '../utils/timeRangeNav';
 import { useAvailableHeight } from '../utils/useAvailableHeight';
@@ -102,7 +103,7 @@ export function defaultColumns(config: SourceConfig): SelectedColumn[] {
 export function LogsExplorer() {
   const styles = useStyles2(getStyles);
   const config = useContext(SourceConfigContext);
-  const { activeView, setActiveViewId } = useContext(DataViewContext);
+  const { activeView, setActiveViewId, views } = useContext(DataViewContext);
   const caps = viewCapabilities(config);
 
   const [searchParams, setSearchParams] = useSearchParams();
@@ -118,7 +119,10 @@ export function LogsExplorer() {
     logsQueryReducer,
     DEFAULT_LOGS_QUERY_STATE,
     (init) => {
-      const baseFilters = initialUrlState.filters ?? init.filters;
+      // Pinned filters (SHARED-STATE-01) follow the user into a page opened *without* filters in
+      // its URL; a link that carries filters is reproduced exactly as the sender saw it.
+      const urlFilters = initialUrlState.filters ?? init.filters;
+      const baseFilters = initialUrlState.filters ? urlFilters : mergePinnedFilters(urlFilters, loadPinnedFilters());
       // Inbound trace->logs link (?traceId=…, see data/traceToLogsLink.ts): seed a filter pill for
       // it, appended after the URL's own `filters` so both survive. Only when this view actually
       // has a trace column mapped — config is available here because App.tsx already resolved the
@@ -130,7 +134,7 @@ export function LogsExplorer() {
       return {
         ...init,
         ...(initialUrlState.search !== undefined ? { search: initialUrlState.search } : {}),
-        ...(initialUrlState.filters || filters !== baseFilters ? { filters } : {}),
+        ...(initialUrlState.filters || filters !== urlFilters ? { filters } : {}),
         ...(initialUrlState.columns ? { columns: initialUrlState.columns } : {}),
         ...(initialUrlState.sort ? { sort: initialUrlState.sort } : {}),
       };
@@ -226,14 +230,39 @@ export function LogsExplorer() {
   // out empty and hydrates async (see SourceConfigContext), so caps.hasSeverity often isn't true
   // yet on the render that would have set the initial value. A derived value can't go stale like
   // that — whatever caps.hasSeverity is *right now* is what an unset choice resolves to.
-  const [intervalMode, setIntervalMode] = useState<IntervalMode>('auto');
-  const [breakdownChoice, setBreakdown] = useState<BreakdownSel | null>(null);
+  const [intervalMode, setIntervalMode] = useState<IntervalMode>(() => initialUrlState.interval ?? 'auto');
+  const [breakdownChoice, setBreakdown] = useState<BreakdownSel | null>(() =>
+    initialUrlState.breakdown && initialUrlState.breakdown.kind !== 'field' ? { kind: initialUrlState.breakdown.kind } : null
+  );
+  // A field breakdown from the URL is stored by FieldModel id and can only be resolved once field
+  // discovery finishes; until then it is kept here so the URL write below doesn't drop it.
+  const [pendingBreakdownFieldId, setPendingBreakdownFieldId] = useState<string | undefined>(() =>
+    initialUrlState.breakdown?.kind === 'field' ? initialUrlState.breakdown.fieldId : undefined
+  );
+  // Derived, not an effect: the URL field resolves as soon as discovery has it. A field that no
+  // longer exists resolves to nothing, so the view's default breakdown applies.
+  // Only resolve against the URL's own view: until a `?ds=` switch lands, fieldsState holds the
+  // default view's fields, whose same-named field may map to a different table/expression.
+  const urlViewActive = !initialUrlState.viewId || activeView?.id === initialUrlState.viewId;
+  const pendingBreakdownField = useMemo(
+    () =>
+      pendingBreakdownFieldId && urlViewActive
+        ? fieldsState.fields.find((f) => f.id === pendingBreakdownFieldId)
+        : undefined,
+    [pendingBreakdownFieldId, urlViewActive, fieldsState.fields]
+  );
   // Memoized: when breakdownChoice is null this falls back to a freshly-built object literal —
   // without useMemo that's a new reference every render, which churns executeQuery's identity
   // (it depends on breakdown) and retriggers the effect that calls it, in an infinite fetch loop.
   const breakdown: BreakdownSel = useMemo(
-    () => breakdownChoice ?? (caps.hasSeverity ? { kind: 'severity' } : { kind: 'none' }),
-    [breakdownChoice, caps.hasSeverity]
+    () =>
+      breakdownChoice ??
+      (pendingBreakdownField
+        ? { kind: 'field', field: pendingBreakdownField }
+        : caps.hasSeverity
+          ? { kind: 'severity' }
+          : { kind: 'none' }),
+    [breakdownChoice, pendingBreakdownField, caps.hasSeverity]
   );
 
   // Reset query state when the active data view changes so stale field refs don't carry over.
@@ -266,13 +295,22 @@ export function LogsExplorer() {
   useEffect(() => {
     const viewId = activeView?.id;
     if (prevViewId.current !== undefined && prevViewId.current !== viewId) {
-      dispatch({ type: 'LOAD_SAVED', state: DEFAULT_LOGS_QUERY_STATE });
+      // Pinned filters survive a data view switch, like Kibana's global filters — disabled when the
+      // new view reads a different table, since they reference the old table's columns.
+      const prev = views.find((v) => v.id === prevViewId.current);
+      const next = views.find((v) => v.id === viewId);
+      const sameTable = !!prev && !!next && prev.database === next.database && prev.logsTable === next.logsTable;
+      dispatch({
+        type: 'LOAD_SAVED',
+        state: { ...DEFAULT_LOGS_QUERY_STATE, filters: carryPinnedToView(loadPinnedFilters(), sameTable) },
+      });
       setBreakdown(null);
+      setPendingBreakdownFieldId(undefined);
       didReconcileForDiscoveryRef.current = false;
     }
     prevViewId.current = viewId;
      
-  }, [activeView?.id]);
+  }, [activeView?.id, views]);
 
   // Sidebar collapse + resizable width, persisted across sessions
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -511,10 +549,18 @@ export function LogsExplorer() {
       sort: queryState.sort,
       timeRange,
       viewId: activeView?.id,
+      interval: intervalMode,
+      // An unresolved URL field breakdown stays in the URL until the user picks another breakdown
+      // or switches view, so a link copied mid-load still carries it.
+      breakdown: breakdownToUrl(breakdownChoice, pendingBreakdownFieldId),
     });
-    setSearchParams(next, { replace: true });
+    // Skip no-op navigations (discovery phases re-run this effect with an unchanged URL).
+    if (next.toString() !== new URLSearchParams(window.location.search).toString()) {
+      setSearchParams(next, { replace: true });
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [queryState.search, queryState.filters, queryState.sort, queryState.columns, effectiveColumns, timeRange, activeView?.id]);
+  }, [queryState.search, queryState.filters, queryState.sort, queryState.columns, effectiveColumns, timeRange, activeView?.id, intervalMode, breakdownChoice, pendingBreakdownFieldId]);
+
 
   const resolvedInterval = useMemo<ResolvedInterval>(
     () => resolveInterval(intervalMode, timeRange),
@@ -1082,7 +1128,8 @@ export function LogsExplorer() {
       type: 'LOAD_SAVED',
       state: {
         search: search.search,
-        filters: search.filters,
+        // A saved search keeps the user's pinned filters on top of its own.
+        filters: mergePinnedFilters(search.filters, loadPinnedFilters()),
         columns: search.columns,
         sort: search.sort,
         useRawSql: false, // always exit raw SQL mode when loading a saved search
@@ -1422,7 +1469,10 @@ export function LogsExplorer() {
                   onIntervalModeChange={setIntervalMode}
                   timeRange={timeRange}
                   breakdown={breakdown}
-                  onBreakdownChange={setBreakdown}
+                  onBreakdownChange={(b: BreakdownSel) => {
+                    setPendingBreakdownFieldId(undefined);
+                    setBreakdown(b);
+                  }}
                   volumeData={volumeData}
                   volLoading={volLoading}
                   totalEvents={totalEvents}
@@ -1717,3 +1767,11 @@ const getStyles = (theme: GrafanaTheme2) => ({
     color: ${theme.colors.text.secondary};
   `,
 });
+
+/** URL form of the breakdown: the explicit choice, else a still-unresolved field from the URL. */
+function breakdownToUrl(choice: BreakdownSel | null, pendingFieldId: string | undefined): BreakdownUrl | undefined {
+  if (choice) {
+    return choice.kind === 'field' ? { kind: 'field', fieldId: choice.field.id } : { kind: choice.kind };
+  }
+  return pendingFieldId ? { kind: 'field', fieldId: pendingFieldId } : undefined;
+}
