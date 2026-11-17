@@ -2,6 +2,7 @@ import React, { createContext, Suspense, useCallback, useEffect, useLayoutEffect
 import { startAutoEnrichment } from '../../diag/autoEnrich';
 import { AppRootProps, getDefaultTimeRange } from '@grafana/data';
 import { LoadingPlaceholder } from '@grafana/ui';
+import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { useFieldDiscovery } from '../FieldsContext';
 import {
   AiProviderConfig,
@@ -231,12 +232,27 @@ function App(props: AppRootProps<AppJsonData>) {
             />
           ) : (
             <Suspense fallback={<LoadingPlaceholder text="Loading…" />}>
-              <LogsExplorer />
+              <AppRoutes />
             </Suspense>
           )}
         </SourceConfigContext.Provider>
       </AiConfigContext.Provider>
     </DataViewContext.Provider>
+  );
+}
+
+/**
+ * Page routes, relative to the app root (`/a/<plugin-id>/`). Every page shares the providers
+ * above (data views, source config, AI config). Unknown paths fall back to `logs`, keeping the
+ * query string so shared links that predate a page still open with their state.
+ */
+function AppRoutes() {
+  const location = useLocation();
+  return (
+    <Routes>
+      <Route path="logs" element={<LogsExplorer />} />
+      <Route path="*" element={<Navigate to={{ pathname: 'logs', search: location.search }} replace />} />
+    </Routes>
   );
 }
 
