@@ -28,6 +28,9 @@ Grafana's time picker applies a range immediately (no pending state), so only th
 ## D10 — Action registry (SHARED-ACTION-01)
 `src/actions/registry.ts` defines each value/field action once (icon, short tooltip, specific accessible name, compatibility, behaviour): `valueActions(ctx, host, ids?)` → filter for / filter out / copy; `fieldActions` → exists / does not exist. A surface passes an `ActionHost` (`addFilter` omitted = read-only → copy only) and keeps its own layout. Grafana's `IconButton` uses `tooltip` as its accessible name, so icon surfaces use `ActionIconButton` (Tooltip wrapper) to keep names like "Filter for Service: payments". The field list's "filter out rows that have this field" is now a `not_exists` pill (same SQL as the old `= ''`).
 
+## D15 — Document flyout (DISC-DOC-01)
+Pinned fields are per browser tab (sessionStorage `clickhouse-observe.pinnedDocFields`, keyed by SQL expression) and sort to the top in pin order across documents. "Hide null fields" hides empty and `null` values. The field-name action is the registry `exists` action. Navigation stays page-scoped ("3 of 50", plus first/last). Permalink and "View surrounding documents" wait for DISC-DOC-02 (#20).
+
 ## D14 — Histogram bucket actions (DISC-CHART-01)
 Right-click on a bar opens a pinned popover (`BucketActionsPopover`): "Filter by time" zooms to that bucket, "Filter N selected series" adds one pill — `=` for one series, `one_of` for several (separate `=` pills would AND to nothing). The synthetic "other" rest-series of a field breakdown is never offered. Left-click behaviour (brush / segment popover) is unchanged; Ctrl+click (macOS right-click) never starts a brush. The popover is keyed by bucket start time (a refresh can't retarget it), stays on screen, and month/year buckets end at the next calendar boundary (`bucketEnd`). The two chart popovers still have separate shells — merge them if a third appears. Deferred: "now" line and partial-bucket shading.
 

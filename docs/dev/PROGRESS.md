@@ -1,9 +1,9 @@
 # Progress — read this first when resuming
 
-**Current item:** #10 DISC-DOC-01 document flyout (not started)
-**Last completed step:** #9 DISC-CHART-01 in PR 10 (v0.19.0): right-click bucket actions (`BucketActionsPopover`: Filter by time, Filter N selected series → `=` or `one_of` pill), tooltip hint, caption with absolute range + "interval: Auto - X"
-**Next step:** branch `feat/disc-doc-01`; verify the detail drawer against DISC-DOC-01 (docs/spec/10-discover.md): table/JSON tabs, field search in the flyout, per-field actions (registry), prev/next document navigation, pin field to top, toggle column, View surrounding documents link. Build the gaps.
-**Open issues:** none. Deferred: histogram "now" line and partial-bucket shading; field list Empty/Meta groups (D13); grid Summary column, sample size, Find, Fullscreen, Save table (#16); popover date distribution, Examples, Visualize (#15).
+**Current item:** #11 LENS-AUTO-01 / LENS-SUGG-01 auto chart + suggestions (not started) — first Lens feature
+**Last completed step:** #10 DISC-DOC-01 in PR 11 (v0.20.0): pinned fields (sessionStorage, stick to top across documents), Hide null fields, type filter (reuses `FieldTypeFilter`), first/last navigation, "field present" registry action on each row, 25 rows per page
+**Next step:** branch `feat/lens-auto-01`; build the Visualize page shell first (route `visualize`, plugin.json include, shared URL search context, header with data view/time), then `src/lens/state.ts`, `suggest.ts` (fixtures from the spec LENS-AUTO-01 table, docs/spec/20-lens.md), `compile.ts` (LensState → ClickHouse SQL via `runQuery`). Bar/line/area custom-drawn (generalize VolumeHistogram), other charts via `src/lens/render/` PanelRenderer adapter. Restart Grafana after plugin.json changes.
+**Open issues:** none. Deferred: flyout permalink + surrounding docs link (DISC-DOC-02 #20); histogram now-line/partial shading; field list Empty/Meta (D13); grid Summary column, sample size, Find, Fullscreen, Save table (#16); popover date distribution, Examples, Visualize (#15).
 
 ## Environment notes
 - Local clone: `C:\Users\Ariel\clickhouse-observe-grafana-dev` (fork `ArielShaharabani/clickhouse-observe-grafana`, `upstream` = PoorTuna).
