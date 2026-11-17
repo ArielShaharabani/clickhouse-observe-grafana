@@ -1,9 +1,9 @@
 # Progress — read this first when resuming
 
-**Current item:** #8 DISC-SIDEBAR-01 field list (not started)
-**Last completed step:** #7 DISC-TABLE-01/02 in PR 8 (v0.17.0): cell-level keyboard navigation (arrows, Home/End, Ctrl+Home/End, PgUp/PgDn, Enter = Expand, Esc), Expand popover (registry `expand` action; full value, JSON pretty-printed, Filter for/out/Copy), Display options (density, body cell lines, remembered per viewer)
-**Next step:** branch `feat/disc-sidebar-01`; verify the field list against DISC-SIDEBAR-01 (docs/spec/10-discover.md): grouping (Selected / Popular / Available / Empty / Meta), type icons + type filter, search, counts, add/remove column buttons, keyboard. Build the gaps.
-**Open issues:** none. Deferred grid items (spec DISC-TABLE-01): Summary column with match-first ordering, sample-size control (paging fetches on demand), Find in table, Fullscreen, Save table to dashboard (→ LENS-SAVE-01 #16). Deferred popover items (DISC-SIDEBAR-02): date-field time distribution, text/geo Examples, Visualize (#15).
+**Current item:** #9 DISC-CHART-01 histogram + brush + series actions (not started)
+**Last completed step:** #8 DISC-SIDEBAR-01 in PR 9 (v0.18.0): "Search field names", type filter popover with per-type counts + active-count button, collapsible Selected / Popular / Available groups with count badges, Popular fields from per-viewer usage (`src/state/fieldUsage.ts`), "Add X as column" button names
+**Next step:** branch `feat/disc-chart-01`; verify the histogram against DISC-CHART-01 (docs/spec/10-discover.md): brush to zoom, bar click/right-click series actions (filter for/out via registry, view this bucket), interval label, hit count, toggle chart. Build the gaps.
+**Open issues:** none. Deferred: field list Empty group (needs a per-field existence query; removed in the perf plan, D13), Meta fields (none in ClickHouse), runtime "Add a field". Grid: Summary column, sample size, Find, Fullscreen, Save table (#16). Popover: date distribution, Examples, Visualize (#15).
 
 ## Environment notes
 - Local clone: `C:\Users\Ariel\clickhouse-observe-grafana-dev` (fork `ArielShaharabani/clickhouse-observe-grafana`, `upstream` = PoorTuna).

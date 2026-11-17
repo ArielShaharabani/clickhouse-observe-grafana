@@ -123,7 +123,8 @@ export function FieldItem({
           ))}
           <button
             className={`${styles.actionBtn} ${isSelected ? styles.actionBtnActive : ''}`}
-            title={isSelected ? 'Remove from table' : 'Add to table'}
+            title={isSelected ? 'Remove from table' : 'Add field as column'}
+            aria-label={isSelected ? `Remove ${field.displayName} column` : `Add ${field.displayName} as column`}
             onClick={(e) => { e.stopPropagation(); onToggleColumn(field); }}
           >
             <Icon name={isSelected ? 'minus' : 'plus'} size="xs" />
