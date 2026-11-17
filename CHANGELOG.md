@@ -10,6 +10,18 @@ Versions track the plugin's release history. `Unreleased` collects commits not y
 
 ---
 
+## [0.15.0] — 2026-11-17
+
+### Added
+
+- **One action registry for value and field actions (`src/actions/registry.ts`).** Filter for / filter out / copy, and field exists / does-not-exist, are defined once and used by the results grid, the log detail drawer, the field stats popover, the field list and the histogram breakdown popover, so wording, icons and behaviour are identical everywhere. Buttons now carry specific accessible names ("Filter for Service: payments") with the short shared tooltip. Spec SHARED-ACTION-01.
+
+### Changed
+
+- **Field list "filter out rows that have this field" creates a "does not exist" pill** instead of an "is empty" pill — the same rows, clearer label, and it works for Map/JSON fields too.
+
+---
+
 ## [0.14.0] — 2026-11-17
 
 ### Added

@@ -26,7 +26,7 @@ Enable a case as soon as both sides exist. Status: `—` not yet possible · `to
 
 | Case | Covers | Status |
 | --- | --- | --- |
-| IT-A | Filter producers (popover ±, exists, cell actions, drawer, legend, histogram series, patterns, stats tab, Lens click/chooser) → filter store → consumers (count, histogram, grid, popover, patterns, stats tab) refresh | — |
+| IT-A | Filter producers (popover ±, exists, cell actions, drawer, legend, histogram series, patterns, stats tab, Lens click/chooser) → filter store → consumers (count, histogram, grid, popover, patterns, stats tab) refresh | Grid, drawer, field list, popover ✅ (`tests/integration/it-a-filter-producers.spec.ts`); legend/patterns/stats tab/Lens later |
 | IT-B | Pill disable / negate / edit / delete / pin re-query; pin survives navigation to Lens | Logs page ✅ (`tests/features/disc-filter-01.spec.ts`; edit → #19); Lens part pending #11 |
 | IT-C | Dirty query/time → Update → all panels and highlight refresh | Query part ✅ (`tests/features/disc-search-02.spec.ts`); time has no dirty state (D9) |
 | IT-D | Time writers (brush, filter-by-time, shift/zoom, Lens brush) → URL time, interval, Empty field grouping | — |
@@ -37,5 +37,5 @@ Enable a case as soon as both sides exist. Status: `—` not yet possible · `to
 | IT-I | Drawer → surrounding documents (filters disabled, query dropped, columns kept) | — |
 | IT-J | Data view switch (columns pruned, filter warnings, fields reload) | — |
 | IT-K | URL reload restores state; Lens unsaved state survives refresh | Logs page ✅ (`tests/features/shared-state.spec.ts`); Lens part pending #11 |
-| IT-M | Same actions everywhere via the action registry | — |
+| IT-M | Same actions everywhere via the action registry | ✅ names/tooltips asserted on grid, drawer, popover, field list |
 | IT-N | Autocomplete scoped by filters/time (KQL bar today; filter builder, Lens pickers later) | KQL bar ✅ (`tests/features/shared-autocomplete.spec.ts`) |

@@ -1,11 +1,12 @@
 import React, { useMemo, useState } from 'react';
 import { splitHighlights } from '../sql/kql/highlight';
+import { copyToClipboard, valueActions } from '../actions/registry';
+import { ActionIconButton } from '../actions/ActionIconButton';
 import { css, cx } from '@emotion/css';
 import { GrafanaTheme2, DateTime, dateTimeFormat, toUtc } from '@grafana/data';
 import { Icon, IconButton, LoadingPlaceholder, EmptyState, useStyles2 } from '@grafana/ui';
 import { FilterPill, LogRow, SelectedColumn } from '../types';
 import { FIELD_DRAG_MIME, SEVERITY_COLORS } from '../constants';
-import { makeFilter } from '../sql/filters';
 
 interface LogsTableProps {
   rows: LogRow[];
@@ -456,31 +457,13 @@ export function LogsTable({
                         </span>
                         {hoveredCell?.ri === i && hoveredCell.ci === col.id && (
                           <div className={styles.cellToolbar} style={{ opacity: 1, pointerEvents: 'auto' }}>
-                              {filterable && (
-                                <>
-                                  <IconButton
-                                    name="filter-plus"
-                                    size="sm"
-                                    tooltip="Filter for value"
-                                    aria-label={`Filter for ${col.displayName}`}
-                                    onClick={() => onAddFilter!(makeFilter(col.sqlExpr, cellTextValue(rawValue), '='))}
-                                  />
-                                  <IconButton
-                                    name="filter-minus"
-                                    size="sm"
-                                    tooltip="Filter out value"
-                                    aria-label={`Filter out ${col.displayName}`}
-                                    onClick={() => onAddFilter!(makeFilter(col.sqlExpr, cellTextValue(rawValue), '!='))}
-                                  />
-                                </>
-                              )}
-                              <IconButton
-                                name="copy"
-                                size="sm"
-                                tooltip="Copy value"
-                                aria-label={`Copy ${col.displayName}`}
-                                onClick={() => navigator.clipboard.writeText(cellTextValue(rawValue))}
-                              />
+                              {valueActions(
+                                // Empty values and raw Map/JSON container cells offer copy only.
+                                { field: col.sqlExpr, value: cellTextValue(rawValue), filterable: !!filterable },
+                                { addFilter: onAddFilter, copyText: copyToClipboard }
+                              ).map((a) => (
+                                <ActionIconButton key={a.id} action={a} />
+                              ))}
                               <IconButton
                                 name="table"
                                 size="sm"

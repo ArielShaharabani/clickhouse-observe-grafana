@@ -13,7 +13,7 @@ Status values: `todo` · `in-progress` · `done` (with PR link) · `skipped` (wi
 | 2 | SHARED-AUTOCOMPLETE-01 | Autocomplete service | 5 | Build | done | PR 3 |
 | 3 | DISC-SEARCH-02 | KQL bar + autocomplete | 5 | Verify | done | PR 4 |
 | 4 | DISC-FILTER-01 | Filter pills (+ pin) | 5 | Verify | done | PR 5 |
-| 5 | SHARED-ACTION-01 | Action registry | 5 | Build | todo | |
+| 5 | SHARED-ACTION-01 | Action registry | 5 | Build | done | PR 6 |
 | 6 | DISC-SIDEBAR-02 | Field stats popover | 5 | Verify | todo | |
 | 7 | DISC-TABLE-01/02 | Results grid + cell actions | 5 | Verify | todo | |
 | 8 | DISC-SIDEBAR-01 | Field list | 4 | Verify | todo | |
@@ -51,4 +51,4 @@ Status values: `todo` · `in-progress` · `done` (with PR link) · `skipped` (wi
 4. Implement, reusing existing modules (`src/sql/*`, `src/data/runQuery.ts`, components).
 5. Add/enable integration cases in `tests/integration/` for every interaction with done features (`TESTING.md` matrix).
 6. Gates: `npm run typecheck && npm run lint && npm run test:ci && npm run build`, `npx playwright test`, `/code-review`, `/security-review` if SQL generation changed, autocomplete checklist (SHARED-AUTOCOMPLETE-01).
-7. CHANGELOG `[Unreleased]` entry + version bump (`package.json` and `src/plugin.json`), update PLAN/PROGRESS/TESTING, push, PR, merge when green, pull `master`.
+7. CHANGELOG `[Unreleased]` entry + version bump (`package.json` and `src/plugin.json`), update PLAN/PROGRESS/TESTING and refresh `CONTEXT.md`, push, PR, merge when green, pull `master`.

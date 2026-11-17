@@ -1,8 +1,9 @@
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { copyToClipboard, valueActions } from '../actions/registry';
 import { css, cx } from '@emotion/css';
 import { dateTime, formattedValueToString, getValueFormat, GrafanaTheme2, TimeRange } from '@grafana/data';
 import { Button, Portal, Spinner, useStyles2 } from '@grafana/ui';
-import { VolumeDataPoint } from '../types';
+import { FilterPill, VolumeDataPoint } from '../types';
 import {
   SEVERITY_COLORS,
   SEVERITY_ORDER,
@@ -62,7 +63,9 @@ interface VolumeHistogramProps {
    *  BreakdownClickPopover below. Reachable in both 'breakdown' and 'severity' colorModes —
    *  severity used to be excluded, which is why the severity breakdown couldn't be filtered from
    *  the chart at all. */
-  onBreakdownFilter?: (value: string, op: '=' | '!=') => void;
+  /** Field the breakdown splits on (filter target for segment/legend actions); omit to disable. */
+  breakdownTarget?: { field: string };
+  onAddFilter?: (pill: FilterPill) => void;
 }
 
 interface HoveredBucket {
@@ -122,7 +125,8 @@ export function VolumeHistogram({
   bucketMs,
   loading,
   onSelectRange,
-  onBreakdownFilter,
+  breakdownTarget,
+  onAddFilter,
 }: VolumeHistogramProps) {
   const styles = useStyles2(getStyles);
   const svgRef = useRef<SVGSVGElement>(null);
@@ -135,6 +139,7 @@ export function VolumeHistogram({
   // (isolate/toggle): a series can be hovered while others are already hidden.
   const [hoveredLevel, setHoveredLevel] = useState<string | null>(null);
   const [breakdownPopover, setBreakdownPopover] = useState<BreakdownClickPopover | null>(null);
+  const canFilterBreakdown = !!breakdownTarget && !!onAddFilter;
   // dragStart holds the live drag-anchor value used by the imperative mouse-move math below.
   // isDragging mirrors "is a drag in progress" into state so the render below (hover band
   // visibility) doesn't read a ref during render.
@@ -284,7 +289,7 @@ export function VolumeHistogram({
   const onLegendClick = (level: string, e: React.MouseEvent) => {
     // Shift-click a legend entry to filter by it — previously the legend only ever isolated/hid
     // series client-side and had no way to add a real filter, unlike clicking a bar segment.
-    if (e.shiftKey && onBreakdownFilter && (colorMode === 'breakdown' || colorMode === 'severity')) {
+    if (e.shiftKey && canFilterBreakdown && (colorMode === 'breakdown' || colorMode === 'severity')) {
       setBreakdownPopover({ level, clientX: e.clientX, clientY: e.clientY });
       return;
     }
@@ -502,7 +507,7 @@ export function VolumeHistogram({
     }
     if (x2 - x1 < 0.5) {
       const t = xPctToTime(end);
-      if ((colorMode === 'breakdown' || colorMode === 'severity') && onBreakdownFilter) {
+      if ((colorMode === 'breakdown' || colorMode === 'severity') && canFilterBreakdown) {
         const idx = Math.max(0, Math.min(bars.length - 1, Math.floor((end / 100) * bars.length)));
         const level = bars[idx] ? pickLevelAtY(bars[idx], clientY) : null;
         if (level) {
@@ -695,7 +700,7 @@ export function VolumeHistogram({
                 title={`${level || '(empty)'} — ${
                   isHidden
                     ? 'Hidden — click to isolate, ctrl/cmd-click to show'
-                    : onBreakdownFilter
+                    : canFilterBreakdown
                     ? 'Click to isolate, ctrl/cmd-click to toggle, shift-click to filter'
                     : 'Click to isolate, ctrl/cmd-click to toggle'
                 }`}
@@ -759,7 +764,7 @@ export function VolumeHistogram({
 
       {/* Breakdown-segment click popover — shown instead of instantly applying a filter, so the
           user picks "for"/"out" rather than guessing what a bare click will do. */}
-      {breakdownPopover && onBreakdownFilter && (
+      {breakdownPopover && breakdownTarget && onAddFilter && (
         <Portal>
           <div className={styles.popoverBackdrop} onClick={() => setBreakdownPopover(null)} />
           <div
@@ -770,30 +775,26 @@ export function VolumeHistogram({
             <div className={styles.popoverTitle} title={breakdownPopover.level}>
               {breakdownPopover.level || '(empty)'}
             </div>
-            <Button
-              size="sm"
-              variant="secondary"
-              icon="filter-plus"
-              fill="text"
-              onClick={() => {
-                onBreakdownFilter(breakdownPopover.level, '=');
-                setBreakdownPopover(null);
-              }}
-            >
-              Filter for value
-            </Button>
-            <Button
-              size="sm"
-              variant="secondary"
-              icon="filter-minus"
-              fill="text"
-              onClick={() => {
-                onBreakdownFilter(breakdownPopover.level, '!=');
-                setBreakdownPopover(null);
-              }}
-            >
-              Filter out value
-            </Button>
+            {valueActions(
+              { field: breakdownTarget.field, value: breakdownPopover.level },
+              { addFilter: onAddFilter, copyText: copyToClipboard },
+              ['filterFor', 'filterOut']
+            ).map((a) => (
+              <Button
+                key={a.id}
+                size="sm"
+                variant="secondary"
+                icon={a.icon}
+                fill="text"
+                aria-label={a.ariaLabel}
+                onClick={() => {
+                  a.run();
+                  setBreakdownPopover(null);
+                }}
+              >
+                {a.tooltip}
+              </Button>
+            ))}
           </div>
         </Portal>
       )}

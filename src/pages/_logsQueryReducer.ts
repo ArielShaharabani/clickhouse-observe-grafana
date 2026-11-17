@@ -5,10 +5,13 @@
  * (internal/supporting module, not an entry point).
  */
 import { FilterPill, LogsQueryState, SelectedColumn } from '../types';
+import { addFilterPill } from '../sql/filters';
 
 export type LogsQueryAction =
   | { type: 'SET_SEARCH'; value: string }
   | { type: 'SET_FILTERS'; filters: FilterPill[] }
+  /** Add one pill (dedupes an identical condition) — lets callers stay stable across renders. */
+  | { type: 'ADD_FILTER'; pill: FilterPill }
   | { type: 'TOGGLE_RAW_SQL' }
   | { type: 'SET_RAW_SQL'; sql: string }
   // `columns` on every one of these is the caller's current *displayed* list (effectiveColumns),
@@ -31,6 +34,8 @@ export function logsQueryReducer(state: LogsQueryState, action: LogsQueryAction)
       return { ...state, search: action.value };
     case 'SET_FILTERS':
       return { ...state, filters: action.filters };
+    case 'ADD_FILTER':
+      return { ...state, filters: addFilterPill(state.filters, action.pill) };
     case 'TOGGLE_RAW_SQL':
       return { ...state, useRawSql: !state.useRawSql };
     case 'SET_RAW_SQL':

@@ -25,5 +25,8 @@ Every page reads/writes the same URL params (`q, filters, cols, sort, from, to, 
 ## D9 — Dirty state only for the query (DISC-SEARCH-02 / DISC-TIME-02)
 Grafana's time picker applies a range immediately (no pending state), so only the KQL bar has a dirty state: when the typed query differs from the committed one, its search icon becomes a primary "Update" button. Matched-term highlighting (`src/sql/kql/highlight.ts`) mirrors the SQL that matched (toSql): fields resolve via `resolveField`, field wildcards expand against discovered fields, an unresolvable `field:value` is a body match on its raw text, wildcard values are one ordered pattern, phrases match on word boundaries; negated/exists/range terms and raw-SQL mode get no highlights. One compiled matcher per column.
 
+## D10 — Action registry (SHARED-ACTION-01)
+`src/actions/registry.ts` defines each value/field action once (icon, short tooltip, specific accessible name, compatibility, behaviour): `valueActions(ctx, host, ids?)` → filter for / filter out / copy; `fieldActions` → exists / does not exist. A surface passes an `ActionHost` (`addFilter` omitted = read-only → copy only) and keeps its own layout. Grafana's `IconButton` uses `tooltip` as its accessible name, so icon surfaces use `ActionIconButton` (Tooltip wrapper) to keep names like "Filter for Service: payments". The field list's "filter out rows that have this field" is now a `not_exists` pill (same SQL as the old `= ''`).
+
 ## D6 — Work in a fork, PR per feature, auto-merge on green
 Fork `ArielShaharabani/clickhouse-observe-grafana` (no push access upstream). One branch + PR per feature, merged once all gates pass.

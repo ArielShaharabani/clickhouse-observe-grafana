@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import { css } from '@emotion/css';
 import { GrafanaTheme2, TimeRange } from '@grafana/data';
 import { Icon, useStyles2, useTheme2, Portal } from '@grafana/ui';
@@ -8,7 +8,7 @@ import { fieldTypeColor } from './fieldTypeColors';
 import { FieldStatsPopover } from './FieldStatsPopover';
 import { FieldKeysPopover } from './FieldKeysPopover';
 import { FilterPill, LogsQueryState } from '../../types';
-import { makeFilter } from '../../sql/filters';
+import { copyToClipboard, fieldActions } from '../../actions/registry';
 import { FIELD_DRAG_MIME } from '../../constants';
 
 interface FieldItemProps {
@@ -67,6 +67,11 @@ export function FieldItem({
     setPopoverOpen(true);
   };
 
+  const existsActions = useMemo(
+    () => fieldActions({ field: field.sqlExpr }, { addFilter: onAddFilter, copyText: copyToClipboard }),
+    [field.sqlExpr, onAddFilter]
+  );
+
   return (
     <>
       <div
@@ -88,20 +93,20 @@ export function FieldItem({
         />
         <span className={`${styles.name} field-item-name`}>{field.displayName}</span>
         <div className={`${styles.actions} field-item-actions`}>
-          <button
-            className={styles.actionBtn}
-            title="Filter to rows where this field has any value"
-            onClick={(e) => { e.stopPropagation(); onAddFilter(makeFilter(field.sqlExpr, '', 'exists')); }}
-          >
-            <Icon name="filter-plus" size="xs" />
-          </button>
-          <button
-            className={styles.actionBtn}
-            title="Filter out rows that have this field"
-            onClick={(e) => { e.stopPropagation(); onAddFilter(makeFilter(field.sqlExpr, '', '=')); }}
-          >
-            <Icon name="filter-minus" size="xs" />
-          </button>
+          {existsActions.map((a) => (
+            <button
+              key={a.id}
+              className={styles.actionBtn}
+              title={a.tooltip}
+              aria-label={a.ariaLabel}
+              onClick={(e) => {
+                e.stopPropagation();
+                a.run();
+              }}
+            >
+              <Icon name={a.icon} size="xs" />
+            </button>
+          ))}
           <button
             className={`${styles.actionBtn} ${isSelected ? styles.actionBtnActive : ''}`}
             title={isSelected ? 'Remove from table' : 'Add to table'}

@@ -137,3 +137,12 @@ describe('logsQueryReducer — SET_SORT', () => {
     expect(next.sort).toEqual({ col: 'fld_a', dir: 'desc' });
   });
 });
+
+describe('ADD_FILTER', () => {
+  it('appends a pill and dedupes an identical condition', () => {
+    const pill = { id: 'a', field: 'SeverityText', op: '=' as const, value: 'error' };
+    let state = logsQueryReducer(DEFAULT_LOGS_QUERY_STATE, { type: 'ADD_FILTER', pill });
+    state = logsQueryReducer(state, { type: 'ADD_FILTER', pill: { ...pill, id: 'b' } });
+    expect(state.filters.map((f) => f.id)).toEqual(['b']);
+  });
+});

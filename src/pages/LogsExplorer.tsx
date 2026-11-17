@@ -1059,12 +1059,8 @@ export function LogsExplorer() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fetchVolume]);
 
-  const onAddFilter = (filter: FilterPill) => {
-    dispatch({
-      type: 'SET_FILTERS',
-      filters: addFilterPill(queryState.filters, filter),
-    });
-  };
+  // Stable identity: memoized action rows (drawer, field list) don't rebuild on every render.
+  const onAddFilter = useCallback((filter: FilterPill) => dispatch({ type: 'ADD_FILTER', pill: filter }), []);
 
   // Matched-term highlighting in the grid (DISC-SEARCH-02): terms from the committed query and
   // the enabled positive filters; bare terms apply to the body column.
@@ -1138,15 +1134,17 @@ export function LogsExplorer() {
   // 'field' and 'severity' breakdowns — severity used to be excluded here (no field to filter by
   // was more true reasoning: this callback simply didn't handle it), which is why the severity
   // breakdown couldn't be filtered from the chart at all.
-  const onHistogramBreakdownFilter = (value: string, op: '=' | '!=') => {
-    if (breakdown.kind === 'field') {
-      onAddFilter(makeFilter(breakdown.field.sqlExpr, value, op));
-    } else if (breakdown.kind === 'severity' && config.columns.severity) {
-      // buildVolumeQuery's severity breakdown no longer lower()s server-side (see queryBuilder.ts)
-      // — `value` here is the real, as-stored casing, so a plain exact-match filter is correct.
-      onAddFilter(makeFilter(config.columns.severity, value, op));
-    }
-  };
+  // Filter target for histogram segment/legend actions: the breakdown field, or the severity
+  // column (stored casing — buildVolumeQuery no longer lower()s it server-side).
+  const histogramBreakdownTarget = useMemo(
+    () =>
+      breakdown.kind === 'field'
+        ? { field: breakdown.field.sqlExpr }
+        : breakdown.kind === 'severity' && config.columns.severity
+          ? { field: config.columns.severity }
+          : undefined,
+    [breakdown, config.columns.severity]
+  );
 
   // Lazy-fetch rows beyond the initial buffer when the user pages past it.
   const ensureRows = useCallback(
@@ -1460,7 +1458,8 @@ export function LogsExplorer() {
                   totalEvents={totalEvents}
                   resolvedInterval={resolvedInterval}
                   onSelectRange={onHistogramSelectRange}
-                  onBreakdownFilter={onHistogramBreakdownFilter}
+                  breakdownTarget={histogramBreakdownTarget}
+                  onAddFilter={onAddFilter}
                   collapsed={histogramCollapsed}
                   onToggleCollapsed={() => setHistogramCollapsed((v) => !v)}
                 />

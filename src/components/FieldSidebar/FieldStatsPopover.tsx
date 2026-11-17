@@ -8,7 +8,7 @@ import { fieldTypeColor } from './fieldTypeColors';
 import { buildWhereConditions } from '../../sql/queryBuilder';
 import { buildFieldIndex } from '../../sql/fields';
 import { buildValuesCacheKey, fetchFieldValuesWithTotal, isValuesCacheEntryFresh, valuesCache } from '../../sql/kql/_values';
-import { makeFilter } from '../../sql/filters';
+import { copyToClipboard, valueActions } from '../../actions/registry';
 import { FilterPill, LogsQueryState, SourceConfig } from '../../types';
 import { errMsg } from '../../errMsg';
 import { SourceConfigContext } from '../App/App';
@@ -175,20 +175,15 @@ export function FieldStatsPopover({
 
             {/* Filter buttons — revealed on row hover via CSS */}
             <div className={`${styles.filterBtns} field-filter-btns`}>
-              <button
-                className={styles.filterBtn}
-                title={`Filter for ${field.displayName}: "${v.value}"`}
-                onClick={() => onAddFilter(makeFilter(field.sqlExpr, v.value, '='))}
-              >
-                <Icon name="filter-plus" size="xs" />
-              </button>
-              <button
-                className={styles.filterBtn}
-                title={`Filter out ${field.displayName}: "${v.value}"`}
-                onClick={() => onAddFilter(makeFilter(field.sqlExpr, v.value, '!='))}
-              >
-                <Icon name="filter-minus" size="xs" />
-              </button>
+              {valueActions(
+                { field: field.sqlExpr, value: v.value },
+                { addFilter: onAddFilter, copyText: copyToClipboard },
+                ['filterFor', 'filterOut']
+              ).map((a) => (
+                <button key={a.id} className={styles.filterBtn} title={a.ariaLabel} aria-label={a.ariaLabel} onClick={a.run}>
+                  <Icon name={a.icon} size="xs" />
+                </button>
+              ))}
             </div>
           </div>
         ))}
