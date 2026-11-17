@@ -23,6 +23,8 @@ import { DEFAULT_LOGS_QUERY_STATE } from '../types';
 import { compileLens, LensResult, shapeLensRows } from './compile';
 import { LensChart } from './render/LensChart';
 import { CHART_ICONS, ChartTypeSwitcher } from './ChartTypeSwitcher';
+import { DimensionEditor } from './DimensionEditor';
+import { addBucket, addMetric, metricForField, nextBucketField, queryShape, replaceDim } from './dimensions';
 import {
   BucketDim,
   ChartType,
@@ -46,7 +48,11 @@ function defaultRange(): TimeRange {
 
 interface Group {
   name: string;
+  /** What the group's "+ Add" slot adds. */
+  role: 'metric' | 'bucket';
   dims: Array<BucketDim | MetricDim>;
+  /** Holds several dimensions (the slot stays after the first). */
+  multi?: boolean;
 }
 
 /** Dimension groups as each chart type names them (LENS-DIM-01). */
@@ -58,25 +64,25 @@ export function dimensionGroups(s: LensState): Group[] {
     case 'area':
     case 'bar':
       return [
-        { name: 'Horizontal axis', dims: opt(b0) },
-        { name: 'Vertical axis', dims: s.metrics },
-        { name: 'Breakdown', dims: opt(b1) },
+        { name: 'Horizontal axis', role: 'bucket', dims: opt(b0) },
+        { name: 'Vertical axis', role: 'metric', dims: s.metrics, multi: true },
+        { name: 'Breakdown', role: 'bucket', dims: b0 ? opt(b1) : [] },
       ];
     case 'table':
       return [
-        { name: 'Rows', dims: s.buckets },
-        { name: 'Metrics', dims: s.metrics },
+        { name: 'Rows', role: 'bucket', dims: s.buckets, multi: true },
+        { name: 'Metrics', role: 'metric', dims: s.metrics, multi: true },
       ];
     case 'metric':
       return [
-        { name: 'Primary metric', dims: s.metrics.slice(0, 1) },
-        { name: 'Secondary metric', dims: s.metrics.slice(1, 2) },
-        { name: 'Break down by', dims: opt(b0) },
+        { name: 'Primary metric', role: 'metric', dims: s.metrics.slice(0, 1) },
+        { name: 'Secondary metric', role: 'metric', dims: s.metrics.slice(1, 2) },
+        { name: 'Break down by', role: 'bucket', dims: opt(b0) },
       ];
     case 'pie':
       return [
-        { name: 'Slice by', dims: s.buckets },
-        { name: 'Size by', dims: s.metrics },
+        { name: 'Slice by', role: 'bucket', dims: s.buckets },
+        { name: 'Size by', role: 'metric', dims: s.metrics },
       ];
   }
 }
@@ -166,8 +172,9 @@ export function LensPage() {
 
   // Run the chart query.
   const [result, setResult] = useState<{ key: string; data?: LensResult; error?: string } | null>(null);
+  // Names are display-only: renaming a dimension must not re-run the query.
   const queryKey = JSON.stringify([
-    encodeLens(lens),
+    encodeLens(queryShape(lens)),
     config.datasourceUid,
     config.database,
     config.logsTable,
@@ -220,6 +227,29 @@ export function LensPage() {
     setLens(switchChart(next, lostTime ? chooseChart(next.buckets) : next.chartType, ctx));
   };
   const cards = useMemo(() => suggestions(lens, ctx), [lens, ctx]);
+  // Dimension being edited (LENS-DIM-02). Its group is looked up in the current state each render,
+  // so a chart change elsewhere (suggestion, type switch) retitles or closes the editor.
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const editingGroup = editingId
+    ? dimensionGroups(lens).find((g) => g.dims.some((d) => d.id === editingId))
+    : undefined;
+  const editingDim = editingGroup?.dims.find((d) => d.id === editingId);
+  const canAddTo = (g: Group) => g.role === 'metric' || !!nextBucketField(lens, lensFields);
+  const addToGroup = (g: Group, dropped?: LensField) => {
+    if (g.role === 'metric') {
+      const { state, id } = addMetric(lens, ctx);
+      const m = dropped ? metricForField(id, dropped) : undefined;
+      setLens(m ? replaceDim(state, m) : state);
+      setEditingId(id);
+      return;
+    }
+    const field = dropped && dropped.type !== 'records' ? dropped : nextBucketField(lens, lensFields);
+    if (field) {
+      const { state, id } = addBucket(lens, field, ctx);
+      setLens(state);
+      setEditingId(id);
+    }
+  };
   const [suggestionsOpen, setSuggestionsOpen] = useState(true);
   const [dragOver, setDragOver] = useState(false);
 
@@ -386,7 +416,7 @@ export function LensPage() {
         </section>
 
         <section className={styles.dims} aria-label="Dimensions">
-          {!isEmptyLens(lens) && (
+          {!isEmptyLens(lens) && !editingDim && (
             <ChartTypeSwitcher
               value={lens.chartType}
               subType={lens.subType}
@@ -394,16 +424,34 @@ export function LensPage() {
               onSubTypeChange={(sub) => setLens(switchChart(lens, lens.chartType, ctx, sub))}
             />
           )}
-          {isEmptyLens(lens) ? (
+          {editingGroup && editingDim ? (
+            <DimensionEditor
+              dim={editingDim}
+              group={editingGroup.name}
+              fields={lensFields}
+              onChange={(d) => setLens(replaceDim(lens, d))}
+              onRemove={() => {
+                setEditingId(null);
+                removeDim(editingDim.id);
+              }}
+              onClose={() => setEditingId(null)}
+            />
+          ) : isEmptyLens(lens) ? (
             <div className={styles.emptySub}>Dimensions appear here as you add fields.</div>
           ) : (
             dimensionGroups(lens).map((g) => (
               <div key={g.name} className={styles.group} role="group" aria-label={g.name}>
                 <div className={styles.groupName}>{g.name}</div>
-                {g.dims.length === 0 && <div className={styles.slot}>+ Add or drag-and-drop a field</div>}
                 {g.dims.map((d) => (
                   <div key={d.id} className={styles.dim}>
-                    <span className={styles.dimLabel}>{dimLabel(d)}</span>
+                    <button
+                      type="button"
+                      className={styles.dimLabel}
+                      aria-label={`Edit ${dimLabel(d)}`}
+                      onClick={() => setEditingId(d.id)}
+                    >
+                      {dimLabel(d)}
+                    </button>
                     <IconButton
                       name="times"
                       size="sm"
@@ -412,6 +460,32 @@ export function LensPage() {
                     />
                   </div>
                 ))}
+                {(g.dims.length === 0 || g.multi) && (
+                  <button
+                    type="button"
+                    className={styles.slot}
+                    aria-label={`Add to ${g.name}`}
+                    disabled={!canAddTo(g)}
+                    title={canAddTo(g) ? undefined : 'No other field can be added here'}
+                    onClick={() => addToGroup(g)}
+                    onDragOver={(e) => {
+                      if (e.dataTransfer.types.includes(FIELD_DRAG_MIME)) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                      }
+                    }}
+                    onDrop={(e) => {
+                      const f = lensFields.find((x) => x.id === e.dataTransfer.getData(FIELD_DRAG_MIME));
+                      if (f) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        addToGroup(g, f);
+                      }
+                    }}
+                  >
+                    + Add or drag-and-drop a field
+                  </button>
+                )}
               </div>
             ))
           )}
@@ -606,6 +680,17 @@ const getStyles = (theme: GrafanaTheme2) => ({
     letter-spacing: 0.04em;
   `,
   slot: css`
+    &:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+    background: none;
+    text-align: left;
+    cursor: pointer;
+    &:hover {
+      border-color: ${theme.colors.primary.border};
+      color: ${theme.colors.text.primary};
+    }
     border: 1px dashed ${theme.colors.border.medium};
     border-radius: ${theme.shape.radius.default};
     padding: ${theme.spacing(0.75)};
@@ -623,6 +708,15 @@ const getStyles = (theme: GrafanaTheme2) => ({
   `,
   dimLabel: css`
     flex: 1;
+    background: none;
+    border: none;
+    padding: 0;
+    color: ${theme.colors.text.primary};
+    text-align: left;
+    cursor: pointer;
+    &:hover {
+      text-decoration: underline;
+    }
     font-size: ${theme.typography.bodySmall.fontSize};
     overflow: hidden;
     text-overflow: ellipsis;

@@ -11,6 +11,7 @@ import {
   LensField,
   LensState,
   MetricDim,
+  newDimId,
   XySubType,
 } from './state';
 
@@ -19,8 +20,7 @@ export interface LensContext {
   timeField?: { sqlExpr: string; label: string };
 }
 
-let seq = 0;
-const newId = (prefix: string) => `${prefix}${Date.now().toString(36)}${(seq++).toString(36)}`;
+const newId = newDimId;
 
 /** LENS-AUTO-01 rule 2: top values size. */
 export const TERMS_SIZE = 9;

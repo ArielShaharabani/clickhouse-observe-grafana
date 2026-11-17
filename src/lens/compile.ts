@@ -18,7 +18,7 @@ import { SourceConfig } from '../types';
 import { quoteIdentifier, tableRef } from '../sql/queryBuilder';
 import { configSettingsFragments, withSettings } from '../sql/settings';
 import { resolveInterval } from '../components/_histogramInterval';
-import { BucketDim, dimLabel, LensState, MetricDim } from './state';
+import { BucketDim, clampPercentile, dimLabel, LensState, MetricDim } from './state';
 
 /** Safety cap on result rows (a date histogram × 9 breakdown values stays far below it). */
 export const LENS_ROW_LIMIT = 10_000;
@@ -45,6 +45,9 @@ function metricSql(m: MetricDim): string {
       return `max(${x})`;
     case 'unique':
       return `uniq(${f})`;
+    case 'percentile':
+      // A number we produce (clamped 1–99), never text from the URL.
+      return `quantile(${(clampPercentile(m.percentile) / 100).toFixed(2)})(${x})`;
   }
 }
 
