@@ -8,7 +8,7 @@ import { fieldTypeColor } from './fieldTypeColors';
 import { FieldStatsPopover } from './FieldStatsPopover';
 import { FieldKeysPopover } from './FieldKeysPopover';
 import { FilterPill, LogsQueryState } from '../../types';
-import { makeFilter } from '../../sql/filters';
+import { copyToClipboard, fieldActions } from '../../actions/registry';
 import { FIELD_DRAG_MIME } from '../../constants';
 
 interface FieldItemProps {
@@ -88,20 +88,23 @@ export function FieldItem({
         />
         <span className={`${styles.name} field-item-name`}>{field.displayName}</span>
         <div className={`${styles.actions} field-item-actions`}>
-          <button
-            className={styles.actionBtn}
-            title="Filter to rows where this field has any value"
-            onClick={(e) => { e.stopPropagation(); onAddFilter(makeFilter(field.sqlExpr, '', 'exists')); }}
-          >
-            <Icon name="filter-plus" size="xs" />
-          </button>
-          <button
-            className={styles.actionBtn}
-            title="Filter out rows that have this field"
-            onClick={(e) => { e.stopPropagation(); onAddFilter(makeFilter(field.sqlExpr, '', '=')); }}
-          >
-            <Icon name="filter-minus" size="xs" />
-          </button>
+          {fieldActions(
+            { field: field.sqlExpr, fieldLabel: field.displayName },
+            { addFilter: onAddFilter, copyText: copyToClipboard }
+          ).map((a) => (
+            <button
+              key={a.id}
+              className={styles.actionBtn}
+              title={a.tooltip}
+              aria-label={a.ariaLabel}
+              onClick={(e) => {
+                e.stopPropagation();
+                a.run();
+              }}
+            >
+              <Icon name={a.icon} size="xs" />
+            </button>
+          ))}
           <button
             className={`${styles.actionBtn} ${isSelected ? styles.actionBtnActive : ''}`}
             title={isSelected ? 'Remove from table' : 'Add to table'}

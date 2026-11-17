@@ -1,4 +1,5 @@
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { copyToClipboard, valueActions } from '../actions/registry';
 import { css, cx } from '@emotion/css';
 import { dateTime, formattedValueToString, getValueFormat, GrafanaTheme2, TimeRange } from '@grafana/data';
 import { Button, Portal, Spinner, useStyles2 } from '@grafana/ui';
@@ -770,30 +771,29 @@ export function VolumeHistogram({
             <div className={styles.popoverTitle} title={breakdownPopover.level}>
               {breakdownPopover.level || '(empty)'}
             </div>
-            <Button
-              size="sm"
-              variant="secondary"
-              icon="filter-plus"
-              fill="text"
-              onClick={() => {
-                onBreakdownFilter(breakdownPopover.level, '=');
-                setBreakdownPopover(null);
-              }}
-            >
-              Filter for value
-            </Button>
-            <Button
-              size="sm"
-              variant="secondary"
-              icon="filter-minus"
-              fill="text"
-              onClick={() => {
-                onBreakdownFilter(breakdownPopover.level, '!=');
-                setBreakdownPopover(null);
-              }}
-            >
-              Filter out value
-            </Button>
+            {valueActions(
+              { field: '', fieldLabel: breakdownPopover.level || '(empty)', value: breakdownPopover.level },
+              {
+                addFilter: (pill) => onBreakdownFilter(breakdownPopover.level, pill.op === '!=' ? '!=' : '='),
+                copyText: copyToClipboard,
+              },
+              ['filterFor', 'filterOut']
+            ).map((a) => (
+              <Button
+                key={a.id}
+                size="sm"
+                variant="secondary"
+                icon={a.icon}
+                fill="text"
+                aria-label={a.ariaLabel}
+                onClick={() => {
+                  a.run();
+                  setBreakdownPopover(null);
+                }}
+              >
+                {a.tooltip}
+              </Button>
+            ))}
           </div>
         </Portal>
       )}
