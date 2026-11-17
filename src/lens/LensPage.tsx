@@ -22,6 +22,7 @@ import { buildAppPageUrl } from '../state/sharedSearch';
 import { DEFAULT_LOGS_QUERY_STATE } from '../types';
 import { compileLens, LensResult, shapeLensRows } from './compile';
 import { LensChart } from './render/LensChart';
+import { CHART_ICONS, ChartTypeSwitcher } from './ChartTypeSwitcher';
 import {
   BucketDim,
   ChartType,
@@ -39,14 +40,6 @@ import {
 import { addField, chartTitle, chooseChart, isLensField, isXy, LensContext, suggestions, switchChart } from './suggest';
 import { shiftTimeRange, zoomOutTimeRange } from '../utils/timeRangeNav';
 
-const CHART_ICONS: Record<ChartType, IconName> = {
-  line: 'chart-line',
-  area: 'chart-line',
-  bar: 'graph-bar',
-  metric: 'calculator-alt',
-  table: 'table',
-  pie: 'circle',
-};
 
 function defaultRange(): TimeRange {
   return { from: dateTime(Date.now() - 3600 * 1000), to: dateTime(Date.now()), raw: { from: 'now-1h', to: 'now' } };
@@ -351,6 +344,14 @@ export function LensPage() {
         </section>
 
         <section className={styles.dims} aria-label="Dimensions">
+          {!isEmptyLens(lens) && (
+            <ChartTypeSwitcher
+              value={lens.chartType}
+              subType={lens.subType}
+              onChange={(t) => setLens(switchChart(lens, t, ctx))}
+              onSubTypeChange={(sub) => setLens(switchChart(lens, lens.chartType, ctx, sub))}
+            />
+          )}
           {isEmptyLens(lens) ? (
             <div className={styles.emptySub}>Dimensions appear here as you add fields.</div>
           ) : (

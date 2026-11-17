@@ -1,7 +1,7 @@
 # Context snapshot — read this to restart
 
 Saved after every feature (and every review-fix round). A new session can resume from this file plus `PROGRESS.md` alone.
-Last saved: 2026-11-17, #12 LENS-TYPE-01 started on branch `feat/lens-type-01` (PR 12 merged).
+Last saved: 2026-11-17, #12 LENS-TYPE-01 switcher built + unit-tested on `feat/lens-type-01` (PR 12 merged).
 
 ## Goal
 Bring Kibana Discover + Lens style exploration to Grafana on ClickHouse by extending the **ClickHouse Observe** app plugin.
