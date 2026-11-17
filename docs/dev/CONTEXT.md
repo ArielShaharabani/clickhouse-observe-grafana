@@ -1,7 +1,7 @@
 # Context snapshot — read this to restart
 
 Saved after every feature (and every review-fix round). A new session can resume from this file plus `PROGRESS.md` alone.
-Last saved: 2026-11-17, after #9 DISC-CHART-01 (PR 10) review fixes.
+Last saved: 2026-11-17, after #10 DISC-DOC-01 (PR 11) review fixes.
 
 ## Goal
 Bring Kibana Discover + Lens style exploration to Grafana on ClickHouse by extending the **ClickHouse Observe** app plugin.
@@ -28,6 +28,7 @@ Bring Kibana Discover + Lens style exploration to Grafana on ClickHouse by exten
 | 7 | DISC-TABLE-01/02: cell keyboard navigation, Expand popover, display options (density, body lines) | 8 | `src/components/LogsTable.tsx`, `src/components/CellExpandPopover.tsx`, `src/components/GridDisplayOptions.tsx` |
 | 8 | DISC-SIDEBAR-01: field search, type filter with counts, Selected / Popular / Available groups | 9 | `src/components/FieldSidebar/FieldSidebar.tsx`, `FieldTypeFilter.tsx`, `src/state/fieldUsage.ts` |
 | 9 | DISC-CHART-01: right-click bucket actions (filter by time, filter selected series), range caption | 10 | `src/components/BucketActionsPopover.tsx`, `VolumeHistogram.tsx`, `LogsHistogramPanel.tsx` |
+| 10 | DISC-DOC-01: pinned fields, Hide null fields, type filter, first/last navigation, field-present action | 11 | `src/components/LogDetailDrawer.tsx`, `src/state/docPins.ts` |
 
 ## Key decisions (details in DECISIONS.md)
 - Frontend-only; queries via grafana-clickhouse-datasource (`src/data/runQuery.ts`). Plain React + @grafana/ui, no Scenes.
@@ -41,11 +42,11 @@ Bring Kibana Discover + Lens style exploration to Grafana on ClickHouse by exten
 - Clone: `C:\Users\Ariel\clickhouse-observe-grafana-dev`; git identity set locally; `core.autocrlf false` + `core.eol lf` required (else Grafana container fails on CRLF `entrypoint.sh`).
 - Stack: `docker compose up -d --build grafana clickhouse`; Grafana http://localhost:3000. Restart Grafana after `plugin.json`/provisioning changes.
 - Docker VM has ~7.5 GB and the user also runs `tagdemo-es`, `tagdemo-kb`, `demo-metabase`; e2e runs on 1 worker, no retries, 15 s expect timeout. Occasional load timeouts → rerun the failed test before assuming a bug.
-- Grafana `IconButton` uses `tooltip` as its accessible name → use `ActionIconButton` for specific names. Grid cells have role `cell` and `data-cell="row:col"` (data columns only; the checkbox/expand cells come first); keyboard-focused cell has `aria-selected`. Grafana `Toggletip` hides the rest of the page from the a11y tree while open — close it (Escape) before locating the grid in e2e; open-detail button is named "Open detail". KQL wildcard `*` is a private-use sentinel (`WILDCARD_STAR`) in parsed values.
+- Grafana `IconButton` uses `tooltip` as its accessible name → use `ActionIconButton` for specific names. Detail panel rows have testid `doc-field-row`; open it with the row's "Open detail" button (IconButton names come from tooltips: "Close", "Next log", "Pin field X"). Grid cells have role `cell` and `data-cell="row:col"` (data columns only; the checkbox/expand cells come first); keyboard-focused cell has `aria-selected`. Grafana `Toggletip` hides the rest of the page from the a11y tree while open — close it (Escape) before locating the grid in e2e; open-detail button is named "Open detail". KQL wildcard `*` is a private-use sentinel (`WILDCARD_STAR`) in parsed values.
 - Gates: `npm run typecheck && npm run lint && npm run test:ci && npm run build && npx playwright test`; then `/code-review medium master...<branch>`.
 
 ## Fixture facts (`tests/fixture.ts`)
 41,520 rows, 2026-01-01..08 UTC; `SeverityNumber` uses OTel numbers (debug 5, info 9, warn 13, error 17); levels info 28,265 · warn 6,080 · debug 3,984 · error 3,191; services 8,064 each except payments 9,264; errors by service auth 384, checkout 445, frontend 373, inventory 414, payments 1,575; incident 2026-01-05 09:00–11:00 (1,200 payments rows, `http.status_code` 503). Latest-5,000 sample: info 3,483 · warn 792 · debug 487 · error 238 (payments-filtered: info 2,667 · error 1,370 · warn 569 · debug 394).
 
 ## Now / next
-Next: #10 DISC-DOC-01 (document flyout) — exact notes in `PROGRESS.md`.
+Next: #11 LENS-AUTO-01 / LENS-SUGG-01 — the first Lens feature (Visualize page shell first) — exact notes in `PROGRESS.md`.

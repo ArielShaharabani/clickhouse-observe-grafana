@@ -1595,6 +1595,12 @@ export function LogsExplorer() {
                           ? () => setSelectedRow(pageRows[selectedIndex + 1])
                           : undefined
                       }
+                      onFirst={selectedIndex > 0 ? () => setSelectedRow(pageRows[0]) : undefined}
+                      onLast={
+                        selectedIndex >= 0 && selectedIndex < pageRows.length - 1
+                          ? () => setSelectedRow(pageRows[pageRows.length - 1])
+                          : undefined
+                      }
                       navLabel={selectedIndex >= 0 ? `${selectedIndex + 1} of ${pageRows.length}` : undefined}
                     />
                   </div>
