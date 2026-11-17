@@ -6,12 +6,16 @@
  *   same shape as the histogram breakdown); no "Other" bucket yet
  * - median → `quantile(0.5)`, unique count → `uniq`, average/sum/min/max → the same-named aggregate
  *
- * Field expressions come from the field model (discovered columns / Map keys / JSON paths), never
- * from free text, and filters/search arrive as already-built WHERE conditions.
+ * Field expressions must come from the field model (discovered columns / Map keys / JSON paths):
+ * callers run `sanitizeLens` against the discovered fields first, and every expression is also
+ * passed through `quoteIdentifier` here (a bare name is quoted; only well-formed Map accessors and
+ * dotted paths pass through). Filters/search arrive as already-built WHERE conditions.
+ *
+ * Date buckets are returned as epoch milliseconds, so no timezone guessing is needed on the way back.
  */
 import { TimeRange } from '@grafana/data';
 import { SourceConfig } from '../types';
-import { tableRef } from '../sql/queryBuilder';
+import { quoteIdentifier, tableRef } from '../sql/queryBuilder';
 import { configSettingsFragments, withSettings } from '../sql/settings';
 import { resolveInterval } from '../components/_histogramInterval';
 import { BucketDim, dimLabel, LensState, MetricDim } from './state';
@@ -26,7 +30,8 @@ function metricSql(m: MetricDim): string {
   if (m.op === 'count' || !m.field) {
     return 'count()';
   }
-  const x = m.numeric ? m.field : `toFloat64OrNull(toString(${m.field}))`;
+  const f = quoteIdentifier(m.field);
+  const x = m.numeric ? f : `toFloat64OrNull(toString(${f}))`;
   switch (m.op) {
     case 'median':
       return `quantile(0.5)(${x})`;
@@ -39,7 +44,7 @@ function metricSql(m: MetricDim): string {
     case 'max':
       return `max(${x})`;
     case 'unique':
-      return `uniq(${m.field})`;
+      return `uniq(${f})`;
   }
 }
 
@@ -61,9 +66,11 @@ export function compileLens(state: LensState, config: SourceConfig, conditions: 
     if (b.kind === 'date_histogram') {
       const iv = resolveInterval('auto', timeRange);
       intervalMs = iv.intervalMs;
-      selects.push(`toStartOfInterval(${b.field}, INTERVAL ${iv.value} ${iv.unit}) AS ${bucketAlias(i)}`);
+      selects.push(
+        `toUnixTimestamp(toStartOfInterval(${quoteIdentifier(b.field)}, INTERVAL ${iv.value} ${iv.unit})) * 1000 AS ${bucketAlias(i)}`
+      );
     } else {
-      const expr = `toString(${b.field})`;
+      const expr = `toString(${quoteIdentifier(b.field)})`;
       const cte = `top${i}`;
       ctes.push(
         `${cte} AS (SELECT ${expr} AS v FROM ${tbl}${where ? ` WHERE ${where}` : ''} GROUP BY v ORDER BY count() DESC LIMIT ${Math.max(1, Math.floor(b.size))})`
@@ -98,6 +105,17 @@ export function compileLens(state: LensState, config: SourceConfig, conditions: 
   return { sql, intervalMs };
 }
 
+/** Metric labels made unique ("Median of x", "Median of x (2)") so series never merge. */
+export function uniqueMetricLabels(metrics: MetricDim[]): string[] {
+  const seen = new Map<string, number>();
+  return metrics.map((m) => {
+    const base = dimLabel(m);
+    const n = (seen.get(base) ?? 0) + 1;
+    seen.set(base, n);
+    return n === 1 ? base : `${base} (${n})`;
+  });
+}
+
 /** One plotted series: a metric (optionally for one breakdown value). */
 export interface LensSeries {
   name: string;
@@ -114,16 +132,10 @@ export interface LensResult {
   table: { columns: string[]; rows: Array<Array<string | number | null>> };
 }
 
+/** Date buckets come back as epoch ms (see compileLens), possibly as a numeric string. */
 function toMs(v: unknown): number {
-  if (typeof v === 'number') {
-    return v;
-  }
-  if (v && typeof v === 'object' && 'valueOf' in v) {
-    return Number((v as { valueOf(): number }).valueOf());
-  }
-  const s = String(v);
-  const n = Date.parse(s.includes('T') || s.endsWith('Z') ? s : `${s.replace(' ', 'T')}Z`);
-  return Number.isNaN(n) ? 0 : n;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : 0;
 }
 
 const num = (v: unknown): number => {
@@ -139,6 +151,7 @@ export function shapeLensRows(state: LensState, rows: Array<Record<string, unkno
   const seenX = new Set<string | number>();
   const seriesMap = new Map<string, LensSeries>();
   const multiMetric = state.metrics.length > 1;
+  const labels = uniqueMetricLabels(state.metrics);
 
   for (const r of rows) {
     const xv = !x ? '' : xIsTime ? toMs(r[bucketAlias(0)]) : String(r[bucketAlias(0)] ?? '');
@@ -147,8 +160,8 @@ export function shapeLensRows(state: LensState, rows: Array<Record<string, unkno
       xs.push(xv);
     }
     const bv = breakdown ? String(r[bucketAlias(1)] ?? '') : undefined;
-    state.metrics.forEach((m, i) => {
-      const label = dimLabel(m);
+    state.metrics.forEach((_m, i) => {
+      const label = labels[i];
       const name = bv === undefined ? label : multiMetric ? `${bv} · ${label}` : bv;
       let s = seriesMap.get(name);
       if (!s) {
@@ -161,7 +174,7 @@ export function shapeLensRows(state: LensState, rows: Array<Record<string, unkno
   if (xIsTime) {
     xs.sort((a, b) => Number(a) - Number(b));
   }
-  const columns = [...state.buckets.map((b) => dimLabel(b)), ...state.metrics.map((m) => dimLabel(m))];
+  const columns = [...state.buckets.map((b) => dimLabel(b)), ...labels];
   const tableRows = rows.map((r) => [
     ...state.buckets.map((b, i) => {
       const v = r[bucketAlias(i)];

@@ -104,3 +104,25 @@ describe('LENS-SUGG-01 suggestions', () => {
     expect(suggestions(EMPTY_LENS, ctx)).toEqual([]);
   });
 });
+
+describe('review fixes', () => {
+  it('adding a field keeps the chart type the user chose', () => {
+    const table = switchChart(add(SERVICE, LEVEL), 'table', ctx);
+    const next = addField(table, f('ScopeName', 'string'), ctx);
+    expect(next.chartType).toBe('table');
+    expect(next.buckets).toHaveLength(3);
+    const area = switchChart(add(RECORDS_FIELD), 'area', ctx, 'percentage');
+    const next2 = addField(area, DURATION, ctx);
+    expect(next2.chartType).toBe('area');
+    expect(next2.subType).toBe('percentage');
+  });
+
+  it('the same number field twice is not added twice', () => {
+    expect(add(DURATION, DURATION).metrics).toHaveLength(1);
+  });
+
+  it('no flip when a date is involved; pie holds one slice dimension', () => {
+    expect(suggestions(add(TS, SERVICE), ctx).some((s) => s.title.includes('for each'))).toBe(false);
+    expect(switchChart(add(LEVEL, SERVICE), 'pie', ctx).buckets).toHaveLength(1);
+  });
+});

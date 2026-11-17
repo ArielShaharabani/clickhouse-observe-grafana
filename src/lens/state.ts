@@ -135,3 +135,24 @@ export function decodeLens(raw: string | null | undefined): LensState | undefine
     return undefined;
   }
 }
+
+/**
+ * Keeps only dimensions whose field is one of `allowed` (the discovered fields' SQL expressions
+ * plus the time column). The `lens` URL param is untrusted — a shared link must never carry its
+ * own SQL — so this runs before anything is compiled.
+ */
+export function sanitizeLens(s: LensState, allowed: ReadonlySet<string>): LensState {
+  const buckets = s.buckets.filter((b) => allowed.has(b.field));
+  const metrics = s.metrics.filter((m) => m.op === 'count' || (m.field !== undefined && allowed.has(m.field)));
+  if (buckets.length === s.buckets.length && metrics.length === s.metrics.length) {
+    return s;
+  }
+  if (buckets.length === 0 && metrics.length === 0) {
+    return EMPTY_LENS;
+  }
+  // Nothing left to put on an axis: show the remaining metrics as numbers.
+  if (buckets.length === 0 && s.chartType !== 'metric' && s.chartType !== 'table') {
+    return { chartType: 'metric', buckets, metrics };
+  }
+  return { ...s, buckets, metrics };
+}

@@ -77,6 +77,9 @@ export function addField(state: LensState, field: LensField, ctx: LensContext): 
       buckets = [dateDim(field.sqlExpr, field.label), ...buckets];
     }
   } else if (field.type === 'number') {
+    if (metrics.some((m) => m.op === 'median' && m.field === field.sqlExpr)) {
+      return state;
+    }
     metrics.push({ kind: 'metric', id: newId('m'), op: 'median', field: field.sqlExpr, fieldLabel: field.label, numeric: true });
   } else {
     if (!buckets.some((b) => b.kind === 'terms' && b.field === field.sqlExpr)) {
@@ -92,11 +95,17 @@ export function addField(state: LensState, field: LensField, ctx: LensContext): 
   if (metrics.length === 0 && buckets.length > 0) {
     metrics = [countMetric()];
   }
+  const wasEmpty = state.buckets.length === 0 && state.metrics.length === 0;
+  // First field: the top suggestion picks the chart. Later fields keep the user's chart type and
+  // sub-type (LENS-TYPE-01: the user's choice isn't silently replaced), within what it can hold.
+  if (wasEmpty) {
+    return withDefaults({ chartType: chooseChart(buckets), buckets, metrics });
+  }
   // XY holds X + Breakdown; a third bucket replaces the breakdown.
-  if (buckets.length > 2) {
+  if (isXy(state.chartType) && buckets.length > 2) {
     buckets = [buckets[0], buckets[buckets.length - 1]];
   }
-  return withDefaults({ chartType: chooseChart(buckets), buckets, metrics });
+  return switchChart({ ...state, buckets, metrics }, state.chartType, ctx, state.subType);
 }
 
 /**
@@ -124,7 +133,8 @@ export function switchChart(state: LensState, target: ChartType, ctx: LensContex
       metrics = metrics.slice(0, 2);
       break;
     case 'pie':
-      buckets = buckets.filter((b) => b.kind === 'terms').slice(0, 2);
+      // One "Slice by" (nested slices need a sunburst Grafana doesn't ship).
+      buckets = buckets.filter((b) => b.kind === 'terms').slice(0, 1);
       metrics = metrics.slice(0, 1);
       break;
     case 'table':
@@ -171,8 +181,9 @@ export function suggestions(state: LensState, ctx: LensContext): Suggestion[] {
     add('Pie', switchChart(state, 'pie', ctx));
     add('Table', switchChart(state, 'table', ctx));
   }
-  // Flip: swap X and breakdown (rule 6).
-  if (b0 && b1) {
+  // Flip: swap X and breakdown (rule 6) — category × category only; a date breakdown would turn
+  // every time bucket into its own series.
+  if (b0?.kind === 'terms' && b1?.kind === 'terms') {
     const flipped: LensState = { ...state, buckets: [b1, b0] };
     add(`${b0.label} for each ${b1.label}`, { ...flipped, chartType: chooseChart(flipped.buckets), subType: state.subType ?? 'stacked' });
   }
@@ -190,5 +201,7 @@ export function suggestions(state: LensState, ctx: LensContext): Suggestion[] {
 
 /** Human title of a state's chart, e.g. "Bar stacked", "Line", "Metric". */
 export function chartTitle(s: LensState): string {
-  return isXy(s.chartType) && s.chartType === 'bar' && s.subType ? `Bar ${s.subType}` : CHART_LABELS[s.chartType];
+  return s.subType && isXy(s.chartType) && !(s.chartType === 'line' && s.subType === 'stacked')
+    ? `${CHART_LABELS[s.chartType]} ${s.subType}`
+    : CHART_LABELS[s.chartType];
 }

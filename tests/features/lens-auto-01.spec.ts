@@ -66,3 +66,17 @@ test('removing a dimension keeps the rest; Clear workspace resets', async ({ pag
   await page.getByRole('button', { name: 'Clear workspace' }).click();
   await expect(page.getByText('Drop some fields here to start')).toBeVisible();
 });
+
+test('a shared link cannot carry its own SQL: unknown fields are dropped', async ({ page }) => {
+  const hostile = {
+    chartType: 'bar',
+    buckets: [{ kind: 'terms', id: 'b', field: '(SELECT groupArray(name) FROM system.users)', label: 'x', size: 9 }],
+    metrics: [{ kind: 'metric', id: 'm', op: 'count' }],
+  };
+  const viz = new VisualizePage(page);
+  await viz.open({ lens: JSON.stringify(hostile) });
+  // Only the safe Count of records survives; no bucket on the hostile expression.
+  await expect(viz.group('Primary metric')).toContainText('Count of records');
+  await expect(page.getByText('system.users')).toHaveCount(0);
+});
+

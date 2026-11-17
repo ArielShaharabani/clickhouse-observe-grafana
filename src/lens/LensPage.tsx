@@ -34,8 +34,10 @@ import {
   LensState,
   MetricDim,
   RECORDS_FIELD,
+  sanitizeLens,
 } from './state';
-import { addField, chartTitle, isLensField, LensContext, suggestions, switchChart } from './suggest';
+import { addField, chartTitle, chooseChart, isLensField, isXy, LensContext, suggestions, switchChart } from './suggest';
+import { shiftTimeRange, zoomOutTimeRange } from '../utils/timeRangeNav';
 
 const CHART_ICONS: Record<ChartType, IconName> = {
   line: 'chart-line',
@@ -98,7 +100,7 @@ export function LensPage() {
   const search = urlState.search ?? '';
   const filters = useMemo(() => urlState.filters ?? [], [urlState]);
   const timeRange = useMemo(() => urlState.timeRange ?? defaultRange(), [urlState]);
-  const lens = useMemo(() => decodeLens(new URLSearchParams(paramsKey).get('lens')) ?? EMPTY_LENS, [paramsKey]);
+  const urlLens = useMemo(() => decodeLens(new URLSearchParams(paramsKey).get('lens')) ?? EMPTY_LENS, [paramsKey]);
 
   const setLens = useCallback(
     (next: LensState) => {
@@ -149,6 +151,13 @@ export function LensPage() {
     ],
     [fields]
   );
+  // The URL's Lens state is untrusted: only dimensions on discovered fields are kept (and nothing
+  // runs until discovery has finished, so a real field is never dropped for being "unknown").
+  const allowedFields = useMemo(
+    () => new Set([...fields.map((f) => f.sqlExpr), ...(config.columns.timestamp ? [config.columns.timestamp] : [])]),
+    [fields, config.columns.timestamp]
+  );
+  const lens = useMemo(() => (fieldsLoading ? urlLens : sanitizeLens(urlLens, allowedFields)), [urlLens, allowedFields, fieldsLoading]);
   const ctx: LensContext = useMemo(
     () => (config.columns.timestamp ? { timeField: { sqlExpr: config.columns.timestamp, label: config.columns.timestamp } } : {}),
     [config.columns.timestamp]
@@ -163,28 +172,37 @@ export function LensPage() {
   const [result, setResult] = useState<{ key: string; data?: LensResult; error?: string } | null>(null);
   const queryKey = JSON.stringify([encodeLens(lens), config.datasourceUid, config.database, config.logsTable, search, filters, timeRange.from.valueOf(), timeRange.to.valueOf()]);
   useEffect(() => {
-    if (isEmptyLens(lens) || !config.datasourceUid) {
+    if (isEmptyLens(lens) || !config.datasourceUid || fieldsLoading) {
       return;
     }
     let cancelled = false;
+    const abort = new AbortController();
     const conditions = buildWhereConditions(config, { ...DEFAULT_LOGS_QUERY_STATE, search, filters }, fieldIndexRef.current);
     const { sql } = compileLens(lens, config, conditions, timeRange);
-    runQueryRows({ datasourceUid: config.datasourceUid, sql, timeRange, op: 'lens' }).then(
+    runQueryRows({ datasourceUid: config.datasourceUid, sql, timeRange, op: 'lens', signal: abort.signal }).then(
       (rows) => !cancelled && setResult({ key: queryKey, data: shapeLensRows(lens, rows) }),
       (e) => !cancelled && setResult({ key: queryKey, error: e instanceof Error ? e.message : String(e) })
     );
     return () => {
       cancelled = true;
+      abort.abort();
     };
     // queryKey covers every input that changes the SQL.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [queryKey]);
+  }, [queryKey, fieldsLoading]);
   const current = result?.key === queryKey ? result : null;
 
   const onAdd = (f: LensField) => setLens(addField(lens, f, ctx));
   const removeDim = (id: string) => {
     const next = { ...lens, buckets: lens.buckets.filter((b) => b.id !== id), metrics: lens.metrics.filter((m) => m.id !== id) };
-    setLens(next.buckets.length === 0 && next.metrics.length === 0 ? EMPTY_LENS : switchChart(next, next.chartType, ctx));
+    if (next.buckets.length === 0 && next.metrics.length === 0) {
+      setLens(EMPTY_LENS);
+      return;
+    }
+    // Removing a line/area chart's time axis must stick: re-pick the chart from what remains
+    // instead of letting the time-based type add the date histogram straight back.
+    const lostTime = isXy(next.chartType) && next.chartType !== 'bar' && !next.buckets.some((b) => b.kind === 'date_histogram');
+    setLens(switchChart(next, lostTime ? chooseChart(next.buckets) : next.chartType, ctx));
   };
   const cards = useMemo(() => suggestions(lens, ctx), [lens, ctx]);
   const [suggestionsOpen, setSuggestionsOpen] = useState(true);
@@ -209,9 +227,9 @@ export function LensPage() {
           value={timeRange}
           onChange={setTimeRange}
           onChangeTimeZone={() => undefined}
-          onMoveBackward={() => undefined}
-          onMoveForward={() => undefined}
-          onZoom={() => undefined}
+          onMoveBackward={() => setTimeRange(shiftTimeRange(timeRange, -1))}
+          onMoveForward={() => setTimeRange(shiftTimeRange(timeRange, 1))}
+          onZoom={() => setTimeRange(zoomOutTimeRange(timeRange))}
           timeZone="browser"
         />
       </div>
@@ -312,9 +330,9 @@ export function LensPage() {
               </button>
               {suggestionsOpen && (
                 <div className={styles.cards} role="group" aria-label="Suggestions">
-                  {cards.map((c) => (
+                  {cards.map((c, i) => (
                     <button
-                      key={c.title}
+                      key={`${i}:${c.title}`}
                       type="button"
                       className={cx(styles.card, c.current && styles.cardCurrent)}
                       title={c.title}
