@@ -3,11 +3,11 @@ import { decodeLogsState, encodeLogsState } from '../../data/urlState';
 import { FilterPill } from '../../types';
 import {
   buildAppPageUrl,
-  carryPinnedToView,
   loadPinnedFilters,
   mergePinnedFilters,
+  normalizePinnedFlags,
   pinFilterInStore,
-  savePinnedFilters,
+  replacePinInStore,
   unpinFilterInStore,
   PINNED_FILTERS_KEY,
 } from '../sharedSearch';
@@ -49,12 +49,28 @@ describe('SHARED-STATE-02: interval and breakdown in the URL', () => {
   });
 });
 
-describe('SHARED-STATE-01: pinned filters follow the user across pages', () => {
+describe('SHARED-STATE-01 / DISC-FILTER-01: pinned filters', () => {
   beforeEach(() => window.sessionStorage.clear());
+  const A = 'default.spec_logs';
+  const B = 'default.otel_logs';
 
-  it('saves only pinned pills and loads them back', () => {
-    savePinnedFilters([pill('a', { pinned: true }), pill('b')]);
-    expect(loadPinnedFilters().map((f) => f.id)).toEqual(['a']);
+  it('pins and unpins by condition, not id, with one stored entry per condition', () => {
+    pinFilterInStore(pill('a'), A);
+    pinFilterInStore(pill('a-again', { value: 'a' }), A);
+    expect(loadPinnedFilters()).toEqual([expect.objectContaining({ value: 'a', pinned: true, pinnedTable: A })]);
+    unpinFilterInStore(pill('other-id', { value: 'a' }));
+    expect(loadPinnedFilters()).toEqual([]);
+  });
+
+  it('stores the condition only: a disabled pill is pinned enabled', () => {
+    pinFilterInStore(pill('a', { disabled: true }), A);
+    expect(loadPinnedFilters()[0].disabled).toBeUndefined();
+  });
+
+  it('replaces the stored condition when a pinned pill is edited or excluded', () => {
+    pinFilterInStore(pill('error'), A);
+    replacePinInStore(pill('error'), pill('error', { op: '!=' }), A);
+    expect(loadPinnedFilters()).toEqual([expect.objectContaining({ value: 'error', op: '!=' })]);
   });
 
   it('returns [] when storage is empty or corrupt', () => {
@@ -63,38 +79,40 @@ describe('SHARED-STATE-01: pinned filters follow the user across pages', () => {
     expect(loadPinnedFilters()).toEqual([]);
   });
 
-  it('merges pinned pills into URL filters without duplicating an equivalent pill', () => {
-    const urlFilters = [pill('error')];
-    const pinned = [pill('error', { id: 'other-id', pinned: true }), pill('warn', { pinned: true })];
-    const merged = mergePinnedFilters(urlFilters, pinned);
-    expect(merged.map((f) => f.value)).toEqual(['error', 'warn']);
-    expect(merged.find((f) => f.value === 'error')?.pinned).toBe(true);
+  it('merges stored pins into filters without duplicating an equivalent pill', () => {
+    pinFilterInStore(pill('error'), A);
+    pinFilterInStore(pill('warn'), A);
+    const merged = mergePinnedFilters([pill('error', { id: 'url-id' })], loadPinnedFilters(), A);
+    expect(merged.map((f) => [f.value, f.pinned])).toEqual([
+      ['error', true],
+      ['warn', true],
+    ]);
+    expect(merged[1]).not.toHaveProperty('pinnedTable');
   });
 
   it('treats one_of value sets as equal regardless of order', () => {
+    pinFilterInStore(pill('y', { op: 'one_of', value: '', values: ['b', 'a'] }), A);
     const url = [pill('x', { op: 'one_of', value: '', values: ['a', 'b'] })];
-    const pinned = [pill('y', { op: 'one_of', value: '', values: ['b', 'a'], pinned: true })];
-    expect(mergePinnedFilters(url, pinned)).toHaveLength(1);
+    expect(mergePinnedFilters(url, loadPinnedFilters(), A)).toHaveLength(1);
   });
 
-  it('gives an appended pinned pill a fresh id when its id collides with a URL pill', () => {
-    const merged = mergePinnedFilters([pill('same', { value: 'error' })], [pill('same', { value: 'warn', pinned: true })]);
-    expect(merged).toHaveLength(2);
+  it('gives an appended pin a fresh id when its id collides with an existing pill', () => {
+    pinFilterInStore(pill('same', { value: 'warn' }), A);
+    const merged = mergePinnedFilters([pill('same', { value: 'error' })], loadPinnedFilters(), A);
     expect(new Set(merged.map((f) => f.id)).size).toBe(2);
   });
 
-  it('pin and unpin change the store by condition, not id', () => {
-    pinFilterInStore(pill('a'));
-    pinFilterInStore(pill('a-again', { value: 'a' }));
-    expect(loadPinnedFilters()).toHaveLength(1);
-    unpinFilterInStore(pill('other-id', { value: 'a' }));
-    expect(loadPinnedFilters()).toEqual([]);
+  it('applies a pin disabled on a view that reads a different table', () => {
+    pinFilterInStore(pill('error'), A);
+    expect(mergePinnedFilters([], loadPinnedFilters(), A)[0].disabled).toBeUndefined();
+    expect(mergePinnedFilters([], loadPinnedFilters(), B)[0].disabled).toBe(true);
   });
 
-  it('carries pins disabled into a view on a different table, enabled on the same table', () => {
-    const pins = [pill('a', { pinned: true })];
-    expect(carryPinnedToView(pins, true)[0].disabled).toBeUndefined();
-    expect(carryPinnedToView(pins, false)[0].disabled).toBe(true);
+  it("ignores pinned flags that are not in this user's store (foreign links)", () => {
+    const foreign = [pill('error', { pinned: true }), pill('warn')];
+    expect(normalizePinnedFlags(foreign, []).map((f) => f.pinned)).toEqual([undefined, undefined]);
+    pinFilterInStore(pill('warn'), A);
+    expect(normalizePinnedFlags(foreign, loadPinnedFilters()).map((f) => !!f.pinned)).toEqual([false, true]);
   });
 });
 

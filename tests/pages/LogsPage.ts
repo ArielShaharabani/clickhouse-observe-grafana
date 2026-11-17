@@ -28,6 +28,22 @@ export class LogsPage {
     return this.searchBar.getByRole('textbox');
   }
 
+  /** The filter pill bar. */
+  get filterBar() {
+    return this.page.getByTestId('filter-pills');
+  }
+
+  /** A pill's body button (opens its action menu), matched by the start of its label. */
+  pill(labelStart: string) {
+    return this.filterBar.getByRole('button', { name: new RegExp(`^Filter actions: ${labelStart}`) });
+  }
+
+  /** Open a pill's menu and pick an action. */
+  async pillAction(labelStart: string, action: string | RegExp) {
+    await this.pill(labelStart).click();
+    await this.page.getByRole('menu', { name: 'Filter actions' }).getByRole('button', { name: action }).click();
+  }
+
   /** The results grid. */
   get grid() {
     return this.page.getByRole('grid');

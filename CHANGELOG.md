@@ -10,6 +10,14 @@ Versions track the plugin's release history. `Unreleased` collects commits not y
 
 ---
 
+## [0.14.0] — 2026-11-17
+
+### Added
+
+- **Pin filters across pages.** The pill menu has "Pin across pages" / "Unpin"; pinned pills show a pin icon and follow you to any page opened without filters, to saved searches and across data views (disabled on a view that reads a different table). Editing or excluding a pinned pill updates the pin and deleting it unpins it; disabling it or "Clear all" only affect the current page. Pin flags inside someone else's link are ignored. Spec DISC-FILTER-01.
+
+---
+
 ## [0.13.0] — 2026-11-17
 
 ### Added

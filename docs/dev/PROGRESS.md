@@ -1,8 +1,8 @@
 # Progress — read this first when resuming
 
-**Current item:** #4 DISC-FILTER-01 filter pills (not started)
-**Last completed step:** #3 DISC-SEARCH-02 merged (v0.13.0): match highlighting (`src/sql/kql/highlight.ts`), dirty-query Update button
-**Next step:** branch `feat/disc-filter-01`; e2e for pill actions (disable re-runs + struck through, exclude flips to NOT, edit, delete, count badge if any), add Pin/Unpin to the pill menu using `pinFilterInStore`/`unpinFilterInStore` (`src/state/sharedSearch.ts`), and unpin on delete of a pinned pill. Integration IT-B.
+**Current item:** #5 SHARED-ACTION-01 action registry (not started)
+**Last completed step:** #4 DISC-FILTER-01 merged (v0.14.0): Pin/Unpin menu item, pinned pill styling, `syncPinnedStore`
+**Next step:** branch `feat/shared-action-01`; build `src/actions/registry.ts` (filter for / filter out / exists / copy, later visualize + breakdown) and route LogsTable hover toolbar, LogDetailDrawer, FieldStatsPopover, FieldItem exists buttons and VolumeHistogram popup through it (today each builds its own buttons → `onAddFilter(makeFilter(...))`, sink `LogsExplorer.tsx` `onAddFilter`). Integration IT-A + IT-M.
 **Open issues:** none
 
 ## Environment notes
@@ -16,4 +16,4 @@
 typecheck ✅ · lint ✅ (0 errors, 18 warnings) · test:ci ✅ 730 tests · build ✅ · e2e: original `appConfig.spec.ts` was stale scaffolding (replaced).
 
 ## Session log
-- 2026-11-17 — Forked, baseline recorded, test foundation merged (PR 1). SHARED-STATE done (PR 2). SHARED-AUTOCOMPLETE done (PR 3). DISC-SEARCH-02 done (PR 4).
+- 2026-11-17 — Forked, baseline recorded, test foundation merged (PR 1). SHARED-STATE done (PR 2). SHARED-AUTOCOMPLETE done (PR 3). DISC-SEARCH-02 done (PR 4). DISC-FILTER-01 done (PR 5).

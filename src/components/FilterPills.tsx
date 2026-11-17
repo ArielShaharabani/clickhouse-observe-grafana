@@ -6,6 +6,7 @@ import { FilterOp, FilterPill } from '../types';
 import { filterLabel, negateFilter, removeFilter, toggleDisabled, updateFilter } from '../sql/filters';
 import { FieldValue } from '../sql/kql/_values';
 import { FilterEditForm } from './AddFilter/FilterEditForm';
+import { pinFilterInStore, replacePinInStore, unpinFilterInStore } from '../state/sharedSearch';
 
 const NEGATED_OPS: ReadonlySet<FilterOp> = new Set(['!=', 'not_contains', 'not_one_of', 'not_exists']);
 
@@ -13,6 +14,8 @@ interface FilterPillsProps {
   filters: FilterPill[];
   onChange: (filters: FilterPill[]) => void;
   loadValues: (sqlExpr: string) => Promise<FieldValue[]>;
+  /** `database.table` of the current view, recorded with a new pin (see state/sharedSearch.ts). */
+  pinTable: string;
 }
 
 /** Splits a pill's text into a leading "NOT" badge (the convention for negated exists/one_of
@@ -45,8 +48,16 @@ interface OpenMenu {
   rect: DOMRect;
 }
 
-export function FilterPills({ filters, onChange, loadValues }: FilterPillsProps) {
+export function FilterPills({ filters, onChange, loadValues, pinTable }: FilterPillsProps) {
   const styles = useStyles2(getStyles);
+  // Pinned store transitions (DISC-FILTER-01 / SHARED-STATE-01) happen only on explicit actions
+  // on a pinned pill: pin, unpin, edit or exclude (condition replaced), delete. Disable and
+  // "Clear all" change this page only.
+  const replaceIfPinned = (before: FilterPill, after: FilterPill) => {
+    if (before.pinned) {
+      replacePinInStore(before, after, pinTable);
+    }
+  };
   const [menu, setMenu] = useState<OpenMenu | null>(null);
   const [editing, setEditing] = useState<OpenMenu | null>(null);
 
@@ -55,11 +66,15 @@ export function FilterPills({ filters, onChange, loadValues }: FilterPillsProps)
   }
 
   const onRemove = (id: string) => {
+    const pill = filters.find((f) => f.id === id);
+    if (pill?.pinned) {
+      unpinFilterInStore(pill);
+    }
     onChange(removeFilter(filters, id));
   };
 
   return (
-    <div className={styles.container}>
+    <div className={styles.container} data-testid="filter-pills">
       {filters.map((f) => {
         const { notPrefix, fieldPart, rest } = pillText(f);
         const negated = NEGATED_OPS.has(f.op);
@@ -68,6 +83,7 @@ export function FilterPills({ filters, onChange, loadValues }: FilterPillsProps)
             key={f.id}
             className={cx(
               styles.pill,
+              f.pinned && styles.pillPinned,
               negated && styles.pillNegated,
               f.disabled && styles.pillDisabled
             )}
@@ -75,8 +91,10 @@ export function FilterPills({ filters, onChange, loadValues }: FilterPillsProps)
           >
             <button
               className={styles.pillBody}
+              aria-label={`Filter actions: ${filterLabel(f)}${f.pinned ? ' (pinned)' : ''}${f.disabled ? ' (disabled)' : ''}`}
               onClick={(e) => setMenu({ id: f.id, rect: e.currentTarget.getBoundingClientRect() })}
             >
+              {f.pinned && <Icon name="gf-pin" size="xs" className={styles.pinIcon} aria-label="Pinned" />}
               {notPrefix && <span className={styles.notPart}>NOT </span>}
               {fieldPart && (
                 <span className={negated ? undefined : styles.fieldPart}>{fieldPart}</span>
@@ -101,11 +119,21 @@ export function FilterPills({ filters, onChange, loadValues }: FilterPillsProps)
                   setMenu(null);
                 }}
                 onToggleNegate={() => {
+                  replaceIfPinned(f, { ...f, ...negateFilter(f) });
                   onChange(updateFilter(filters, f.id, negateFilter(f)));
                   setMenu(null);
                 }}
                 onToggleDisabled={() => {
                   onChange(toggleDisabled(filters, f.id));
+                  setMenu(null);
+                }}
+                onTogglePin={() => {
+                  if (f.pinned) {
+                    unpinFilterInStore(f);
+                  } else {
+                    pinFilterInStore(f, pinTable);
+                  }
+                  onChange(updateFilter(filters, f.id, { pinned: !f.pinned }));
                   setMenu(null);
                 }}
                 onDelete={() => {
@@ -122,6 +150,7 @@ export function FilterPills({ filters, onChange, loadValues }: FilterPillsProps)
                 loadValues={loadValues}
                 onCancel={() => setEditing(null)}
                 onSubmit={(patched) => {
+                  replaceIfPinned(f, { ...f, ...patched });
                   onChange(updateFilter(filters, f.id, patched));
                   setEditing(null);
                 }}
@@ -152,12 +181,13 @@ interface FilterPillMenuProps {
   onEdit: () => void;
   onToggleNegate: () => void;
   onToggleDisabled: () => void;
+  onTogglePin: () => void;
   onDelete: () => void;
 }
 
-const MENU_HEIGHT_ESTIMATE = 180;
+const MENU_HEIGHT_ESTIMATE = 215;
 
-function FilterPillMenu({ anchorRect, pill, onClose, onEdit, onToggleNegate, onToggleDisabled, onDelete }: FilterPillMenuProps) {
+function FilterPillMenu({ anchorRect, pill, onClose, onEdit, onToggleNegate, onToggleDisabled, onTogglePin, onDelete }: FilterPillMenuProps) {
   const styles = useStyles2(getStyles);
   const negated = NEGATED_OPS.has(pill.op);
   const flipUp = anchorRect.bottom + 6 + MENU_HEIGHT_ESTIMATE > window.innerHeight;
@@ -169,7 +199,17 @@ function FilterPillMenu({ anchorRect, pill, onClose, onEdit, onToggleNegate, onT
   return (
     <Portal>
       <div className={styles.backdrop} onClick={onClose} />
-      <div className={styles.menu} style={{ top: pos.top, left: pos.left }} onClick={(e) => e.stopPropagation()}>
+      <div
+        className={styles.menu}
+        role="menu"
+        aria-label="Filter actions"
+        style={{ top: pos.top, left: pos.left }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <button className={styles.menuItem} onClick={onTogglePin}>
+          <Icon name="gf-pin" size="sm" />
+          {pill.pinned ? 'Unpin' : 'Pin across pages'}
+        </button>
         <button className={styles.menuItem} onClick={onEdit}>
           <Icon name="pen" size="sm" />
           Edit filter
@@ -229,6 +269,14 @@ function FilterPillEditPopover({ anchorRect, pill, loadValues, onCancel, onSubmi
 // ── Styles ────────────────────────────────────────────────────────────────────
 
 const getStyles = (theme: GrafanaTheme2) => ({
+  pillPinned: css({
+    borderStyle: 'solid',
+    borderColor: theme.colors.primary.border,
+  }),
+  pinIcon: css({
+    marginRight: theme.spacing(0.5),
+    color: theme.colors.primary.text,
+  }),
   container: css`
     display: flex;
     flex-wrap: wrap;

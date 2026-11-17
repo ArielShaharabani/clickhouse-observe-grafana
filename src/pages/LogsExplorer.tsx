@@ -43,7 +43,7 @@ import {
   VolumeDataPoint,
 } from '../types';
 import { BreakdownUrl, decodeLogsState, encodeLogsState } from '../data/urlState';
-import { carryPinnedToView, loadPinnedFilters, mergePinnedFilters } from '../state/sharedSearch';
+import { loadPinnedFilters, mergePinnedFilters, normalizePinnedFlags, tableKey } from '../state/sharedSearch';
 import { useAutocompleteSources } from '../autocomplete/service';
 import { compileColumnHighlighter, extractHighlightTerms } from '../sql/kql/highlight';
 import { errMsg } from '../errMsg';
@@ -122,7 +122,14 @@ export function LogsExplorer() {
       // Pinned filters (SHARED-STATE-01) follow the user into a page opened *without* filters in
       // its URL; a link that carries filters is reproduced exactly as the sender saw it.
       const urlFilters = initialUrlState.filters ?? init.filters;
-      const baseFilters = initialUrlState.filters ? urlFilters : mergePinnedFilters(urlFilters, loadPinnedFilters());
+      const stored = loadPinnedFilters();
+      // The table of the view the page opens on — the URL's own view when it names one, which
+      // App.tsx may not have activated yet at this point.
+      const initialView = views.find((v) => v.id === initialUrlState.viewId) ?? config;
+      const initialTable = tableKey(initialView.database, initialView.logsTable);
+      const baseFilters = initialUrlState.filters
+        ? normalizePinnedFlags(urlFilters, stored)
+        : mergePinnedFilters(urlFilters, stored, initialTable);
       // Inbound trace->logs link (?traceId=…, see data/traceToLogsLink.ts): seed a filter pill for
       // it, appended after the URL's own `filters` so both survive. Only when this view actually
       // has a trace column mapped — config is available here because App.tsx already resolved the
@@ -296,13 +303,12 @@ export function LogsExplorer() {
     const viewId = activeView?.id;
     if (prevViewId.current !== undefined && prevViewId.current !== viewId) {
       // Pinned filters survive a data view switch, like Kibana's global filters — disabled when the
-      // new view reads a different table, since they reference the old table's columns.
-      const prev = views.find((v) => v.id === prevViewId.current);
+      // new view reads a different table than the one they were pinned on.
       const next = views.find((v) => v.id === viewId);
-      const sameTable = !!prev && !!next && prev.database === next.database && prev.logsTable === next.logsTable;
+      const table = next ? tableKey(next.database, next.logsTable) : '';
       dispatch({
         type: 'LOAD_SAVED',
-        state: { ...DEFAULT_LOGS_QUERY_STATE, filters: carryPinnedToView(loadPinnedFilters(), sameTable) },
+        state: { ...DEFAULT_LOGS_QUERY_STATE, filters: mergePinnedFilters([], loadPinnedFilters(), table) },
       });
       setBreakdown(null);
       setPendingBreakdownFieldId(undefined);
@@ -1104,7 +1110,7 @@ export function LogsExplorer() {
       state: {
         search: search.search,
         // A saved search keeps the user's pinned filters on top of its own.
-        filters: mergePinnedFilters(search.filters, loadPinnedFilters()),
+        filters: mergePinnedFilters(search.filters, loadPinnedFilters(), tableKey(config.database, config.logsTable)),
         columns: search.columns,
         sort: search.sort,
         useRawSql: false, // always exit raw SQL mode when loading a saved search
@@ -1343,6 +1349,7 @@ export function LogsExplorer() {
           <div className={styles.pills}>
             <FilterPills
               filters={queryState.filters}
+              pinTable={tableKey(config.database, config.logsTable)}
               onChange={(f) => dispatch({ type: 'SET_FILTERS', filters: f })}
               loadValues={logsLoadValues}
             />
