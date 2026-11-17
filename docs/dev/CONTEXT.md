@@ -1,7 +1,7 @@
 # Context snapshot — read this to restart
 
 Saved after every feature (and every review-fix round). A new session can resume from this file plus `PROGRESS.md` alone.
-Last saved: 2026-11-17, after #11 LENS-AUTO-01 / LENS-SUGG-01 (PR 12) security + review fixes.
+Last saved: 2026-11-17, 2026-11-17, #12 LENS-TYPE-01 started on branch `feat/lens-type-01` (PR 12 merged).
 
 ## Goal
 Bring Kibana Discover + Lens style exploration to Grafana on ClickHouse by extending the **ClickHouse Observe** app plugin.
@@ -12,7 +12,7 @@ Bring Kibana Discover + Lens style exploration to Grafana on ClickHouse by exten
 
 ## Working agreements (from the user)
 - Fork `ArielShaharabani/clickhouse-observe-grafana` (upstream PoorTuna is read-only). One branch + PR per feature; merge (squash) once gates pass and `/code-review` findings are fixed.
-- Checkpoint (PROGRESS + push) at every step; save this CONTEXT file after every feature. The user watches `/usage` and says "stop" near 80% → commit `wip:`, push, end.
+- Checkpoint (PROGRESS + push) at every step; save this CONTEXT file after every feature, every important step and periodically (user: "save your context every once in a while and after every important step"). The user watches `/usage` and says "stop" near 80% → commit `wip:`, push, end.
 - Models: Opus for foundations/compilers/reviews, Sonnet for well-specified UI, Haiku for log digestion, Fable only if Patterns quality is poor.
 
 ## Built so far
@@ -50,4 +50,4 @@ Bring Kibana Discover + Lens style exploration to Grafana on ClickHouse by exten
 41,520 rows, 2026-01-01..08 UTC; `SeverityNumber` uses OTel numbers (debug 5, info 9, warn 13, error 17); levels info 28,265 · warn 6,080 · debug 3,984 · error 3,191; services 8,064 each except payments 9,264; errors by service auth 384, checkout 445, frontend 373, inventory 414, payments 1,575; incident 2026-01-05 09:00–11:00 (1,200 payments rows, `http.status_code` 503). Latest-5,000 sample: info 3,483 · warn 792 · debug 487 · error 238 (payments-filtered: info 2,667 · error 1,370 · warn 569 · debug 394).
 
 ## Now / next
-Next: #12 LENS-TYPE-01 (chart type switcher) — exact notes in `PROGRESS.md`.
+Now: #12 LENS-TYPE-01 (chart type switcher) in progress on `feat/lens-type-01` — exact notes in `PROGRESS.md`.
