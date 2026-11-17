@@ -10,6 +10,21 @@ Versions track the plugin's release history. `Unreleased` collects commits not y
 
 ---
 
+## [0.17.0] — 2026-11-17
+
+### Added
+
+- **Results grid keyboard navigation.** Arrow keys move between cells, Home/End jump to row edges, Ctrl+Home/End to the page corners, PgUp/PgDn change page, Enter expands the focused cell and Escape closes it. The focused cell shows its action bar. Spec DISC-TABLE-01.
+- **Expand popover on every grid cell.** Shows the full value (JSON pretty-printed) with Filter for, Filter out and Copy value. Opened from the new Expand button on the cell action bar or with Enter. Spec DISC-TABLE-02.
+- **Grid display options.** Density (Compact / Normal / Expanded) and body cell lines (1, 2, 3, 5 or Auto), remembered per browser. Spec DISC-TABLE-01.
+
+### Changed
+
+- **"Wrap lines" switch replaced by Display options** (body cell lines "Auto" = wrap). The body cell now shows 3 lines by default (was 2).
+- **Enter on the grid expands the focused cell** instead of opening the row detail panel; the row's Open detail button still does that.
+
+---
+
 ## [0.16.0] — 2026-11-17
 
 ### Added
