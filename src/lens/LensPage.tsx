@@ -18,8 +18,14 @@ import { decodeLogsState, encodeLogsState } from '../data/urlState';
 import { runQueryRows } from '../data/runQuery';
 import { buildFieldIndex } from '../sql/fields';
 import { buildWhereConditions } from '../sql/queryBuilder';
-import { buildAppPageUrl } from '../state/sharedSearch';
-import { DEFAULT_LOGS_QUERY_STATE } from '../types';
+import { buildAppPageUrl, tableKey } from '../state/sharedSearch';
+import { FilterPills } from '../components/FilterPills';
+import { useAutocompleteSources } from '../autocomplete/service';
+import { addFilterPill } from '../sql/filters';
+import { copyToClipboard, valueActions } from '../actions/registry';
+import { FilterChoice, FilterChooser } from './FilterChooser';
+import { XySelection, xLabel } from './render/XyChart';
+import { DEFAULT_LOGS_QUERY_STATE, FilterPill } from '../types';
 import { compileLens, LensResult, shapeLensRows } from './compile';
 import { LensChart } from './render/LensChart';
 import { CHART_ICONS, ChartTypeSwitcher } from './ChartTypeSwitcher';
@@ -133,6 +139,31 @@ export function LensPage() {
     [setSearchParams]
   );
 
+  // Filters live in the shared URL param, same as Discover (LENS-INTERACT-01 writes there).
+  const setFilters = useCallback(
+    (next: FilterPill[]) => {
+      setSearchParams(
+        (prev) => {
+          const sp = new URLSearchParams(prev);
+          const enc = encodeLogsState({ search: '', filters: next, columns: [], timeRange: defaultRange() });
+          const v = enc.get('filters');
+          if (v) {
+            sp.set('filters', v);
+          } else {
+            sp.delete('filters');
+          }
+          return sp;
+        },
+        { replace: false }
+      );
+    },
+    [setSearchParams]
+  );
+  const addFilters = useCallback(
+    (pills: FilterPill[]) => setFilters(pills.reduce(addFilterPill, filters)),
+    [filters, setFilters]
+  );
+
   // Fields of the active data view.
   const { fields, loading: fieldsLoading } = useFieldDiscovery(config, timeRange);
   const fieldIndex = useMemo(() => buildFieldIndex(fields), [fields]);
@@ -157,6 +188,12 @@ export function LensPage() {
     () => (fieldsLoading ? urlLens : sanitizeLens(urlLens, allowedFields)),
     [urlLens, allowedFields, fieldsLoading]
   );
+  const { loadValues } = useAutocompleteSources({
+    config,
+    query: { ...DEFAULT_LOGS_QUERY_STATE, search, filters },
+    timeRange,
+    fieldIndex,
+  });
   const ctx: LensContext = useMemo(
     () =>
       config.columns.timestamp
@@ -171,7 +208,9 @@ export function LensPage() {
   }, [lensFields, nameFilter]);
 
   // Run the chart query.
-  const [result, setResult] = useState<{ key: string; data?: LensResult; error?: string } | null>(null);
+  const [result, setResult] = useState<{ key: string; data?: LensResult; error?: string; bucketMs?: number } | null>(
+    null
+  );
   // Names are display-only: renaming a dimension must not re-run the query.
   const queryKey = JSON.stringify([
     encodeLens(queryShape(lens)),
@@ -194,9 +233,9 @@ export function LensPage() {
       { ...DEFAULT_LOGS_QUERY_STATE, search, filters },
       fieldIndexRef.current
     );
-    const { sql } = compileLens(lens, config, conditions, timeRange);
+    const { sql, intervalMs } = compileLens(lens, config, conditions, timeRange);
     runQueryRows({ datasourceUid: config.datasourceUid, sql, timeRange, op: 'lens', signal: abort.signal }).then(
-      (rows) => !cancelled && setResult({ key: queryKey, data: shapeLensRows(lens, rows) }),
+      (rows) => !cancelled && setResult({ key: queryKey, data: shapeLensRows(lens, rows), bucketMs: intervalMs }),
       (e) => !cancelled && setResult({ key: queryKey, error: e instanceof Error ? e.message : String(e) })
     );
     return () => {
@@ -251,6 +290,77 @@ export function LensPage() {
     }
   };
   const [suggestionsOpen, setSuggestionsOpen] = useState(true);
+
+  // LENS-INTERACT-01: one click on a bar / point. One candidate filter → applied at once; several
+  // (X value + breakdown value, or a time bucket + breakdown) → "Select filters to apply".
+  const [chooser, setChooser] = useState<FilterChoice[] | null>(null);
+  const viaRegistry = (field: string, value: string, mode: 'filterFor' | 'filterOut'): FilterPill | undefined => {
+    let made: FilterPill | undefined;
+    valueActions({ field, value }, { addFilter: (p) => (made = p), copyText: copyToClipboard }, [mode]).forEach((a) =>
+      a.run()
+    );
+    return made;
+  };
+  const choicesFor = (sel: XySelection, data: LensResult, bucketMs?: number): FilterChoice[] => {
+    const out: FilterChoice[] = [];
+    const [x, breakdown] = lens.buckets;
+    const xv = data.xs[sel.xIndex];
+    const series = data.series[sel.seriesIndex];
+    if (x?.kind === 'terms') {
+      const pill = viaRegistry(x.field, String(xv), 'filterFor');
+      if (pill) {
+        out.push({ label: `${x.label}: ${xLabel(xv, false, 0)}`, pill });
+      }
+    } else if (x?.kind === 'date_histogram' && bucketMs) {
+      const from = Number(xv);
+      out.push({
+        label: `${x.label}: ${dateTime(from).format('YYYY-MM-DD HH:mm')} – ${dateTime(from + bucketMs).format('YYYY-MM-DD HH:mm')}`,
+        time: [from, from + bucketMs],
+      });
+    }
+    if (breakdown?.kind === 'terms' && series?.breakdown !== undefined) {
+      const pill = viaRegistry(breakdown.field, series.breakdown, 'filterFor');
+      if (pill) {
+        out.push({ label: `${breakdown.label}: ${series.breakdown || '(empty)'}`, pill });
+      }
+    }
+    return out;
+  };
+  const applyChoices = (choices: FilterChoice[]) => {
+    const pills = choices.flatMap((c) => (c.pill ? [c.pill] : []));
+    const time = choices.find((c) => c.time)?.time;
+    if (pills.length > 0) {
+      addFilters(pills);
+    }
+    if (time) {
+      setTimeRange({
+        from: dateTime(time[0]),
+        to: dateTime(time[1]),
+        raw: { from: dateTime(time[0]), to: dateTime(time[1]) },
+      });
+    }
+  };
+  const onSelect = (sel: XySelection) => {
+    if (!current?.data) {
+      return;
+    }
+    const choices = choicesFor(sel, current.data, current.bucketMs);
+    if (choices.length === 1) {
+      applyChoices(choices);
+    } else if (choices.length > 1) {
+      setChooser(choices);
+    }
+  };
+  const onLegendFilter = (seriesIndex: number, mode: 'for' | 'out') => {
+    const breakdown = lens.buckets[1];
+    const s = current?.data?.series[seriesIndex];
+    if (breakdown?.kind === 'terms' && s?.breakdown !== undefined) {
+      const pill = viaRegistry(breakdown.field, s.breakdown, mode === 'for' ? 'filterFor' : 'filterOut');
+      if (pill) {
+        addFilters([pill]);
+      }
+    }
+  };
   const [dragOver, setDragOver] = useState(false);
 
   const discoverUrl = buildAppPageUrl('logs', { search, filters, columns: [], timeRange });
@@ -278,6 +388,13 @@ export function LensPage() {
           timeZone="browser"
         />
       </div>
+
+      <FilterPills
+        filters={filters}
+        onChange={setFilters}
+        loadValues={loadValues}
+        pinTable={tableKey(config.database, config.logsTable)}
+      />
 
       <div className={styles.body}>
         <section className={styles.fields} aria-label="Fields">
@@ -374,6 +491,9 @@ export function LensPage() {
                     raw: { from: dateTime(from), to: dateTime(to) },
                   })
                 }
+                bucketMs={current.bucketMs}
+                onSelect={onSelect}
+                onLegendFilter={onLegendFilter}
               />
             ) : (
               <div className={styles.empty}>
@@ -415,6 +535,16 @@ export function LensPage() {
           )}
         </section>
 
+        {chooser && (
+          <FilterChooser
+            choices={chooser}
+            onApply={(picked) => {
+              setChooser(null);
+              applyChoices(picked);
+            }}
+            onCancel={() => setChooser(null)}
+          />
+        )}
         <section className={styles.dims} aria-label="Dimensions">
           {!isEmptyLens(lens) && !editingDim && (
             <ChartTypeSwitcher

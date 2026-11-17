@@ -1,7 +1,7 @@
 # Context snapshot — read this to restart
 
 Saved after every feature (and every review-fix round). A new session can resume from this file plus `PROGRESS.md` alone.
-Last saved: 2026-11-17, 2026-11-18, #14 LENS-INTERACT-01 started on `feat/lens-interact-01` (PR 14 merged).
+Last saved: 2026-11-17, 2026-11-18, #14 LENS-INTERACT-01 XyChart + chooser built on `feat/lens-interact-01`; tests next.
 
 ## Goal
 Bring Kibana Discover + Lens style exploration to Grafana on ClickHouse by extending the **ClickHouse Observe** app plugin.

@@ -129,6 +129,10 @@ export interface LensSeries {
   name: string;
   /** Category value or bucket start (ms) → value. */
   points: Map<string | number, number>;
+  /** The breakdown value this series is for (undefined without a breakdown). */
+  breakdown?: string;
+  /** Index into `state.metrics`. */
+  metricIndex: number;
 }
 
 export interface LensResult {
@@ -173,7 +177,7 @@ export function shapeLensRows(state: LensState, rows: Array<Record<string, unkno
       const name = bv === undefined ? label : multiMetric ? `${bv} · ${label}` : bv;
       let s = seriesMap.get(name);
       if (!s) {
-        s = { name, points: new Map() };
+        s = { name, points: new Map(), breakdown: bv, metricIndex: i };
         seriesMap.set(name, s);
       }
       s.points.set(xv, num(r[metricAlias(i)]));

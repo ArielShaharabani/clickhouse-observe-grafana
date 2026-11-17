@@ -17,6 +17,7 @@ import {
 import { PanelRenderer } from '@grafana/runtime';
 import { LensResult } from '../compile';
 import { LensState } from '../state';
+import { XyChart, XySelection } from './XyChart';
 
 interface PanelSpec {
   pluginId: string;
@@ -132,9 +133,35 @@ interface Props {
   result: LensResult;
   timeRange: TimeRange;
   onChangeTimeRange?: (from: number, to: number) => void;
+  /** Width of one date bucket (ms), for the brush. */
+  bucketMs?: number;
+  /** One click on a bar segment / point (XY charts, LENS-INTERACT-01). */
+  onSelect?: (sel: XySelection) => void;
+  onLegendFilter?: (seriesIndex: number, mode: 'for' | 'out') => void;
 }
 
-export function LensChart({ state, result, timeRange, onChangeTimeRange }: Props) {
+export function LensChart({ state, result, timeRange, onChangeTimeRange, bucketMs, onSelect, onLegendFilter }: Props) {
+  if (state.chartType === 'bar' || state.chartType === 'line' || state.chartType === 'area') {
+    // Custom-drawn so one click can filter (PanelRenderer has no point-click callback).
+    return (
+      <div className={styles.box} data-testid="lens-chart" data-chart-type={state.chartType} data-panel="xy">
+        <XyChart
+          chartType={state.chartType}
+          subType={state.subType}
+          result={result}
+          bucketMs={bucketMs}
+          onSelect={onSelect}
+          onBrush={onChangeTimeRange}
+          onLegendFilter={onLegendFilter}
+        />
+      </div>
+    );
+  }
+  return <PanelChart state={state} result={result} timeRange={timeRange} />;
+}
+
+/** Metric / Table / Pie through Grafana's own panels. */
+function PanelChart({ state, result, timeRange }: { state: LensState; result: LensResult; timeRange: TimeRange }) {
   const ref = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ width: 0, height: 0 });
   useEffect(() => {
@@ -172,7 +199,6 @@ export function LensChart({ state, result, timeRange, onChangeTimeRange }: Props
           options={spec.options}
           fieldConfig={spec.fieldConfig}
           timeZone="browser"
-          onChangeTimeRange={onChangeTimeRange ? (r) => onChangeTimeRange(r.from, r.to) : undefined}
         />
       )}
     </div>
