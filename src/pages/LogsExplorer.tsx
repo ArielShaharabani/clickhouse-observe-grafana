@@ -6,6 +6,7 @@ import { buildContextUrl, resolveContextAnchor } from '../data/surrounding';
 import { Button, Icon, RadioButtonGroup, Spinner, useStyles2, TimeRangePicker, RefreshPicker, useSplitter } from '@grafana/ui';
 import { GridDisplay, GridDisplayOptions, loadGridDisplay, saveGridDisplay } from '../components/GridDisplayOptions';
 import { useSearchParams } from 'react-router-dom';
+import { QueryProgress } from '../components/QueryProgress/QueryProgress';
 import { SearchBar } from '../components/SearchBar';
 import { FilterPills } from '../components/FilterPills';
 import { LogsTable } from '../components/LogsTable';
@@ -760,6 +761,17 @@ export function LogsExplorer() {
   // those three triggers in the diagnostics drawer's activity list — see each call site below.
   // actionRef is set synchronously right before, and cleared synchronously right after, the two
   // fetch calls it wraps — see actionRef's declaration for why that ordering is what makes it safe.
+  // SHARED-PERF-01: stop waiting for the running list + histogram queries. Bumping the run ids
+  // makes the aborted calls' catch/finally blocks no-ops; ClickHouse may still finish the query.
+  const cancelQueries = useCallback(() => {
+    runRef.current++;
+    volRunRef.current++;
+    runAbortRef.current?.abort();
+    volAbortRef.current?.abort();
+    setLoading(false);
+    setVolLoading(false);
+  }, []);
+
   const executeQuery = useCallback(
     (actionName?: string) => {
       // Defensive, not just stylistic: RefreshPicker's onRefresh is typed () => void, but at
@@ -1423,6 +1435,8 @@ export function LogsExplorer() {
             />
           </div>
         </div>
+
+        <QueryProgress active={loading || volLoading} onCancel={cancelQueries} />
 
         {/* Filter pills */}
         {queryState.filters.length > 0 && (

@@ -133,7 +133,7 @@ export function FieldKeysPopover({ field, queryState, timeRange, onSelectKey }: 
       )}
 
       {!loading && !error && total > 0 && (
-        <div className={styles.caption}>Discovered from {total.toLocaleString()} records.</div>
+        <div className={styles.caption}>Discovered from {total.toLocaleString()} sample records.</div>
       )}
     </div>
   );
