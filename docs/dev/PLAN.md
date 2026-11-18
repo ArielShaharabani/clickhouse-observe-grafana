@@ -28,6 +28,9 @@ Status values: `todo` · `in-progress` · `done` (with PR link) · `skipped` (wi
 | 16b | LENS-AUTO-01 (gap) | Data view picker on Visualize: switch view from the Lens search bar; re-sanitize the chart against the new view's fields; pins follow D7 | 4 | Build | done | PR 25 |
 | 16c | LENS-INTERACT-02 (gap) | Labeled "Explore in Visualize" button in the Discover toolbar (same hand-off as Edit visualization: query, filters, time, data view); Visualize opened from the Grafana side menu with no URL context restores the tab's last search context | 4 | Build | done | PR 25 |
 | 16d | DATA-VIEW time field (gap, spec 00-preamble "Data view = index pattern + time field") | Shared data views on the Configuration page get the same column mapping as Create data view, including Timestamp field (today: none); time field editable after creation; numeric epoch / string time columns selectable via conversion (flagged as converted) | 4 | Build | done | PR 30 |
+| 16e | LENS-DIM-05 | Horizontal axis date histogram: Customize time interval (Minimum interval presets + typed `5m`/`3h`/`2w`, scaled-up notice, calendar units), Advanced: Include empty rows, Drop partial intervals, Bind to global time picker (user request 2026-11-18) | 4 | Build | todo | |
+| 16f | LENS-DIM-05 | Bucket functions Intervals (granularity / custom ranges) and Filters (KQL buckets with labels) | 4 | Build | todo | |
+| 16g | LENS-DIM-02 (gap) | Metric advanced options: Filter by (KQL), Time shift, Reduced time range, Normalize by unit; Appearance: value format, series colour, axis side | 4 | Build | todo | |
 | 17 | DISC-TIME-01/02 | Time picker, Update state | 3 | Verify | done | PR 18 |
 | 18 | DISC-CHART-02 | Breakdown + legend actions | 3 | Verify | done | PR 22 |
 | 19 | DISC-FILTER-02 | Filter builder | 3 | Verify | done | PR 19 |
