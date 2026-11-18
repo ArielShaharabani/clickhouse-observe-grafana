@@ -1,0 +1,29 @@
+<!--
+  Dev / e2e memory cap (mounted into /etc/clickhouse-server/config.d/). The default caches are sized
+  for a production server (5 GiB each) and the fixture tables are tiny, so cap them and the server so
+  the host has room for more Playwright workers. system.query_log stays on (Diagnostics reads it);
+  the background profiling logs nothing here uses are turned off.
+-->
+<clickhouse>
+    <max_server_memory_usage>2147483648</max_server_memory_usage>
+    <mark_cache_size>268435456</mark_cache_size>
+    <index_mark_cache_size>67108864</index_mark_cache_size>
+    <primary_index_cache_size>134217728</primary_index_cache_size>
+    <uncompressed_cache_size>0</uncompressed_cache_size>
+    <mmap_cache_size>256</mmap_cache_size>
+
+    <metric_log remove="1"/>
+    <asynchronous_metric_log remove="1"/>
+    <trace_log remove="1"/>
+    <text_log remove="1"/>
+    <query_thread_log remove="1"/>
+    <query_views_log remove="1"/>
+    <part_log remove="1"/>
+    <processors_profile_log remove="1"/>
+    <latency_log remove="1"/>
+    <error_log remove="1"/>
+    <session_log remove="1"/>
+    <opentelemetry_span_log remove="1"/>
+    <blob_storage_log remove="1"/>
+    <background_schedule_pool_log remove="1"/>
+</clickhouse>
