@@ -1,8 +1,8 @@
 # Progress — read this first when resuming
 
 **Current item:** coordinator merging fan-out PRs (see CONTEXT "Parallel work", last bullets). Agents running: fix-url-cols (3016), lens-dataview (3012), dataview-time (3011), disc-fieldstats-01 (#22, 3017).
-**Last completed step:** #24 LENS-DIM-04 (Top values editor: rank by / direction, Other, missing, include / exclude with regex) in PR 20 (v0.29.0; 1,030 jest, 105 e2e).
-**Next step:** merge order 22 (DISC-CHART-02, 0.30.0) → 23 (DISC-DOC-02, 0.31.0) → url-cols security fix (branch fix/url-cols-sanitize, based on 23; patch bump, no PLAN row — fold by hand) → lens-dataview (16b/16c) → dataview-time (16d) → disc-fieldstats-01 (#22). Per PR: in its worktree `git merge origin/master`, `python scripts/dev/fold-pending.py <SPEC> <row> <PR> <next minor> "<title>" "<files>"`, gates + full e2e under `.e2e-lock` on its port, push, wait for MERGEABLE, squash-merge, stop its container. Then next PLAN todo: #25 SHARED-PERF-01.
+**Last completed step:** #18 DISC-CHART-02 (Histogram breakdown label and legend actions) in PR 22 (v0.30.0).
+**Next step:** merge order 23 (DISC-DOC-02, 0.31.0) → url-cols security fix (branch fix/url-cols-sanitize, based on 23; patch bump, no PLAN row — fold by hand) → lens-dataview (16b/16c) → dataview-time (16d) → disc-fieldstats-01 (#22). Per PR: in its worktree `git merge origin/master`, `python scripts/dev/fold-pending.py <SPEC> <row> <PR> <next minor> "<title>" "<files>"`, gates + full e2e under `.e2e-lock` on its port, push, wait for MERGEABLE, squash-merge, stop its container. Then next PLAN todo: #25 SHARED-PERF-01.
 **Open issues:** none. Deferred Lens items: per-group drag-and-drop (LENS-DIM-01 DnD; workspace drop works), formula (#23), advanced metric options (filter by, time shift), value format/colour/axis side (LENS-STYLE-01), date interval picker, "Other" bucket. Deferred elsewhere: DISC-DOC-02 links (#20); histogram now-line; field list Empty/Meta; grid Summary column etc. (#16); popover Visualize (#15).
 
 ## Environment notes

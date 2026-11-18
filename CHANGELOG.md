@@ -10,6 +10,22 @@ Versions track the plugin's release history. `Unreleased` collects commits not y
 
 ---
 
+## [0.30.0] — 2026-11-18
+
+### Added
+- **Histogram legend ⋮ menu.** Hovering (or keyboard-focusing) a legend row shows ⋮; it opens a popover titled with the value with `Filter for` / `Filter out` (from the shared action registry). Focus moves into the popover; Escape or a click outside closes it. Shift-click still opens the same popover.
+- **Hidden legend series show an eye-slash icon** instead of their colour swatch; legend rows expose `aria-pressed` (shown / hidden) and the legend is a labelled list ("Histogram legend").
+
+### Changed
+- **Breakdown picker label reads `Breakdown by <field>`** (`Breakdown by Severity` for the severity breakdown); `No breakdown` until one is chosen. The trigger has `aria-expanded`, the list is a labelled dialog with a labelled search box, the chosen entry has `aria-current`, and Escape closes it and returns focus to the trigger.
+- **Ctrl/Cmd+click on a legend entry hides that series** (tooltip wording; behaviour unchanged: a second Ctrl+click shows it again).
+
+### Fixed
+- The synthetic `other` series of a field breakdown could be "filtered" from the legend (shift-click) or a bar-segment click, adding a pill for the literal value `other`. It no longer offers filter actions anywhere (right-click bucket actions already excluded it).
+- Hidden legend series were kept when the breakdown changed, so a series isolated under one field could hide every series of the next. Changing the breakdown (field or mode) now clears hidden / hovered series and closes the legend menu.
+
+---
+
 ## [0.29.0] — 2026-11-18
 
 ### Added
