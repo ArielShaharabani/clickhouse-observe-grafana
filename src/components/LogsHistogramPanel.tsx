@@ -11,7 +11,7 @@
 import React from 'react';
 import { css } from '@emotion/css';
 import { dateTime, GrafanaTheme2, TimeRange } from '@grafana/data';
-import { IconButton, useStyles2 } from '@grafana/ui';
+import { IconButton, LinkButton, useStyles2 } from '@grafana/ui';
 import { BreakdownSel, FilterPill, IntervalMode, VolumeDataPoint } from '../types';
 import { VolumeHistogram, ResolvedInterval, HistogramColorMode } from './VolumeHistogram';
 import { IntervalPicker } from './HistogramControls/IntervalPicker';
@@ -37,6 +37,8 @@ interface LogsHistogramPanelProps {
    *  without unmounting them, so the query state they hold isn't lost while collapsed. */
   collapsed: boolean;
   onToggleCollapsed: () => void;
+  /** "Edit visualization" link to the Visualize page (DISC-CHART-03); absent = no button. */
+  editVisualizationUrl?: string;
 }
 
 function colorModeFor(breakdown: BreakdownSel): HistogramColorMode {
@@ -73,6 +75,7 @@ export function LogsHistogramPanel({
   onAddFilter,
   collapsed,
   onToggleCollapsed,
+  editVisualizationUrl,
 }: LogsHistogramPanelProps) {
   const styles = useStyles2(getStyles);
 
@@ -92,6 +95,17 @@ export function LogsHistogramPanel({
         />
         <IntervalPicker value={intervalMode} onChange={onIntervalModeChange} timeRange={timeRange} />
         <BreakdownPicker value={breakdown} onChange={onBreakdownChange} hasSeverity={hasSeverity} />
+        {editVisualizationUrl && (
+          <LinkButton
+            href={editVisualizationUrl}
+            icon="pen"
+            size="sm"
+            variant="secondary"
+            fill="text"
+            tooltip="Edit visualization"
+            aria-label="Edit visualization"
+          />
+        )}
       </div>
       {!collapsed &&
         (volumeData.length > 0 ? (

@@ -1,4 +1,6 @@
 import React, { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { lensFieldOf } from '../../lens/handoff';
+import { isLensField } from '../../lens/suggest';
 import { css } from '@emotion/css';
 import { GrafanaTheme2, TimeRange } from '@grafana/data';
 import { Icon, RadioButtonGroup, useStyles2, useTheme2 } from '@grafana/ui';
@@ -60,6 +62,8 @@ interface FieldStatsPopoverProps {
   isSelected: boolean;
   /** Break the histogram down by this field; omitted -> no breakdown action. */
   onSetBreakdown?: (field: FieldModel) => void;
+  /** Open this field on the Visualize page (LENS hand-off); absent = no Visualize button. */
+  onVisualize?: (field: FieldModel) => void;
 }
 
 export function FieldStatsPopover({
@@ -70,6 +74,7 @@ export function FieldStatsPopover({
   onAddColumn,
   isSelected,
   onSetBreakdown,
+  onVisualize,
 }: FieldStatsPopoverProps) {
   const styles = useStyles2(getStyles);
   const theme = useTheme2();
@@ -177,11 +182,11 @@ export function FieldStatsPopover({
         {
           copyText: copyToClipboard,
           setBreakdown: onSetBreakdown && isBreakdownField(field) ? () => onSetBreakdown(field) : undefined,
+          visualize: onVisualize && isLensField(lensFieldOf(field)) ? () => onVisualize(field) : undefined,
         },
-        // 'visualize' joins here when the Visualize page provides the capability (#15).
-        ['breakdown']
+        ['visualize', 'breakdown']
       ),
-    [field, onSetBreakdown]
+    [field, onSetBreakdown, onVisualize]
   );
 
   const typeIcon = FIELD_TYPE_ICONS[field.type] ?? 'question-circle';

@@ -8,9 +8,9 @@
 import React, { useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { css, cx } from '@emotion/css';
-import { dateTime, GrafanaTheme2, IconName, TimeRange } from '@grafana/data';
+import { dateTime, GrafanaTheme2, IconName, locationUtil, TimeRange } from '@grafana/data';
 import { Alert, Button, Icon, IconButton, Input, LinkButton, Spinner, TimeRangePicker, useStyles2 } from '@grafana/ui';
-import { SourceConfigContext } from '../components/App/App';
+import { DataViewContext, SourceConfigContext } from '../components/App/App';
 import { useFieldDiscovery } from '../components/FieldsContext';
 import { FIELD_TYPE_ICONS } from '../components/FieldSidebar/fieldIcons';
 import { FIELD_DRAG_MIME } from '../constants';
@@ -18,7 +18,8 @@ import { decodeLogsState, encodeLogsState } from '../data/urlState';
 import { runQueryRows } from '../data/runQuery';
 import { buildFieldIndex } from '../sql/fields';
 import { buildWhereConditions } from '../sql/queryBuilder';
-import { buildAppPageUrl, tableKey } from '../state/sharedSearch';
+import { tableKey } from '../state/sharedSearch';
+import { discoverColumns, discoverUrl, lensContextFor } from './handoff';
 import { FilterPills } from '../components/FilterPills';
 import { useAutocompleteSources } from '../autocomplete/service';
 import { addFilterPill, makeFilter } from '../sql/filters';
@@ -95,6 +96,7 @@ export function dimensionGroups(s: LensState): Group[] {
 export function LensPage() {
   const styles = useStyles2(getStyles);
   const config = useContext(SourceConfigContext);
+  const { activeView } = useContext(DataViewContext);
   const [searchParams, setSearchParams] = useSearchParams();
   const paramsKey = searchParams.toString();
 
@@ -193,13 +195,7 @@ export function LensPage() {
     timeRange,
     fieldIndex,
   });
-  const ctx: LensContext = useMemo(
-    () =>
-      config.columns.timestamp
-        ? { timeField: { sqlExpr: config.columns.timestamp, label: config.columns.timestamp } }
-        : {},
-    [config.columns.timestamp]
-  );
+  const ctx: LensContext = useMemo(() => lensContextFor(config), [config]);
   const [nameFilter, setNameFilter] = useState('');
   const shownFields = useMemo(() => {
     const q = nameFilter.toLowerCase();
@@ -367,7 +363,16 @@ export function LensPage() {
   };
   const [dragOver, setDragOver] = useState(false);
 
-  const discoverUrl = buildAppPageUrl('logs', { search, filters, columns: [], timeRange });
+  // LENS-INTERACT-02: Discover in a new tab, same context and data view (the one this page queries),
+  // default columns plus the chart's top-values fields. A new tab bypasses Grafana's router, so the
+  // href needs the server's sub-path.
+  const exploreUrl = useMemo(
+    () =>
+      locationUtil.assureBaseUrl(
+        discoverUrl({ search, filters, timeRange, viewId: activeView?.id }, discoverColumns(lens, fields, config))
+      ),
+    [search, filters, timeRange, activeView?.id, lens, fields, config]
+  );
 
   return (
     <div className={styles.page}>
@@ -379,8 +384,8 @@ export function LensPage() {
           {filters.length > 0 && ` · ${filters.length} filter${filters.length > 1 ? 's' : ''}`}
         </span>
         <div className={styles.spacer} />
-        <LinkButton href={discoverUrl} variant="secondary" size="sm" icon="compass" fill="outline">
-          Edit query in Discover
+        <LinkButton href={exploreUrl} target="_blank" variant="secondary" size="sm" icon="compass" fill="outline">
+          Explore in Discover
         </LinkButton>
         <TimeRangePicker
           value={timeRange}

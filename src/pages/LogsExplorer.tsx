@@ -1,7 +1,7 @@
 import React, { useCallback, useContext, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { css, cx } from '@emotion/css';
 import { dateTime, GrafanaTheme2, PageLayoutType, rangeUtil, TimeRange } from '@grafana/data';
-import { PluginPage } from '@grafana/runtime';
+import { locationService, PluginPage } from '@grafana/runtime';
 import { Button, Icon, Spinner, useStyles2, TimeRangePicker, RefreshPicker, useSplitter } from '@grafana/ui';
 import { GridDisplay, GridDisplayOptions, loadGridDisplay, saveGridDisplay } from '../components/GridDisplayOptions';
 import { useSearchParams } from 'react-router-dom';
@@ -50,6 +50,10 @@ import { compileColumnHighlighter, extractHighlightTerms } from '../sql/kql/high
 import { errMsg } from '../errMsg';
 import { shiftTimeRange, zoomOutTimeRange } from '../utils/timeRangeNav';
 import { useAvailableHeight } from '../utils/useAvailableHeight';
+import { lensContextFor, lensFieldOf, lensForField, lensForHistogram, visualizeUrl } from '../lens/handoff';
+import { defaultColumns } from '../data/columns';
+// Re-exported for existing importers (tests).
+export { defaultColumns } from '../data/columns';
 import { logsQueryReducer } from './_logsQueryReducer';
 
 const INITIAL_FETCH = 200;
@@ -78,28 +82,6 @@ function defaultTimeRange(): TimeRange {
   };
 }
 
-export function defaultColumns(config: SourceConfig): SelectedColumn[] {
-  const c = config.columns;
-  // Only include columns for which a mapping exists. Empty mapping = column not present in this view.
-  // `id` stays a stable plain name (used for React keys/reorder, unrelated to SQL); `key` must
-  // match the __-prefixed alias buildLogsQuery actually emits (see CORE_ALIAS).
-  const cols: Array<{ id: string; key: string; sqlExpr: string; displayName: string; type: ColumnType }> = [
-    { id: 'timestamp', key: CORE_ALIAS.timestamp, sqlExpr: c.timestamp, displayName: 'Time', type: 'time' },
-    { id: 'severity', key: CORE_ALIAS.severity, sqlExpr: c.severity, displayName: 'Level', type: 'level' },
-    { id: 'serviceName', key: CORE_ALIAS.serviceName, sqlExpr: c.serviceName, displayName: 'Service', type: 'exact' },
-    { id: 'body', key: CORE_ALIAS.body, sqlExpr: c.body, displayName: 'Message', type: 'text' },
-  ];
-  const core = cols
-    .filter((col) => Boolean(col.sqlExpr))
-    .map((col) => ({ ...col, isCore: true }));
-  // "Pinned columns" — a per-view saved set of extra (non-core) columns appended after the fixed
-  // core set (see SourceConfig.pinnedColumns). Core is never replaced or reordered by this; a
-  // pinned entry that happens to duplicate a mapped core column's sqlExpr (e.g. someone pinned
-  // ServiceName by hand) is dropped so it doesn't render twice.
-  const coreExprs = new Set(core.map((col) => col.sqlExpr));
-  const pinned = (config.pinnedColumns ?? []).filter((col) => !coreExprs.has(col.sqlExpr));
-  return [...core, ...pinned];
-}
 
 export function LogsExplorer() {
   const styles = useStyles2(getStyles);
@@ -1161,6 +1143,29 @@ export function LogsExplorer() {
     [breakdown, config.columns.severity]
   );
 
+  // Discover → Lens hand-off (LENS-INTERACT-02 / DISC-CHART-03): same query, filters, time and
+  // data view; the Lens state is what Visualize would build from the field / the histogram.
+  const handoffContext = useMemo(
+    () => ({ search: queryState.search, filters: queryState.filters, timeRange, viewId: activeView?.id }),
+    [queryState.search, queryState.filters, timeRange, activeView?.id]
+  );
+  const lensContext = useMemo(() => lensContextFor(config), [config]);
+  const onVisualizeField = useCallback(
+    (field: FieldModel) => locationService.push(visualizeUrl(handoffContext, lensForField(field, lensContext))),
+    [handoffContext, lensContext]
+  );
+  const editVisualizationUrl = useMemo(() => {
+    const sev = config.columns.severity;
+    const split =
+      breakdown.kind === 'field'
+        ? lensFieldOf(breakdown.field)
+        : breakdown.kind === 'severity' && sev
+          ? { id: `col:${sev}`, sqlExpr: sev, label: sev, type: 'string' as const }
+          : undefined;
+    const lens = lensForHistogram(lensContext, split);
+    return lens ? visualizeUrl(handoffContext, lens) : undefined;
+  }, [breakdown, config.columns.severity, lensContext, handoffContext]);
+
   // Lazy-fetch rows beyond the initial buffer when the user pages past it.
   const ensureRows = useCallback(
     async (page: number, currentPageSize: number, currentRows: LogRow[], currentHasMore: boolean) => {
@@ -1441,6 +1446,7 @@ export function LogsExplorer() {
                   onAddFilter={onAddFilter}
                   onCollapse={() => setSidebarCollapsed(true)}
                   onSetBreakdown={onSetFieldBreakdown}
+                  onVisualize={onVisualizeField}
                 />
               </div>
               <div {...splitterProps} className={cx(splitterProps.className, styles.splitterHandle)} />
@@ -1491,6 +1497,7 @@ export function LogsExplorer() {
                   resolvedInterval={resolvedInterval}
                   onSelectRange={onHistogramSelectRange}
                   breakdownTarget={histogramBreakdownTarget}
+                  editVisualizationUrl={editVisualizationUrl}
                   onAddFilter={onAddFilter}
                   collapsed={histogramCollapsed}
                   onToggleCollapsed={() => setHistogramCollapsed((v) => !v)}

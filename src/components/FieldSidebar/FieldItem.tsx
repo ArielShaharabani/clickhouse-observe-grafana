@@ -19,6 +19,7 @@ interface FieldItemProps {
   onToggleColumn: (field: FieldModel) => void;
   onAddFilter: (f: FilterPill) => void;
   onSetBreakdown?: (field: FieldModel) => void;
+  onVisualize?: (field: FieldModel) => void;
 }
 
 export function FieldItem({
@@ -29,6 +30,7 @@ export function FieldItem({
   onToggleColumn,
   onAddFilter,
   onSetBreakdown,
+  onVisualize,
 }: FieldItemProps) {
   const styles = useStyles2(getStyles);
   const theme = useTheme2();
@@ -170,6 +172,7 @@ export function FieldItem({
                     timeRange={timeRange}
                     isSelected={false}
                     onSetBreakdown={onBreakdownAndClose}
+                    onVisualize={onVisualize}
                     onAddFilter={(f) => {
                       onAddFilter(f);
                       setPopoverOpen(false);
@@ -188,6 +191,7 @@ export function FieldItem({
                   timeRange={timeRange}
                   isSelected={isSelected}
                   onSetBreakdown={onBreakdownAndClose}
+                  onVisualize={onVisualize}
                   onAddFilter={(f) => {
                     onAddFilter(f);
                     setPopoverOpen(false);

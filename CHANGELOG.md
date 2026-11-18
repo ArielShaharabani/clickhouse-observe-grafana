@@ -10,6 +10,20 @@ Versions track the plugin's release history. `Unreleased` collects commits not y
 
 ---
 
+## [0.25.0] — 2026-11-18
+
+### Added
+
+- **Visualize a field from Discover.** The field popover's Visualize button opens the Visualize page with the chart for that field, keeping the query, filters, time range and data view. Spec LENS-INTERACT-02 / DISC-SIDEBAR-02.
+- **Edit visualization from the histogram.** ✎ in the histogram toolbar opens it on the Visualize page as a bar chart of Count of records over time, split by the current breakdown. Spec DISC-CHART-03.
+- **Explore in Discover from a chart.** Opens Discover in a new tab with the same query, filters, time and data view, and the chart's top-values fields as table columns. Spec LENS-INTERACT-02.
+
+### Changed
+
+- **"Edit query in Discover" is now "Explore in Discover"** and also carries the data view and columns.
+
+---
+
 ## [0.24.0] — 2026-11-18
 
 ### Added

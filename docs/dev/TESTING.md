@@ -33,8 +33,8 @@ Enable a case as soon as both sides exist. Status: `—` not yet possible · `to
 | IT-D | Time writers (brush, filter-by-time, shift/zoom, Lens brush) → URL time, interval, Empty field grouping | — |
 | IT-E | Breakdown via popover icon and toolbar; carried into Lens | Popover icon ✅ (`tests/features/disc-sidebar-02.spec.ts`); Lens part pending #15 |
 | IT-F | Column writers (sidebar, drawer, column menu, Explore in Discover) → grid + context view | — |
-| IT-G | Discover → Lens handoff (Visualize, Edit visualization, stats tab) | — |
-| IT-H | Lens → Discover (filters, time, bucket columns, consistent counts) | — |
+| IT-G | Discover → Lens handoff (Visualize, Edit visualization, stats tab) | ✅ lens-interact-02 (stats tab: #22) |
+| IT-H | Lens → Discover (filters, time, bucket columns, consistent counts) | ✅ lens-interact-02 |
 | IT-I | Drawer → surrounding documents (filters disabled, query dropped, columns kept) | — |
 | IT-J | Data view switch (columns pruned, filter warnings, fields reload) | — |
 | IT-K | URL reload restores state; Lens unsaved state survives refresh | Logs page ✅ (`tests/features/shared-state.spec.ts`); Lens part pending #11 |

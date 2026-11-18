@@ -11,21 +11,9 @@ import { useFields } from '../FieldsContext';
 import { FieldItem } from './FieldItem';
 import { FilterPill, LogsQueryState, SelectedColumn, ColumnType } from '../../types';
 
-/** Sanitize a field id into a SQL-safe alias. Shared with LogDetailDrawer's "add as column" action. */
-export function makeColumnKey(id: string): string {
-  return 'fld_' + id.replace(/[^a-zA-Z0-9]/g, '_').replace(/_+/g, '_').slice(0, 40);
-}
-
-export function fieldToColumn(field: FieldModel): SelectedColumn {
-  return {
-    id: field.id,
-    key: makeColumnKey(field.id),
-    sqlExpr: field.sqlExpr,
-    displayName: field.displayName,
-    type: field.type as ColumnType,
-    isCore: false,
-  };
-}
+// Moved to src/data/columns.ts (shared with the Lens hand-off); re-exported for existing importers.
+export { makeColumnKey, fieldToColumn } from '../../data/columns';
+import { fieldToColumn } from '../../data/columns';
 
 interface FieldSidebarProps {
   queryState: LogsQueryState;
@@ -35,6 +23,8 @@ interface FieldSidebarProps {
   onCollapse: () => void;
   /** Break the histogram down by a field (field stats popover action). */
   onSetBreakdown?: (field: FieldModel) => void;
+  /** Open a field on the Visualize page (popover Visualize button). */
+  onVisualize?: (field: FieldModel) => void;
 }
 
 type Group = 'selected' | 'popular' | 'available';
@@ -46,6 +36,7 @@ export function FieldSidebar({
   onAddFilter,
   onCollapse,
   onSetBreakdown,
+  onVisualize,
 }: FieldSidebarProps) {
   const styles = useStyles2(getStyles);
   const { fields, loading, refresh } = useFields();
@@ -163,6 +154,7 @@ export function FieldSidebar({
     onToggleColumn: onToggleFromList,
     onAddFilter: onFilterFromList,
     onSetBreakdown,
+    onVisualize,
   };
 
   // The unselected list is the one that scales with schema width — a table with hundreds of
