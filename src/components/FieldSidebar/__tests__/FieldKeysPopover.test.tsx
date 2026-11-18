@@ -87,7 +87,7 @@ describe('FieldKeysPopover', () => {
     renderPopover(mapField, jest.fn());
     await waitFor(() => expect(screen.getByText('http.method')).toBeInTheDocument());
     expect(screen.getByText('http.status_code')).toBeInTheDocument();
-    expect(screen.getByText(/discovered from 42 records/i)).toBeInTheDocument();
+    expect(screen.getByText(/discovered from 42 sample records/i)).toBeInTheDocument();
   });
 
   it('clicking a Map key calls onSelectKey with the discovery id/sqlExpr scheme', async () => {
