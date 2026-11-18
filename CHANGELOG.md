@@ -10,6 +10,13 @@ Versions track the plugin's release history. `Unreleased` collects commits not y
 
 ---
 
+## [0.31.0] — 2026-11-18
+
+### Added
+- **Surrounding documents (DISC-DOC-02).** "View surrounding documents" in the document detail panel opens `context/<dataViewId>/<docId>` (breadcrumb `Discover / Surrounding documents`, title `Documents surrounding #<id>`): the anchor document highlighted in pale yellow, 5 newer documents above and 5 older below, `Load [5] newer documents` / `Load [5] older documents` with an editable step (up to 500 per side), and a status line ("7 newer documents · no more newer documents"). The search query is dropped; filters come along disabled (struck through) and can be re-enabled; Discover's columns are kept. Documents sharing a timestamp are ordered by a row id, so paging never skips or repeats one. The page is not bound to the time picker. Rows open the same detail panel, where "View surrounding documents" re-anchors on that document; the breadcrumb returns to Discover with its original query and filters.
+
+---
+
 ## [0.30.0] — 2026-11-18
 
 ### Added

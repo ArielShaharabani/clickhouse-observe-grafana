@@ -1,7 +1,7 @@
 # Context snapshot — read this to restart
 
 Saved after every feature (and every review-fix round). A new session can resume from this file plus `PROGRESS.md` alone.
-Last saved: 2026-11-18, #18 DISC-CHART-02 merged (PR 22, v0.30.0).
+Last saved: 2026-11-18, #20 DISC-DOC-02 merged (PR 23, v0.31.0).
 
 ## Goal
 Bring Kibana Discover + Lens style exploration to Grafana on ClickHouse by extending the **ClickHouse Observe** app plugin.
@@ -37,6 +37,7 @@ Bring Kibana Discover + Lens style exploration to Grafana on ClickHouse by exten
 | 19 | DISC-FILTER-02: Filter builder: range operators, per-type operators, preview | 19 | `src/components/AddFilter/FilterEditForm.tsx`, `src/sql/filters.ts` (`sanitizeFilterPills`, range validation), `buildFilterClause` |
 | 24 | LENS-DIM-04: Top values editor: rank by / direction, Other, missing, include / exclude with regex | 20 | `src/lens/compile.ts` (top-values SQL, `regexError`), `src/lens/state.ts` (`TermsDim` options, `cleanTerms`), `src/lens/DimensionEditor.tsx` |
 | 18 | DISC-CHART-02: Histogram breakdown label and legend actions | 22 | src/components/VolumeHistogram.tsx, src/components/HistogramControls/BreakdownPicker.tsx |
+| 20 | DISC-DOC-02: Surrounding documents | 23 | src/data/surrounding.ts, src/pages/ContextView.tsx |
 
 ## Key decisions (details in DECISIONS.md)
 - Frontend-only; queries via grafana-clickhouse-datasource (`src/data/runQuery.ts`). Plain React + @grafana/ui, no Scenes.

@@ -31,7 +31,7 @@ Status values: `todo` · `in-progress` · `done` (with PR link) · `skipped` (wi
 | 17 | DISC-TIME-01/02 | Time picker, Update state | 3 | Verify | done | PR 18 |
 | 18 | DISC-CHART-02 | Breakdown + legend actions | 3 | Verify | done | PR 22 |
 | 19 | DISC-FILTER-02 | Filter builder | 3 | Verify | done | PR 19 |
-| 20 | DISC-DOC-02 | Surrounding documents | 3 | Build | in-progress | |
+| 20 | DISC-DOC-02 | Surrounding documents | 3 | Build | done | PR 23 |
 | 21 | DISC-PATTERNS-01 | Log patterns | 3 | Build | skipped (user: not a focus, 2026-11-18) | |
 | 22 | DISC-FIELDSTATS-01 | Field statistics tab | 3 | Build | todo | |
 | 24 | LENS-DIM-04 | Top values editor | 3 | Build | done | PR 20 |
