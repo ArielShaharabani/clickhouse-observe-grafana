@@ -88,7 +88,7 @@ export function buildLensPanel(
       if (x?.kind === 'date_histogram') {
         // Long rows (time, split value, metrics) → one series per split value.
         const transformations: Transformation[] =
-          split?.kind === 'terms'
+          split && split.kind !== 'date_histogram'
             ? [
                 rename(withoutSplit),
                 { id: 'partitionByValues', options: { fields: [bucketAlias(1)], keepFields: false } },
@@ -115,7 +115,7 @@ export function buildLensPanel(
       }
       // Category X: a breakdown becomes one column per split value.
       const transformations: Transformation[] =
-        split?.kind !== 'terms'
+        !split || split.kind === 'date_histogram'
           ? [rename(names)]
           : state.metrics.length === 1
             ? [

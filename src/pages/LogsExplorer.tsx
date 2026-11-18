@@ -1230,9 +1230,9 @@ export function LogsExplorer() {
         : breakdown.kind === 'severity' && sev
           ? { id: `col:${sev}`, sqlExpr: sev, label: sev, type: 'string' as const }
           : undefined;
-    const lens = lensForHistogram(lensContext, split);
+    const lens = lensForHistogram(lensContext, split, intervalMode);
     return lens ? visualizeUrl(handoffContext, lens) : undefined;
-  }, [breakdown, config.columns.severity, lensContext, handoffContext]);
+  }, [breakdown, config.columns.severity, lensContext, handoffContext, intervalMode]);
   // Toolbar "Explore in Visualize" (#16c): the histogram's chart when the view has a time field,
   // otherwise an empty workspace — always with the same query, filters, time and data view.
   const exploreInVisualizeUrl = useMemo(

@@ -1,7 +1,11 @@
 /**
  * LensState → ClickHouse SQL (blueprint "Query layer → Lens chart") and query rows → chart series.
  *
- * - date histogram → `toStartOfInterval(ts, INTERVAL n SECOND)` with the Discover auto interval
+ * - date histogram → `toStartOfInterval(ts, INTERVAL n SECOND)` with the Discover auto interval, or
+ *   a typed minimum interval (LENS-DIM-05, `interval.ts`: parsed number + unit keyword, never text)
+ * - intervals → `floor(x / w) * w` with a power-of-ten width from the data's span, or custom ranges
+ *   (`multiIf` over numbers we validated); filters → one bucket per KQL query (`arrayJoin` of the
+ *   matching indexes; queries compiled by the search bar's KQL compiler)
  * - top values → `toString(field)` restricted to the top N by count (`GLOBAL IN` a ranked CTE, the
  *   same shape as the histogram breakdown); options (rank, Other, missing, include/exclude)
  * - median → `quantile(0.5)`, unique count → `uniq`, average/sum/min/max → the same-named aggregate
@@ -20,14 +24,28 @@ import { SourceConfig } from '../types';
 import { quoteIdentifier, quoteString, tableRef } from '../sql/queryBuilder';
 import { configSettingsFragments, withSettings } from '../sql/settings';
 import { isConvertedTimestamp, timeExpr } from '../sql/timeExpr';
-import { resolveInterval } from '../components/_histogramInterval';
+import {
+  bucketStartSql,
+  dashboardBucketSql,
+  intervalMs as ivMs,
+  LensInterval,
+  parseInterval,
+  ResolvedLensInterval,
+  resolveLensInterval,
+  stepBucket,
+} from './interval';
 import { FieldIndex } from '../sql/fields';
+import { kqlToSql, parseKql } from '../sql/kql';
 import { formulaToSql, FormulaSqlContext } from './formula';
 import {
   BucketDim,
   clampPercentile,
   dimLabel,
   dimLabelIn,
+  DEFAULT_GRANULARITY,
+  filterLabel,
+  FiltersDim,
+  GRANULARITY_TARGETS,
   hasKindColumn,
   KIND_MISSING,
   KIND_OTHER,
@@ -36,6 +54,9 @@ import {
   MetricDim,
   MISSING_VALUE,
   OTHER_VALUE,
+  RangeDim,
+  rangeLabel,
+  RangeSpec,
   rankDirOf,
   regexError,
   TermsDim,
@@ -51,6 +72,46 @@ export const bucketAlias = (i: number) => `b${i}`;
 export const metricAlias = (i: number) => `m${i}`;
 /** Row-kind column of a top-values bucket with Other / missing on (see KIND_* in state.ts). */
 export const kindAlias = (i: number) => `k${i}`;
+/** Bucket width column of an automatic Intervals bucket. */
+export const widthAlias = (i: number) => `w${i}`;
+
+/** A number we validated (finite) as a SQL literal. */
+const numLit = (n: number): string => (Number.isFinite(n) ? String(n) : '0');
+
+/** `from <= x < to` of one custom range (open ends omitted). */
+function rangeCond(x: string, r: RangeSpec): string {
+  const parts = [`${x} IS NOT NULL`];
+  if (r.from !== undefined) {
+    parts.push(`${x} >= ${numLit(r.from)}`);
+  }
+  if (r.to !== undefined) {
+    parts.push(`${x} < ${numLit(r.to)}`);
+  }
+  return parts.join(' AND ');
+}
+
+/** Numeric value of an Intervals field (cast like the quick functions for a non-number column). */
+function rangeValue(b: RangeDim): string {
+  const f = quoteIdentifier(b.field);
+  return b.numeric ? `toFloat64(${f})` : `toFloat64OrNull(toString(${f}))`;
+}
+
+/** WHERE condition of one Filters bucket; an empty query matches everything, an invalid one nothing. */
+function filterCond(query: string, fctx: FormulaSqlContext): string {
+  if (!query.trim()) {
+    return '1';
+  }
+  try {
+    const sql = kqlToSql(parseKql(query), fctx.config, fctx.index);
+    if (!sql) {
+      return '1';
+    }
+    // Saved panels: the datasource's macro expander must never see `$__…` text from a query.
+    return `(${fctx.dashboard ? sql.replace(/\$/g, () => '\\x24') : sql})`;
+  } catch {
+    return '0';
+  }
+}
 
 const MAP_ACCESSOR = /^("(?:[^"]|"")*"|[A-Za-z_][A-Za-z0-9_]*)\[(.+)\]$/;
 
@@ -122,8 +183,10 @@ function missingAwareRaw(field: string): string {
 
 export interface CompiledLens {
   sql: string;
-  /** Interval of the date histogram, when there is one (ms). */
+  /** Interval of the date histogram, when there is one (ms; months / years approximated). */
   intervalMs?: number;
+  /** The date histogram's interval as used (exact stepping for gap filling / click ranges). */
+  interval?: ResolvedLensInterval;
 }
 
 export function compileLens(
@@ -144,6 +207,7 @@ export function compileLens(
   const tbl = tableRef(config, config.logsTable);
   const where = conditions.length > 0 ? conditions.join(' AND ') : '';
   let intervalMs: number | undefined;
+  let interval: ResolvedLensInterval | undefined;
 
   // A date histogram on the view's time field reads it the way every other query does: a
   // converted time field (epoch / text, PLAN #16d) is not a real DateTime column. Any other field
@@ -154,8 +218,60 @@ export function compileLens(
   const ctes: string[] = [];
   const restrictions: string[] = [];
   const selects: string[] = [];
+
+  // Intervals (LENS-DIM-05): custom ranges → the index of the first matching range; automatic →
+  // the bucket start, with a power-of-ten width sized from the data's span (`rng<i>` CTE).
+  const rangeBucket = (b: RangeDim, i: number) => {
+    const x = rangeValue(b);
+    if (b.ranges) {
+      if (b.ranges.length === 0) {
+        restrictions.push('0');
+        selects.push(`0 AS ${bucketAlias(i)}`);
+        return;
+      }
+      const idx = `multiIf(${b.ranges.map((r, k) => `${rangeCond(x, r)}, ${k}`).join(', ')}, -1)`;
+      restrictions.push(`${idx} >= 0`);
+      selects.push(
+        mode === 'dashboard'
+          ? `transform(${idx}, [${b.ranges.map((_, k) => k).join(', ')}], [${b.ranges.map((r) => lit(rangeLabel(r))).join(', ')}], '') AS ${bucketAlias(i)}`
+          : `${idx} AS ${bucketAlias(i)}`
+      );
+      return;
+    }
+    const target = GRANULARITY_TARGETS[(b.granularity ?? DEFAULT_GRANULARITY) - 1] ?? 50;
+    const cte = `rng${i}`;
+    ctes.push(
+      `${cte} AS (SELECT if(max(v) > min(v), exp10(ceil(log10((max(v) - min(v)) / ${target}))), 1) AS w FROM (SELECT ${x} AS v FROM ${tbl}${where ? ` WHERE ${where}` : ''}) WHERE v IS NOT NULL)`
+    );
+    const w = `(SELECT w FROM ${cte})`;
+    restrictions.push(`${x} IS NOT NULL`);
+    selects.push(`floor(${x} / ${w}) * ${w} AS ${bucketAlias(i)}`);
+    if (mode === 'app') {
+      selects.push(`any(${w}) AS ${widthAlias(i)}`);
+    }
+  };
+
+  // Filters (LENS-DIM-05): a document lands in every bucket whose query it matches.
+  const filtersBucket = (b: FiltersDim, i: number) => {
+    if (b.filters.length === 0) {
+      restrictions.push('0');
+      selects.push(`0 AS ${bucketAlias(i)}`);
+      return;
+    }
+    const conds = b.filters.map((f) => filterCond(f.query, fctx));
+    restrictions.push(`(${conds.join(' OR ')})`);
+    const idx = `arrayJoin(arrayFilter(__f -> __f >= 0, [${conds.map((c, k) => `if(${c}, ${k}, -1)`).join(', ')}]))`;
+    selects.push(
+      mode === 'dashboard'
+        ? `transform(${idx}, [${b.filters.map((_, k) => k).join(', ')}], [${b.filters.map((f) => lit(filterLabel(f))).join(', ')}], '') AS ${bucketAlias(i)}`
+        : `${idx} AS ${bucketAlias(i)}`
+    );
+  };
   state.buckets.forEach((b: BucketDim, i) => {
-    if (b.kind === 'date_histogram' && mode === 'dashboard') {
+    const custom = b.kind === 'date_histogram' ? parseInterval(b.interval) : null;
+    if (b.kind === 'date_histogram' && mode === 'dashboard' && custom) {
+      selects.push(`${dashboardBucketSql(dateSql(b.field), custom)} AS ${bucketAlias(i)}`);
+    } else if (b.kind === 'date_histogram' && mode === 'dashboard') {
       const col = dateSql(b.field);
       // The datasource's macro parser counts parentheses and commas without regard to quotes, so
       // an expression field (e.g. a Map key with ')' in it) gets the explicit form instead.
@@ -165,11 +281,14 @@ export function compileLens(
           : `$__timeInterval(${col}) AS ${bucketAlias(i)}`
       );
     } else if (b.kind === 'date_histogram') {
-      const iv = resolveInterval('auto', timeRange);
-      intervalMs = iv.intervalMs;
-      selects.push(
-        `toUnixTimestamp(toStartOfInterval(${dateSql(b.field)}, INTERVAL ${iv.value} ${iv.unit})) * 1000 AS ${bucketAlias(i)}`
-      );
+      const iv = resolveLensInterval(b.interval, timeRange);
+      interval = iv;
+      intervalMs = ivMs(iv);
+      selects.push(`${bucketStartSql(dateSql(b.field), iv)} AS ${bucketAlias(i)}`);
+    } else if (b.kind === 'range') {
+      rangeBucket(b, i);
+    } else if (b.kind === 'filters') {
+      filtersBucket(b, i);
     } else {
       const field = quoteIdentifier(b.field);
       const size = Math.max(1, Math.floor(b.size));
@@ -227,7 +346,7 @@ export function compileLens(
   );
   const first = state.buckets[0];
   let orderBy: string | null = null;
-  if (first?.kind === 'date_histogram') {
+  if (first?.kind === 'date_histogram' || first?.kind === 'range' || first?.kind === 'filters') {
     orderBy = `ORDER BY ${groupBy.join(', ')}`;
   } else if (first) {
     // Ordered by the chosen rank; the synthetic Other / (missing) rows always come last.
@@ -256,7 +375,7 @@ export function compileLens(
     ],
     configSettingsFragments(config)
   );
-  return { sql, intervalMs };
+  return { sql, intervalMs, interval };
 }
 
 /** Metric labels made unique ("Median of x", "Median of x (2)") so series never merge. */
@@ -338,10 +457,62 @@ function termCell(b: TermsDim, r: Record<string, unknown>, i: number): TermCell 
   };
 }
 
+/** Date histogram shaping inputs (LENS-DIM-05): exact bucket stepping and the time picker range. */
+export interface ShapeOptions {
+  interval?: LensInterval;
+  /** Time picker range (epoch ms): bound empty rows and partial buckets. */
+  range?: { from: number; to: number };
+}
+
+/** A float bucket start / end normalised so data rows and generated buckets share one key. */
+const normNum = (n: number): number => Number(n.toPrecision(12));
+const fmtNum = (n: number): string => normNum(n).toLocaleString('en-US', { maximumFractionDigits: 6 });
+
+/** Cell of an Intervals / Filters bucket (top values: `termCell`; date histogram: none). */
+function bucketCell(b: BucketDim | undefined, r: Record<string, unknown>, i: number): TermCell | undefined {
+  if (!b || b.kind === 'date_histogram') {
+    return undefined;
+  }
+  if (b.kind === 'terms') {
+    return termCell(b, r, i);
+  }
+  const v = r[bucketAlias(i)];
+  if (b.kind === 'filters') {
+    const k = num(v);
+    const f = b.filters[k];
+    return { key: `\u0002${k}`, label: f ? filterLabel(f) : String(k), synthetic: false };
+  }
+  if (b.ranges) {
+    const k = num(v);
+    const spec = b.ranges[k];
+    return { key: `\u0002${k}`, label: spec ? rangeLabel(spec) : String(k), synthetic: false };
+  }
+  const start = normNum(num(v));
+  const w = num(r[widthAlias(i)]);
+  return { key: String(start), label: `${fmtNum(start)} – ${fmtNum(start + w)}`, synthetic: false };
+}
+
 /** Shapes query rows into chart series: X = buckets[0], one series per metric × breakdown value. */
-export function shapeLensRows(state: LensState, rows: Array<Record<string, unknown>>, bucketMs?: number): LensResult {
+export function shapeLensRows(
+  state: LensState,
+  rowsIn: Array<Record<string, unknown>>,
+  bucketMs?: number,
+  opts: ShapeOptions = {}
+): LensResult {
   const [x, breakdown] = state.buckets;
   const xIsTime = x?.kind === 'date_histogram';
+  const xd = x?.kind === 'date_histogram' ? x : undefined;
+  const { interval, range } = opts;
+  const canStep = !!interval || (!!bucketMs && bucketMs > 0);
+  const step = (t: number, k: number) => (interval ? stepBucket(t, interval, k) : t + k * (bucketMs ?? 0));
+  // Drop partial intervals: buckets the time range covers only in part (first / last).
+  const rows =
+    xd?.dropPartial && range && canStep
+      ? rowsIn.filter((r) => {
+          const t = toMs(r[bucketAlias(0)]);
+          return t >= range.from && step(t, 1) <= range.to;
+        })
+      : rowsIn;
   const xs: Array<string | number> = [];
   const xInfo = new Map<string | number, TermCell>();
   const seenX = new Set<string | number>();
@@ -350,7 +521,7 @@ export function shapeLensRows(state: LensState, rows: Array<Record<string, unkno
   const labels = uniqueMetricLabels(state.metrics);
 
   for (const r of rows) {
-    const xCell = x?.kind === 'terms' ? termCell(x, r, 0) : undefined;
+    const xCell = bucketCell(x, r, 0);
     const xv = !x ? '' : xIsTime ? toMs(r[bucketAlias(0)]) : (xCell?.key ?? '');
     if (!seenX.has(xv)) {
       seenX.add(xv);
@@ -359,7 +530,7 @@ export function shapeLensRows(state: LensState, rows: Array<Record<string, unkno
         xInfo.set(xv, xCell);
       }
     }
-    const bCell = breakdown?.kind === 'terms' ? termCell(breakdown, r, 1) : undefined;
+    const bCell = bucketCell(breakdown, r, 1);
     const bv = bCell?.label;
     state.metrics.forEach((_m, i) => {
       const label = labels[i];
@@ -383,24 +554,64 @@ export function shapeLensRows(state: LensState, rows: Array<Record<string, unkno
   if (xIsTime) {
     xs.sort((a, b) => Number(a) - Number(b));
     // ClickHouse returns no row for an empty bucket; fill the gaps so the axis is linear in time
-    // (bars and the brush line up with real time).
-    if (bucketMs && bucketMs > 0 && xs.length > 1) {
-      const first = Number(xs[0]);
-      const last = Number(xs[xs.length - 1]);
-      if ((last - first) / bucketMs <= MAX_FILLED_BUCKETS) {
-        xs.length = 0;
-        for (let t = first; t <= last; t += bucketMs) {
-          xs.push(t);
+    // (bars and the brush line up with real time). Include empty rows (default on) fills the whole
+    // time picker range when bound to it, else only between the first and last bucket with data.
+    // Stepping starts from a real bucket so generated starts line up with ClickHouse's.
+    if (canStep && xd?.emptyRows !== false && xs.length > 0) {
+      let start = Number(xs[0]);
+      let end = Number(xs[xs.length - 1]);
+      if (range && !xd?.unbound) {
+        const keep = (t: number) => (xd?.dropPartial ? t >= range.from : step(t, 1) > range.from);
+        for (let n = 0; n < MAX_FILLED_BUCKETS && keep(step(start, -1)); n++) {
+          start = step(start, -1);
+        }
+        const keepEnd = (t: number) => (xd?.dropPartial ? step(t, 1) <= range.to : t < range.to);
+        for (let n = 0; n < MAX_FILLED_BUCKETS && keepEnd(step(end, 1)); n++) {
+          end = step(end, 1);
         }
       }
+      const filled: number[] = [];
+      for (let t = start; t <= end && filled.length <= MAX_FILLED_BUCKETS; t = step(t, 1)) {
+        filled.push(t);
+      }
+      if (filled.length <= MAX_FILLED_BUCKETS && filled.length >= xs.length) {
+        const seen = new Set(xs.map(Number));
+        // Keep any data bucket the stepping did not land on (e.g. a DST shift), in time order.
+        const merged = [...new Set([...filled, ...seen])].sort((a, b) => a - b);
+        xs.length = 0;
+        xs.push(...merged);
+      }
+    }
+  }
+  // Intervals (automatic) with Include empty rows: fill the missing widths between the first and
+  // last bucket so the axis is linear in value.
+  if (x?.kind === 'range' && !x.ranges && x.emptyRows !== false && xs.length > 1 && rows.length > 0) {
+    const w = num(rows[0][widthAlias(0)]);
+    const first = Number(xs[0]);
+    const last = Number(xs[xs.length - 1]);
+    if (w > 0 && (last - first) / w <= MAX_FILLED_BUCKETS) {
+      const filled: string[] = [];
+      for (let k = 0; first + k * w <= last + w / 2; k++) {
+        const start = normNum(first + k * w);
+        filled.push(String(start));
+        if (!xInfo.has(String(start))) {
+          xInfo.set(String(start), {
+            key: String(start),
+            label: `${fmtNum(start)} – ${fmtNum(start + w)}`,
+            synthetic: false,
+          });
+        }
+      }
+      xs.length = 0;
+      xs.push(...filled);
     }
   }
   const columns = [...state.buckets.map((b) => dimLabelIn(b, state.metrics)), ...labels];
   const tableRows = rows.map((r) => [
     ...state.buckets.map((b, i) => {
       const v = r[bucketAlias(i)];
-      if (b.kind === 'terms' && hasKindColumn(b)) {
-        return termCell(b, r, i).label;
+      if ((b.kind === 'terms' && hasKindColumn(b)) || b.kind === 'range' || b.kind === 'filters') {
+        return bucketCell(b, r, i)!.label;
       }
       return b.kind === 'date_histogram' ? toMs(v) : v === null || v === undefined ? null : String(v);
     }),
