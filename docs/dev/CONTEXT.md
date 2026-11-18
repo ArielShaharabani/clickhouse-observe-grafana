@@ -1,7 +1,7 @@
 # Context snapshot — read this to restart
 
 Saved after every feature (and every review-fix round). A new session can resume from this file plus `PROGRESS.md` alone.
-Last saved: 2026-11-18, #16 merged (PR 17, v0.26.0).
+Last saved: 2026-11-18, #19 DISC-FILTER-02 merged (PR 19, v0.28.0).
 
 ## Goal
 Bring Kibana Discover + Lens style exploration to Grafana on ClickHouse by extending the **ClickHouse Observe** app plugin.
@@ -34,6 +34,7 @@ Bring Kibana Discover + Lens style exploration to Grafana on ClickHouse by exten
 | 13 | LENS-DIM-01/02: dimension editor (functions, field, percentile, name, top-N size), + Add slots | 14 | `src/lens/DimensionEditor.tsx`, `src/lens/dimensions.ts` |
 | 15 | LENS-INTERACT-02 / DISC-CHART-03: Discover ↔ Lens hand-off (popover Visualize, histogram Edit visualization, Explore in Discover with columns) | 16 | `src/lens/handoff.ts`, `LogsExplorer.tsx`, `LogsHistogramPanel.tsx`, `LensPage.tsx` |
 | 14 | LENS-INTERACT-01: click-to-filter on custom XY chart, chooser, legend actions, brush, filter pills on Visualize | 15 | `src/lens/render/XyChart.tsx`, `src/lens/FilterChooser.tsx`, `src/lens/LensPage.tsx` |
+| 19 | DISC-FILTER-02: Filter builder: range operators, per-type operators, preview | 19 | `src/components/AddFilter/FilterEditForm.tsx`, `src/sql/filters.ts` (`sanitizeFilterPills`, range validation), `buildFilterClause` |
 
 ## Key decisions (details in DECISIONS.md)
 - Frontend-only; queries via grafana-clickhouse-datasource (`src/data/runQuery.ts`). Plain React + @grafana/ui, no Scenes.
@@ -66,3 +67,12 @@ Agents work in git worktrees under `C:\Users\Ariel\co-wt\<id>` on `feat/<id>`, e
 - `lens-dim-04` → #24 LENS-DIM-04, port 3013
 Agents do NOT touch the version, CHANGELOG, PLAN/PROGRESS/CONTEXT/DECISIONS/TESTING. They write `docs/dev/pending/<SPEC-ID>.md` (CHANGELOG bullets, decision text, TESTING rows) and open a PR. The coordinator (main session) merges one at a time: rebase, fold the pending file into the docs, bump the minor version, full e2e on the main stack, `/code-review medium`, squash-merge. If a session ends: `git worktree list`, `gh pr list`, and continue each branch.
 Status 2026-11-18: PR 18 (#17 time; docs folded, 0.27.0), PR 19 (#19 filter builder), PR 20 (#24 top values) open on the fork; code-review fixes in progress by the agents; security review for 19/20 running. `gh repo set-default` now points at the fork (agents had opened upstream PRs #26/#27/#28 by mistake; all closed). Merge order: 18 → 19 → 20 (each later one rebases, bumps 0.28.0 / 0.29.0 and folds its pending file with the coordinator script).
+Update 2026-11-18 (after a PC restart): Docker restarted, all containers resumed (`docker start` the stack + `co-*`). Interrupted lens-dim-04 review fixes pushed as a `wip:` commit. Second wave added:
+- `disc-chart-02` → #18 DISC-CHART-02, port 3014
+- `disc-doc-02` → #20 DISC-DOC-02, port 3015
+New containers: `docker run -d --name co-<id> --network clickhouse-observe-grafana-dev_default -p <port>:3000 -v <wt>/provisioning:/etc/grafana/provisioning -v <wt>/dist:/var/lib/grafana/plugins/poortuna-clickhouse-observe-app` + the GF_* env of the compose `grafana` service + `GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS=poortuna-clickhouse-observe-app`, image `clickhouse-observe-grafana-dev-grafana`.
+Then merge order: 18 → 19 → 20 → chart-02 → doc-02.
+Status 2026-11-18 (later): PR 18 merged (v0.27.0; gates 930 jest, 79 e2e). Agents hit the 5-hour usage limit once and were resumed. Next: PR 19 → 0.28.0, PR 20 → 0.29.0, then chart-02 / doc-02 PRs.
+- 2026-11-18: four parallel e2e suites pushed each worktree Grafana to ~1.3 GB and crashed the Docker engine (VM 7.5 GB). Rule since then: every playwright run takes the lock `mkdir C:/Users/Ariel/co-wt/.e2e-lock` (atomic; wait + retry if it exists) and `rmdir`s it after, pass or fail. Stale lock after a crash: remove it by hand. Merged worktree containers (`co-disc-time-01`) stay stopped. Docker recovery: kill Docker Desktop, `wsl --shutdown`, relaunch, `docker start` the stack + `co-*`.
+- User decisions 2026-11-18: #21 DISC-PATTERNS-01 skipped (not a focus); #23 LENS-DIM-03 formula editor lowered to importance 2 (nothing depends on it), now after #25 in PLAN.
+- 2026-11-18: PR 19 merged (v0.28.0; 1,003 jest, 98 e2e). Coordinator fold is now `python scripts/dev/fold-pending.py <SPEC> <row> <PR> <version> "<title>" "<key files>"` run in the feature worktree after merging master. User added importance-4 gaps 16b/16c/16d (PLAN). Agent `lens-dataview` (16b + 16c) on port 3012 (`co-lens-dataview`); 16d waits for the next free slot. Merge order now: 20 → chart-02 → doc-02 → lens-dataview.

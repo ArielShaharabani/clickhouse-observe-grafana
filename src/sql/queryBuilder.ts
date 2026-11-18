@@ -6,6 +6,7 @@
  * from the query request's time range automatically.
  */
 
+import { isDateBound, isNumericBound } from './filters';
 import { BreakdownSel, ColumnMapping, FilterPill, FilterOp, LogsQueryState, SourceConfig } from '../types';
 import { resolveField, FieldIndex } from './fields';
 import { parseKql, kqlToSql } from './kql';
@@ -52,10 +53,11 @@ export function logRowKey(row: Record<string, unknown>, config?: SourceConfig): 
 }
 
 const BARE_IDENT = '[A-Za-z_][A-Za-z0-9_]*';
-/** A double-quoted SQL identifier using this file's own quoteIdentifier()/quoteDottedPath()
- *  escaping convention (embedded `"` doubled) — matches a single dotted-path segment quoteDottedPath
- *  produces for a segment that isn't bare-safe (e.g. a JSON path like `user-id`). */
-const QUOTED_IDENT = '"(?:[^"]|"")*"';
+/** A double-quoted SQL identifier exactly as ClickHouse's lexer reads one: inside the quotes a
+ *  backslash escapes the next character and `""` is an escaped quote. Mirroring the lexer (not just
+ *  "doubled quotes") matters: `"x\""` is ONE identifier to ClickHouse, so a regex that ignored the
+ *  backslash would end it early and let the rest pass as trusted SQL. */
+const QUOTED_IDENT = '"(?:[^"\\\\]|""|\\\\[\\s\\S])*"';
 const IDENT = `(?:${BARE_IDENT}|${QUOTED_IDENT})`;
 /** A single-quoted SQL string literal using this file's own quoteString() escaping convention
  *  (backslash escaped first, then embedded single quotes) — matches what quoteString() actually
@@ -100,11 +102,20 @@ export function looksLikeTrustedExpr(name: string): boolean {
   return MAP_ACCESSOR_RE.test(name) || DOTTED_PATH_RE.test(name);
 }
 
+/**
+ * Double-quotes one identifier part. ClickHouse treats `\` as an escape inside quoted identifiers,
+ * so backslashes are escaped first, then quotes doubled: a name ending in `\"` can't close the
+ * identifier early and smuggle SQL after it.
+ */
+export function quoteIdentPart(name: string): string {
+  return `"${name.replace(/\\/g, '\\\\').replace(/"/g, '""')}"`;
+}
+
 export function quoteIdentifier(name: string): string {
   if (looksLikeTrustedExpr(name)) {
     return name;
   }
-  return `"${name.replace(/"/g, '""')}"`;
+  return quoteIdentPart(name);
 }
 
 export function quoteString(value: string): string {
@@ -127,7 +138,7 @@ export function quoteString(value: string): string {
  */
 export function quoteDottedPath(root: string, path: string): string {
   const quoteSegment = (seg: string) =>
-    /^[A-Za-z_][A-Za-z0-9_]*$/.test(seg) ? seg : `"${seg.replace(/"/g, '""')}"`;
+    /^[A-Za-z_][A-Za-z0-9_]*$/.test(seg) ? seg : quoteIdentPart(seg);
   return [root, ...path.split('.')].map(quoteSegment).join('.');
 }
 
@@ -154,7 +165,7 @@ export function escapeLike(value: string): string {
 }
 
 export function tableRef(config: SourceConfig, table: string): string {
-  return `"${config.database}"."${table}"`;
+  return `${quoteIdentPart(config.database)}.${quoteIdentPart(table)}`;
 }
 
 /**
@@ -199,6 +210,10 @@ function filterOpToSql(op: FilterOp): string {
       return 'NOT IN';
     case 'exists':
     case 'not_exists':
+    case 'gte':
+    case 'lt':
+    case 'between':
+    case 'not_between':
       return ''; // handled separately below
   }
 }
@@ -231,6 +246,40 @@ function buildFilterClause(filter: FilterPill, config: SourceConfig, index?: Fie
     return filter.op === 'one_of'
       ? `${col} IN (${list})`
       : `${col} NOT IN (${list})`;
+  }
+
+  // Range ops — gte / lt / between / not_between.
+  //  - Bounds must be a plain number or an ISO-like date (isNumericBound / isDateBound), so
+  //    `BETWEEN '1s' AND '5s'` can never reach ClickHouse; a pill with an invalid or missing bound
+  //    is skipped (matches nothing: 1=0; not_between: 1=1, like an empty one_of set).
+  //  - Every bound still goes through quoteString(), the column through quoteIdentifier().
+  //  - A Map value (always read as text) compares numerically: toFloat64OrNull(toString(col)) so
+  //    '9' < '10' and Map(String, Float64) values work too; only numeric bounds are valid there.
+  //    On that path the negative ops (lt, not_between) are NOT ifNull(positive, 0), so a row whose
+  //    key is missing or non-numeric lands on exactly one side of an include / exclude pair.
+  if (filter.op === 'gte' || filter.op === 'lt' || filter.op === 'between' || filter.op === 'not_between') {
+    const mapValue = resolved?.kind === 'map';
+    const isPair = filter.op === 'between' || filter.op === 'not_between';
+    const bounds = (isPair ? (filter.values ?? []).slice(0, 2) : [value]).map((v) => v.trim());
+    const validBound = (v: string) => (mapValue ? isNumericBound(v) : isNumericBound(v) || isDateBound(v));
+    if (bounds.length !== (isPair ? 2 : 1) || !bounds.every(validBound)) {
+      return filter.op === 'not_between' ? '1=1' : '1=0';
+    }
+    const col = quoteIdentifier(sqlExprRaw);
+    const lhs = mapValue ? `toFloat64OrNull(toString(${col}))` : col;
+    const lit = (v: string) => (mapValue ? `toFloat64OrNull(${quoteString(v)})` : quoteString(v));
+    const positive = isPair
+      ? `${lhs} BETWEEN ${lit(bounds[0])} AND ${lit(bounds[1])}`
+      : `${lhs} >= ${lit(bounds[0])}`;
+    switch (filter.op) {
+      case 'gte':
+      case 'between':
+        return positive;
+      case 'lt':
+        return mapValue ? `NOT ifNull(${positive}, 0)` : `${lhs} < ${lit(bounds[0])}`;
+      default: // not_between
+        return mapValue ? `NOT ifNull(${positive}, 0)` : `${lhs} NOT BETWEEN ${lit(bounds[0])} AND ${lit(bounds[1])}`;
+    }
   }
 
   // Standard single-value ops: =, !=, contains, not_contains

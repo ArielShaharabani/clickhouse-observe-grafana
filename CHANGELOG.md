@@ -10,12 +10,47 @@ Versions track the plugin's release history. `Unreleased` collects commits not y
 
 ---
 
+## [0.28.0] — 2026-11-18
+
+### Added
+- **Filter builder: greater or equal, less than, is between, is not between.** The spec lists these operators; the builder only had is / is not / one of / exists / contains. New `FilterOp`s `gte`, `lt`, `between`, `not_between` (bounds in `values: [low, high]`, inclusive), with labels, negate pairing (gte <-> lt, between <-> not_between) and pill rendering (`NOT` badge for not-between). `samePill` compares a between pair in order. Bounds are validated in the form (numbers for number fields and Map keys, dates for time fields, From <= To, with a message) and again in SQL: an invalid, missing or empty bound skips the pill (matches nothing; not_between matches everything) instead of sending `BETWEEN '1s' AND '5s'` to ClickHouse. A Map value is read as `toFloat64OrNull(toString(col))` (works for `Map(String, String)` and `Map(String, Float64)`; `'9' < '10'`), and there `lt` / `not_between` are `NOT ifNull(positive, 0)` so rows with a missing or non-numeric key fall on exactly one side of an include / exclude pair.
+- **Filter builder: live Preview line** showing the pill text before it is added.
+
+### Changed
+- **Filter builder: operator list depends on the field type.** Ranges only for number / time / unknown scalars and Map keys (never a whole Map / JSON / Tuple / Array column); substring match not for number / time (ILIKE needs a string). An edited pill keeps its own operator even if the type would not offer it.
+- **Filter builder: Value stays disabled ("Please select operator first...") until an operator is picked.** The operator no longer defaults to "is"; Add filter is enabled only when the draft is complete (field, operator, and the values the operator needs). Matches the spec.
+- Editing a pill now keeps its `pinned` flag as well as id / disabled.
+
+---
+
+## [0.27.0] — 2026-11-18
+
+### Added
+- **Typed time shorthand next to the time picker** (`-7d`, `-30m`, `now-1h`, `td`, `yd`, `tw`, `tm`, `ty`): Enter or Update applies it; relative ranges stay relative in the URL (`from=now-7d`). Spec DISC-TIME-01 gap (`src/utils/timeShorthand.ts`, `src/components/TimeShorthandInput.tsx`).
+- **Duration badge** (`~7d`, `~17h`) beside the picker showing the window length.
+- **Pending-time cue**: typed-but-unapplied shorthand shows a green Update button (DISC-TIME-02 dirty state for time).
+### Changed
+- **URL `from`/`to` also accept ISO-8601 with an explicit zone** (`Z` or `+hh:mm`, as Kibana writes `_g.time`); the plugin still writes epoch ms. Zone-less/date-only/non-ISO strings and invalid `now…` expressions are dropped instead of guessed.
+- Shorthand units s/h/d/w/y are case-insensitive (`m` minutes vs `M` months are not); overflowing counts are rejected. The badge uses the larger unit from 2 of it (`~36h`, `~90m`).
+
+---
+
+## [0.26.1] — 2026-11-18
+
+### Security
+
+- **Quoted identifiers escape backslashes.** ClickHouse treats `\` as an escape inside `"quoted"` identifiers, so a field name ending in `\"` (e.g. a filter pill in a shared link) could close the identifier early and append SQL that the viewer then ran. `quoteIdentifier`, dotted paths and table references now escape backslashes before doubling quotes, and the trusted-expression check mirrors ClickHouse's lexer. Found by the security review of PR 19.
+
+---
+
 ## [0.26.0] — 2026-11-18
 
 ### Added
 
 - **Save a Visualize chart.** Save opens "Save Lens visualization": title (suggested from the chart), description, add to an existing or new dashboard or none, and add to the panel library. The panel runs the same query on the ClickHouse datasource as a core Grafana panel (time series, bar chart, stat, pie, table) and follows the dashboard's time picker. Spec LENS-SAVE-01.
 - **Unsaved charts survive a refresh.** The chart is kept in the URL and in this tab's session, so opening Visualize again restores it.
+
+---
 
 ## [0.25.0] — 2026-11-18
 
@@ -370,6 +405,8 @@ Versions track the plugin's release history. `Unreleased` collects commits not y
 - The drawer's warnings computation ran twice per rail row per render (once for grouping, once per
   row) on every tracer mutation; now computed once per root per version and shared.
 
+---
+
 ## [0.6.0] — 2026-08-14
 
 ### Added
@@ -513,6 +550,8 @@ Versions track the plugin's release history. `Unreleased` collects commits not y
 - The ClickHouse datasource resolves (never rejects) its query response even when a query failed server-side — the failure surfaces via `DataQueryResponse.error`/`.errors` alongside an empty/partial result, not by throwing. Nothing in this plugin checked those fields, so every ClickHouse error (bad SQL, a query hitting its execution-time budget, permissions) silently looked like "0 results" instead of a catchable error — including every timeout guardrail already in this codebase, whose whole point was to fail loudly rather than return a wrong-looking answer. Fixed at the single chokepoint all queries run through.
 
 
+
+---
 
 ## [0.4.8] — 2026-08-04
 

@@ -40,3 +40,35 @@ Enable a case as soon as both sides exist. Status: `—` not yet possible · `to
 | IT-K | URL reload restores state; Lens unsaved state survives refresh | Logs page ✅ (`tests/features/shared-state.spec.ts`); Lens draft ✅ (`tests/features/lens-save-01.spec.ts`) |
 | IT-M | Same actions everywhere via the action registry | ✅ names/tooltips asserted on grid, drawer, popover, field list; grid Expand popover uses the same Filter for/out/Copy (`tests/features/disc-table-01.spec.ts`) |
 | IT-N | Autocomplete scoped by filters/time (KQL bar today; filter builder, Lens pickers later) | KQL bar ✅ (`tests/features/shared-autocomplete.spec.ts`) |
+
+### DISC-TIME-01 (PR 18)
+| Case | Status |
+| --- | --- |
+| IT-C | Query + time dirty states -> Update -> count/grid/URL refresh ✅ (`tests/integration/it-c-d-time.spec.ts`) |
+| IT-D | Brush (epoch-ms URL, interval recomputed), Filter by time (interval kept), shift/zoom (interval kept), shorthand + reload ✅ (`tests/integration/it-c-d-time.spec.ts`); Lens brush and Empty-field grouping not covered (grouping exists only with FIELD features) |
+
+### DISC-FILTER-02 (PR 19)
+| Case | Status |
+| --- | --- |
+| IT-B | Edit now covered for builder-made pills (`tests/features/disc-filter-02.spec.ts`: "IT-B: edit a builder-made pill ...", "IT-B: a builder-made range pill can be negated, disabled and deleted") ✅. Lens part still pending #11. |
+
+DISC-FILTER-02 acceptance:
+
+| Criterion | Test / status |
+| --- | --- |
+| Popover from Add filter; Edit filter reuses it, button "Update filter" | e2e "IT-B: edit a builder-made pill ..."; unit "editing a pill prefills it ..." |
+| Field combobox (searchable) with type info | e2e (every builder test picks via the combobox); type shown in option description. No type icons (gap left: text type label only) |
+| Operator list depends on field type | unit "DISC-FILTER-02 operator lists"; e2e "operator list depends on the field type" |
+| Range validation (numbers / dates / From <= To), invalid pills skipped | unit `validateRange`, SQL `incomplete or invalid ranges are skipped`; e2e "invalid bounds are rejected in the form", "pills with a missing or non-numeric range bound ..." |
+| Whole Map column offers no range operators; Map-key ranges are numeric and Exclude is the complement | unit operator lists, SQL `Map negations ...`; e2e "a whole Map column ...", "Map-key range pill from a link ..." (1,200 slow rows; exclude 40,320) |
+| Operators: is, is not, is one of, is not one of, greater or equal, less than, is between, is not between, exists | e2e one test per operator (counts: ServiceName payments 9,264; SeverityNumber >= 13 = 9,271; < 9 = 3,984; between 9..13 = 34,345; not between = 7,175; one of auth+payments 17,328); SQL `every operator produces its WHERE` |
+| Value input disabled with "Please select operator first..." | unit "blank form ..."; e2e "value input is disabled until an operator is picked ..." |
+| Value autocomplete from the shared service | e2e "value autocomplete suggests real values from the shared service" (info / warn / debug / error) |
+| Live Preview | e2e (is, is between); unit (edit) |
+| Optional custom label | e2e "custom label replaces the pill text" |
+| Cancel / Add filter | e2e "Cancel closes the builder ..."; Add stays disabled until complete (e2e + unit `isFilterComplete`) |
+| Hostile values | SQL tests (quotes, backslashes, `') OR 1=1 --`) for all value ops; e2e "hostile value is data, not SQL" |
+| IT-B: builder-made pills re-query on edit / negate / disable / delete | the two IT-B e2e tests |
+| Rows with OR / AND nested groups (`+ OR`, `+ AND`) | gap left: needs a nested pill model; separate feature |
+| Edit as Query DSL (JSON editor) | gap left: Elasticsearch concept, no ClickHouse equivalent |
+| ~1200 px wide popover | gap left: kept at 760 px (all three inputs fit; no change in behaviour) |
