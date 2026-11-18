@@ -31,9 +31,9 @@ Status values: `todo` · `in-progress` · `done` (with PR link) · `skipped` (wi
 | 20 | DISC-DOC-02 | Surrounding documents | 3 | Build | in-progress | |
 | 21 | DISC-PATTERNS-01 | Log patterns | 3 | Build | skipped (user: not a focus, 2026-11-18) | |
 | 22 | DISC-FIELDSTATS-01 | Field statistics tab | 3 | Build | todo | |
-| 23 | LENS-DIM-03 | Formula editor | 3 | Build | todo | |
 | 24 | LENS-DIM-04 | Top values editor | 3 | Build | in-progress | |
 | 25 | SHARED-PERF-01 | Loading / sampling cues | 3 | Verify | todo | |
+| 23 | LENS-DIM-03 | Formula editor | 2 | Build | todo | |
 | 26 | LENS-CHART-01 | Table + Metric specifics | 2 | Build | todo | |
 | 27 | LENS-STYLE-01 | Style + Legend panels | 2 | Build | todo | |
 | 28 | LENS-LAYER-01 | Layers | 2 | Build | todo | |
