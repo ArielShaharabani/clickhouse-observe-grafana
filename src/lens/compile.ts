@@ -37,7 +37,6 @@ import {
   stepBucket,
 } from './interval';
 import { FieldIndex } from '../sql/fields';
-import { kqlToSql, parseKql } from '../sql/kql';
 import { formulaToSql, FormulaSqlContext } from './formula';
 import {
   BucketDim,
