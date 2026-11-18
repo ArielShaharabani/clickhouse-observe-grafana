@@ -11,7 +11,9 @@
  * passed through `quoteIdentifier` here (a bare name is quoted; only well-formed Map accessors and
  * dotted paths pass through). Filters/search arrive as already-built WHERE conditions.
  *
- * Date buckets are returned as epoch milliseconds, so no timezone guessing is needed on the way back.
+ * App mode returns date buckets as epoch milliseconds (no timezone guessing on the way back) for
+ * `shapeLensRows`. Dashboard mode (saved panels) returns DateTime from `$__timeInterval` for Grafana
+ * panels; its rows are not meant for `shapeLensRows`.
  */
 import { TimeRange } from '@grafana/data';
 import { SourceConfig } from '../types';

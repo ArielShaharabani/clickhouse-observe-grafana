@@ -6,13 +6,11 @@
  * transformations into what the matching core panel draws. Pure: unit-tested on the JSON.
  */
 import { TimeRange } from '@grafana/data';
-import { chDatasourceRef, ExportedPanel, GridPos } from '../data/panelExport';
+import { chDatasourceRef, ExportedPanel, FORMAT_TABLE, GridPos } from '../data/panelExport';
 import { SourceConfig } from '../types';
 import { bucketAlias, compileLens, metricAlias, uniqueMetricLabels } from './compile';
 import { dimLabel, LensState } from './state';
 import { chartTitle } from './suggest';
-
-const FORMAT_TABLE = 1;
 
 export interface LensPanelOpts {
   id: number;
@@ -68,6 +66,8 @@ export function buildLensPanel(
   const names = columnNames(state);
   const [x, split] = state.buckets;
   const stacking = stackingOf(state);
+  // Everything renamed except the split column, which the partition / pivot transformations read.
+  const withoutSplit = Object.fromEntries(Object.entries(names).filter(([k]) => k !== bucketAlias(1)));
   const base = {
     id: opts.id,
     title: opts.title?.trim() || chartTitle(state),
@@ -90,6 +90,7 @@ export function buildLensPanel(
         const transformations: Transformation[] =
           split?.kind === 'terms'
             ? [
+                rename(withoutSplit),
                 { id: 'partitionByValues', options: { fields: [bucketAlias(1)], keepFields: false } },
                 { id: 'prepareTimeSeries', options: { format: 'many' } },
               ]
@@ -114,15 +115,21 @@ export function buildLensPanel(
       }
       // Category X: a breakdown becomes one column per split value.
       const transformations: Transformation[] =
-        split?.kind === 'terms'
-          ? [
-              {
-                id: 'groupingToMatrix',
-                options: { columnField: bucketAlias(1), rowField: bucketAlias(0), valueField: metricAlias(0) },
-              },
-              rename({ [`${bucketAlias(0)}\\${bucketAlias(1)}`]: names[bucketAlias(0)] }),
-            ]
-          : [rename(names)];
+        split?.kind !== 'terms'
+          ? [rename(names)]
+          : state.metrics.length === 1
+            ? [
+                {
+                  id: 'groupingToMatrix',
+                  options: { columnField: bucketAlias(1), rowField: bucketAlias(0), valueField: metricAlias(0) },
+                },
+                rename({ [`${bucketAlias(0)}\\${bucketAlias(1)}`]: names[bucketAlias(0)] }),
+              ]
+            : [
+                rename(withoutSplit),
+                { id: 'partitionByValues', options: { fields: [bucketAlias(1)], keepFields: false } },
+                { id: 'joinByField', options: { byField: names[bucketAlias(0)], mode: 'outer' } },
+              ];
       return {
         ...base,
         type: 'barchart',

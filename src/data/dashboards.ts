@@ -70,3 +70,7 @@ export async function createLibraryPanel(
   });
   return { uid: res.result.uid, name: res.result.name };
 }
+
+export async function deleteLibraryPanel(uid: string): Promise<void> {
+  await getBackendSrv().delete(`/api/library-elements/${encodeURIComponent(uid)}`);
+}

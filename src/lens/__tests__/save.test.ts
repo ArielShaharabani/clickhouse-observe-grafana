@@ -77,8 +77,10 @@ describe('LENS-SAVE-01 panel per chart type', () => {
   it('time × breakdown → one series per value', () => {
     const p = panel(lens('area', [date, level], 'percentage'));
     expect(p.type).toBe('timeseries');
-    expect(ids(p)).toEqual(['partitionByValues', 'prepareTimeSeries']);
-    expect(p.transformations?.[0].options).toEqual({ fields: ['b1'], keepFields: false });
+    expect(ids(p)).toEqual(['organize', 'partitionByValues', 'prepareTimeSeries']);
+    // Metric and X keep readable names; the split column stays b1 for the partition.
+    expect(p.transformations?.[0].options).toEqual(expect.objectContaining({ renameByName: { b0: 'Timestamp', m0: 'Count of records' } }));
+    expect(p.transformations?.[1].options).toEqual({ fields: ['b1'], keepFields: false });
     expect((p.fieldConfig?.defaults as any).custom.stacking.mode).toBe('percent');
     expect((p.fieldConfig?.defaults as any).custom.fillOpacity).toBe(50);
   });
@@ -92,6 +94,15 @@ describe('LENS-SAVE-01 panel per chart type', () => {
     expect(p.transformations?.[0].options).toEqual({ columnField: 'b1', rowField: 'b0', valueField: 'm0' });
     expect(p.transformations?.[1].options).toEqual(expect.objectContaining({ renameByName: { 'b0\\b1': 'Top 9 values of ServiceName' } }));
     expect((p.options as any).stacking).toBe('none');
+  });
+
+  it('category X × breakdown with several metrics keeps every metric (partition + join on X)', () => {
+    const avg = { kind: 'metric' as const, id: 'm1', op: 'avg' as const, field: 'SeverityNumber' };
+    const p = panel({ ...lens('bar', [service, level], 'stacked'), metrics: [count, avg] });
+    expect(ids(p)).toEqual(['organize', 'partitionByValues', 'joinByField']);
+    const renamed = (p.transformations?.[0].options as any).renameByName;
+    expect(Object.keys(renamed).sort()).toEqual(['b0', 'm0', 'm1']);
+    expect(p.transformations?.[2].options).toEqual({ byField: 'Top 9 values of ServiceName', mode: 'outer' });
   });
 
   it.each([
@@ -122,6 +133,7 @@ describe('saveLens', () => {
     jest.resetAllMocks();
     api.saveDashboard.mockResolvedValue({ uid: 'd1', url: '/d/d1/x' });
     api.createLibraryPanel.mockResolvedValue({ uid: 'lib1', name: 'Bar stacked' });
+    api.deleteLibraryPanel.mockResolvedValue();
     api.getDashboard.mockResolvedValue({
       dashboard: { title: 'Ops', panels: [{ id: 7, gridPos: { x: 0, y: 0, w: 24, h: 6 } }] },
       meta: { folderUid: 'f1' },
@@ -132,6 +144,8 @@ describe('saveLens', () => {
     expect(await saveLens({ panel: p, destination: 'new', library: false, timeRange: range })).toEqual({ url: '/d/d1/x' });
     const [dash] = api.saveDashboard.mock.calls[0];
     expect(dash).toEqual(expect.objectContaining({ title: 'Bar stacked', time: { from: 'now-7d', to: 'now' } }));
+    await saveLens({ panel: p, destination: 'new', dashboardTitle: ' Ops view ', library: false, timeRange: range });
+    expect(api.saveDashboard.mock.calls[1][0]).toEqual(expect.objectContaining({ title: 'Ops view' }));
     expect((dash.panels as any[])[0]).toBe(p);
     expect(api.createLibraryPanel).not.toHaveBeenCalled();
   });
@@ -157,6 +171,12 @@ describe('saveLens', () => {
     expect((dash.panels as any[])[0]).toEqual({ id: 1, gridPos: p.gridPos, title: 'Bar stacked', libraryPanel: { uid: 'lib1', name: 'Bar stacked' } });
   });
 
+  it('a failed dashboard save deletes the library panel just created', async () => {
+    api.saveDashboard.mockRejectedValue(new Error('name taken'));
+    await expect(saveLens({ panel: p, destination: 'new', library: true, timeRange: range })).rejects.toThrow('name taken');
+    expect(api.deleteLibraryPanel).toHaveBeenCalledWith('lib1');
+  });
+
   it('library only: no dashboard is touched', async () => {
     expect(await saveLens({ panel: p, destination: 'none', library: true, timeRange: range })).toEqual({});
     expect(api.saveDashboard).not.toHaveBeenCalled();
@@ -168,11 +188,18 @@ describe('unsaved chart draft', () => {
 
   it('round-trips, clears when empty, and rejects junk', () => {
     const s = lens('bar', [date], 'stacked');
-    saveLensDraft(s);
-    expect(loadLensDraft()).toEqual(s);
-    saveLensDraft(EMPTY_LENS);
+    saveLensDraft('ds|t', s);
+    expect(loadLensDraft('ds|t')).toEqual(s);
+    saveLensDraft('ds|t', EMPTY_LENS);
     expect(window.sessionStorage.getItem(LENS_DRAFT_KEY)).toBeNull();
-    window.sessionStorage.setItem(LENS_DRAFT_KEY, '{"chartType":"evil"}');
-    expect(loadLensDraft()).toBeUndefined();
+    window.sessionStorage.setItem(LENS_DRAFT_KEY, JSON.stringify({ scope: 'ds|t', lens: '{"chartType":"evil"}' }));
+    expect(loadLensDraft('ds|t')).toBeUndefined();
+    window.sessionStorage.setItem(LENS_DRAFT_KEY, 'not json');
+    expect(loadLensDraft('ds|t')).toBeUndefined();
+  });
+
+  it('only restores on the source it was built on', () => {
+    saveLensDraft('ds|a', lens('bar', [date], 'stacked'));
+    expect(loadLensDraft('ds|b')).toBeUndefined();
   });
 });

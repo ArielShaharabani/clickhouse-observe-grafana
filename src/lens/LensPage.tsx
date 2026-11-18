@@ -108,13 +108,15 @@ export function LensPage() {
   const search = urlState.search ?? '';
   const filters = useMemo(() => urlState.filters ?? [], [urlState]);
   const timeRange = useMemo(() => urlState.timeRange ?? defaultRange(), [urlState]);
+  // LENS-SAVE-01 draft, scoped to the datasource + table the chart was built on.
+  const draftScope = `${config.datasourceUid}|${tableKey(config.database, config.logsTable)}`;
   const restored = useRef(false);
   useEffect(() => {
     if (restored.current) {
       return;
     }
     restored.current = true;
-    const draft = new URLSearchParams(window.location.search).has('lens') ? undefined : loadLensDraft();
+    const draft = new URLSearchParams(window.location.search).has('lens') ? undefined : loadLensDraft(draftScope);
     if (draft) {
       setSearchParams(
         (prev) => {
@@ -125,12 +127,20 @@ export function LensPage() {
         { replace: true }
       );
     }
-  }, [setSearchParams]);
+  }, [setSearchParams, draftScope]);
   const urlLens = useMemo(() => decodeLens(new URLSearchParams(paramsKey).get('lens')) ?? EMPTY_LENS, [paramsKey]);
+  // Every chart shown (also one opened from a Discover link) becomes the draft; clearing happens in setLens.
+  useEffect(() => {
+    if (restored.current && !isEmptyLens(urlLens)) {
+      saveLensDraft(draftScope, urlLens);
+    }
+  }, [urlLens, draftScope]);
 
   const setLens = useCallback(
     (next: LensState) => {
-      saveLensDraft(next);
+      if (isEmptyLens(next)) {
+        saveLensDraft(draftScope, next);
+      }
       setSearchParams(
         (prev) => {
           const sp = new URLSearchParams(prev);
@@ -144,7 +154,7 @@ export function LensPage() {
         { replace: true }
       );
     },
-    [setSearchParams]
+    [setSearchParams, draftScope]
   );
   const setTimeRange = useCallback(
     (r: TimeRange) => {

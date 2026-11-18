@@ -8,21 +8,26 @@ import { decodeLens, encodeLens, isEmptyLens, LensState } from './state';
 
 export const LENS_DRAFT_KEY = 'clickhouse-observe.lensDraft';
 
-export function saveLensDraft(s: LensState): void {
+/** `scope` names the source the chart was built on (datasource + table); a draft only restores there. */
+export function saveLensDraft(scope: string, s: LensState): void {
   try {
     if (isEmptyLens(s)) {
       window.sessionStorage.removeItem(LENS_DRAFT_KEY);
     } else {
-      window.sessionStorage.setItem(LENS_DRAFT_KEY, encodeLens(s));
+      window.sessionStorage.setItem(LENS_DRAFT_KEY, JSON.stringify({ scope, lens: encodeLens(s) }));
     }
   } catch {
     // Storage unavailable: the URL still carries the chart.
   }
 }
 
-export function loadLensDraft(): LensState | undefined {
+export function loadLensDraft(scope: string): LensState | undefined {
   try {
-    const s = decodeLens(window.sessionStorage.getItem(LENS_DRAFT_KEY));
+    const stored = JSON.parse(window.sessionStorage.getItem(LENS_DRAFT_KEY) ?? 'null');
+    if (!stored || stored.scope !== scope || typeof stored.lens !== 'string') {
+      return undefined;
+    }
+    const s = decodeLens(stored.lens);
     return s && !isEmptyLens(s) ? s : undefined;
   } catch {
     return undefined;

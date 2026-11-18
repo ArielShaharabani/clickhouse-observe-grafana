@@ -4,12 +4,12 @@
  */
 import React, { useEffect, useId, useState } from 'react';
 import { css } from '@emotion/css';
-import { GrafanaTheme2, TimeRange } from '@grafana/data';
-import { locationService } from '@grafana/runtime';
+import { AppEvents, GrafanaTheme2, TimeRange } from '@grafana/data';
+import { getAppEvents, locationService } from '@grafana/runtime';
 import { Alert, Button, Combobox, Field, Input, Modal, RadioButtonGroup, Spinner, Switch, TextArea, useStyles2 } from '@grafana/ui';
 import { errMsg } from '../errMsg';
 import { appendPanelsToDashboard, buildNewDashboard, ExportedPanel } from '../data/panelExport';
-import { createLibraryPanel, getDashboard, saveDashboard, searchDashboards } from '../data/dashboards';
+import { createLibraryPanel, deleteLibraryPanel, getDashboard, saveDashboard, searchDashboards } from '../data/dashboards';
 import { LensPanel } from './panelExport';
 
 export type SaveDestination = 'existing' | 'new' | 'none';
@@ -18,6 +18,8 @@ export interface SaveLensRequest {
   panel: LensPanel;
   destination: SaveDestination;
   dashboardUid?: string;
+  /** Title of a new dashboard (default: the panel title). */
+  dashboardTitle?: string;
   library: boolean;
   timeRange: TimeRange;
 }
@@ -30,7 +32,8 @@ function dashboardTime(r: TimeRange): { from: string; to: string } {
 
 /**
  * Saves the panel: to the library first (when asked), then onto the dashboard — as a reference
- * to the library panel when one was created. Returns the dashboard URL, if any.
+ * to the library panel when one was created. If the dashboard save fails, the library panel just
+ * created is deleted again, so a retry doesn't hit "name already exists". Returns the dashboard URL.
  */
 export async function saveLens(req: SaveLensRequest): Promise<{ url?: string }> {
   const { panel, destination } = req;
@@ -40,13 +43,21 @@ export async function saveLens(req: SaveLensRequest): Promise<{ url?: string }> 
     return {};
   }
   const onDashboard = (ref ? { id, gridPos, title: panel.title, libraryPanel: ref } : panel) as ExportedPanel;
-  if (destination === 'new') {
-    const dash = { ...buildNewDashboard([onDashboard], panel.title), time: dashboardTime(req.timeRange) };
-    return { url: (await saveDashboard(dash)).url };
+  try {
+    if (destination === 'new') {
+      const title = req.dashboardTitle?.trim() || panel.title;
+      const dash = { ...buildNewDashboard([onDashboard], title), time: dashboardTime(req.timeRange) };
+      return { url: (await saveDashboard(dash)).url };
+    }
+    const existing = await getDashboard(req.dashboardUid as string);
+    const merged = appendPanelsToDashboard(existing.dashboard, [onDashboard]);
+    return { url: (await saveDashboard(merged, { folderUid: existing.meta.folderUid, overwrite: true })).url };
+  } catch (e) {
+    if (ref) {
+      await deleteLibraryPanel(ref.uid).catch(() => undefined);
+    }
+    throw e;
   }
-  const existing = await getDashboard(req.dashboardUid as string);
-  const merged = appendPanelsToDashboard(existing.dashboard, [onDashboard]);
-  return { url: (await saveDashboard(merged, { folderUid: existing.meta.folderUid, overwrite: true })).url };
 }
 
 interface Props {
@@ -67,7 +78,10 @@ export function SaveLensModal({ isOpen, onDismiss, defaultTitle, buildPanel, tim
   const [destination, setDestination] = useState<SaveDestination>('new');
   const [dashboardUid, setDashboardUid] = useState<string | undefined>();
   const [library, setLibrary] = useState(false);
+  const [dashboardTitle, setDashboardTitle] = useState(defaultTitle);
+  const [titleEdited, setTitleEdited] = useState(false);
   const [options, setOptions] = useState<Array<{ label: string; value: string }> | null>(null);
+  const [loadError, setLoadError] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
@@ -81,13 +95,16 @@ export function SaveLensModal({ isOpen, onDismiss, defaultTitle, buildPanel, tim
       setDestination(canSaveDashboards ? 'new' : 'none');
       setDashboardUid(undefined);
       setLibrary(false);
+      setDashboardTitle(defaultTitle);
+      setTitleEdited(false);
       setOptions(null);
+      setLoadError('');
       setError('');
     }
   }
 
   useEffect(() => {
-    if (!isOpen || destination !== 'existing' || options !== null) {
+    if (!isOpen || destination !== 'existing' || options !== null || loadError) {
       return;
     }
     let cancelled = false;
@@ -95,18 +112,20 @@ export function SaveLensModal({ isOpen, onDismiss, defaultTitle, buildPanel, tim
       (hits) =>
         !cancelled &&
         setOptions(hits.map((h) => ({ label: h.folderTitle ? `${h.folderTitle} / ${h.title}` : h.title, value: h.uid }))),
-      (e) => !cancelled && setError(`Failed to load dashboards: ${errMsg(e)}`)
+      (e) => !cancelled && setLoadError(errMsg(e))
     );
     return () => {
       cancelled = true;
     };
-  }, [isOpen, destination, options]);
+  }, [isOpen, destination, options, loadError]);
 
   const toDashboard = destination !== 'none';
   const canSave =
     !saving &&
     Boolean(title.trim()) &&
-    (toDashboard ? canSaveDashboards && (destination === 'new' || Boolean(dashboardUid)) : library);
+    (toDashboard
+      ? canSaveDashboards && (destination === 'new' ? Boolean(dashboardTitle.trim()) : Boolean(dashboardUid))
+      : library);
 
   const onSave = async () => {
     setSaving(true);
@@ -116,12 +135,15 @@ export function SaveLensModal({ isOpen, onDismiss, defaultTitle, buildPanel, tim
         panel: buildPanel(title.trim(), description),
         destination,
         dashboardUid,
+        dashboardTitle,
         library,
         timeRange,
       });
       onDismiss();
       if (url) {
         locationService.push(url);
+      } else {
+        getAppEvents().publish({ type: AppEvents.alertSuccess.name, payload: [`Saved "${title.trim()}" to the panel library`] });
       }
     } catch (e) {
       setError(errMsg(e));
@@ -138,7 +160,18 @@ export function SaveLensModal({ isOpen, onDismiss, defaultTitle, buildPanel, tim
         </Alert>
       )}
       <Field label="Title" required htmlFor={`${ids}-title`}>
-        <Input id={`${ids}-title`} value={title} onChange={(e) => setTitle(e.currentTarget.value)} autoFocus />
+        <Input
+          id={`${ids}-title`}
+          value={title}
+          onChange={(e) => {
+            const v = e.currentTarget.value;
+            setTitle(v);
+            if (!titleEdited) {
+              setDashboardTitle(v);
+            }
+          }}
+          autoFocus
+        />
       </Field>
       <Field label="Description" description="Optional" htmlFor={`${ids}-desc`}>
         <TextArea id={`${ids}-desc`} value={description} rows={2} onChange={(e) => setDescription(e.currentTarget.value)} />
@@ -157,9 +190,28 @@ export function SaveLensModal({ isOpen, onDismiss, defaultTitle, buildPanel, tim
           ]}
         />
       </Field>
+      {destination === 'new' && (
+        <Field label="Dashboard title" required htmlFor={`${ids}-dtitle`}>
+          <Input
+            id={`${ids}-dtitle`}
+            value={dashboardTitle}
+            onChange={(e) => {
+              setDashboardTitle(e.currentTarget.value);
+              setTitleEdited(true);
+            }}
+          />
+        </Field>
+      )}
       {destination === 'existing' && (
         <Field label="Select dashboard" required htmlFor={`${ids}-dash`}>
-          {options === null ? (
+          {loadError ? (
+            <Alert title="Failed to load dashboards" severity="error" className={styles.alert}>
+              {loadError}{' '}
+              <Button size="sm" variant="secondary" fill="text" onClick={() => setLoadError('')}>
+                Retry
+              </Button>
+            </Alert>
+          ) : options === null ? (
             <Spinner size="sm" />
           ) : (
             <Combobox
