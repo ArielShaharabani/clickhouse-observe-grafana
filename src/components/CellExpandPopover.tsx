@@ -1,5 +1,6 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { css, cx } from '@emotion/css';
+import { createPortal } from 'react-dom';
+import { css } from '@emotion/css';
 import { GrafanaTheme2 } from '@grafana/data';
 import { Button, IconButton, useStyles2 } from '@grafana/ui';
 import { ActionHost, fieldLabelFor, ValueContext, valueActions } from '../actions/registry';
@@ -92,14 +93,35 @@ interface Props {
 export function CellExpandPopover({ ctx, raw, host, onClose }: Props) {
   const styles = useStyles2(getStyles);
   const ref = useRef<HTMLDivElement>(null);
-  const [flipUp, setFlipUp] = useState(false);
-  // Open upward when there's no room below inside the grid's scroll area.
+  const anchorRef = useRef<HTMLSpanElement>(null);
+  const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
+  // The popover is portalled to <body> with fixed positioning: drawn inside the grid it was clipped
+  // by the grid's scroll area and covered by neighbouring panels (histogram, sidebars) whenever it
+  // opened past the grid's edge. Anchor it to the cell, below it when there is room (else above),
+  // and clamp it inside the window; follow the cell while anything scrolls or the window resizes.
   useLayoutEffect(() => {
-    const el = ref.current;
-    const scroller = el?.closest('[role="grid"]');
-    if (el && scroller && el.getBoundingClientRect().bottom > scroller.getBoundingClientRect().bottom) {
-      setFlipUp(true);
-    }
+    const place = () => {
+      const cell = anchorRef.current?.parentElement;
+      const el = ref.current;
+      if (!cell || !el) {
+        return;
+      }
+      const c = cell.getBoundingClientRect();
+      const w = el.offsetWidth;
+      const h = el.offsetHeight;
+      const margin = 8;
+      const below = c.bottom + h + margin <= window.innerHeight;
+      const top = below ? c.bottom : Math.max(margin, c.top - h);
+      const left = Math.max(margin, Math.min(c.left, window.innerWidth - w - margin));
+      setPos((p) => (p && p.top === top && p.left === left ? p : { top, left }));
+    };
+    place();
+    window.addEventListener('scroll', place, true);
+    window.addEventListener('resize', place);
+    return () => {
+      window.removeEventListener('scroll', place, true);
+      window.removeEventListener('resize', place);
+    };
   }, []);
   // Latest onClose without re-running the mount effect (the grid re-renders on every hover, and
   // re-running would steal focus back each time).
@@ -119,13 +141,14 @@ export function CellExpandPopover({ ctx, raw, host, onClose }: Props) {
   }, []);
   const name = ctx.fieldLabel ?? fieldLabelFor(ctx.field);
   const actions = valueActions(ctx, host);
-  return (
+  const dialog = (
     <div
       ref={ref}
       role="dialog"
       aria-label={`Value of ${name}`}
       tabIndex={-1}
-      className={cx(styles.popover, flipUp && styles.up)}
+      className={styles.popover}
+      style={pos ? { top: pos.top, left: pos.left } : { visibility: 'hidden', top: 0, left: 0 }}
       onKeyDown={(e) => {
         // Keep keys inside the dialog from driving grid navigation.
         e.stopPropagation();
@@ -152,14 +175,18 @@ export function CellExpandPopover({ ctx, raw, host, onClose }: Props) {
       </div>
     </div>
   );
+  return (
+    <>
+      <span ref={anchorRef} hidden />
+      {createPortal(dialog, document.body)}
+    </>
+  );
 }
 
 const getStyles = (theme: GrafanaTheme2) => ({
   popover: css`
-    position: absolute;
-    top: 100%;
-    left: 0;
-    z-index: 6;
+    position: fixed;
+    z-index: ${theme.zIndex.dropdown};
     width: min(480px, 70vw);
     padding: ${theme.spacing(1)};
     background: ${theme.colors.background.primary};
@@ -169,10 +196,6 @@ const getStyles = (theme: GrafanaTheme2) => ({
     font-family: ${theme.typography.fontFamily};
     cursor: auto;
     outline: none;
-  `,
-  up: css`
-    top: auto;
-    bottom: 100%;
   `,
   header: css`
     display: flex;

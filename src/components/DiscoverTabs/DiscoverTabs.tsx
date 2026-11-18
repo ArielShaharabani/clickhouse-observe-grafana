@@ -32,7 +32,9 @@ export function DiscoverTabs(props: DiscoverTabsProps) {
 
   const tabMenu = (id: string, index: number) => (
     <Menu>
-      <Menu.Item label="Rename" icon="pen" onClick={() => setEditing(id)} />
+      {/* Open the editor after the menu has closed: closing returns focus to the ⋮ button, which
+          would otherwise blur (and so commit) the freshly focused input at once. */}
+      <Menu.Item label="Rename" icon="pen" onClick={() => setTimeout(() => setEditing(id), 0)} />
       <Menu.Item label="Duplicate" icon="copy" disabled={atMax} onClick={() => onDuplicate(id)} />
       <Menu.Item label="Move left" icon="arrow-left" disabled={index === 0} onClick={() => onMove(id, index - 1)} />
       <Menu.Item
@@ -165,7 +167,12 @@ function TitleEditor({ initial, onDone }: { initial: string; onDone: (title: str
   const ref = useRef<HTMLInputElement>(null);
   const done = useRef(false);
   useEffect(() => {
-    ref.current?.select();
+    // Focus a frame later so a menu restoring focus to its trigger can't steal it back.
+    const raf = requestAnimationFrame(() => {
+      ref.current?.focus();
+      ref.current?.select();
+    });
+    return () => cancelAnimationFrame(raf);
   }, []);
   const finish = (title: string | null) => {
     if (!done.current) {
@@ -176,7 +183,6 @@ function TitleEditor({ initial, onDone }: { initial: string; onDone: (title: str
   return (
     <Input
       ref={ref}
-      autoFocus
       width={20}
       value={value}
       maxLength={MAX_TITLE_LENGTH}

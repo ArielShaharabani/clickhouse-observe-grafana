@@ -6,6 +6,7 @@
  * `'` so Excel / Sheets / LibreOffice show it as text instead of running it (OWASP CSV injection).
  */
 import { SelectedColumn } from '../types';
+import { saveFile } from '../utils/download';
 
 /** Rows fetched for one export (the grid itself pages 200 at a time). */
 export const CSV_EXPORT_LIMIT = 10000;
@@ -61,13 +62,5 @@ export function csvFileName(viewName: string | undefined, now: Date = new Date()
 
 /** Triggers a browser download (UTF-8 with BOM so Excel detects the encoding). */
 export function downloadCsv(fileName: string, csv: string): void {
-  const blob = new Blob(['﻿', csv], { type: 'text/csv;charset=utf-8' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = fileName;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 0);
+  saveFile(fileName, ['﻿', csv], 'text/csv;charset=utf-8');
 }

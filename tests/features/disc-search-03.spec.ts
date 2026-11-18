@@ -114,6 +114,6 @@ test('the language section shows KQL and Lucene as unsupported', async ({ page }
   const logs = new LogsPage(page);
   await logs.open();
   await openMenu(page);
-  await expect(page.getByRole('menuitemradio', { name: 'KQL' })).toHaveAttribute('aria-checked', 'true');
+  await expect(page.getByRole('menuitemradio', { name: 'KQL', exact: true })).toHaveAttribute('aria-checked', 'true');
   await expect(page.getByRole('menuitemradio', { name: /Lucene/ })).toHaveAttribute('data-disabled', 'true');
 });

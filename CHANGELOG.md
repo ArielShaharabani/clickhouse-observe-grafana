@@ -20,6 +20,9 @@ Versions track the plugin's release history. `Unreleased` collects commits not y
 - CSV cells are formula-injection safe: a value starting with `=`, `+`, `-`, `@`, tab or carriage return is prefixed with `'` before RFC 4180 quoting.
 - The alert query reuses Discover's escaped WHERE clause; `$` inside string literals is written as `\x24` so the ClickHouse datasource's `$__` macros can't be injected through a search value.
 
+
+### Fixed
+- **Export tab results (CSV) saved the file under a random name** (same cause as the Inspector download; same helper).
 ---
 
 ## [0.41.0] — 2026-11-18
@@ -28,6 +31,10 @@ Versions track the plugin's release history. `Unreleased` collects commits not y
 - **Discover session tabs** (#31 DISC-NAV-01; spec 10-discover.md "Discover tabs"). A tab strip above the Discover toolbar keeps several explorations open in one browser tab, each with its own query, filters, columns, sort, time, data view, interval and breakdown. `+` opens a tab on the current data view; each tab has a ⋮ menu (Rename, Duplicate, Move left / right, Close) and a close button; double-click renames; tabs drag-reorder. The ⌄ menu lists Opened tabs and Recently closed tabs (with "17 seconds ago"-style times; click to restore) and Clear recently closed. The active tab is in the URL (`_tab`), so reload and back / forward land on it. Up to 20 tabs, 10 recently closed.
 - Grafana's side-menu Discover entry (a URL with no state) reopens the active tab instead of an empty search. A link with Discover state but no `_tab` (shared link, Explore in Discover, trace deep link) loads into the active tab; a link with another session's `_tab` opens as a new tab.
 
+
+### Fixed
+- **Rename from a tab's ⋮ menu closed immediately.** The menu returned focus to its button on close, which blurred (and committed) the new name field; the editor now opens after the menu has closed and focuses a frame later.
+- **Cell Expand popover could be covered or clipped** (pre-existing, exposed by the shorter grid under the tab strip): it was drawn inside the grid, so opening past the grid's edge put it under the histogram or outside the window. It is now portalled with fixed positioning, below the cell when there is room (else above), clamped inside the window and following the cell on scroll.
 ---
 
 ## [0.40.0] — 2026-11-18
@@ -40,6 +47,9 @@ Versions track the plugin's release history. `Unreleased` collects commits not y
 ### Security
 - CSV export never writes a log value a spreadsheet would run as a formula: text starting with `= + - @`, tab or CR is prefixed with `'` (CSV injection); fields are RFC 4180-quoted. File names are reduced to `[A-Za-z0-9_.-]`.
 
+
+### Fixed
+- **Inspector Download CSV saved the file under a random name.** Grafana routes bubbling `<a>` clicks through its router, so the blob link was navigated to, not downloaded. Downloads now go through one helper (`src/utils/download.ts`) that dispatches a non-bubbling click (shared with Discover's CSV export).
 ---
 
 ## [0.39.0] — 2026-11-18

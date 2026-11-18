@@ -41,6 +41,7 @@ import {
   toCsv,
 } from './inspectorData';
 import { LensState } from './state';
+import { saveFile } from '../utils/download';
 
 export const INSPECTOR_PAGE_SIZE = 20;
 /** Response JSON shows at most this many rows (the Data view has them all). */
@@ -83,15 +84,7 @@ export function LensInspector(props: LensInspectorProps) {
 }
 
 function download(text: string, fileName: string) {
-  const blob = new Blob([text], { type: 'text/csv;charset=utf-8' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = fileName;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
+  saveFile(fileName, [text], 'text/csv;charset=utf-8');
 }
 
 function DataView({ lens, data, title, addFilter }: LensInspectorProps) {
