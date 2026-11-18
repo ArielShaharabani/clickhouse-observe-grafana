@@ -3,6 +3,7 @@
  */
 import {
   BucketDim,
+  cleanTerms,
   clampPercentile,
   DEFAULT_PERCENTILE,
   LensField,
@@ -11,6 +12,7 @@ import {
   MetricDim,
   MetricOp,
   newDimId,
+  TermsDim,
 } from './state';
 import { isLensField, LensContext, switchChart } from './suggest';
 
@@ -79,6 +81,16 @@ export function withName<D extends BucketDim | MetricDim>(d: D, name: string): D
 
 export function withSize(b: BucketDim, size: number): BucketDim {
   return b.kind === 'terms' ? { ...b, size: Math.min(100, Math.max(1, Math.round(size) || 1)) } : b;
+}
+
+/** Applies top-values options (LENS-DIM-04); the result is normalised like URL input (defaults dropped, lists capped). */
+export function withTermsOptions(b: BucketDim, patch: Partial<Omit<TermsDim, 'kind' | 'id'>>): BucketDim {
+  return b.kind === 'terms' ? cleanTerms({ ...b, ...patch }) : b;
+}
+
+/** Include / exclude box text (one value or pattern per line) -> list. */
+export function parseLines(text: string): string[] {
+  return text.split(/\r?\n/).filter((l) => l.length > 0);
 }
 
 /** Replaces the dimension with the same id. */

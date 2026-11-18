@@ -6,6 +6,7 @@
  * from the query request's time range automatically.
  */
 
+import { isDateBound, isNumericBound } from './filters';
 import { BreakdownSel, ColumnMapping, FilterPill, FilterOp, LogsQueryState, SelectedColumn, SourceConfig } from '../types';
 import { resolveField, FieldIndex } from './fields';
 import { parseKql, kqlToSql } from './kql';
@@ -209,6 +210,10 @@ function filterOpToSql(op: FilterOp): string {
       return 'NOT IN';
     case 'exists':
     case 'not_exists':
+    case 'gte':
+    case 'lt':
+    case 'between':
+    case 'not_between':
       return ''; // handled separately below
   }
 }
@@ -241,6 +246,40 @@ function buildFilterClause(filter: FilterPill, config: SourceConfig, index?: Fie
     return filter.op === 'one_of'
       ? `${col} IN (${list})`
       : `${col} NOT IN (${list})`;
+  }
+
+  // Range ops — gte / lt / between / not_between.
+  //  - Bounds must be a plain number or an ISO-like date (isNumericBound / isDateBound), so
+  //    `BETWEEN '1s' AND '5s'` can never reach ClickHouse; a pill with an invalid or missing bound
+  //    is skipped (matches nothing: 1=0; not_between: 1=1, like an empty one_of set).
+  //  - Every bound still goes through quoteString(), the column through quoteIdentifier().
+  //  - A Map value (always read as text) compares numerically: toFloat64OrNull(toString(col)) so
+  //    '9' < '10' and Map(String, Float64) values work too; only numeric bounds are valid there.
+  //    On that path the negative ops (lt, not_between) are NOT ifNull(positive, 0), so a row whose
+  //    key is missing or non-numeric lands on exactly one side of an include / exclude pair.
+  if (filter.op === 'gte' || filter.op === 'lt' || filter.op === 'between' || filter.op === 'not_between') {
+    const mapValue = resolved?.kind === 'map';
+    const isPair = filter.op === 'between' || filter.op === 'not_between';
+    const bounds = (isPair ? (filter.values ?? []).slice(0, 2) : [value]).map((v) => v.trim());
+    const validBound = (v: string) => (mapValue ? isNumericBound(v) : isNumericBound(v) || isDateBound(v));
+    if (bounds.length !== (isPair ? 2 : 1) || !bounds.every(validBound)) {
+      return filter.op === 'not_between' ? '1=1' : '1=0';
+    }
+    const col = quoteIdentifier(sqlExprRaw);
+    const lhs = mapValue ? `toFloat64OrNull(toString(${col}))` : col;
+    const lit = (v: string) => (mapValue ? `toFloat64OrNull(${quoteString(v)})` : quoteString(v));
+    const positive = isPair
+      ? `${lhs} BETWEEN ${lit(bounds[0])} AND ${lit(bounds[1])}`
+      : `${lhs} >= ${lit(bounds[0])}`;
+    switch (filter.op) {
+      case 'gte':
+      case 'between':
+        return positive;
+      case 'lt':
+        return mapValue ? `NOT ifNull(${positive}, 0)` : `${lhs} < ${lit(bounds[0])}`;
+      default: // not_between
+        return mapValue ? `NOT ifNull(${positive}, 0)` : `${lhs} NOT BETWEEN ${lit(bounds[0])} AND ${lit(bounds[1])}`;
+    }
   }
 
   // Standard single-value ops: =, !=, contains, not_contains

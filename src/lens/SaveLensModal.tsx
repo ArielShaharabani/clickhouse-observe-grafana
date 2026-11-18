@@ -6,10 +6,28 @@ import React, { useEffect, useId, useState } from 'react';
 import { css } from '@emotion/css';
 import { AppEvents, GrafanaTheme2, TimeRange } from '@grafana/data';
 import { getAppEvents, locationService } from '@grafana/runtime';
-import { Alert, Button, Combobox, Field, Input, Modal, RadioButtonGroup, Spinner, Switch, TextArea, useStyles2 } from '@grafana/ui';
+import {
+  Alert,
+  Button,
+  Combobox,
+  Field,
+  Input,
+  Modal,
+  RadioButtonGroup,
+  Spinner,
+  Switch,
+  TextArea,
+  useStyles2,
+} from '@grafana/ui';
 import { errMsg } from '../errMsg';
 import { appendPanelsToDashboard, buildNewDashboard, ExportedPanel } from '../data/panelExport';
-import { createLibraryPanel, deleteLibraryPanel, getDashboard, saveDashboard, searchDashboards } from '../data/dashboards';
+import {
+  createLibraryPanel,
+  deleteLibraryPanel,
+  getDashboard,
+  saveDashboard,
+  searchDashboards,
+} from '../data/dashboards';
 import { LensPanel } from './panelExport';
 
 export type SaveDestination = 'existing' | 'new' | 'none';
@@ -111,7 +129,9 @@ export function SaveLensModal({ isOpen, onDismiss, defaultTitle, buildPanel, tim
     searchDashboards().then(
       (hits) =>
         !cancelled &&
-        setOptions(hits.map((h) => ({ label: h.folderTitle ? `${h.folderTitle} / ${h.title}` : h.title, value: h.uid }))),
+        setOptions(
+          hits.map((h) => ({ label: h.folderTitle ? `${h.folderTitle} / ${h.title}` : h.title, value: h.uid }))
+        ),
       (e) => !cancelled && setLoadError(errMsg(e))
     );
     return () => {
@@ -143,7 +163,10 @@ export function SaveLensModal({ isOpen, onDismiss, defaultTitle, buildPanel, tim
       if (url) {
         locationService.push(url);
       } else {
-        getAppEvents().publish({ type: AppEvents.alertSuccess.name, payload: [`Saved "${title.trim()}" to the panel library`] });
+        getAppEvents().publish({
+          type: AppEvents.alertSuccess.name,
+          payload: [`Saved "${title.trim()}" to the panel library`],
+        });
       }
     } catch (e) {
       setError(errMsg(e));
@@ -174,7 +197,12 @@ export function SaveLensModal({ isOpen, onDismiss, defaultTitle, buildPanel, tim
         />
       </Field>
       <Field label="Description" description="Optional" htmlFor={`${ids}-desc`}>
-        <TextArea id={`${ids}-desc`} value={description} rows={2} onChange={(e) => setDescription(e.currentTarget.value)} />
+        <TextArea
+          id={`${ids}-desc`}
+          value={description}
+          rows={2}
+          onChange={(e) => setDescription(e.currentTarget.value)}
+        />
       </Field>
       <Field
         label="Add to dashboard"
@@ -224,7 +252,11 @@ export function SaveLensModal({ isOpen, onDismiss, defaultTitle, buildPanel, tim
           )}
         </Field>
       )}
-      <Field label="Add to library" description="Save as a library panel that other dashboards can reuse" htmlFor={`${ids}-lib`}>
+      <Field
+        label="Add to library"
+        description="Save as a library panel that other dashboards can reuse"
+        htmlFor={`${ids}-lib`}
+      >
         <Switch id={`${ids}-lib`} value={library} onChange={(e) => setLibrary(e.currentTarget.checked)} />
       </Field>
       <div className={styles.actions}>

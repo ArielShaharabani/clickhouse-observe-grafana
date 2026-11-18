@@ -8,7 +8,7 @@ import { FieldValue } from '../sql/kql/_values';
 import { FilterEditForm } from './AddFilter/FilterEditForm';
 import { pinFilterInStore, replacePinInStore, unpinFilterInStore } from '../state/sharedSearch';
 
-const NEGATED_OPS: ReadonlySet<FilterOp> = new Set(['!=', 'not_contains', 'not_one_of', 'not_exists']);
+const NEGATED_OPS: ReadonlySet<FilterOp> = new Set(['!=', 'not_contains', 'not_one_of', 'not_exists', 'not_between']);
 
 interface FilterPillsProps {
   filters: FilterPill[];
@@ -33,6 +33,10 @@ function pillText(f: FilterPill): { notPrefix: boolean; fieldPart: string | null
   if (f.op === 'not_one_of') {
     const vals = (f.values ?? [f.value]).filter(Boolean).join(', ');
     return { notPrefix: true, fieldPart: f.field, rest: ` is one of [${vals}]` };
+  }
+  if (f.op === 'not_between') {
+    const [lo = '', hi = ''] = f.values ?? [];
+    return { notPrefix: true, fieldPart: f.field, rest: ` is between ${lo} and ${hi}` };
   }
   const label = filterLabel(f);
   const spaceIdx = label.indexOf(' ');

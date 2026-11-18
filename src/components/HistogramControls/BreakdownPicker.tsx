@@ -15,14 +15,15 @@ interface Props {
   hasSeverity: boolean;
 }
 
-function triggerLabel(sel: BreakdownSel): string {
+/** Trigger text (DISC-CHART-02): `No breakdown` until one is chosen, then `Breakdown by <field>`. */
+export function triggerLabel(sel: BreakdownSel): string {
   if (sel.kind === 'none') {
     return 'No breakdown';
   }
   if (sel.kind === 'severity') {
-    return 'Severity';
+    return 'Breakdown by Severity';
   }
-  return sel.field.displayName;
+  return `Breakdown by ${sel.field.displayName}`;
 }
 
 export function BreakdownPicker({ value, onChange, hasSeverity }: Props) {
@@ -50,6 +51,7 @@ export function BreakdownPicker({ value, onChange, hasSeverity }: Props) {
   }, [loading, severityExists, value.kind, onChange]);
   const wrapperRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
@@ -58,11 +60,22 @@ export function BreakdownPicker({ value, onChange, hasSeverity }: Props) {
         setSearch('');
       }
     }
+    function handleKey(e: KeyboardEvent) {
+      if (e.key === 'Escape') {
+        setOpen(false);
+        setSearch('');
+        triggerRef.current?.focus();
+      }
+    }
     if (open) {
       document.addEventListener('mousedown', handleClickOutside);
+      document.addEventListener('keydown', handleKey);
       setTimeout(() => inputRef.current?.focus(), 0);
     }
-    return () => document.removeEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', handleKey);
+    };
   }, [open]);
 
   const visibleFields = fields.filter(
@@ -81,18 +94,27 @@ export function BreakdownPicker({ value, onChange, hasSeverity }: Props) {
 
   return (
     <div className={toolbarStyles.wrapper} ref={wrapperRef}>
-      <button className={toolbarStyles.trigger} onClick={() => setOpen((v) => !v)}>
+      <button
+        ref={triggerRef}
+        type="button"
+        className={toolbarStyles.trigger}
+        aria-haspopup="true"
+        aria-expanded={open}
+        title={triggerLabel(value)}
+        onClick={() => setOpen((v) => !v)}
+      >
         <span className={styles.triggerLabel}>{triggerLabel(value)}</span>
         <Icon name={open ? 'angle-up' : 'angle-down'} size="md" />
       </button>
 
       {open && (
-        <div className={styles.dropdown}>
+        <div className={styles.dropdown} role="dialog" aria-label="Breakdown field">
           <div className={styles.searchRow}>
             <input
               ref={inputRef}
               className={styles.searchInput}
               placeholder="Search fields…"
+              aria-label="Search breakdown fields"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
             />
@@ -101,6 +123,8 @@ export function BreakdownPicker({ value, onChange, hasSeverity }: Props) {
           <div className={styles.list}>
             {/* No breakdown */}
             <button
+              type="button"
+              aria-current={value.kind === 'none' ? 'true' : undefined}
               className={`${styles.item} ${value.kind === 'none' ? styles.itemActive : ''}`}
               onClick={() => select({ kind: 'none' })}
             >
@@ -113,6 +137,8 @@ export function BreakdownPicker({ value, onChange, hasSeverity }: Props) {
             {/* Severity — only when the mapped column actually exists in the real schema */}
             {severityExists && (
               <button
+                type="button"
+                aria-current={value.kind === 'severity' ? 'true' : undefined}
                 className={`${styles.item} ${value.kind === 'severity' ? styles.itemActive : ''}`}
                 onClick={() => select({ kind: 'severity' })}
               >
@@ -137,6 +163,8 @@ export function BreakdownPicker({ value, onChange, hasSeverity }: Props) {
               return (
                 <button
                   key={field.id}
+                  type="button"
+                  aria-current={active ? 'true' : undefined}
                   className={`${styles.item} ${active ? styles.itemActive : ''}`}
                   onClick={() => select({ kind: 'field', field })}
                 >
@@ -162,7 +190,7 @@ const getStyles = (theme: GrafanaTheme2) => ({
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    max-width: 160px;
+    max-width: 220px;
   `,
   dropdown: css`
     position: absolute;

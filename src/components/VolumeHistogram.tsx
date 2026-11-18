@@ -2,7 +2,7 @@ import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 're
 import { copyToClipboard, valueActions } from '../actions/registry';
 import { css, cx } from '@emotion/css';
 import { dateTime, formattedValueToString, getValueFormat, GrafanaTheme2, TimeRange } from '@grafana/data';
-import { Button, Portal, Spinner, useStyles2 } from '@grafana/ui';
+import { Button, Icon, IconButton, Portal, Spinner, useStyles2 } from '@grafana/ui';
 import { FilterPill, VolumeDataPoint } from '../types';
 import { BucketActionsPopover } from './BucketActionsPopover';
 import {
@@ -141,6 +141,31 @@ export function VolumeHistogram({
   const [hoveredLevel, setHoveredLevel] = useState<string | null>(null);
   const [breakdownPopover, setBreakdownPopover] = useState<BreakdownClickPopover | null>(null);
   const canFilterBreakdown = !!breakdownTarget && !!onAddFilter;
+  // A new breakdown means new series: drop hidden/hovered names and any open legend menu so an
+  // isolate from the previous breakdown can't hide everything (or match a same-named value).
+  const breakdownKey = `${colorMode}|${breakdownTarget?.field ?? ''}`;
+  const [seenBreakdownKey, setSeenBreakdownKey] = useState(breakdownKey);
+  if (seenBreakdownKey !== breakdownKey) {
+    setSeenBreakdownKey(breakdownKey);
+    setHiddenLevels(new Set());
+    setHoveredLevel(null);
+    setBreakdownPopover(null);
+  }
+  /** Filter for / out is offered for real values only — never the synthetic top-N "other" rest. */
+  const isFilterableLevel = (level: string) =>
+    canFilterBreakdown && colorMode !== 'single' && !(colorMode === 'breakdown' && level === 'other');
+  // Portal content sits at the end of the document: move focus into it so a keyboard user who
+  // opened it from the legend ⋮ lands on Filter for, not back at the page start.
+  const popoverRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!breakdownPopover) {
+      return;
+    }
+    requestAnimationFrame(() => popoverRef.current?.querySelector<HTMLButtonElement>('button')?.focus());
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setBreakdownPopover(null);
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [breakdownPopover]);
   // dragStart holds the live drag-anchor value used by the imperative mouse-move math below.
   // isDragging mirrors "is a drag in progress" into state so the render below (hover band
   // visibility) doesn't read a ref during render.
@@ -306,7 +331,7 @@ export function VolumeHistogram({
   const onLegendClick = (level: string, e: React.MouseEvent) => {
     // Shift-click a legend entry to filter by it — previously the legend only ever isolated/hid
     // series client-side and had no way to add a real filter, unlike clicking a bar segment.
-    if (e.shiftKey && canFilterBreakdown && (colorMode === 'breakdown' || colorMode === 'severity')) {
+    if (e.shiftKey && isFilterableLevel(level)) {
       setBreakdownPopover({ level, clientX: e.clientX, clientY: e.clientY });
       return;
     }
@@ -533,7 +558,7 @@ export function VolumeHistogram({
       if ((colorMode === 'breakdown' || colorMode === 'severity') && canFilterBreakdown) {
         const idx = barIndexAtPct(end);
         const level = bars[idx] ? pickLevelAtY(bars[idx], clientY) : null;
-        if (level) {
+        if (level && isFilterableLevel(level)) {
           setHovered(null);
           setBreakdownPopover({ level, clientX, clientY });
           return;
@@ -564,7 +589,7 @@ export function VolumeHistogram({
       )}
       {/* SVG bar chart, with a y-axis gutter to its left for scale reference */}
       <div className={styles.chartRow}>
-        <div className={styles.yAxis} style={{ height: svgHeight }}>
+        <div className={styles.yAxis} style={{ height: svgHeight }} data-testid="histogram-y-axis">
           {[...yTicks].reverse().map((tick) => (
             <span key={tick} style={{ top: `${yForValue(tick)}px` }}>
               {formatCompact(tick)}
@@ -720,16 +745,23 @@ export function VolumeHistogram({
           the numeric tooltip, which never depends on color alone). Click a series to isolate it,
           ctrl/cmd-click to toggle just that one; hover dims every other series' bars. */}
       {hasLegend && (
-        <div className={styles.legend}>
+        <div className={styles.legend} role="list" aria-label="Histogram legend">
           {allLevels.map((level) => {
             const isHidden = hiddenLevels.has(level);
+            const label = level || '(empty)';
             return (
-              <button
+              <div
                 key={level}
-                className={cx(styles.legendItem, isHidden && styles.legendItemHidden)}
-                onClick={(e) => onLegendClick(level, e)}
+                role="listitem"
+                className={styles.legendRow}
                 onMouseEnter={() => setHoveredLevel(level)}
                 onMouseLeave={() => setHoveredLevel((prev) => (prev === level ? null : prev))}
+              >
+              <button
+                type="button"
+                aria-pressed={!isHidden}
+                className={cx(styles.legendItem, isHidden && styles.legendItemHidden)}
+                onClick={(e) => onLegendClick(level, e)}
                 // Level name first — the narrower legend column (see styles.legend) truncates
                 // longer values more readily now, so the full value needs to be recoverable on
                 // hover, not just the click-behavior hint that used to be the whole tooltip.
@@ -737,18 +769,40 @@ export function VolumeHistogram({
                   isHidden
                     ? 'Hidden — click to isolate, ctrl/cmd-click to show'
                     : canFilterBreakdown
-                    ? 'Click to isolate, ctrl/cmd-click to toggle, shift-click to filter'
-                    : 'Click to isolate, ctrl/cmd-click to toggle'
+                    ? 'Click to isolate, ctrl/cmd-click to hide, ⋮ to filter'
+                    : 'Click to isolate, ctrl/cmd-click to hide'
                 }`}
               >
                 <span className={styles.legendSwatchSlot}>
-                  <span
-                    className={styles.legendSwatch}
-                    style={{ background: colorMap[level] ?? OTHER_COLOR }}
-                  />
+                  {isHidden ? (
+                    <span className={styles.legendHiddenIcon} data-testid="legend-hidden-icon">
+                      <Icon name="eye-slash" size="sm" />
+                    </span>
+                  ) : (
+                    <span
+                      className={styles.legendSwatch}
+                      style={{ background: colorMap[level] ?? OTHER_COLOR }}
+                    />
+                  )}
                 </span>
-                <span className={styles.legendLabel}>{level || '(empty)'}</span>
+                <span className={styles.legendLabel}>{label}</span>
               </button>
+              {isFilterableLevel(level) && (
+                <IconButton
+                  name="ellipsis-v"
+                  size="sm"
+                  className={styles.legendMenuBtn}
+                  data-legend-menu
+                  aria-label={`Legend actions for ${label}`}
+                  aria-haspopup="true"
+                  aria-expanded={breakdownPopover?.level === level}
+                  onClick={(e) => {
+                    const r = e.currentTarget.getBoundingClientRect();
+                    setBreakdownPopover({ level, clientX: r.left + r.width / 2, clientY: r.bottom });
+                  }}
+                />
+              )}
+              </div>
             );
           })}
         </div>
@@ -819,7 +873,10 @@ export function VolumeHistogram({
         <Portal>
           <div className={styles.popoverBackdrop} onClick={() => setBreakdownPopover(null)} />
           <div
+            ref={popoverRef}
             className={styles.popover}
+            role="dialog"
+            aria-label={`Actions for ${breakdownPopover.level || '(empty)'}`}
             style={{ left: breakdownPopover.clientX, top: breakdownPopover.clientY }}
             onClick={(e) => e.stopPropagation()}
           >
@@ -1007,7 +1064,24 @@ const getStyles = (theme: GrafanaTheme2) => ({
   axisTickDate: css`
     font-size: 11px;
   `,
+  legendRow: css`
+    display: flex;
+    align-items: center;
+    min-width: 0;
+    &:hover [data-legend-menu],
+    &:focus-within [data-legend-menu] {
+      opacity: 1;
+    }
+  `,
+  // ⋮ appears on hover / keyboard focus of its row (spec: "Hover shows ⋮").
+  legendMenuBtn: css`
+    opacity: 0;
+    flex-shrink: 0;
+    margin: 0;
+  `,
   legendItem: css`
+    flex: 1;
+    min-width: 0;
     display: flex;
     align-items: center;
     gap: ${theme.spacing(0.5)};
@@ -1028,6 +1102,10 @@ const getStyles = (theme: GrafanaTheme2) => ({
     display: flex;
     align-items: center;
     justify-content: center;
+  `,
+  legendHiddenIcon: css`
+    display: flex;
+    color: ${theme.colors.text.secondary};
   `,
   legendSwatch: css`
     width: 10px;

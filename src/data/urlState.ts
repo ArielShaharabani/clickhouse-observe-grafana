@@ -9,6 +9,7 @@
  */
 import { dateMath, dateTime, rangeUtil, TimeRange } from '@grafana/data';
 import { FilterPill, IntervalMode, SelectedColumn } from '../types';
+import { sanitizeFilterPills } from '../sql/filters';
 
 /** Breakdown as stored in the URL: a field is referenced by its stable FieldModel id and
  *  resolved against discovered fields once they load (SHARED-STATE-02). */
@@ -118,7 +119,8 @@ export function decodeLogsState(searchParams: URLSearchParams): DecodedLogsUrlSt
 
   const filters = safeParseArray<FilterPill>(searchParams.get('filters'));
   if (filters) {
-    result.filters = filters;
+    // Untrusted: keep only well-formed pills (known op, string field / value / values).
+    result.filters = sanitizeFilterPills(filters);
   }
 
   const cols = safeParseArray<SelectedColumn>(searchParams.get('cols'));
