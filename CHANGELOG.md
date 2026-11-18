@@ -10,6 +10,16 @@ Versions track the plugin's release history. `Unreleased` collects commits not y
 
 ---
 
+## [0.27.0] — 2026-11-18
+
+### Added
+- **Typed time shorthand next to the time picker** (`-7d`, `-30m`, `now-1h`, `td`, `yd`, `tw`, `tm`, `ty`): Enter or Update applies it; relative ranges stay relative in the URL (`from=now-7d`). Spec DISC-TIME-01 gap (`src/utils/timeShorthand.ts`, `src/components/TimeShorthandInput.tsx`).
+- **Duration badge** (`~7d`, `~17h`) beside the picker showing the window length.
+- **Pending-time cue**: typed-but-unapplied shorthand shows a green Update button (DISC-TIME-02 dirty state for time).
+### Changed
+- **URL `from`/`to` also accept ISO-8601** (as Kibana writes `_g.time`); the plugin still writes epoch ms.
+- Bad `from`/`to` no longer risk `NaN` dates; the time param is dropped instead.
+
 ## [0.26.0] — 2026-11-18
 
 ### Added
