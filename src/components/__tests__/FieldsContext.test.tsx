@@ -67,9 +67,7 @@ describe('useFieldDiscovery — columns (Phase A)', () => {
       return [];
     });
 
-    const { result } = renderHook(() =>
-      useFieldDiscovery({ ...config, logsTable: 'failing_table' }, timeRange)
-    );
+    const { result } = renderHook(() => useFieldDiscovery({ ...config, logsTable: 'failing_table' }, timeRange));
 
     await waitFor(() => expect(result.current.loading).toBe(false));
 
@@ -85,9 +83,7 @@ describe('useFieldDiscovery — columns (Phase A)', () => {
       return [];
     });
 
-    const { result } = renderHook(() =>
-      useFieldDiscovery({ ...config, logsTable: 'plain_logs' }, timeRange)
-    );
+    const { result } = renderHook(() => useFieldDiscovery({ ...config, logsTable: 'plain_logs' }, timeRange));
 
     await waitFor(() => expect(result.current.loading).toBe(false));
 
@@ -209,9 +205,7 @@ describe('useFieldDiscovery — tuple elements still derived synchronously', () 
       return [];
     });
 
-    const { result } = renderHook(() =>
-      useFieldDiscovery({ ...config, logsTable: 'tuple_table' }, timeRange)
-    );
+    const { result } = renderHook(() => useFieldDiscovery({ ...config, logsTable: 'tuple_table' }, timeRange));
 
     await waitFor(() => expect(result.current.loading).toBe(false));
 
@@ -232,18 +226,31 @@ describe('useFieldDiscovery — detectedPartitionTimestamp', () => {
     mockRunQueryRows.mockImplementation(async ({ sql }) => {
       if (sql.includes('system.columns')) {
         return [
-          { name: 'Timestamp', type: 'DateTime64(9)', default_kind: '', default_expression: '', is_in_partition_key: 0, is_in_primary_key: 0, position: 1 },
-          { name: 'TimestampTime', type: 'DateTime', default_kind: 'DEFAULT', default_expression: 'toDate(Timestamp)', is_in_partition_key: 1, is_in_primary_key: 1, position: 2 },
+          {
+            name: 'Timestamp',
+            type: 'DateTime64(9)',
+            default_kind: '',
+            default_expression: '',
+            is_in_partition_key: 0,
+            is_in_primary_key: 0,
+            position: 1,
+          },
+          {
+            name: 'TimestampTime',
+            type: 'DateTime',
+            default_kind: 'DEFAULT',
+            default_expression: 'toDate(Timestamp)',
+            is_in_partition_key: 1,
+            is_in_primary_key: 1,
+            position: 2,
+          },
         ];
       }
       return [];
     });
 
     const { result } = renderHook(() =>
-      useFieldDiscovery(
-        { ...config, logsTable: 'prune_detect_table', columns: OTEL_COLUMN_MAPPING },
-        timeRange
-      )
+      useFieldDiscovery({ ...config, logsTable: 'prune_detect_table', columns: OTEL_COLUMN_MAPPING }, timeRange)
     );
 
     await waitFor(() => expect(result.current.loading).toBe(false));
@@ -255,17 +262,22 @@ describe('useFieldDiscovery — detectedPartitionTimestamp', () => {
     mockRunQueryRows.mockImplementation(async ({ sql }) => {
       if (sql.includes('system.columns')) {
         return [
-          { name: 'Timestamp', type: 'DateTime64(9)', default_kind: '', default_expression: '', is_in_partition_key: 0, is_in_primary_key: 1, position: 1 },
+          {
+            name: 'Timestamp',
+            type: 'DateTime64(9)',
+            default_kind: '',
+            default_expression: '',
+            is_in_partition_key: 0,
+            is_in_primary_key: 1,
+            position: 1,
+          },
         ];
       }
       return [];
     });
 
     const { result } = renderHook(() =>
-      useFieldDiscovery(
-        { ...config, logsTable: 'no_prune_table', columns: OTEL_COLUMN_MAPPING },
-        timeRange
-      )
+      useFieldDiscovery({ ...config, logsTable: 'no_prune_table', columns: OTEL_COLUMN_MAPPING }, timeRange)
     );
 
     await waitFor(() => expect(result.current.loading).toBe(false));

@@ -33,7 +33,10 @@ function columnCacheKey(config: SourceConfig, table: string): string {
 }
 
 /** Identifies the table a discovery result belongs to; compare with `FieldDiscoveryResult.fieldsFor`. */
-export function discoveryKey(config: Pick<SourceConfig, 'datasourceUid' | 'database' | 'logsTable'>, table?: string): string {
+export function discoveryKey(
+  config: Pick<SourceConfig, 'datasourceUid' | 'database' | 'logsTable'>,
+  table?: string
+): string {
   return `${config.datasourceUid}:${config.database}:${table ?? config.logsTable}`;
 }
 

@@ -7,12 +7,7 @@ import { rangeUtil } from '@grafana/data';
 import { decodeLogsState } from '../../data/urlState';
 import { DEFAULT_SOURCE_CONFIG, DataView, FilterPill } from '../../types';
 import { filtersForViewSwitch, StoredPin } from '../../state/sharedSearch';
-import {
-  hasSearchContext,
-  LAST_SEARCH_KEY,
-  rememberSearchContext,
-  restoreSearchContext,
-} from '../../state/lastSearch';
+import { hasSearchContext, LAST_SEARCH_KEY, rememberSearchContext, restoreSearchContext } from '../../state/lastSearch';
 import { draftScopeOf, visualizeEntry, VisualizeEntryInput } from '../entry';
 import { decodeLens, EMPTY_LENS, LensState, RECORDS_FIELD } from '../state';
 import { addField } from '../suggest';
