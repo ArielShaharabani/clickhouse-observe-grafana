@@ -1,7 +1,7 @@
 # Progress — read this first when resuming
 
 **Current item:** none in flight.
-**Last completed step:** batch PR 33 (supersedes 32, 31): #16e/#16f date histogram interval + Intervals/Filters (0.37.0), #16g metric advanced options + appearance (0.38.0).
+**Last completed step:** batch PR 33 (supersedes 32, 31): #16e/#16f date histogram interval + Intervals/Filters (0.37.0), #16g metric advanced options + appearance (0.38.0); 1,359 jest, 163 e2e (160 + 3 test fixes re-run green).
 **Next step:** batch-3 from agents lens-inspect-01 (#29), disc-search-03 (#30), disc-nav-01 (#31), disc-session-01 (#32); then next PLAN todos: #26 LENS-CHART-01, #27 LENS-STYLE-01, #28 LENS-LAYER-01, #29 LENS-INSPECT-01, then importance-2 Verify items (#30, #32, #33) and #31. Fan out agents (no containers; coordinator runs e2e), merge in batches: one batch branch, one full e2e `--workers=3`, one PR. Per merge: `git merge origin/master`, fold with `scripts/dev/fold-pending.py`, gates (jest --maxWorkers 1), e2e under `.e2e-lock`, squash-merge.
 **Open issues:** none. Deferred Lens items: per-group drag-and-drop (LENS-DIM-01 DnD; workspace drop works), formula (#23), advanced metric options (filter by, time shift), value format/colour/axis side (LENS-STYLE-01), date interval picker, "Other" bucket. Deferred elsewhere: DISC-DOC-02 links (#20); histogram now-line; field list Empty/Meta; grid Summary column etc. (#16); popover Visualize (#15).
 
