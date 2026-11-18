@@ -138,7 +138,17 @@ export function decodeLogsState(searchParams: URLSearchParams): DecodedLogsUrlSt
     try {
       // Same convention as SavedSearchMenu.tsx's handleLoad: relative strings pass through for
       // dateMath to resolve, absolute epoch-ms strings become DateTime objects.
-      const toRaw = (v: string) => (v.startsWith('now') ? v : dateTime(Number(v)));
+      // ISO-8601 strings (as Kibana's _g.time writes) are accepted too; we write epoch ms.
+      const toRaw = (v: string) => {
+        if (v.startsWith('now')) {
+          return v;
+        }
+        const ms = /^-?\d+$/.test(v) ? Number(v) : Date.parse(v);
+        if (Number.isNaN(ms)) {
+          throw new Error('bad time');
+        }
+        return dateTime(ms);
+      };
       result.timeRange = rangeUtil.convertRawToRange({ from: toRaw(from), to: toRaw(to) });
     } catch {
       // Malformed from/to — leave timeRange undefined, caller keeps its own default.

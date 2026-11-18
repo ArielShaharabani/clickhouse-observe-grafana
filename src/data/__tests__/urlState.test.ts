@@ -129,4 +129,11 @@ describe('encodeLogsState / decodeLogsState round-trip', () => {
     expect(encoded.has('traceId')).toBe(false);
     expect(encoded.has('dsUid')).toBe(false);
   });
+
+  it('decodes ISO-8601 from/to (as Kibana writes them) and rejects garbage', () => {
+    const iso = decodeLogsState(new URLSearchParams({ from: '2026-01-01T00:00:00.000Z', to: '2026-01-08T00:00:00Z' }));
+    expect(iso.timeRange?.from.valueOf()).toBe(Date.UTC(2026, 0, 1));
+    expect(iso.timeRange?.to.valueOf()).toBe(Date.UTC(2026, 0, 8));
+    expect(decodeLogsState(new URLSearchParams({ from: 'junk', to: 'junk' })).timeRange).toBeUndefined();
+  });
 });
