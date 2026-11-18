@@ -1,7 +1,7 @@
 """Coordinator helper: fold docs/dev/pending/<SPEC>.md into the project docs and bump the version.
 
 Usage (from the feature worktree root):
-  python scripts/dev/fold-pending.py <SPEC-ID> <PLAN-row-#> <PR-#> <new-version> "<Feature title>" "<key files>"
+  python scripts/dev/fold-pending.py <SPEC-ID> <PLAN-row-# or -> <PR-#> <new-version> "<Feature title>" "<key files>"
 
 Does: CHANGELOG release section, DECISIONS entry (next D number, newest first), TESTING section
 (TESTING + Acceptance tables), PLAN row -> done, CONTEXT "Built so far" row, PROGRESS last step,
@@ -73,11 +73,12 @@ def main():
         t += f'\n\n{spec} acceptance:\n\n| Criterion | Test / status |\n| --- | --- |\n' + '\n'.join(acc)
     write('docs/dev/TESTING.md', t + '\n')
 
-    # PLAN
-    plan = read('docs/dev/PLAN.md')
-    plan, n = re.subn(rf'^(\| {row} \| [^\n]*?\| )in-progress \| [^|\n]*\|$', rf'\1done | PR {pr} |', plan, flags=re.M)
-    assert n == 1, f'PLAN row {row} not found as in-progress'
-    write('docs/dev/PLAN.md', plan)
+    # PLAN (row '-' = no PLAN row: security / patch fixes)
+    if row != '-':
+        plan = read('docs/dev/PLAN.md')
+        plan, n = re.subn(rf'^(\| {row} \| [^\n]*?\| )in-progress \| [^|\n]*\|$', rf'\1done | PR {pr} |', plan, flags=re.M)
+        assert n == 1, f'PLAN row {row} not found as in-progress'
+        write('docs/dev/PLAN.md', plan)
 
     # CONTEXT "Built so far": append after the table's last row
     ctx = read('docs/dev/CONTEXT.md')

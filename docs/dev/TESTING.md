@@ -144,3 +144,10 @@ DISC-DOC-02 acceptance:
 | Entry from the document flyout ("View surrounding documents") | e2e (all tests open it from the detail panel); re-anchor e2e |
 | Bad / unknown links | e2e "malformed or unknown document links ..."; jest hostile anchors |
 | "View single document" permalink (DISC-DOC-01 header) | gap: not built |
+
+### URL-COLS (PR 24)
+| Case | Status |
+| --- | --- |
+| Hostile `cols` (expr/alias with `FROM system.users --`, subqueries, hostile core expr) dropped or rebuilt from the mapping; types checked; duplicates dropped; strict mode keeps only discovered fields / Map keys (jest `sanitizeColumns.test.ts`) | ✅ |
+| `buildLogsQuery` never emits an unsafe alias / expression; hostile sort column and direction fall back (jest `sanitizeColumns.test.ts`) | ✅ |
+| Crafted link renders without the injected column; hostile core column uses the mapping; hostile sort falls back; a legitimate Map key column from a link is kept (`tests/features/sec-url-cols.spec.ts`) | ✅ |
