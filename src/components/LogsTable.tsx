@@ -44,6 +44,8 @@ interface LogsTableProps {
   /** PgUp / PgDn from the keyboard: move one page back (-1) or forward (+1). Returns whether the
    *  page changes (false on the first/last page or while a page is loading). */
   onPageStep?: (delta: 1 | -1) => boolean;
+  /** Surrounding documents (DISC-DOC-02): the anchor row, highlighted pale yellow. */
+  anchorRow?: LogRow | null;
 }
 
 type CellPos = { ri: number; ci: number };
@@ -140,6 +142,7 @@ export function LogsTable({
   highlighterFor,
   display = DEFAULT_GRID_DISPLAY,
   onPageStep,
+  anchorRow,
 }: LogsTableProps) {
   const wrap = display.bodyLines === 'auto';
   const bodyLines = display.bodyLines === 'auto' ? 0 : display.bodyLines;
@@ -478,7 +481,13 @@ export function LogsTable({
             return (
               <React.Fragment key={i}>
                 <tr
-                  className={cx(styles.tr, isSelected && styles.trSelected, isFocused && styles.trFocused)}
+                  className={cx(
+                    styles.tr,
+                    row === anchorRow && styles.trAnchor,
+                    isSelected && styles.trSelected,
+                    isFocused && styles.trFocused
+                  )}
+                  data-anchor={row === anchorRow ? 'true' : undefined}
                   style={{ borderLeftColor: stripeColor }}
                   onMouseDown={() => {
                     setKeyboardNav(false);
@@ -784,6 +793,9 @@ const getStyles = (theme: GrafanaTheme2) => ({
   `,
   trSelected: css`
     background: ${theme.colors.action.selected} !important;
+  `,
+  trAnchor: css`
+    background: ${theme.isDark ? 'rgba(255, 214, 0, 0.16)' : 'rgba(255, 230, 128, 0.45)'};
   `,
   trFocused: css`
     box-shadow: inset 0 0 0 1px ${theme.colors.primary.border};
