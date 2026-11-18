@@ -101,14 +101,18 @@ export type FilterOp =
   | 'one_of'       // is one of (IN)
   | 'not_one_of'   // is not one of (NOT IN)
   | 'exists'       // exists
-  | 'not_exists';  // does not exist
+  | 'not_exists'   // does not exist
+  | 'gte'          // greater or equal (value)
+  | 'lt'           // less than (value)
+  | 'between'      // is between (values: [low, high], inclusive)
+  | 'not_between'; // is not between (values: [low, high])
 
 export interface FilterPill {
   id: string;
   field: string;
   op: FilterOp;
   value: string;        // single-value ops; '' for multi / exists ops
-  values?: string[];    // one_of / not_one_of
+  values?: string[];    // one_of / not_one_of; [low, high] for between / not_between
   label?: string;       // optional custom display label
   disabled?: boolean;   // temporarily excluded from the query, kept in state/URL
   /** Pinned across app pages (SHARED-STATE-01): kept in per-tab session storage and re-applied on
