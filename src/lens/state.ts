@@ -9,6 +9,7 @@
  */
 import { FieldType } from '../sql/fieldModel';
 import { formulaErrors, FormulaFields, MAX_FORMULA_LEN } from './formula';
+import { cleanStyle, LensStyle } from './style';
 import { isIntervalValue } from './interval';
 import { cleanMetricOptions, MetricOptions, optionsLabelSuffix } from './metricOptions';
 
@@ -425,6 +426,8 @@ export function filterLabel(f: FilterSpec): string {
 export interface LensState {
   chartType: ChartType;
   subType?: XySubType;
+  /** XY Style / Legend settings (LENS-STYLE-01); display-only. */
+  style?: LensStyle;
   buckets: BucketDim[];
   metrics: MetricDim[];
 }
@@ -656,7 +659,8 @@ export function decodeLens(raw: string | null | undefined): LensState | undefine
         return out;
       });
     const subType = ['stacked', 'percentage', 'unstacked'].includes(v.subType) ? (v.subType as XySubType) : undefined;
-    return { chartType: v.chartType, subType, buckets, metrics };
+    const style = cleanStyle(v.style);
+    return { chartType: v.chartType, subType, buckets, metrics, ...(style ? { style } : {}) };
   } catch {
     return undefined;
   }

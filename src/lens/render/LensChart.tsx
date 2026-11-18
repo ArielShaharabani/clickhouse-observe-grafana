@@ -22,6 +22,7 @@ import { XyChart, XySelection } from './XyChart';
 import { withMetricAppearance } from './fieldConfig';
 import { MetricTiles } from './MetricTiles';
 import { tableColumns, tableOverrides } from '../tableChart';
+import { autoAxisTitles, withLensStyle } from './styleConfig';
 
 interface PanelSpec {
   pluginId: string;
@@ -44,7 +45,17 @@ function numberFields(result: LensResult) {
 export function panelSpec(state: LensState, result: LensResult): PanelSpec {
   const spec = basePanelSpec(state, result);
   const xy = state.chartType === 'line' || state.chartType === 'area' || state.chartType === 'bar';
-  return { ...spec, fieldConfig: withMetricAppearance(spec.fieldConfig, state, xy) as PanelSpec['fieldConfig'] };
+  const fieldConfig = withMetricAppearance(spec.fieldConfig, state, xy) as PanelSpec['fieldConfig'];
+  if (!xy) {
+    return { ...spec, fieldConfig };
+  }
+  const styled = withLensStyle(
+    { options: spec.options, fieldConfig },
+    state,
+    spec.pluginId === 'barchart' ? 'barchart' : 'timeseries',
+    autoAxisTitles(state)
+  );
+  return { ...spec, ...styled };
 }
 
 function basePanelSpec(state: LensState, result: LensResult): PanelSpec {
@@ -161,6 +172,8 @@ export function LensChart({ state, result, timeRange, onChangeTimeRange, bucketM
           onBrush={onChangeTimeRange}
           onLegendFilter={onLegendFilter}
           metrics={state.metrics}
+          style={state.style}
+          axisTitles={autoAxisTitles(state)}
         />
       </div>
     );

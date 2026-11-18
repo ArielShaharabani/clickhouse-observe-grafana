@@ -175,8 +175,10 @@ export function metricForField(id: string, field: LensField): MetricDim | undefi
 
 /** Display-only parts (names) removed — what the chart query actually depends on. */
 export function queryShape(s: LensState): LensState {
+  // Style / Legend (LENS-STYLE-01) never changes the SQL.
+  const { style: _style, ...rest } = s;
   return {
-    ...s,
+    ...rest,
     // Table pivot (Split metrics by) only reshapes the same rows.
     buckets: s.buckets.map(({ name: _n, pivot: _p, ...b }) => b as BucketDim),
     // Format, colour and axis side are display-only too, and so are the Table / Metric chart options.

@@ -36,6 +36,7 @@ import { DEFAULT_LOGS_QUERY_STATE, FilterPill } from '../types';
 import { compileLens, LensResult, realKey, shapeLensRows } from './compile';
 import { LensChart } from './render/LensChart';
 import { CHART_ICONS, ChartTypeSwitcher } from './ChartTypeSwitcher';
+import { StylePanel, StyleToolbar, StyleView } from './StylePanel';
 import { DimensionEditor } from './DimensionEditor';
 import { LensInterval, stepBucket } from './interval';
 import { addBucket, addMetric, metricForField, nextBucketField, queryShape, replaceDim } from './dimensions';
@@ -434,6 +435,7 @@ export function LensPage() {
   // Dimension being edited (LENS-DIM-02). Its group is looked up in the current state each render,
   // so a chart change elsewhere (suggestion, type switch) retitles or closes the editor.
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [styleView, setStyleView] = useState<StyleView | null>(null);
   const editingGroup = editingId
     ? dimensionGroups(lens).find((g) => g.dims.some((d) => d.id === editingId))
     : undefined;
@@ -771,7 +773,19 @@ export function LensPage() {
               onSubTypeChange={(sub) => setLens(switchChart(lens, lens.chartType, ctx, sub))}
             />
           )}
-          {editingGroup && editingDim ? (
+          {!isEmptyLens(lens) && !editingDim && !styleView && isXy(lens.chartType) && (
+            <StyleToolbar onOpen={setStyleView} />
+          )}
+          {styleView && !editingDim && isXy(lens.chartType) ? (
+            <StylePanel
+              view={styleView}
+              chartType={lens.chartType}
+              style={lens.style}
+              hasRightAxis={lens.metrics.some((m) => m.axis === 'right')}
+              onChange={(style) => setLens({ ...lens, style })}
+              onBack={() => setStyleView(null)}
+            />
+          ) : editingGroup && editingDim ? (
             <DimensionEditor
               dim={editingDim}
               group={editingGroup.name}

@@ -166,6 +166,9 @@ export function switchChart(state: LensState, target: ChartType, ctx: LensContex
   const next: LensState = { chartType: target, buckets, metrics };
   if (isXy(target)) {
     next.subType = subType ?? state.subType ?? 'stacked';
+    if (state.style && isXy(state.chartType)) {
+      next.style = state.style;
+    }
   }
   return next;
 }

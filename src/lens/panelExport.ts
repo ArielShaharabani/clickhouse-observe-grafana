@@ -13,6 +13,7 @@ import { dimLabelIn, LensState } from './state';
 import { chartTitle } from './suggest';
 import { withMetricAppearance } from './render/fieldConfig';
 import { tableOverrides } from './tableChart';
+import { autoAxisTitles, withLensStyle } from './render/styleConfig';
 
 export interface LensPanelOpts {
   id: number;
@@ -65,7 +66,20 @@ export function buildLensPanel(
 ): LensPanel {
   const panel = baseLensPanel(state, config, conditions, timeRange, opts);
   const xy = state.chartType === 'line' || state.chartType === 'area' || state.chartType === 'bar';
-  return panel.fieldConfig ? { ...panel, fieldConfig: withMetricAppearance(panel.fieldConfig, state, xy) } : panel;
+  if (!panel.fieldConfig) {
+    return panel;
+  }
+  const fieldConfig = withMetricAppearance(panel.fieldConfig, state, xy);
+  if (!xy || (panel.type !== 'timeseries' && panel.type !== 'barchart')) {
+    return { ...panel, fieldConfig };
+  }
+  const styled = withLensStyle(
+    { options: (panel.options ?? {}) as Record<string, unknown>, fieldConfig },
+    state,
+    panel.type,
+    autoAxisTitles(state)
+  );
+  return { ...panel, ...styled };
 }
 
 function baseLensPanel(
