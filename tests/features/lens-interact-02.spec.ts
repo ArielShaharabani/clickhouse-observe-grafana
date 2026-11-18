@@ -53,8 +53,9 @@ test('IT-H: Explore in Discover opens a new tab with the bucket fields as column
 }) => {
   const viz = new VisualizePage(page);
   await viz.open({ q: 'SeverityText:error' });
-  await viz.addField('LogAttributes.http.method');
-  await expect(viz.chart.getByRole('button', { name: /^GET · Count of records: / })).toBeVisible();
+  await viz.addField('TraceId');
+  await expect(viz.chart).toHaveAttribute('data-chart-type', 'bar');
+  await expect(viz.group('Horizontal axis')).toContainText('Top 9 values of TraceId');
 
   const [tab] = await Promise.all([
     context.waitForEvent('page'),
@@ -71,7 +72,7 @@ test('IT-H: Explore in Discover opens a new tab with the bucket fields as column
     await whatsNew.getByRole('button', { name: 'Close' }).click();
   }
   // The view's default columns stay; the chart's bucket field is added.
-  for (const name of [/^Time/, /^Message/, /LogAttributes\.http\.method/]) {
+  for (const name of ['Drag to reorder Time', 'Drag to reorder Message', 'Drag to reorder TraceId']) {
     await expect(logs.grid.getByRole('columnheader', { name })).toBeVisible();
   }
   const sp = new URL(tab.url()).searchParams;
@@ -79,5 +80,5 @@ test('IT-H: Explore in Discover opens a new tab with the bucket fields as column
   expect(sp.get('ds')).toBe(FIXTURE.dataViewId);
   const cols: Array<{ displayName: string }> = JSON.parse(sp.get('cols') ?? '[]');
   expect(cols[0].displayName).toBe('Time');
-  expect(cols[cols.length - 1].displayName).toBe('LogAttributes.http.method');
+  expect(cols[cols.length - 1].displayName).toBe('TraceId');
 });
