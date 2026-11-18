@@ -45,6 +45,7 @@ describe('XyChart geometry', () => {
         ],
       ],
       max: 4,
+      min: 0,
     });
     expect(stackValues(result, [true, true], 'percentage').spans[1][0]).toEqual([25, 100]);
     expect(stackValues(result, [true, true], 'none')).toMatchObject({
@@ -72,7 +73,48 @@ describe('XyChart geometry', () => {
         ],
       ],
       max: 3,
+      min: 0,
     });
+  });
+
+  it('negative values stack downwards and extend the scale below 0', () => {
+    const neg: LensResult = {
+      ...result,
+      series: [
+        {
+          name: 'delta',
+          points: new Map([
+            ['a', -2],
+            ['b', 5],
+          ]),
+          metricIndex: 0,
+          zeroFill: false,
+        },
+      ],
+    };
+    expect(stackValues(neg, [true], 'stacked')).toEqual({
+      spans: [
+        [
+          [0, -2],
+          [0, 5],
+        ],
+      ],
+      max: 5,
+      min: -2,
+    });
+  });
+
+  it('a missing point is a gap for averages, 0 for counts', () => {
+    const gap: LensResult = {
+      ...result,
+      series: [
+        { name: 'avg', points: new Map([['a', 4]]), metricIndex: 0, zeroFill: false },
+        { name: 'count', points: new Map([['a', 4]]), metricIndex: 1, zeroFill: true },
+      ],
+    };
+    const { spans } = stackValues(gap, [true, true], 'none');
+    expect(spans[0][1]).toBeNull();
+    expect(spans[1][1]).toEqual([0, 0]);
   });
 
   it('labels: empty category, time format', () => {

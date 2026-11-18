@@ -72,3 +72,21 @@ test('time series: brushing sets the time range', async ({ page }) => {
   expect(from).toBeGreaterThan(FIXTURE.from);
   expect(to).toBeLessThan(FIXTURE.to);
 });
+
+test('time bucket + breakdown in one Apply: both the filter and the time range are kept', async ({ page }) => {
+  const viz = new VisualizePage(page);
+  await viz.open();
+  await viz.addField('Records');
+  await viz.addField('ServiceName');
+  await viz.chart
+    .getByRole('button', { name: /^\S+ \S+ · payments: / })
+    .first()
+    .click();
+  const dialog = page.getByRole('dialog', { name: 'Select filters to apply' });
+  await expect(dialog.getByRole('checkbox')).toHaveCount(2);
+  await dialog.getByRole('button', { name: 'Apply' }).click();
+  await expect(filterBar(page).getByRole('button', { name: /^Filter actions: ServiceName = payments/ })).toBeVisible();
+  const sp = new URL(page.url()).searchParams;
+  expect(sp.get('filters')).toContain('payments');
+  expect(Number(sp.get('to')) - Number(sp.get('from'))).toBeLessThan(FIXTURE.to - FIXTURE.from);
+});

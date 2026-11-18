@@ -23,6 +23,9 @@ import { BucketDim, clampPercentile, dimLabel, LensState, MetricDim } from './st
 /** Safety cap on result rows (a date histogram × 9 breakdown values stays far below it). */
 export const LENS_ROW_LIMIT = 10_000;
 
+/** Upper bound for gap filling (the auto interval targets ~60 buckets). */
+const MAX_FILLED_BUCKETS = 5000;
+
 export const bucketAlias = (i: number) => `b${i}`;
 export const metricAlias = (i: number) => `m${i}`;
 
@@ -81,7 +84,8 @@ export function compileLens(
       const expr = `toString(${quoteIdentifier(b.field)})`;
       const cte = `top${i}`;
       ctes.push(
-        `${cte} AS (SELECT ${expr} AS v FROM ${tbl}${where ? ` WHERE ${where}` : ''} GROUP BY v ORDER BY count() DESC LIMIT ${Math.max(1, Math.floor(b.size))})`
+        // NULL never matches the outer GLOBAL IN, so it must not take one of the top-N slots either.
+        `${cte} AS (SELECT ${expr} AS v FROM ${tbl} WHERE ${where ? `${where} AND ` : ''}${expr} IS NOT NULL GROUP BY v ORDER BY count() DESC LIMIT ${Math.max(1, Math.floor(b.size))})`
       );
       restrictions.push(`${expr} GLOBAL IN (SELECT v FROM ${cte})`);
       selects.push(`${expr} AS ${bucketAlias(i)}`);
@@ -133,6 +137,8 @@ export interface LensSeries {
   breakdown?: string;
   /** Index into `state.metrics`. */
   metricIndex: number;
+  /** A missing point means 0 (counts); otherwise it's a gap (no data). */
+  zeroFill: boolean;
 }
 
 export interface LensResult {
@@ -156,7 +162,7 @@ const num = (v: unknown): number => {
 };
 
 /** Shapes query rows into chart series: X = buckets[0], one series per metric × breakdown value. */
-export function shapeLensRows(state: LensState, rows: Array<Record<string, unknown>>): LensResult {
+export function shapeLensRows(state: LensState, rows: Array<Record<string, unknown>>, bucketMs?: number): LensResult {
   const [x, breakdown] = state.buckets;
   const xIsTime = x?.kind === 'date_histogram';
   const xs: Array<string | number> = [];
@@ -177,7 +183,7 @@ export function shapeLensRows(state: LensState, rows: Array<Record<string, unkno
       const name = bv === undefined ? label : multiMetric ? `${bv} · ${label}` : bv;
       let s = seriesMap.get(name);
       if (!s) {
-        s = { name, points: new Map(), breakdown: bv, metricIndex: i };
+        s = { name, points: new Map(), breakdown: bv, metricIndex: i, zeroFill: state.metrics[i].op === 'count' };
         seriesMap.set(name, s);
       }
       s.points.set(xv, num(r[metricAlias(i)]));
@@ -185,6 +191,18 @@ export function shapeLensRows(state: LensState, rows: Array<Record<string, unkno
   }
   if (xIsTime) {
     xs.sort((a, b) => Number(a) - Number(b));
+    // ClickHouse returns no row for an empty bucket; fill the gaps so the axis is linear in time
+    // (bars and the brush line up with real time).
+    if (bucketMs && bucketMs > 0 && xs.length > 1) {
+      const first = Number(xs[0]);
+      const last = Number(xs[xs.length - 1]);
+      if ((last - first) / bucketMs <= MAX_FILLED_BUCKETS) {
+        xs.length = 0;
+        for (let t = first; t <= last; t += bucketMs) {
+          xs.push(t);
+        }
+      }
+    }
   }
   const columns = [...state.buckets.map((b) => dimLabel(b)), ...labels];
   const tableRows = rows.map((r) => [

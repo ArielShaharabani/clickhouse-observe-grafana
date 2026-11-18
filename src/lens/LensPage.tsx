@@ -21,8 +21,7 @@ import { buildWhereConditions } from '../sql/queryBuilder';
 import { buildAppPageUrl, tableKey } from '../state/sharedSearch';
 import { FilterPills } from '../components/FilterPills';
 import { useAutocompleteSources } from '../autocomplete/service';
-import { addFilterPill } from '../sql/filters';
-import { copyToClipboard, valueActions } from '../actions/registry';
+import { addFilterPill, makeFilter } from '../sql/filters';
 import { FilterChoice, FilterChooser } from './FilterChooser';
 import { XySelection, xLabel } from './render/XyChart';
 import { DEFAULT_LOGS_QUERY_STATE, FilterPill } from '../types';
@@ -235,7 +234,8 @@ export function LensPage() {
     );
     const { sql, intervalMs } = compileLens(lens, config, conditions, timeRange);
     runQueryRows({ datasourceUid: config.datasourceUid, sql, timeRange, op: 'lens', signal: abort.signal }).then(
-      (rows) => !cancelled && setResult({ key: queryKey, data: shapeLensRows(lens, rows), bucketMs: intervalMs }),
+      (rows) =>
+        !cancelled && setResult({ key: queryKey, data: shapeLensRows(lens, rows, intervalMs), bucketMs: intervalMs }),
       (e) => !cancelled && setResult({ key: queryKey, error: e instanceof Error ? e.message : String(e) })
     );
     return () => {
@@ -294,23 +294,16 @@ export function LensPage() {
   // LENS-INTERACT-01: one click on a bar / point. One candidate filter → applied at once; several
   // (X value + breakdown value, or a time bucket + breakdown) → "Select filters to apply".
   const [chooser, setChooser] = useState<FilterChoice[] | null>(null);
-  const viaRegistry = (field: string, value: string, mode: 'filterFor' | 'filterOut'): FilterPill | undefined => {
-    let made: FilterPill | undefined;
-    valueActions({ field, value }, { addFilter: (p) => (made = p), copyText: copyToClipboard }, [mode]).forEach((a) =>
-      a.run()
-    );
-    return made;
-  };
+  // Same pill the action registry's Filter for / Filter out builds everywhere else.
+  const pillFor = (field: string, value: string, mode: 'for' | 'out'): FilterPill =>
+    makeFilter(field, value, mode === 'for' ? '=' : '!=');
   const choicesFor = (sel: XySelection, data: LensResult, bucketMs?: number): FilterChoice[] => {
     const out: FilterChoice[] = [];
     const [x, breakdown] = lens.buckets;
     const xv = data.xs[sel.xIndex];
     const series = data.series[sel.seriesIndex];
     if (x?.kind === 'terms') {
-      const pill = viaRegistry(x.field, String(xv), 'filterFor');
-      if (pill) {
-        out.push({ label: `${x.label}: ${xLabel(xv, false, 0)}`, pill });
-      }
+      out.push({ label: `${x.label}: ${xLabel(xv, false, 0)}`, pill: pillFor(x.field, String(xv), 'for') });
     } else if (x?.kind === 'date_histogram' && bucketMs) {
       const from = Number(xv);
       out.push({
@@ -319,26 +312,40 @@ export function LensPage() {
       });
     }
     if (breakdown?.kind === 'terms' && series?.breakdown !== undefined) {
-      const pill = viaRegistry(breakdown.field, series.breakdown, 'filterFor');
-      if (pill) {
-        out.push({ label: `${breakdown.label}: ${series.breakdown || '(empty)'}`, pill });
-      }
+      out.push({
+        label: `${breakdown.label}: ${series.breakdown || '(empty)'}`,
+        pill: pillFor(breakdown.field, series.breakdown, 'for'),
+      });
     }
     return out;
   };
+  // Filters and time go into ONE URL update: two setSearchParams calls in a row each start from the
+  // render-time params, so the second would drop the first's change.
   const applyChoices = (choices: FilterChoice[]) => {
     const pills = choices.flatMap((c) => (c.pill ? [c.pill] : []));
     const time = choices.find((c) => c.time)?.time;
-    if (pills.length > 0) {
-      addFilters(pills);
-    }
-    if (time) {
-      setTimeRange({
-        from: dateTime(time[0]),
-        to: dateTime(time[1]),
-        raw: { from: dateTime(time[0]), to: dateTime(time[1]) },
-      });
-    }
+    const nextFilters = pills.reduce(addFilterPill, filters);
+    const tr = time
+      ? { from: dateTime(time[0]), to: dateTime(time[1]), raw: { from: dateTime(time[0]), to: dateTime(time[1]) } }
+      : timeRange;
+    const enc = encodeLogsState({ search: '', filters: nextFilters, columns: [], timeRange: tr });
+    setSearchParams(
+      (prev) => {
+        const sp = new URLSearchParams(prev);
+        const f = enc.get('filters');
+        if (f) {
+          sp.set('filters', f);
+        } else {
+          sp.delete('filters');
+        }
+        if (time) {
+          sp.set('from', enc.get('from') ?? '');
+          sp.set('to', enc.get('to') ?? '');
+        }
+        return sp;
+      },
+      { replace: false }
+    );
   };
   const onSelect = (sel: XySelection) => {
     if (!current?.data) {
@@ -355,10 +362,7 @@ export function LensPage() {
     const breakdown = lens.buckets[1];
     const s = current?.data?.series[seriesIndex];
     if (breakdown?.kind === 'terms' && s?.breakdown !== undefined) {
-      const pill = viaRegistry(breakdown.field, s.breakdown, mode === 'for' ? 'filterFor' : 'filterOut');
-      if (pill) {
-        addFilters([pill]);
-      }
+      addFilters([pillFor(breakdown.field, s.breakdown, mode)]);
     }
   };
   const [dragOver, setDragOver] = useState(false);
@@ -493,7 +497,7 @@ export function LensPage() {
                 }
                 bucketMs={current.bucketMs}
                 onSelect={onSelect}
-                onLegendFilter={onLegendFilter}
+                onLegendFilter={lens.buckets[1]?.kind === 'terms' ? onLegendFilter : undefined}
               />
             ) : (
               <div className={styles.empty}>

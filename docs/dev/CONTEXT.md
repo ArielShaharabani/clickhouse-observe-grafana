@@ -1,7 +1,7 @@
 # Context snapshot — read this to restart
 
 Saved after every feature (and every review-fix round). A new session can resume from this file plus `PROGRESS.md` alone.
-Last saved: 2026-11-17, 2026-11-18, after #14 LENS-INTERACT-01 (PR 15).
+Last saved: 2026-11-17, 2026-11-18, after #14 LENS-INTERACT-01 (PR 15) review fixes.
 
 ## Goal
 Bring Kibana Discover + Lens style exploration to Grafana on ClickHouse by extending the **ClickHouse Observe** app plugin.
@@ -39,6 +39,7 @@ Bring Kibana Discover + Lens style exploration to Grafana on ClickHouse by exten
 - URL is the shared search context across pages; pinned filters also in per-tab sessionStorage, changed only by explicit pin transitions, tagged with their table.
 - One autocomplete service and one action registry for every surface; field names in actions derived from the SQL expression (`fieldLabelFor`).
 - Numeric stats: one-pass sample query (D11); `isBreakdownField` is the single breakdown rule; `chooseBreakdown` in LogsExplorer is the single breakdown setter.
+- Two `setSearchParams` calls in one handler: the second starts from render-time params and drops the first's change — build one update.
 - Popovers inside scrolling columns render in a Grafana `Portal` (position fixed, measured when opened); `autoFocus` doesn't fire inside a Portal — focus the input explicitly (rAF) after opening.
 - @grafana/ui `Select` is deprecated (lint warning) — use `Combobox` (label via `Field htmlFor` + `id`; no aria-label prop).
 - Field list groups are ARIA regions ("Selected fields", "Popular fields", "Available fields"); row actions appear on hover (hover before clicking in e2e).

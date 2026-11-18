@@ -26,8 +26,14 @@ interface Props {
   bucketMs?: number;
   onSelect?: (sel: XySelection) => void;
   onBrush?: (from: number, to: number) => void;
-  /** Legend ⋮ actions; omitted → no menu. */
+  /** Legend ⋮ actions; omitted → no menu (also omitted when the breakdown can't be filtered). */
   onLegendFilter?: (seriesIndex: number, mode: 'for' | 'out') => void;
+}
+
+/** A series' value at x: missing → 0 for counts, null (gap) otherwise. */
+function pointValue(s: LensResult['series'][number], x: string | number): number | null {
+  const v = s.points.get(x);
+  return v === undefined ? (s.zeroFill ? 0 : null) : v;
 }
 
 const M = { top: 8, right: 8, bottom: 28, left: 52 };
@@ -65,33 +71,41 @@ export function stackValues(
   result: LensResult,
   visible: boolean[],
   mode: 'stacked' | 'percentage' | 'none'
-): { spans: Array<Array<[number, number] | null>>; max: number } {
+): { spans: Array<Array<[number, number] | null>>; max: number; min: number } {
   const spans: Array<Array<[number, number] | null>> = result.series.map(() => []);
   let max = 0;
+  let min = 0;
   result.xs.forEach((x, xi) => {
-    const vals = result.series.map((s, si) => (visible[si] ? (s.points.get(x) ?? 0) : 0));
-    const total = vals.reduce((a, b) => a + b, 0);
-    let acc = 0;
+    const vals = result.series.map((s, si) => (visible[si] ? pointValue(s, x) : null));
+    const total = vals.reduce<number>((a, b) => a + Math.abs(b ?? 0), 0);
+    // Positive values stack upwards from 0, negative ones downwards.
+    let up = 0;
+    let down = 0;
     result.series.forEach((_s, si) => {
-      if (!visible[si]) {
+      const raw = vals[si];
+      if (raw === null) {
         spans[si][xi] = null;
         return;
       }
-      const raw = vals[si];
       const v = mode === 'percentage' ? (total > 0 ? (raw / total) * 100 : 0) : raw;
       if (mode === 'none') {
         spans[si][xi] = [0, v];
         max = Math.max(max, v);
+        min = Math.min(min, v);
+      } else if (v >= 0) {
+        spans[si][xi] = [up, up + v];
+        up += v;
       } else {
-        spans[si][xi] = [acc, acc + v];
-        acc += v;
+        spans[si][xi] = [down, down + v];
+        down += v;
       }
     });
     if (mode !== 'none') {
-      max = Math.max(max, acc);
+      max = Math.max(max, up);
+      min = Math.min(min, down);
     }
   });
-  return { spans, max: mode === 'percentage' ? 100 : max };
+  return { spans, max: mode === 'percentage' ? 100 : max, min: mode === 'percentage' ? Math.max(-100, min) : min };
 }
 
 export function XyChart({ chartType, subType, result, bucketMs, onSelect, onBrush, onLegendFilter }: Props) {
@@ -100,8 +114,12 @@ export function XyChart({ chartType, subType, result, bucketMs, onSelect, onBrus
   const boxRef = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ w: 0, h: 0 });
   const [hidden, setHidden] = useState<Set<string>>(() => new Set());
-  const [menuFor, setMenuFor] = useState<number | null>(null);
+  // Keyed by series name, so a re-query that reorders series can't retarget an open menu.
+  const [menuFor, setMenuFor] = useState<string | null>(null);
   const [brush, setBrush] = useState<{ x0: number; x1: number } | null>(null);
+  // Removes an in-flight brush's window listeners (also on unmount mid-drag).
+  const stopBrush = useRef<(() => void) | null>(null);
+  useEffect(() => () => stopBrush.current?.(), []);
 
   useEffect(() => {
     const el = boxRef.current;
@@ -120,7 +138,7 @@ export function XyChart({ chartType, subType, result, bucketMs, onSelect, onBrus
   const visible = result.series.map((s) => !hidden.has(s.name));
   const mode: 'stacked' | 'percentage' | 'none' =
     subType === 'percentage' ? 'percentage' : chartType === 'line' || subType === 'unstacked' ? 'none' : 'stacked';
-  const { spans, max } = useMemo(
+  const { spans, max, min } = useMemo(
     () =>
       stackValues(
         result,
@@ -135,7 +153,8 @@ export function XyChart({ chartType, subType, result, bucketMs, onSelect, onBrus
   const plotW = Math.max(1, W - M.left - M.right);
   const plotH = Math.max(1, H - M.top - M.bottom);
   const yMax = niceMax(max);
-  const y = (v: number) => M.top + plotH - (v / yMax) * plotH;
+  const yMin = min < 0 ? -niceMax(-min) : 0;
+  const y = (v: number) => M.top + plotH - ((v - yMin) / (yMax - yMin)) * plotH;
   const n = Math.max(1, result.xs.length);
   const band = plotW / n;
   const cx0 = (xi: number) => M.left + band * xi + band / 2;
@@ -154,7 +173,7 @@ export function XyChart({ chartType, subType, result, bucketMs, onSelect, onBrus
     });
   };
   const itemLabel = (xi: number, si: number) =>
-    `${xLabel(result.xs[xi], result.xIsTime, spanMs)} · ${result.series[si].name}: ${fmt(result.series[si].points.get(result.xs[xi]) ?? 0)}`;
+    `${xLabel(result.xs[xi], result.xIsTime, spanMs)} · ${result.series[si].name}: ${fmt(pointValue(result.series[si], result.xs[xi]) ?? 0)}`;
 
   // Brush (time X only): drag across the plot to pick a range.
   const pxToTime = (px: number) => {
@@ -171,9 +190,13 @@ export function XyChart({ chartType, subType, result, bucketMs, onSelect, onBrus
     setBrush({ x0: x, x1: x });
     const move = (ev: MouseEvent) =>
       setBrush((b) => (b ? { ...b, x1: Math.min(M.left + plotW, Math.max(M.left, ev.clientX - left)) } : b));
-    const up = (ev: MouseEvent) => {
+    const stop = () => {
       window.removeEventListener('mousemove', move);
       window.removeEventListener('mouseup', up);
+      stopBrush.current = null;
+    };
+    const up = (ev: MouseEvent) => {
+      stop();
       const x1 = Math.min(M.left + plotW, Math.max(M.left, ev.clientX - left));
       setBrush(null);
       if (Math.abs(x1 - x) > 4) {
@@ -182,6 +205,7 @@ export function XyChart({ chartType, subType, result, bucketMs, onSelect, onBrus
     };
     window.addEventListener('mousemove', move);
     window.addEventListener('mouseup', up);
+    stopBrush.current = stop;
   };
 
   const visibleIdx = result.series.map((_s, i) => i).filter((i) => visible[i]);
@@ -192,12 +216,18 @@ export function XyChart({ chartType, subType, result, bucketMs, onSelect, onBrus
     <div className={styles.wrap} data-testid="lens-xy">
       <div ref={boxRef} className={styles.plot}>
         {W > 0 && (
-          <svg width={W} height={H} role="img" aria-label={`${chartType} chart`}>
+          <svg width={W} height={H} role="group" aria-label={`${chartType} chart`}>
             {[0, 0.25, 0.5, 0.75, 1].map((f) => (
               <g key={f}>
-                <line x1={M.left} x2={M.left + plotW} y1={y(yMax * f)} y2={y(yMax * f)} className={styles.grid} />
-                <text x={M.left - 6} y={y(yMax * f) + 4} textAnchor="end" className={styles.tick}>
-                  {mode === 'percentage' ? `${Math.round(yMax * f)}%` : fmt(yMax * f)}
+                <line
+                  x1={M.left}
+                  x2={M.left + plotW}
+                  y1={y(yMin + (yMax - yMin) * f)}
+                  y2={y(yMin + (yMax - yMin) * f)}
+                  className={styles.grid}
+                />
+                <text x={M.left - 6} y={y(yMin + (yMax - yMin) * f) + 4} textAnchor="end" className={styles.tick}>
+                  {mode === 'percentage' ? `${Math.round(yMin + (yMax - yMin) * f)}%` : fmt(yMin + (yMax - yMin) * f)}
                 </text>
               </g>
             ))}
@@ -224,7 +254,7 @@ export function XyChart({ chartType, subType, result, bucketMs, onSelect, onBrus
                 visible[si]
                   ? result.xs.map((x, xi) => {
                       const sp = spans[si][xi];
-                      if (!sp || sp[1] - sp[0] <= 0) {
+                      if (!sp || sp[1] === sp[0]) {
                         return null;
                       }
                       const gi = visibleIdx.indexOf(si);
@@ -235,8 +265,8 @@ export function XyChart({ chartType, subType, result, bucketMs, onSelect, onBrus
                           key={`${si}-${xi}`}
                           x={left}
                           width={Math.max(1, w - 1)}
-                          y={y(sp[1])}
-                          height={Math.max(1, y(sp[0]) - y(sp[1]))}
+                          y={Math.min(y(sp[0]), y(sp[1]))}
+                          height={Math.max(1, Math.abs(y(sp[0]) - y(sp[1])))}
                           fill={color(si)}
                           role="button"
                           tabIndex={0}
@@ -257,34 +287,55 @@ export function XyChart({ chartType, subType, result, bucketMs, onSelect, onBrus
                 if (!visible[si]) {
                   return null;
                 }
-                const top = result.xs.map((_x, xi) => [cx0(xi), y(spans[si][xi]?.[1] ?? 0)] as const);
-                const bottom = result.xs.map((_x, xi) => [cx0(xi), y(spans[si][xi]?.[0] ?? 0)] as const);
-                const line = top.map(([px, py], i) => `${i ? 'L' : 'M'}${px},${py}`).join(' ');
-                const area = `${line} ${[...bottom]
-                  .reverse()
-                  .map(([px, py]) => `L${px},${py}`)
-                  .join(' ')} Z`;
+                // Gaps (no data) break the line; each unbroken run is its own path segment.
+                const pts = result.xs.map((_x, xi) => {
+                  const sp = spans[si][xi];
+                  return sp ? ([cx0(xi), y(sp[1]), y(sp[0])] as const) : null;
+                });
+                const runs: Array<Array<readonly [number, number, number]>> = [];
+                pts.forEach((p, i) => {
+                  if (!p) {
+                    return;
+                  }
+                  if (i === 0 || !pts[i - 1]) {
+                    runs.push([]);
+                  }
+                  runs[runs.length - 1].push(p);
+                });
+                const line = runs.map((r) => r.map(([px, py], i) => `${i ? 'L' : 'M'}${px},${py}`).join(' ')).join(' ');
+                const area = runs
+                  .map(
+                    (r) =>
+                      `${r.map(([px, py], i) => `${i ? 'L' : 'M'}${px},${py}`).join(' ')} ${[...r]
+                        .reverse()
+                        .map(([px, , py0]) => `L${px},${py0}`)
+                        .join(' ')} Z`
+                  )
+                  .join(' ');
+                const top = pts;
                 return (
                   <g key={si}>
                     {chartType === 'area' && <path d={area} fill={color(si)} opacity={0.35} pointerEvents="none" />}
                     <path d={line} fill="none" stroke={color(si)} strokeWidth={2} pointerEvents="none" />
-                    {top.map(([px, py], xi) => (
-                      <circle
-                        key={xi}
-                        cx={px}
-                        cy={py}
-                        r={n > 80 ? 2 : 3}
-                        fill={color(si)}
-                        role="button"
-                        tabIndex={0}
-                        aria-label={itemLabel(xi, si)}
-                        className={styles.mark}
-                        onClick={(e) => select(e, xi, si)}
-                        onKeyDown={(e) => e.key === 'Enter' && select(e, xi, si)}
-                      >
-                        <title>{itemLabel(xi, si)}</title>
-                      </circle>
-                    ))}
+                    {top.map((p, xi) =>
+                      p ? (
+                        <circle
+                          key={xi}
+                          cx={p[0]}
+                          cy={p[1]}
+                          r={n > 80 ? 2 : 3}
+                          fill={color(si)}
+                          role="button"
+                          tabIndex={0}
+                          aria-label={itemLabel(xi, si)}
+                          className={styles.mark}
+                          onClick={(e) => select(e, xi, si)}
+                          onKeyDown={(e) => e.key === 'Enter' && select(e, xi, si)}
+                        >
+                          <title>{itemLabel(xi, si)}</title>
+                        </circle>
+                      ) : null
+                    )}
                   </g>
                 );
               })}
@@ -331,10 +382,10 @@ export function XyChart({ chartType, subType, result, bucketMs, onSelect, onBrus
                 name="ellipsis-v"
                 size="sm"
                 tooltip={`Legend actions for ${s.name || '(empty)'}`}
-                onClick={() => setMenuFor(menuFor === si ? null : si)}
+                onClick={() => setMenuFor(menuFor === s.name ? null : s.name)}
               />
             )}
-            {menuFor === si && (
+            {menuFor === s.name && onLegendFilter && (
               <div className={styles.menu} role="menu" aria-label={`Actions for ${s.name}`}>
                 <div className={styles.menuTitle}>{s.breakdown || '(empty)'}</div>
                 {(['for', 'out'] as const).map((m) => (
