@@ -20,6 +20,8 @@ import { LensResult } from '../compile';
 import { LensState } from '../state';
 import { XyChart, XySelection } from './XyChart';
 import { withMetricAppearance } from './fieldConfig';
+import { MetricTiles } from './MetricTiles';
+import { tableColumns, tableOverrides } from '../tableChart';
 
 interface PanelSpec {
   pluginId: string;
@@ -116,21 +118,18 @@ function basePanelSpec(state: LensState, result: LensResult): PanelSpec {
       };
     }
     case 'table': {
-      const { columns, rows } = result.table;
-      const fields = columns.map((name, i) => {
-        const isTime = state.buckets[i]?.kind === 'date_histogram';
-        const isNum = i >= state.buckets.length;
-        return {
-          name,
-          type: isTime ? FieldType.time : isNum ? FieldType.number : FieldType.string,
-          values: rows.map((r) => r[i]),
-        };
-      });
+      // Rows / Split metrics by / Metrics, summary row and colour by value (LENS-CHART-01).
+      const columns = tableColumns(state, result.table);
+      const fields = columns.map((c) => ({
+        name: c.name,
+        type: c.kind === 'time' ? FieldType.time : c.kind === 'number' ? FieldType.number : FieldType.string,
+        values: c.values,
+      }));
       return {
         pluginId: 'table',
         frames: [createDataFrame({ fields })],
         options: { showHeader: true },
-        fieldConfig: { defaults: {}, overrides: [] },
+        fieldConfig: { defaults: {}, overrides: tableOverrides(columns, state.metrics) },
       };
     }
   }
@@ -163,6 +162,14 @@ export function LensChart({ state, result, timeRange, onChangeTimeRange, bucketM
           onLegendFilter={onLegendFilter}
           metrics={state.metrics}
         />
+      </div>
+    );
+  }
+  if (state.chartType === 'metric') {
+    // Tiles drawn here: secondary metric, maximum-value progress bar (LENS-CHART-01).
+    return (
+      <div className={styles.box} data-testid="lens-chart" data-chart-type="metric" data-panel="tiles">
+        <MetricTiles state={state} result={result} />
       </div>
     );
   }

@@ -138,11 +138,13 @@ export function switchChart(state: LensState, target: ChartType, ctx: LensContex
       }
       buckets = buckets.slice(0, 2);
       break;
-    case 'metric':
-      // Primary + secondary metric; one "Break down by" (a category, not time).
+    case 'metric': {
+      // Primary + secondary metric (+ a Maximum value, LENS-CHART-01); one "Break down by" (a category, not time).
       buckets = buckets.filter((b) => b.kind !== 'date_histogram').slice(0, 1);
-      metrics = metrics.slice(0, 2);
+      const max = metrics.find((m) => m.role === 'max');
+      metrics = [...metrics.filter((m) => m.role !== 'max').slice(0, 2), ...(max ? [max] : [])];
       break;
+    }
     case 'pie':
       // One "Slice by" (nested slices need a sunburst Grafana doesn't ship).
       buckets = buckets.filter((b) => b.kind !== 'date_histogram').slice(0, 1);
@@ -151,8 +153,15 @@ export function switchChart(state: LensState, target: ChartType, ctx: LensContex
     case 'table':
       break;
   }
-  if (metrics.length === 0) {
-    metrics = [countMetric()];
+  // Chart-specific roles (LENS-CHART-01) only mean something on their own chart type.
+  if (target !== 'table') {
+    buckets = buckets.map(({ pivot: _p, ...b }) => b as BucketDim);
+  }
+  if (target !== 'metric') {
+    metrics = metrics.map(({ role: _r, ...m }) => m as MetricDim);
+  }
+  if (metrics.every((m) => m.role === 'max')) {
+    metrics = [countMetric(), ...metrics];
   }
   const next: LensState = { chartType: target, buckets, metrics };
   if (isXy(target)) {
