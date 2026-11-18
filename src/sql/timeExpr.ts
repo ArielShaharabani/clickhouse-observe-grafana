@@ -14,7 +14,8 @@
  * a native column — it is never inserted into SQL itself.
  */
 import { SourceConfig, TimestampFormat } from '../types';
-import { quoteIdentifier } from './queryBuilder';
+import { quoteIdentifier, tableRef } from './queryBuilder';
+import { configSettingsFragments, withSettings } from './settings';
 
 export const TIMESTAMP_FORMATS: Record<TimestampFormat, { label: string; description: string }> = {
   native: { label: 'Date / time column', description: 'Used as is.' },
@@ -139,4 +140,16 @@ export function guessEpochFormat(sample: unknown): TimestampFormat {
     return 'epoch_us';
   }
   return 'epoch_ns';
+}
+
+/**
+ * One recent non-zero value of a candidate time column, read to guess its epoch unit
+ * (`guessEpochFormat`). Column and table go through the identifier quoting helpers.
+ */
+export function buildTimeSampleQuery(config: SourceConfig, table: string, column: string): string {
+  const q = quoteIdentifier(column);
+  return withSettings(
+    [`SELECT toString(${q}) AS v`, `FROM ${tableRef(config, table)}`, `WHERE ${q} != 0`, `LIMIT 1`],
+    configSettingsFragments(config)
+  );
 }

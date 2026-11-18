@@ -31,6 +31,7 @@ const QUERY_OP_LABELS: Partial<Record<SpanKind, string>> = {
   wizardTables: 'Data view setup: tables',
   wizardColumns: 'Data view setup: columns',
   wizardJsonPaths: 'Data view setup: JSON paths',
+  wizardTimeSample: 'Data view setup: time sample',
   lens: 'Visualize chart',
 };
 
@@ -50,6 +51,7 @@ const QUERY_OP_HINTS: Partial<Record<SpanKind, string>> = {
   wizardTables: 'Lists tables while setting up a data view.',
   wizardColumns: 'Lists columns while setting up a data view.',
   wizardJsonPaths: 'Discovers JSON paths while setting up a data view.',
+  wizardTimeSample: 'Reads one value of a numeric time column to guess its epoch unit.',
   lens: 'Aggregates the data for the Visualize page chart.',
 };
 

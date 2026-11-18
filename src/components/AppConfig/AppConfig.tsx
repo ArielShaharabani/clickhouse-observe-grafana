@@ -4,7 +4,7 @@
  * Users can also create personal (per-browser) views from the Logs Explorer header.
  */
 
-import React, { ChangeEvent, useState } from 'react';
+import React, { ChangeEvent, useMemo, useState } from 'react';
 import { lastValueFrom } from 'rxjs';
 import { css } from '@emotion/css';
 import { AppPluginMeta, GrafanaTheme2, PluginConfigPageProps, PluginMeta } from '@grafana/data';
@@ -22,6 +22,7 @@ import {
 } from '../../types';
 import { migrateLegacyConfig } from '../../data/dataViews';
 import { ColumnMappingForm } from '../ColumnMappingForm';
+import { epochGuesser, TimeFieldSelect, useTableColumns } from '../DataViewPicker/TimeFieldSelect';
 
 export interface AppConfigProps extends PluginConfigPageProps<AppPluginMeta<AppJsonData>> {}
 
@@ -227,20 +228,9 @@ const AppConfig = ({ plugin }: AppConfigProps) => {
                   />
                 </Field>
 
-                <ColumnMappingForm
-                  value={v.columns}
-                  onChange={(updated) => patchView(v.id, { columns: updated })}
-                  onApplyOtelPreset={() => {
-                    const preset = applyOtelPreset(v);
-                    patchView(v.id, {
-                      logsTable: preset.logsTable,
-                      isOtel: true,
-                      columns: preset.columns,
-                    });
-                  }}
-                  onClearMapping={() =>
-                    patchView(v.id, { isOtel: false, columns: { ...EMPTY_COLUMN_MAPPING } })
-                  }
+                <SharedViewColumns
+                  view={v}
+                  onPatch={(patch) => patchView(v.id, patch)}
                 />
               </div>
             )}
@@ -307,6 +297,61 @@ const AppConfig = ({ plugin }: AppConfigProps) => {
 
 export default AppConfig;
 
+/**
+ * Column mapping of a shared view (PLAN #16d): same pickers as "Create data view" — the time field
+ * (with epoch / text conversion) and every other mapping chosen from the table's real columns.
+ * Falls back to typed names while the columns can't be listed (no datasource / unknown table).
+ */
+function SharedViewColumns({ view, onPatch }: { view: DataView; onPatch: (patch: Partial<DataView>) => void }) {
+  const styles = useStyles2(getStyles);
+  const { columns, loading, error } = useTableColumns(view.datasourceUid, view.database, view.logsTable, true);
+  const columnOptions = useMemo(
+    () => (columns.length > 0 ? columns.map((c) => ({ label: c.name, value: c.name, description: c.type })) : undefined),
+    [columns]
+  );
+  return (
+    <FieldSet label="Column Mapping">
+      <div className={styles.columnsStatus} data-testid="shared-view-columns-status">
+        {loading
+          ? 'Loading table columns…'
+          : error
+            ? `Could not list the table's columns (${error}); type column names instead.`
+            : columns.length > 0
+              ? `${columns.length} columns in ${view.database}.${view.logsTable}.`
+              : 'Pick a datasource, database and table to choose columns from a list.'}
+      </div>
+      <TimeFieldSelect
+        columns={columns}
+        timestamp={view.columns.timestamp}
+        format={view.timestampFormat}
+        onChange={(timestamp, format) =>
+          onPatch({
+            columns: { ...view.columns, timestamp },
+            timestampFormat: timestamp && format !== 'native' ? format : undefined,
+          })
+        }
+        guessEpoch={epochGuesser(view, view.logsTable)}
+        allowCustomValue
+        width={40}
+      />
+      <ColumnMappingForm
+        value={view.columns}
+        onChange={(updated) => onPatch({ columns: updated })}
+        columnOptions={columnOptions}
+        omitKeys={['timestamp']}
+        bare
+        onApplyOtelPreset={() => {
+          const preset = applyOtelPreset(view);
+          onPatch({ logsTable: preset.logsTable, isOtel: true, columns: preset.columns, timestampFormat: undefined });
+        }}
+        onClearMapping={() =>
+          onPatch({ isOtel: false, columns: { ...EMPTY_COLUMN_MAPPING }, timestampFormat: undefined })
+        }
+      />
+    </FieldSet>
+  );
+}
+
 const getStyles = (theme: GrafanaTheme2) => ({
   page: css`
     max-width: 780px;
@@ -371,6 +416,11 @@ const getStyles = (theme: GrafanaTheme2) => ({
   viewEditor: css`
     padding: ${theme.spacing(2)};
     background: ${theme.colors.background.primary};
+  `,
+  columnsStatus: css`
+    color: ${theme.colors.text.secondary};
+    font-size: ${theme.typography.bodySmall.fontSize};
+    margin-bottom: ${theme.spacing(1.5)};
   `,
   footer: css`
     margin-top: ${theme.spacing(3)};

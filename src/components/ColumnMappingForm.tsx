@@ -17,6 +17,10 @@ interface ColumnMappingFormProps {
    * a plain text input. Omit to keep the old free-text behavior (e.g. AppConfig, which has no
    * live column list to offer). */
   columnOptions?: Array<SelectableValue<string>>;
+  /** Mapping keys edited elsewhere (the time field has its own picker, TimeFieldSelect). */
+  omitKeys?: Array<keyof ColumnMapping>;
+  /** Render without the "Column Mapping" FieldSet (the caller already provides one). */
+  bare?: boolean;
 }
 
 export function ColumnMappingForm({
@@ -25,13 +29,15 @@ export function ColumnMappingForm({
   onApplyOtelPreset,
   onClearMapping,
   columnOptions,
+  omitKeys,
+  bare,
 }: ColumnMappingFormProps) {
   const setField = (key: keyof ColumnMapping, v: string) => {
     onChange({ ...value, [key]: v });
   };
 
-  return (
-    <FieldSet label="Column Mapping">
+  const body = (
+    <>
       {(onApplyOtelPreset || onClearMapping) && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
           {onApplyOtelPreset && (
@@ -51,7 +57,7 @@ export function ColumnMappingForm({
         </div>
       )}
 
-      {COL_FIELDS.map(({ key, label, description, required }) => (
+      {COL_FIELDS.filter((f) => !omitKeys?.includes(f.key)).map(({ key, label, description, required }) => (
         <Field key={key} label={label} description={description} required={required}>
           {columnOptions ? (
             <Select
@@ -74,6 +80,7 @@ export function ColumnMappingForm({
           )}
         </Field>
       ))}
-    </FieldSet>
+    </>
   );
+  return bare ? body : <FieldSet label="Column Mapping">{body}</FieldSet>;
 }

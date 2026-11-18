@@ -5,7 +5,7 @@
  */
 import React, { ChangeEvent, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { css } from '@emotion/css';
-import { dateTime, GrafanaTheme2, SelectableValue, TimeRange } from '@grafana/data';
+import { GrafanaTheme2, SelectableValue, TimeRange } from '@grafana/data';
 import { getDataSourceSrv } from '@grafana/runtime';
 import { Alert, Button, Checkbox, Field, Input, Modal, MultiSelect, Select, Spinner, Switch, useStyles2 } from '@grafana/ui';
 import { AiConfigContext, DataViewContext } from '../App/App';
@@ -15,13 +15,23 @@ import { applyOtelPreset } from '../../sql/schema';
 import { DEFAULT_QUERY_TIMEOUT_SECONDS } from '../../sql/settings';
 import { useFieldDiscovery, runWithConcurrencyLimit } from '../FieldsContext';
 import { fieldToColumn } from '../FieldSidebar/FieldSidebar';
-import { ColumnMapping, DataView, DEFAULT_SOURCE_CONFIG, EMPTY_COLUMN_MAPPING, SelectedColumn, SourceConfig } from '../../types';
+import {
+  ColumnMapping,
+  DataView,
+  DEFAULT_SOURCE_CONFIG,
+  EMPTY_COLUMN_MAPPING,
+  SelectedColumn,
+  SourceConfig,
+  TimestampFormat,
+} from '../../types';
 import { ColumnMappingForm } from '../ColumnMappingForm';
 import { COL_FIELDS } from '../../columnFields';
 import { guessColumnMapping, TableColumn } from '../../ai/columnGuess';
 import { expandColumnCandidates, JsonPathsByColumn } from '../../ai/columnCandidates';
 import { inferFieldType, parseJsonTypedPaths } from '../../sql/fieldModel';
 import { errMsg } from '../../errMsg';
+import { formatsForKind, normalizeTimestampFormat, timeColumnKind } from '../../sql/timeExpr';
+import { epochGuesser, NO_TIME_VALUE, schemaTimeRange, TimeFieldSelect } from './TimeFieldSelect';
 
 interface CreateDataViewModalProps {
   isOpen: boolean;
@@ -33,25 +43,7 @@ interface CreateDataViewModalProps {
   editingView?: DataView;
 }
 
-const NO_TIME_VALUE = '__no_time__';
 const NO_BODY_VALUE = '__no_body__';
-
-// Matches ClickHouse Date, Date32, DateTime, DateTime64(...), unwrapping
-// Nullable(...) / LowCardinality(...) wrappers first.
-function isTimeColumnType(rawType: string): boolean {
-  const t = rawType.toLowerCase().replace(/^(nullable|lowcardinality)\(([^)]+)\)$/, '$2');
-  return /^date(32|time(64)?)?\b/.test(t);
-}
-
-// A minimal valid time range for schema-only introspection queries.
-function schemaTimeRange(): TimeRange {
-  const now = Date.now();
-  return {
-    from: dateTime(now - 3600 * 1000),
-    to: dateTime(now),
-    raw: { from: 'now-1h', to: 'now' },
-  };
-}
 
 type Step = 'location' | 'columns';
 
@@ -84,7 +76,6 @@ export function CreateDataViewModal({ isOpen, onDismiss, editingView }: CreateDa
   const [loadingTables, setLoadingTables] = useState(false);
 
   // Step 2 state
-  const [columnOptions, setColumnOptions] = useState<Array<SelectableValue<string>>>([]);
   const [allColumnOptions, setAllColumnOptions] = useState<Array<SelectableValue<string>>>([]);
   // Raw name+type pairs for the current table — the input the AI guesser needs (allColumnOptions
   // only carries names). Populated alongside columnOptions/allColumnOptions in goToColumnsStepFor.
@@ -92,6 +83,8 @@ export function CreateDataViewModal({ isOpen, onDismiss, editingView }: CreateDa
   const [loadingCols, setLoadingCols] = useState(false);
   const [aiBusy, setAiBusy] = useState(false);
   const [timestampField, setTimestampField] = useState<string | undefined>(undefined);
+  // How the time column is read (PLAN #16d): native date/time, epoch unit, or parsed text.
+  const [timestampFormat, setTimestampFormat] = useState<TimestampFormat>('native');
   const [bodyField, setBodyField] = useState<string | undefined>(undefined);
   const [mapping, setMapping] = useState<ColumnMapping>({ ...EMPTY_COLUMN_MAPPING });
   const [showAdvanced, setShowAdvanced] = useState(false);
@@ -134,9 +127,9 @@ export function CreateDataViewModal({ isOpen, onDismiss, editingView }: CreateDa
     setLogsTable('');
     setDbOptions([]);
     setTableOptions([]);
-    setColumnOptions([]);
     setTableColumns([]);
     setTimestampField(undefined);
+    setTimestampFormat('native');
     setBodyField(undefined);
     setMapping({ ...EMPTY_COLUMN_MAPPING });
     setShowAdvanced(false);
@@ -189,6 +182,7 @@ export function CreateDataViewModal({ isOpen, onDismiss, editingView }: CreateDa
       setLogsTable(editingView.logsTable);
       setMapping({ ...editingView.columns });
       setTimestampField(editingView.columns.timestamp || NO_TIME_VALUE);
+      setTimestampFormat(normalizeTimestampFormat(editingView.timestampFormat));
       setBodyField(editingView.columns.body || NO_BODY_VALUE);
       setApplyOtel(editingView.isOtel);
       setName(editingView.name);
@@ -294,6 +288,7 @@ export function CreateDataViewModal({ isOpen, onDismiss, editingView }: CreateDa
         setApplyOtel(false);
         setMapping({ ...EMPTY_COLUMN_MAPPING });
         setTimestampField(undefined);
+        setTimestampFormat('native');
         setBodyField(undefined);
         setName(`${db}.${table}`);
       }
@@ -361,13 +356,6 @@ export function CreateDataViewModal({ isOpen, onDismiss, editingView }: CreateDa
   // the initial tuple-only pass and the later JSON-path-filled pass in goToColumnsStepFor.
   function applyCandidates(candidates: TableColumn[]) {
     setTableColumns(candidates);
-
-    const dateTimeCols = candidates.filter((c) => isTimeColumnType(c.type)).map((c) => c.name);
-    const timestampOpts: Array<SelectableValue<string>> = [
-      { label: '— No time field', value: NO_TIME_VALUE },
-      ...dateTimeCols.map((c) => ({ label: c, value: c, description: 'date/time type' })),
-    ];
-    setColumnOptions(timestampOpts);
     setAllColumnOptions(candidates.map((c) => ({ label: c.name, value: c.name })));
   }
 
@@ -375,12 +363,16 @@ export function CreateDataViewModal({ isOpen, onDismiss, editingView }: CreateDa
     return goToColumnsStepFor(datasourceUid, database, logsTable);
   }
 
-  function onTimestampChange(v: string) {
-    setTimestampField(v);
-    setMapping((prev) => ({
-      ...prev,
-      timestamp: v === NO_TIME_VALUE ? '' : v,
-    }));
+  function onTimestampChange(v: string, format: TimestampFormat) {
+    setTimestampField(v || NO_TIME_VALUE);
+    setTimestampFormat(v ? format : 'native');
+    setMapping((prev) => ({ ...prev, timestamp: v }));
+  }
+
+  /** Default reading of a column picked outside the time picker (AI guess): by its type. */
+  function defaultFormatFor(col: string): TimestampFormat {
+    const t = tableColumns.find((c) => c.name === col)?.type ?? '';
+    return formatsForKind(timeColumnKind(t))[0] ?? 'native';
   }
 
   function onBodyChange(v: string) {
@@ -406,6 +398,7 @@ export function CreateDataViewModal({ isOpen, onDismiss, editingView }: CreateDa
       setMapping((prev) => {
         const next = { ...prev, ...guessed };
         setTimestampField(next.timestamp || NO_TIME_VALUE);
+        setTimestampFormat(next.timestamp ? defaultFormatFor(next.timestamp) : 'native');
         setBodyField(next.body || NO_BODY_VALUE);
         return next;
       });
@@ -428,10 +421,12 @@ export function CreateDataViewModal({ isOpen, onDismiss, editingView }: CreateDa
       const preset = applyOtelPreset(tmp);
       setMapping({ ...preset.columns });
       setTimestampField(preset.columns.timestamp || NO_TIME_VALUE);
+      setTimestampFormat('native');
       setBodyField(preset.columns.body || NO_BODY_VALUE);
     } else {
       setMapping({ ...EMPTY_COLUMN_MAPPING });
       setTimestampField(undefined);
+      setTimestampFormat('native');
       setBodyField(undefined);
     }
   }
@@ -457,6 +452,8 @@ export function CreateDataViewModal({ isOpen, onDismiss, editingView }: CreateDa
         logsTable,
         isOtel: applyOtel,
         columns: mapping,
+        // Key always present so an edit back to a native column clears a stored conversion.
+        timestampFormat: mapping.timestamp && timestampFormat !== 'native' ? timestampFormat : undefined,
         name: name.trim() || `${database}.${logsTable}`,
         pinnedColumns: pinnedColumns.length > 0 ? pinnedColumns : undefined,
         sequentialConsistency,
@@ -610,19 +607,16 @@ export function CreateDataViewModal({ isOpen, onDismiss, editingView }: CreateDa
                 </div>
               )}
 
-              <Field
-                label="Timestamp field"
-                description='Pick the column that holds the event time, or choose "No time field" for timeless tables.'
-                required
-              >
-                <Select
-                  width={36}
-                  value={timestampField}
-                  options={columnOptions}
-                  onChange={(opt) => onTimestampChange(opt.value ?? NO_TIME_VALUE)}
-                  placeholder="Select timestamp column…"
-                />
-              </Field>
+              <TimeFieldSelect
+                columns={tableColumns}
+                timestamp={timestampField === undefined ? undefined : timestampField === NO_TIME_VALUE ? '' : timestampField}
+                format={timestampFormat}
+                onChange={onTimestampChange}
+                guessEpoch={epochGuesser(
+                  { ...DEFAULT_SOURCE_CONFIG, datasourceUid, database, sequentialConsistency },
+                  logsTable
+                )}
+              />
 
               <Field label="Body / message field" description="The primary text content of each log line.">
                 <Select
@@ -659,10 +653,10 @@ export function CreateDataViewModal({ isOpen, onDismiss, editingView }: CreateDa
                       value={mapping}
                       onChange={(updated) => {
                         setMapping(updated);
-                        setTimestampField(updated.timestamp || NO_TIME_VALUE);
                         setBodyField(updated.body || NO_BODY_VALUE);
                       }}
                       columnOptions={allColumnOptions}
+                      omitKeys={['timestamp']}
                     />
                   )}
 
