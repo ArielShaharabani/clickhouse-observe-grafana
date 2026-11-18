@@ -25,6 +25,9 @@ export interface SessionActionsProps {
   config: SourceConfig;
   /** Current query state with the grid's effective columns. */
   queryState: LogsQueryState;
+  /** The user's own column choice (`[]` = view defaults), as Saved searches store it — used for the
+   *  unsaved-changes check. Defaults to `queryState.columns`. */
+  rawColumns?: LogsQueryState['columns'];
   timeRange: TimeRange;
   index?: FieldIndex;
   viewId?: string;
@@ -39,7 +42,16 @@ function notify(type: 'success' | 'error', text: string) {
   });
 }
 
-export function SessionActions({ config, queryState, timeRange, index, viewId, viewName, onOpenDiagnostics }: SessionActionsProps) {
+export function SessionActions({
+  config,
+  queryState,
+  rawColumns,
+  timeRange,
+  index,
+  viewId,
+  viewName,
+  onOpenDiagnostics,
+}: SessionActionsProps) {
   const styles = useStyles2(getStyles);
   const [shareOpen, setShareOpen] = useState(false);
   const [absolute, setAbsolute] = useState(false);
@@ -49,7 +61,9 @@ export function SessionActions({ config, queryState, timeRange, index, viewId, v
   const hasTime = Boolean(config.columns.timestamp);
   const relative = isRelativeRange(timeRange);
   const shareUrl = shareOpen ? buildShareUrl(window.location.href, timeRange, absolute) : '';
-  const unsaved = shareOpen ? hasUnsavedChanges(queryState, loadSavedSearches(), viewId) : false;
+  const unsaved = shareOpen
+    ? hasUnsavedChanges({ ...queryState, columns: rawColumns ?? queryState.columns }, loadSavedSearches(), viewId)
+    : false;
 
   const exportCsv = async () => {
     if (queryState.useRawSql) {
@@ -57,8 +71,20 @@ export function SessionActions({ config, queryState, timeRange, index, viewId, v
     }
     setExporting(true);
     try {
-      const sql = buildLogsQuery(config, queryState, { limit: CSV_EXPORT_LIMIT, offset: 0 }, { projection: 'grid' }, index);
-      const rows = await runQueryRows({ datasourceUid: config.datasourceUid, sql, timeRange, op: 'export', refId: 'export' });
+      const sql = buildLogsQuery(
+        config,
+        queryState,
+        { limit: CSV_EXPORT_LIMIT, offset: 0 },
+        { projection: 'grid' },
+        index
+      );
+      const rows = await runQueryRows({
+        datasourceUid: config.datasourceUid,
+        sql,
+        timeRange,
+        op: 'export',
+        refId: 'export',
+      });
       downloadCsv(csvFileName(viewName), rowsToCsv(queryState.columns, rows));
       notify(
         'success',
@@ -93,7 +119,11 @@ export function SessionActions({ config, queryState, timeRange, index, viewId, v
         label={exporting ? 'Exporting…' : 'Export tab results (CSV)'}
         icon="download-alt"
         disabled={exporting || queryState.useRawSql}
-        description={queryState.useRawSql ? 'Available in the query builder' : `Up to ${CSV_EXPORT_LIMIT.toLocaleString()} documents`}
+        description={
+          queryState.useRawSql
+            ? 'Available in the query builder'
+            : `Up to ${CSV_EXPORT_LIMIT.toLocaleString()} documents`
+        }
         onClick={exportCsv}
       />
       <Menu.Item label="Inspect" icon="stopwatch" onClick={onOpenDiagnostics} />
@@ -122,7 +152,13 @@ export function SessionActions({ config, queryState, timeRange, index, viewId, v
         Share
       </Button>
       <Dropdown overlay={menu} placement="bottom-end">
-        <Button variant="secondary" size="sm" icon="ellipsis-v" aria-label="More Discover actions" tooltip="More actions" />
+        <Button
+          variant="secondary"
+          size="sm"
+          icon="ellipsis-v"
+          aria-label="More Discover actions"
+          tooltip="More actions"
+        />
       </Dropdown>
 
       <Modal title="Share this Discover session" isOpen={shareOpen} onDismiss={() => setShareOpen(false)}>
@@ -144,7 +180,8 @@ export function SessionActions({ config, queryState, timeRange, index, viewId, v
           </Field>
           {unsaved && (
             <Alert severity="warning" title="You have unsaved changes">
-              The link shares the current search, filters, columns and time range. Save the search to keep it in Saved searches.
+              The link shares the current search, filters, columns and time range. Save the search to keep it in Saved
+              searches.
             </Alert>
           )}
           <Field label="Link">
