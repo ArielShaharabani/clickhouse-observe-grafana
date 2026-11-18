@@ -2,7 +2,7 @@ import React, { useCallback, useContext, useEffect, useLayoutEffect, useMemo, us
 import { css, cx } from '@emotion/css';
 import { dateTime, GrafanaTheme2, PageLayoutType, rangeUtil, TimeRange } from '@grafana/data';
 import { locationService, PluginPage } from '@grafana/runtime';
-import { Button, Icon, Spinner, useStyles2, TimeRangePicker, RefreshPicker, useSplitter } from '@grafana/ui';
+import { Button, Icon, RadioButtonGroup, Spinner, useStyles2, TimeRangePicker, RefreshPicker, useSplitter } from '@grafana/ui';
 import { GridDisplay, GridDisplayOptions, loadGridDisplay, saveGridDisplay } from '../components/GridDisplayOptions';
 import { useSearchParams } from 'react-router-dom';
 import { SearchBar } from '../components/SearchBar';
@@ -16,6 +16,7 @@ import { LogsHistogramPanel } from '../components/LogsHistogramPanel';
 import { FieldSidebar, fieldToColumn } from '../components/FieldSidebar/FieldSidebar';
 import { FieldsContext, useFieldDiscovery } from '../components/FieldsContext';
 import { PaginationBar } from '../components/PaginationBar';
+import { FieldStatsTab } from '../components/FieldStatsTab/FieldStatsTab';
 import { DataViewPicker } from '../components/DataViewPicker/DataViewPicker';
 import { AddToDashboardModal } from '../components/AddToDashboard/AddToDashboardModal';
 import { SqlInspectorBar } from '../components/SqlInspectorBar';
@@ -53,6 +54,12 @@ import { useAvailableHeight } from '../utils/useAvailableHeight';
 import { lensContextFor, lensFieldOf, lensForField, lensForHistogram, visualizeUrl } from '../lens/handoff';
 import { defaultColumns } from '../data/columns';
 // Re-exported for existing importers (tests).
+type ResultsTab = 'documents' | 'fieldStats';
+const RESULTS_TABS: Array<{ label: string; value: ResultsTab }> = [
+  { label: 'Documents', value: 'documents' },
+  { label: 'Field statistics', value: 'fieldStats' },
+];
+
 export { defaultColumns } from '../data/columns';
 import { logsQueryReducer } from './_logsQueryReducer';
 
@@ -343,6 +350,8 @@ export function LogsExplorer() {
   const [showDiagnostics, setShowDiagnostics] = useState(false);
   // Grid display options (DISC-TABLE-01), remembered per viewer.
   const [gridDisplay, setGridDisplayState] = useState<GridDisplay>(loadGridDisplay);
+  // DISC-FIELDSTATS-01: results tabs (Documents | Field statistics).
+  const [resultsTab, setResultsTab] = useState<ResultsTab>('documents');
   const setGridDisplay = useCallback((d: GridDisplay) => {
     setGridDisplayState(d);
     saveGridDisplay(d);
@@ -1504,7 +1513,20 @@ export function LogsExplorer() {
                   onToggleCollapsed={() => setHistogramCollapsed((v) => !v)}
                 />
                 <div className={styles.tableToolbar}>
-                  {compareSelection.size >= 2 && (
+                  <RadioButtonGroup<ResultsTab>
+                    size="sm"
+                    aria-label="Results view"
+                    options={RESULTS_TABS}
+                    value={resultsTab}
+                    onChange={(tab) => {
+                      setResultsTab(tab);
+                      if (tab !== 'documents') {
+                        setSelectedRow(null);
+                        setDetailExpanded(false);
+                      }
+                    }}
+                  />
+                  {resultsTab === 'documents' && compareSelection.size >= 2 && (
                     <Button
                       variant="secondary"
                       size="sm"
@@ -1520,45 +1542,57 @@ export function LogsExplorer() {
                       Compare ({compareSelection.size})
                     </Button>
                   )}
-                  <GridDisplayOptions value={gridDisplay} onChange={setGridDisplay} />
+                  {resultsTab === 'documents' && <GridDisplayOptions value={gridDisplay} onChange={setGridDisplay} />}
                   <div className={styles.headerSpacer} />
                 </div>
-                <LogsTable
-                  rows={pageRows}
-                  loading={loading && rows.length === 0}
-                  columns={effectiveColumns}
-                  sort={queryState.sort}
-                  onRowClick={(row) => {
-                    if (selectedRow === row) {
-                      setSelectedRow(null);
-                      setDetailExpanded(false);
-                    } else {
-                      setSelectedRow(row);
-                    }
-                  }}
-                  onSort={(col) => dispatch({ type: 'SET_SORT', col })}
-                  onRemoveColumn={(col) => dispatch({ type: 'REMOVE_COLUMN', id: col.id, columns: effectiveColumns })}
-                  onMoveColumn={(id, direction) => dispatch({ type: 'REORDER_COLUMN', id, direction, columns: effectiveColumns })}
-                  onMoveColumnTo={(id, targetId) => dispatch({ type: 'MOVE_COLUMN_TO', id, targetId, columns: effectiveColumns })}
-                  selectedRow={selectedRow}
-                  display={gridDisplay}
-                  onPageStep={onPageStep}
-                  compareSelection={compareSelection}
-                  onToggleCompare={onToggleCompare}
-                  highlighterFor={highlighterFor}
-                  onAddFilter={onAddFilter}
-                  onDropField={onDropField}
-                />
-                <PaginationBar
-                  page={currentPage}
-                  pageSize={pageSize}
-                  pageSizeOptions={PAGE_SIZE_OPTIONS}
-                  totalLoaded={rows.length}
-                  hasMore={hasMore}
-                  fetchingMore={fetchingMore}
-                  onPageChange={onPageChange}
-                  onPageSizeChange={onPageSizeChange}
-                />
+                {resultsTab === 'fieldStats' && (
+                  <FieldStatsTab
+                    queryState={{ ...queryState, columns: effectiveColumns }}
+                    timeRange={timeRange}
+                    onAddFilter={onAddFilter}
+                    onVisualize={onVisualizeField}
+                  />
+                )}
+                {resultsTab === 'documents' && (
+                  <>
+                  <LogsTable
+                    rows={pageRows}
+                    loading={loading && rows.length === 0}
+                    columns={effectiveColumns}
+                    sort={queryState.sort}
+                    onRowClick={(row) => {
+                      if (selectedRow === row) {
+                        setSelectedRow(null);
+                        setDetailExpanded(false);
+                      } else {
+                        setSelectedRow(row);
+                      }
+                    }}
+                    onSort={(col) => dispatch({ type: 'SET_SORT', col })}
+                    onRemoveColumn={(col) => dispatch({ type: 'REMOVE_COLUMN', id: col.id, columns: effectiveColumns })}
+                    onMoveColumn={(id, direction) => dispatch({ type: 'REORDER_COLUMN', id, direction, columns: effectiveColumns })}
+                    onMoveColumnTo={(id, targetId) => dispatch({ type: 'MOVE_COLUMN_TO', id, targetId, columns: effectiveColumns })}
+                    selectedRow={selectedRow}
+                    display={gridDisplay}
+                    onPageStep={onPageStep}
+                    compareSelection={compareSelection}
+                    onToggleCompare={onToggleCompare}
+                    highlighterFor={highlighterFor}
+                    onAddFilter={onAddFilter}
+                    onDropField={onDropField}
+                  />
+                  <PaginationBar
+                    page={currentPage}
+                    pageSize={pageSize}
+                    pageSizeOptions={PAGE_SIZE_OPTIONS}
+                    totalLoaded={rows.length}
+                    hasMore={hasMore}
+                    fetchingMore={fetchingMore}
+                    onPageChange={onPageChange}
+                    onPageSizeChange={onPageSizeChange}
+                  />
+                  </>
+                )}
               </div>
               {selectedRow && (
                 <>

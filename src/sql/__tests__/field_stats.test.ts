@@ -44,7 +44,11 @@ describe('buildFieldStatsBatchQuery', () => {
 
   it('returns empty SQL for no fields and clamps the sample', () => {
     expect(buildFieldStatsBatchQuery(config, [], { table: 't', conditions: [], sampleSize: 5 })).toBe('');
-    const s = buildFieldStatsBatchQuery(config, [{ sqlExpr: 'x', numeric: false }], { table: 't', conditions: [], sampleSize: 0 });
+    const s = buildFieldStatsBatchQuery(config, [{ sqlExpr: 'x', numeric: false }], {
+      table: 't',
+      conditions: [],
+      sampleSize: 0,
+    });
     expect(s).toContain('LIMIT 1');
     expect(s).not.toContain('WHERE');
   });
@@ -59,12 +63,32 @@ describe('parseFieldStatsRow', () => {
   it('maps positional columns to per-field stats (arrays or JSON text)', () => {
     const [kw, num] = parseFieldStatsRow(
       {
-        total: 5000, d0: 5000, u0: 2, tv0: ['info', 'warn'], tc0: [4000, 1000],
-        d1: 10, u1: 1, tv1: '["9"]', tc1: '[10]', nn1: 10, lo1: 9, hi1: 9, med1: 9, bk1: '[10,0,0,0,0,0,0,0,0,0]',
+        total: 5000,
+        d0: 5000,
+        u0: 2,
+        tv0: ['info', 'warn'],
+        tc0: [4000, 1000],
+        d1: 10,
+        u1: 1,
+        tv1: '["9"]',
+        tc1: '[10]',
+        nn1: 10,
+        lo1: 9,
+        hi1: 9,
+        med1: 9,
+        bk1: '[10,0,0,0,0,0,0,0,0,0]',
       },
       targets
     );
-    expect(kw).toEqual({ sampled: 5000, docs: 5000, distinct: 2, top: [{ value: 'info', count: 4000 }, { value: 'warn', count: 1000 }] });
+    expect(kw).toEqual({
+      sampled: 5000,
+      docs: 5000,
+      distinct: 2,
+      top: [
+        { value: 'info', count: 4000 },
+        { value: 'warn', count: 1000 },
+      ],
+    });
     expect(num.top).toEqual([{ value: '9', count: 10 }]);
     expect(num.numeric).toEqual({ count: 10, min: 9, max: 9, median: 9, buckets: [10, 0, 0, 0, 0, 0, 0, 0, 0, 0] });
   });

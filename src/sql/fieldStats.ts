@@ -58,7 +58,11 @@ export interface FieldStats {
 /** Same "absent" stand-ins buildFieldTopValuesQuery drops (empty, '{}', '[]', 'null'). */
 const present = (v: string) => `(notEmpty(${v}) AND ${v} NOT IN ('{}', '[]', 'null'))`;
 
-export function buildFieldStatsBatchQuery(config: SourceConfig, targets: FieldStatsTarget[], opts: FieldStatsBatchOpts): string {
+export function buildFieldStatsBatchQuery(
+  config: SourceConfig,
+  targets: FieldStatsTarget[],
+  opts: FieldStatsBatchOpts
+): string {
   if (targets.length === 0) {
     return '';
   }
@@ -130,7 +134,10 @@ function arr(raw: unknown): unknown[] {
   return [];
 }
 
-export function parseFieldStatsRow(row: Record<string, unknown> | undefined, targets: FieldStatsTarget[]): FieldStats[] {
+export function parseFieldStatsRow(
+  row: Record<string, unknown> | undefined,
+  targets: FieldStatsTarget[]
+): FieldStats[] {
   const sampled = row ? Number(row['total'] ?? 0) : 0;
   return targets.map((t, i) => {
     if (!row) {
