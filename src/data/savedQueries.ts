@@ -45,7 +45,13 @@ export function sanitizeSavedQuery(raw: unknown): SavedQuery | null {
     return null;
   }
   const r = raw as Record<string, unknown>;
-  if (typeof r.id !== 'string' || !r.id || typeof r.name !== 'string' || !r.name.trim() || typeof r.query !== 'string') {
+  if (
+    typeof r.id !== 'string' ||
+    !r.id ||
+    typeof r.name !== 'string' ||
+    !r.name.trim() ||
+    typeof r.query !== 'string'
+  ) {
     return null;
   }
   if (r.name.length > MAX_NAME || r.query.length > MAX_QUERY) {

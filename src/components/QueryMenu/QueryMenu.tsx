@@ -8,7 +8,19 @@
 import React, { useState } from 'react';
 import { css } from '@emotion/css';
 import { dateTime, GrafanaTheme2, rangeUtil, TimeRange } from '@grafana/data';
-import { Button, ConfirmModal, Dropdown, Field, IconButton, Input, Menu, Modal, Switch, TextArea, useStyles2 } from '@grafana/ui';
+import {
+  Button,
+  ConfirmModal,
+  Dropdown,
+  Field,
+  IconButton,
+  Input,
+  Menu,
+  Modal,
+  Switch,
+  TextArea,
+  useStyles2,
+} from '@grafana/ui';
 import { FilterPill } from '../../types';
 import {
   addSavedQuery,
@@ -161,7 +173,12 @@ export function QueryMenu({
           disabled={!query && filters.length === 0}
           onClick={() => setSaveMode({ kind: 'new' })}
         />
-        <Menu.Item label="Manage saved queries" icon="cog" disabled={saved.length === 0} onClick={() => setManageOpen(true)} />
+        <Menu.Item
+          label="Manage saved queries"
+          icon="cog"
+          disabled={saved.length === 0}
+          onClick={() => setManageOpen(true)}
+        />
         <Menu.Divider />
         <Menu.Group label="Language">
           <Menu.Item label="KQL" ariaChecked={true} role="menuitemradio" icon="check" />
@@ -188,7 +205,13 @@ export function QueryMenu({
           }
         }}
       >
-        <IconButton name="ellipsis-v" size="lg" tooltip="Query menu" aria-label="Query menu" className={styles.trigger} />
+        <IconButton
+          name="ellipsis-v"
+          size="lg"
+          tooltip="Query menu"
+          aria-label="Query menu"
+          className={styles.trigger}
+        />
       </Dropdown>
 
       {saveMode && (
@@ -204,7 +227,12 @@ export function QueryMenu({
               query,
               ...(meta.includeFilters ? { filters } : {}),
               ...(meta.includeTime
-                ? { timeRange: { from: rawBound(timeRange.raw.from, timeRange.from), to: rawBound(timeRange.raw.to, timeRange.to) } }
+                ? {
+                    timeRange: {
+                      from: rawBound(timeRange.raw.from, timeRange.from),
+                      to: rawBound(timeRange.raw.to, timeRange.to),
+                    },
+                  }
                 : {}),
               ...(dataViewId ? { dataViewId } : {}),
             };
@@ -271,7 +299,11 @@ function SaveQueryModal({
   return (
     <Modal title={target ? `Save changes to "${target.name}"` : 'Save query'} isOpen onDismiss={onDismiss}>
       <div className={styles.form}>
-        <Field label="Name" invalid={conflict} error={conflict ? 'Name conflicts with an existing saved query' : undefined}>
+        <Field
+          label="Name"
+          invalid={conflict}
+          error={conflict ? 'Name conflicts with an existing saved query' : undefined}
+        >
           <Input
             aria-label="Saved query name"
             value={name}
@@ -295,10 +327,18 @@ function SaveQueryModal({
           />
         </Field>
         <Field label="Include filters" horizontal>
-          <Switch aria-label="Include filters" value={includeFilters} onChange={(e) => setIncludeFilters(e.currentTarget.checked)} />
+          <Switch
+            aria-label="Include filters"
+            value={includeFilters}
+            onChange={(e) => setIncludeFilters(e.currentTarget.checked)}
+          />
         </Field>
         <Field label="Include time filter" horizontal>
-          <Switch aria-label="Include time filter" value={includeTime} onChange={(e) => setIncludeTime(e.currentTarget.checked)} />
+          <Switch
+            aria-label="Include time filter"
+            value={includeTime}
+            onChange={(e) => setIncludeTime(e.currentTarget.checked)}
+          />
         </Field>
         <Modal.ButtonRow>
           <Button variant="secondary" fill="outline" onClick={onDismiss}>
@@ -345,7 +385,12 @@ function ManageSavedQueriesModal({
                   {q.timeRange ? ' · time range' : ''}
                 </div>
               </div>
-              <IconButton name="trash-alt" aria-label={`Delete ${q.name}`} tooltip="Delete" onClick={() => setDeleting(q)} />
+              <IconButton
+                name="trash-alt"
+                aria-label={`Delete ${q.name}`}
+                tooltip="Delete"
+                onClick={() => setDeleting(q)}
+              />
             </li>
           ))}
         </ul>

@@ -28,7 +28,12 @@ export function applyToAll(filters: FilterPill[], action: ApplyToAllAction): Fil
  * Mirrors a bulk action into the pinned store (D7): pin stores every pill that was not pinned yet
  * on `table`; unpin removes every pinned pill; invert replaces a pinned pill's stored condition.
  */
-export function applyToAllPins(before: FilterPill[], after: FilterPill[], action: ApplyToAllAction, table: string): void {
+export function applyToAllPins(
+  before: FilterPill[],
+  after: FilterPill[],
+  action: ApplyToAllAction,
+  table: string
+): void {
   if (action === 'pin') {
     before.forEach((f) => {
       if (!f.pinned) {

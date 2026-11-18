@@ -1171,7 +1171,11 @@ export function LogsExplorer() {
       state: {
         search: search.search,
         // A saved search keeps the user's pinned filters on top of its own.
-        filters: mergePinnedFilters(search.filters, loadPinnedFilters(), tableKey(config.database, config.logsTable)),
+        filters: mergePinnedFilters(
+          sanitizeFilterPills(Array.isArray(search.filters) ? search.filters : []),
+          loadPinnedFilters(),
+          tableKey(config.database, config.logsTable)
+        ),
         // Saved searches are stored data, not trusted SQL: rebuild their columns too.
         columns: sanitizeColumns(search.columns, config),
         sort: search.sort,
