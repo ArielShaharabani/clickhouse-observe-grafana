@@ -101,7 +101,10 @@ test('IT-I: query dropped, filters carried over disabled, re-enabling one applie
 
 test('breadcrumb returns to Discover with the original query and filters', async ({ page }) => {
   const logs = await openSurrounding(page, { filters: JSON.stringify([paymentsPill]) });
-  await page.getByRole('navigation', { name: 'Breadcrumb', exact: true }).getByRole('link', { name: 'Discover' }).click();
+  await page
+    .getByRole('navigation', { name: 'Breadcrumb', exact: true })
+    .getByRole('link', { name: 'Discover' })
+    .click();
   await expect(logs.searchInput).toHaveValue(`"${ANCHOR_BODY}"`);
   await expect(logs.pill('ServiceName = payments')).not.toHaveAccessibleName(/\(disabled\)$/);
   await logs.expectRowCount(1);
@@ -154,8 +157,7 @@ test('re-anchor from a neighbour in the detail panel', async ({ page }) => {
 });
 
 test('malformed or unknown document links show an error, never a query', async ({ page }) => {
-  const open = (path: string) =>
-    page.goto(`/a/${pluginJson.id}/context/${path}`, { waitUntil: 'domcontentloaded' });
+  const open = (path: string) => page.goto(`/a/${pluginJson.id}/context/${path}`, { waitUntil: 'domcontentloaded' });
   await open(`spec-fixture/${encodeURIComponent('1;DROP TABLE spec_logs_1')}`);
   await expect(page.getByText('Invalid document link')).toBeVisible({ timeout: 45_000 });
   await open('spec-fixture/1_1');

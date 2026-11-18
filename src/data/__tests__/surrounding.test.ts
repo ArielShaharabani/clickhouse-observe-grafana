@@ -52,7 +52,11 @@ describe('buildContextUrl', () => {
       ret: 'q=hello&ds=spec-fixture',
       disableFilters: true,
     });
-    expect(url.startsWith('/a/poortuna-clickhouse-observe-app/context/spec-fixture/1767603630000000000_15918698468527039780?')).toBe(true);
+    expect(
+      url.startsWith(
+        '/a/poortuna-clickhouse-observe-app/context/spec-fixture/1767603630000000000_15918698468527039780?'
+      )
+    ).toBe(true);
     const sp = new URLSearchParams(url.split('?')[1]);
     expect(sp.get('q')).toBeNull();
     const carried = JSON.parse(sp.get('filters')!);
@@ -129,7 +133,14 @@ describe('contextColumns (URL columns are untrusted)', () => {
   });
 
   const withMap: FieldModel[] = [
-    { id: 'col:LogAttributes', name: 'LogAttributes', displayName: 'LogAttributes', sqlExpr: 'LogAttributes', type: 'map', source: 'column' },
+    {
+      id: 'col:LogAttributes',
+      name: 'LogAttributes',
+      displayName: 'LogAttributes',
+      sqlExpr: 'LogAttributes',
+      type: 'map',
+      source: 'column',
+    },
   ];
   const mapCol = (sqlExpr: string, extra: Partial<SelectedColumn> = {}): SelectedColumn => ({
     id: 'map:LogAttributes:http.method',

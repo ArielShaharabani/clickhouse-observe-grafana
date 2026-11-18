@@ -95,7 +95,14 @@ describe('buildSurroundingDocsQuery', () => {
       ANCHOR,
       opts({
         columns: [
-          { id: 'map:LogAttributes:http.status_code', key: 'fld_x', sqlExpr: "LogAttributes['http.status_code']", displayName: 'x', type: 'exact', isCore: false },
+          {
+            id: 'map:LogAttributes:http.status_code',
+            key: 'fld_x',
+            sqlExpr: "LogAttributes['http.status_code']",
+            displayName: 'x',
+            type: 'exact',
+            isCore: false,
+          },
         ],
       })
     );
@@ -157,7 +164,9 @@ describe('surrounding documents: hostile anchors (URL input)', () => {
   });
 
   it('returns no query without a mapped timestamp', () => {
-    expect(buildSurroundingDocsQuery({ ...cfg, columns: { ...cfg.columns, timestamp: '' } }, ANCHOR, opts({}))).toBe('');
+    expect(buildSurroundingDocsQuery({ ...cfg, columns: { ...cfg.columns, timestamp: '' } }, ANCHOR, opts({}))).toBe(
+      ''
+    );
   });
 });
 
