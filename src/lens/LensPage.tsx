@@ -263,7 +263,7 @@ export function LensPage() {
       { ...DEFAULT_LOGS_QUERY_STATE, search, filters },
       fieldIndexRef.current
     );
-    const { sql, intervalMs } = compileLens(lens, config, conditions, timeRange);
+    const { sql, intervalMs } = compileLens(lens, config, conditions, timeRange, 'app', fieldIndexRef.current);
     runQueryRows({ datasourceUid: config.datasourceUid, sql, timeRange, op: 'lens', signal: abort.signal }).then(
       (rows) =>
         !cancelled && setResult({ key: queryKey, data: shapeLensRows(lens, rows, intervalMs), bucketMs: intervalMs }),

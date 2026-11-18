@@ -20,6 +20,8 @@ import { SourceConfig } from '../types';
 import { quoteIdentifier, quoteString, tableRef } from '../sql/queryBuilder';
 import { configSettingsFragments, withSettings } from '../sql/settings';
 import { resolveInterval } from '../components/_histogramInterval';
+import { FieldIndex } from '../sql/fields';
+import { formulaToSql, FormulaSqlContext } from './formula';
 import {
   BucketDim,
   clampPercentile,
@@ -51,7 +53,11 @@ export const kindAlias = (i: number) => `k${i}`;
 
 const MAP_ACCESSOR = /^("(?:[^"]|"")*"|[A-Za-z_][A-Za-z0-9_]*)\[(.+)\]$/;
 
-function metricSql(m: MetricDim): string {
+function metricSql(m: MetricDim, fctx: FormulaSqlContext): string {
+  if (m.op === 'formula') {
+    // Parsed, validated and compiled from the AST (formula.ts); an invalid formula yields no value.
+    return formulaToSql(m.formula ?? '', m.formulaFields ?? {}, fctx) ?? 'NULL';
+  }
   if (m.op === 'count' || !m.field) {
     return 'count()';
   }
@@ -129,8 +135,11 @@ export function compileLens(
    * datasource's `$__timeInterval` macro and come back as DateTime, so the panel follows the
    * dashboard's time range and resolution instead of the range it was built on.
    */
-  mode: 'app' | 'dashboard' = 'app'
+  mode: 'app' | 'dashboard' = 'app',
+  /** Discovered fields, for the `kql=` filters of formulas (same resolution as the search bar). */
+  index?: FieldIndex
 ): CompiledLens {
+  const fctx: FormulaSqlContext = { config, index, dashboard: mode === 'dashboard' };
   const tbl = tableRef(config, config.logsTable);
   const where = conditions.length > 0 ? conditions.join(' AND ') : '';
   let intervalMs: number | undefined;
@@ -164,7 +173,7 @@ export function compileLens(
         b.rankBy === 'alpha'
           ? `v ${dir}`
           : rankMetric
-            ? `${metricSql(rankMetric)} ${dir}, v`
+            ? `${metricSql(rankMetric, fctx)} ${dir}, v`
             : b.rankDir === 'asc'
               ? 'count() ASC, v'
               : 'count() DESC';
@@ -203,7 +212,7 @@ export function compileLens(
       );
     }
   });
-  state.metrics.forEach((m, i) => selects.push(`${metricSql(m)} AS ${metricAlias(i)}`));
+  state.metrics.forEach((m, i) => selects.push(`${metricSql(m, fctx)} AS ${metricAlias(i)}`));
 
   const allWhere = [where, ...restrictions].filter(Boolean).join(' AND ');
   const groupBy = state.buckets.flatMap((b, i) =>

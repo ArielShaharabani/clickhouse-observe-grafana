@@ -8,11 +8,12 @@
  * (LENS-TYPE-01 remapping rules 1–2), never a rebuild.
  */
 import { FieldType } from '../sql/fieldModel';
+import { formulaErrors, FormulaFields, MAX_FORMULA_LEN } from './formula';
 
 export type ChartType = 'line' | 'area' | 'bar' | 'metric' | 'table' | 'pie';
 export type XySubType = 'stacked' | 'percentage' | 'unstacked';
 
-export type MetricOp = 'count' | 'median' | 'avg' | 'sum' | 'min' | 'max' | 'unique' | 'percentile';
+export type MetricOp = 'count' | 'median' | 'avg' | 'sum' | 'min' | 'max' | 'unique' | 'percentile' | 'formula';
 
 export interface DateHistogramDim {
   kind: 'date_histogram';
@@ -219,6 +220,10 @@ export interface MetricDim {
   numeric?: boolean;
   /** For `percentile`: 1–99 (default 95). */
   percentile?: number;
+  /** For `formula` (LENS-DIM-03): the formula text, parsed and compiled by `formula.ts`. */
+  formula?: string;
+  /** For `formula`: the fields it may use (name as written → field SQL expression + numeric). */
+  formulaFields?: FormulaFields;
   name?: string;
 }
 
@@ -266,6 +271,7 @@ const OP_NAMES: Record<MetricOp, string> = {
   max: 'Maximum',
   unique: 'Unique count',
   percentile: 'Percentile',
+  formula: 'Formula',
 };
 
 /** Display name of a quick function (LENS-DIM-02 grid). */
@@ -299,6 +305,10 @@ export function autoLabelIn(d: BucketDim | MetricDim, metrics?: MetricDim[]): st
   if (d.kind === 'metric') {
     if (d.op === 'count') {
       return 'Count of records';
+    }
+    if (d.op === 'formula') {
+      const f = (d.formula ?? '').trim();
+      return f.length > 60 ? `${f.slice(0, 57)}…` : f || 'Formula';
     }
     const what = d.fieldLabel ?? d.field;
     return d.op === 'percentile'
@@ -336,7 +346,22 @@ export function encodeLens(s: LensState): string {
 }
 
 const CHARTS: readonly ChartType[] = ['line', 'area', 'bar', 'metric', 'table', 'pie'];
-const OPS: readonly MetricOp[] = ['count', 'median', 'avg', 'sum', 'min', 'max', 'unique', 'percentile'];
+const OPS: readonly MetricOp[] = ['count', 'median', 'avg', 'sum', 'min', 'max', 'unique', 'percentile', 'formula'];
+
+/** Keeps only a well-formed `{ name: { expr, numeric } }` map of untrusted input. */
+function cleanFormulaFields(x: unknown): FormulaFields | undefined {
+  if (!x || typeof x !== 'object' || Array.isArray(x)) {
+    return undefined;
+  }
+  const out: FormulaFields = {};
+  for (const [k, v] of Object.entries(x as Record<string, unknown>).slice(0, 50)) {
+    const r = v as { expr?: unknown; numeric?: unknown } | null;
+    if (k.length <= 500 && r && typeof r.expr === 'string' && r.expr.length <= 1000) {
+      out[k] = { expr: r.expr, numeric: r.numeric === true };
+    }
+  }
+  return out;
+}
 
 export function decodeLens(raw: string | null | undefined): LensState | undefined {
   if (!raw) {
@@ -362,16 +387,24 @@ export function decodeLens(raw: string | null | undefined): LensState | undefine
             (b.kind === 'terms' && Number.isInteger(b.size) && b.size > 0))
       )
       .map((b) => (b.kind === 'terms' ? cleanTerms(b) : b));
-    const metrics = (v.metrics as MetricDim[]).filter(
-      (m) =>
-        m &&
-        m.kind === 'metric' &&
-        str(m.id) &&
-        OPS.includes(m.op) &&
-        (m.op === 'count' || str(m.field)) &&
-        okName(m.name) &&
-        okPct(m.percentile)
-    );
+    const metrics = (v.metrics as MetricDim[])
+      .filter(
+        (m) =>
+          m &&
+          m.kind === 'metric' &&
+          str(m.id) &&
+          OPS.includes(m.op) &&
+          (m.op === 'formula'
+            ? str(m.formula) && (m.formula as string).length <= MAX_FORMULA_LEN
+            : m.op === 'count' || str(m.field)) &&
+          okName(m.name) &&
+          okPct(m.percentile)
+      )
+      .map((m): MetricDim =>
+        m.op === 'formula'
+          ? { kind: 'metric', id: m.id, op: 'formula', formula: m.formula, formulaFields: cleanFormulaFields(m.formulaFields) ?? {}, name: m.name }
+          : m
+      );
     const subType = ['stacked', 'percentage', 'unstacked'].includes(v.subType) ? (v.subType as XySubType) : undefined;
     return { chartType: v.chartType, subType, buckets, metrics };
   } catch {
@@ -386,7 +419,9 @@ export function decodeLens(raw: string | null | undefined): LensState | undefine
  */
 export function sanitizeLens(s: LensState, allowed: ReadonlySet<string>): LensState {
   const kept = s.buckets.filter((b) => allowed.has(b.field));
-  const metrics = s.metrics.filter((m) => m.op === 'count' || (m.field !== undefined && allowed.has(m.field)));
+  const metrics = s.metrics.filter((m) =>
+    m.op === 'formula' ? formulaAllowed(m, allowed) : m.op === 'count' || (m.field !== undefined && allowed.has(m.field))
+  );
   // A rank metric that no longer exists falls back to ranking by count.
   const ids = new Set(metrics.map((m) => m.id));
   const buckets = kept.map((b) =>
@@ -409,4 +444,16 @@ export function sanitizeLens(s: LensState, allowed: ReadonlySet<string>): LensSt
     return { chartType: 'metric', buckets, metrics };
   }
   return { ...s, buckets, metrics };
+}
+
+/**
+ * A formula metric survives sanitizing only when it parses, validates against its own field map,
+ * and every field it refers to is a discovered field (same rule as a quick function's `field`).
+ */
+function formulaAllowed(m: MetricDim, allowed: ReadonlySet<string>): boolean {
+  const fields = m.formulaFields ?? {};
+  if (!m.formula || formulaErrors(m.formula, fields).length > 0) {
+    return false;
+  }
+  return Object.values(fields).every((f) => allowed.has(f.expr));
 }
