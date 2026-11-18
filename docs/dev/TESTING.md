@@ -72,3 +72,30 @@ DISC-FILTER-02 acceptance:
 | Rows with OR / AND nested groups (`+ OR`, `+ AND`) | gap left: needs a nested pill model; separate feature |
 | Edit as Query DSL (JSON editor) | gap left: Elasticsearch concept, no ClickHouse equivalent |
 | ~1200 px wide popover | gap left: kept at 760 px (all three inputs fit; no change in behaviour) |
+
+### LENS-DIM-04 (PR 20)
+| Case | Status |
+| --- | --- |
+| Top values rank | Alphabetical asc top 1 = auth, desc = payments; fixture `spec-fixture` (e2e) |
+| Top values Other | Top 3 + Other: payments 9,264, Other 16,128 (e2e) |
+| Top values include/exclude | exclude payments; regex include `pay.*` / `front.*`; hostile include value returns nothing (e2e) |
+| SQL escaping | hostile quotes/backslashes/`$__` in values stay in literals (jest `topValues.test.tsx`) |
+| URL validation | invalid rankBy/rankDir/lists dropped, extra props removed (jest) |
+
+LENS-DIM-04 acceptance:
+
+| Criterion | Test / status |
+| --- | --- |
+| Rank by Count / Alphabetical / Custom metric | jest `ascending count, alphabetical ... custom metric ranking`; e2e `rank alphabetically` |
+| Rank by Rarity, Significance | gap left: Rarity is count ascending; Significance needs a background set, not meaningful here |
+| Rank direction | jest + e2e `rank alphabetically` |
+| Group remaining values as Other | jest `Other: ...`; e2e `Top 3 + Other` |
+| Include documents without the field | jest `missing values become "(missing)"`; no e2e (fixture has no null ServiceName) |
+| Include / Exclude values, regex | jest `include / exclude ...`; e2e `exclude values, and include by regular expression` |
+| Multi-field terms, Aggregate by this dimension first, accuracy mode | gap left: out of scope for this step (see Decision) |
+| Saved panels / dashboard mode | jest `dashboard mode and saved panels carry the options` |
+| Click-to-filter on Other / (missing) | jest `shaping: synthetic ...` (flags drive the click guard); no e2e |
+| Order follows rank, Other last | jest `outer order follows the rank`; e2e `alphabetical rank lists values in alphabetical order` |
+| Missing on Map keys, real "Other" kept apart | jest `missing on a Map key ...`, `shaping: synthetic ...` |
+| Regex / list validation | jest `regexError`, `listError`, editor UI test; e2e `invalid regular expression` |
+| Hostile values | jest `hostile values stay inside a string literal`, `macro text ... hex-escaped`; e2e hostile include |
