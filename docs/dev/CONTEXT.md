@@ -58,3 +58,11 @@ Bring Kibana Discover + Lens style exploration to Grafana on ClickHouse by exten
 
 ## Now / next
 Now (in progress on `feat/lens-save-01`): #16 LENS-SAVE-01 (save to dashboard) — exact notes in `PROGRESS.md`.
+
+## Parallel work (fan-out, from 2026-11-18)
+Agents work in git worktrees under `C:\Users\Ariel\co-wt\<id>` on `feat/<id>`, each with its own Grafana container (`co-<id>`, same image and docker network as the main stack, shared fixture ClickHouse) and `GRAFANA_URL` for e2e:
+- `disc-time-01` → #17 DISC-TIME-01/02, port 3011
+- `disc-filter-02` → #19 DISC-FILTER-02, port 3012
+- `lens-dim-04` → #24 LENS-DIM-04, port 3013
+Agents do NOT touch the version, CHANGELOG, PLAN/PROGRESS/CONTEXT/DECISIONS/TESTING. They write `docs/dev/pending/<SPEC-ID>.md` (CHANGELOG bullets, decision text, TESTING rows) and open a PR. The coordinator (main session) merges one at a time: rebase, fold the pending file into the docs, bump the minor version, full e2e on the main stack, `/code-review medium`, squash-merge. If a session ends: `git worktree list`, `gh pr list`, and continue each branch.
+Status 2026-11-18: PR 18 (#17 time; docs folded, 0.27.0), PR 19 (#19 filter builder), PR 20 (#24 top values) open on the fork; code-review fixes in progress by the agents; security review for 19/20 running. `gh repo set-default` now points at the fork (agents had opened upstream PRs #26/#27/#28 by mistake; all closed). Merge order: 18 → 19 → 20 (each later one rebases, bumps 0.28.0 / 0.29.0 and folds its pending file with the coordinator script).
