@@ -32,6 +32,11 @@ function columnCacheKey(config: SourceConfig, table: string): string {
   return `${config.datasourceUid}:${config.database}:${table}`;
 }
 
+/** Identifies the table a discovery result belongs to; compare with `FieldDiscoveryResult.fieldsFor`. */
+export function discoveryKey(config: Pick<SourceConfig, 'datasourceUid' | 'database' | 'logsTable'>, table?: string): string {
+  return `${config.datasourceUid}:${config.database}:${table ?? config.logsTable}`;
+}
+
 /**
  * Discovered path list per native-JSON column. Deliberately *not* time-bucket-scoped, unlike the
  * old Phase B/C caches: buildJsonPathsQuery carries no time or filter predicate (a predicate would
@@ -136,6 +141,12 @@ export interface FieldDiscoveryResult extends FieldsContextValue {
    * SourceConfigContext's doc comment — so already-saved views benefit without re-saving.
    */
   detectedPartitionTimestamp: string;
+  /**
+   * `discoveryKey` of the table `fields` were discovered for ('' before the first result). After a
+   * data view switch, `fields` still holds the previous table's fields until the new discovery
+   * publishes — a consumer that must not mix the two (Visualize) waits until this matches.
+   */
+  fieldsFor: string;
 }
 
 /**
@@ -166,6 +177,7 @@ export function useFieldDiscovery(
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [detectedPartitionTimestamp, setDetectedPartitionTimestamp] = useState('');
+  const [fieldsFor, setFieldsFor] = useState('');
   const runRef = useRef(0);
 
   const bucket = useMemo(() => coarseTimeBucket(timeRange), [timeRange]);
@@ -174,6 +186,8 @@ export function useFieldDiscovery(
     if (!config.datasourceUid) {
       // No datasource configured yet — nothing to discover. Without this, `loading` (which
       // starts true) never resolves, so sidebar/pickers spin forever until a datasource shows up.
+      setFields([]);
+      setFieldsFor(columnCacheKey(config, resolvedTable));
       setLoading(false);
       return;
     }
@@ -287,6 +301,7 @@ export function useFieldDiscovery(
       return;
     }
     setFields([...columns, ...tupleFields]);
+    setFieldsFor(cKey);
     setError(null);
     setDetectedPartitionTimestamp(detected);
 
@@ -348,6 +363,7 @@ export function useFieldDiscovery(
     // Columns stay first in the published array: buildFieldIndex (sql/fields.ts) is first-wins on
     // `byName`, so a real column keeps its bare name against a same-named JSON path.
     setFields([...columns, ...tupleFields, ...jsonFields]);
+    setFieldsFor(cKey);
     setError(
       failedCols.length > 0
         ? `Field discovery failed for: ${failedCols.join(', ')}. Some JSON attribute fields may be missing.`
@@ -366,5 +382,5 @@ export function useFieldDiscovery(
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [config.datasourceUid, config.database, resolvedTable, bucket, config.columns.timestamp]);
 
-  return { fields, loading, error, refresh, detectedPartitionTimestamp };
+  return { fields, loading, error, refresh, detectedPartitionTimestamp, fieldsFor };
 }

@@ -119,3 +119,27 @@ export function mergePinnedFilters(filters: FilterPill[], stored: StoredPin[], t
   }
   return result;
 }
+
+/**
+ * Filters after a data view switch on a page that keeps its filters (Visualize, #16b). Pinned
+ * pills follow D7: enabled only on the table they were pinned on. Other pills are kept as they are
+ * on a view of the same table and arrive disabled on a different table (their SQL expressions may
+ * not exist there; the user can re-enable them). Stored pins missing from `filters` are appended.
+ */
+export function filtersForViewSwitch(
+  filters: FilterPill[],
+  stored: StoredPin[],
+  fromTable: string,
+  toTable: string
+): FilterPill[] {
+  const kept = filters.map((f) => {
+    const pin = stored.find((p) => samePill(p, f));
+    if (pin) {
+      const otherTable = !!pin.pinnedTable && pin.pinnedTable !== toTable;
+      const { disabled: _d, ...rest } = f;
+      return otherTable ? { ...rest, disabled: true } : rest;
+    }
+    return fromTable === toTable || f.disabled ? f : { ...f, disabled: true };
+  });
+  return mergePinnedFilters(kept, stored, toTable);
+}
