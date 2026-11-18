@@ -10,6 +10,13 @@ Versions track the plugin's release history. `Unreleased` collects commits not y
 
 ---
 
+## [0.26.0] — 2026-11-18
+
+### Added
+
+- **Save a Visualize chart.** Save opens "Save Lens visualization": title (suggested from the chart), description, add to an existing or new dashboard or none, and add to the panel library. The panel runs the same query on the ClickHouse datasource as a core Grafana panel (time series, bar chart, stat, pie, table) and follows the dashboard's time picker. Spec LENS-SAVE-01.
+- **Unsaved charts survive a refresh.** The chart is kept in the URL and in this tab's session, so opening Visualize again restores it.
+
 ## [0.25.0] — 2026-11-18
 
 ### Added

@@ -1,8 +1,8 @@
 # Progress — read this first when resuming
 
-**Current item:** #16 LENS-SAVE-01 save Lens chart to dashboard (not started)
-**Last completed step:** #15 LENS-INTERACT-02 / DISC-CHART-03 in PR 16 (v0.25.0): `src/lens/handoff.ts`; field popover "Visualize" (Discover → /visualize, lens = first-field chart), histogram "Edit visualization" (Bar over time + breakdown), Lens "Explore in Discover" (new tab, cols = terms buckets, ds kept). e2e `tests/features/lens-interact-02.spec.ts` (IT-G, IT-H)
-**Next step:** branch `feat/lens-save-01`. Spec LENS-SAVE-01 (docs/spec/20-lens.md): Save on Visualize → modal "Save Lens visualization" (Title, Description, Add to dashboard Existing/New/None, Add to library), "Save and go to dashboard". Reuse `src/components/AddToDashboard/AddToDashboardModal.tsx`; panel = compiled Lens SQL on the ClickHouse datasource with the matching Grafana panel type (timeseries/barchart/stat/table/piechart). Unsaved state already in URL; add session storage so a refresh without `lens` restores it.
+**Current item:** none — #16 merged (PR 17, v0.26.0)
+**Last completed step:** #16 LENS-SAVE-01 in PR 17 (v0.26.0): Save on Visualize → dashboard (new/existing) and/or library; `src/lens/panelExport.ts`, `SaveLensModal.tsx`, `draft.ts`. e2e lens-save-01 (5), unit save.test (19), full e2e 67 green.
+**Next step:** importance-3 queue (#17 DISC-TIME-01/02 …), fanned out to parallel agents in worktrees (see CONTEXT).
 **Open issues:** none. Deferred Lens items: per-group drag-and-drop (LENS-DIM-01 DnD; workspace drop works), formula (#23), advanced metric options (filter by, time shift), value format/colour/axis side (LENS-STYLE-01), date interval picker, "Other" bucket. Deferred elsewhere: DISC-DOC-02 links (#20); histogram now-line; field list Empty/Meta; grid Summary column etc. (#16); popover Visualize (#15).
 
 ## Environment notes

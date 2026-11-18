@@ -24,7 +24,7 @@ import { canCreateDashboards } from '../utils/permissions';
 import { runQueryRows } from '../data/runQuery';
 import { startAction } from '../diag/tracer';
 import { SpanHandle } from '../diag/types';
-import { buildLogsQuery, buildLogDetailQuery, buildVolumeQuery, buildWhereConditions, resolveVolumeBreakdown, logRowKey, CORE_ALIAS } from '../sql/queryBuilder';
+import { buildLogsQuery, buildLogDetailQuery, buildVolumeQuery, resolveVolumeBreakdown, logRowKey } from '../sql/queryBuilder';
 import { buildFieldIndex } from '../sql/fields';
 import { addFilterPill, makeFilter } from '../sql/filters';
 import { AddFilterPopover } from '../components/AddFilter/AddFilterPopover';
@@ -39,10 +39,9 @@ import {
   LogsQueryState,
   SavedSearch,
   SelectedColumn,
-  ColumnType,
-  SourceConfig,
   VolumeDataPoint,
 } from '../types';
+import type { FieldModel } from '../sql/fieldModel';
 import { BreakdownUrl, decodeLogsState, encodeLogsState } from '../data/urlState';
 import { loadPinnedFilters, mergePinnedFilters, normalizePinnedFlags, tableKey } from '../state/sharedSearch';
 import { useAutocompleteSources } from '../autocomplete/service';

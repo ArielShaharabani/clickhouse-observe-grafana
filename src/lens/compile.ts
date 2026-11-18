@@ -11,7 +11,9 @@
  * passed through `quoteIdentifier` here (a bare name is quoted; only well-formed Map accessors and
  * dotted paths pass through). Filters/search arrive as already-built WHERE conditions.
  *
- * Date buckets are returned as epoch milliseconds, so no timezone guessing is needed on the way back.
+ * App mode returns date buckets as epoch milliseconds (no timezone guessing on the way back) for
+ * `shapeLensRows`. Dashboard mode (saved panels) returns DateTime from `$__timeInterval` for Grafana
+ * panels; its rows are not meant for `shapeLensRows`.
  */
 import { TimeRange } from '@grafana/data';
 import { SourceConfig } from '../types';
@@ -64,7 +66,13 @@ export function compileLens(
   state: LensState,
   config: SourceConfig,
   conditions: string[],
-  timeRange: TimeRange
+  timeRange: TimeRange,
+  /**
+   * 'dashboard': SQL for a saved panel (LENS-SAVE-01) — date buckets use the ClickHouse
+   * datasource's `$__timeInterval` macro and come back as DateTime, so the panel follows the
+   * dashboard's time range and resolution instead of the range it was built on.
+   */
+  mode: 'app' | 'dashboard' = 'app'
 ): CompiledLens {
   const tbl = tableRef(config, config.logsTable);
   const where = conditions.length > 0 ? conditions.join(' AND ') : '';
@@ -74,7 +82,16 @@ export function compileLens(
   const restrictions: string[] = [];
   const selects: string[] = [];
   state.buckets.forEach((b: BucketDim, i) => {
-    if (b.kind === 'date_histogram') {
+    if (b.kind === 'date_histogram' && mode === 'dashboard') {
+      const col = quoteIdentifier(b.field);
+      // The datasource's macro parser counts parentheses and commas without regard to quotes, so
+      // an expression field (e.g. a Map key with ')' in it) gets the explicit form instead.
+      selects.push(
+        /[(),]/.test(col)
+          ? `toStartOfInterval(toDateTime(${col}), INTERVAL $__interval_s second) AS ${bucketAlias(i)}`
+          : `$__timeInterval(${col}) AS ${bucketAlias(i)}`
+      );
+    } else if (b.kind === 'date_histogram') {
       const iv = resolveInterval('auto', timeRange);
       intervalMs = iv.intervalMs;
       selects.push(

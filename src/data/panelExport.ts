@@ -45,7 +45,8 @@ export interface ExportedPanel {
 // Both exported panels use Table + client-side (transformation) shaping rather than guessing at
 // an unverified TimeSeries enum value, so this stays correct regardless of the installed CH
 // datasource version.
-const FORMAT_TABLE = 1;
+/** ClickHouse datasource query format "Table". */
+export const FORMAT_TABLE = 1;
 
 export function chDatasourceRef(datasourceUid: string): DataSourceRef {
   return { type: CH_DATASOURCE_TYPE, uid: datasourceUid };

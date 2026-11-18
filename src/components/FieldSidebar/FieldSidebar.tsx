@@ -9,7 +9,7 @@ import { loadFieldUsage, popularFieldIds, recordFieldUse } from '../../state/fie
 import { FieldTypeFilter } from './FieldTypeFilter';
 import { useFields } from '../FieldsContext';
 import { FieldItem } from './FieldItem';
-import { FilterPill, LogsQueryState, SelectedColumn, ColumnType } from '../../types';
+import { FilterPill, LogsQueryState, SelectedColumn } from '../../types';
 
 // Moved to src/data/columns.ts (shared with the Lens hand-off); re-exported for existing importers.
 export { makeColumnKey, fieldToColumn } from '../../data/columns';
