@@ -10,6 +10,66 @@ Versions track the plugin's release history. `Unreleased` collects commits not y
 
 ---
 
+## [0.42.0] — 2026-11-18
+
+### Added
+- **Share this Discover session** (DISC-SESSION-01). A `Share` button in the Discover toolbar opens a modal with a `Use absolute time range` toggle (off keeps a relative range such as "Last 15 minutes", so the link shows the latest data when opened; on pins the exact range shown, as epoch ms; disabled when the range is already absolute), a `You have unsaved changes` warning when no saved search of the view matches the current query, filters, columns and sort, and `Copy link`. The link carries only the URL codec's parameters (`q`, `filters`, `cols`, `sort`, `from`, `to`, `ds`, `interval`, `bd`).
+- **⋮ overflow menu in Discover**: `New session` (Discover on the current data view with no query, filters or column changes; pinned filters still apply), `Export tab results (CSV)` (the current search, up to 10,000 documents, the grid's columns in order, UTF-8 with BOM; disabled in raw-SQL mode), `Inspect` (the diagnostics drawer) and `Create alert rule` (opens Grafana's new alert rule form, prefilled: query A counts the documents matching the current search, query, filters and time field included, over a window equal to the current time range clamped to 1 min–7 days; B is a threshold `A > 0` and the condition. Needs `alert.rules:create` or Editor; disabled for views without a time field and in raw-SQL mode).
+
+### Security
+- CSV cells are formula-injection safe: a value starting with `=`, `+`, `-`, `@`, tab or carriage return is prefixed with `'` before RFC 4180 quoting.
+- The alert query reuses Discover's escaped WHERE clause; `$` inside string literals is written as `\x24` so the ClickHouse datasource's `$__` macros can't be injected through a search value.
+
+
+### Fixed
+- **Export tab results (CSV) saved the file under a random name** (same cause as the Inspector download; same helper).
+---
+
+## [0.41.0] — 2026-11-18
+
+### Added
+- **Discover session tabs** (#31 DISC-NAV-01; spec 10-discover.md "Discover tabs"). A tab strip above the Discover toolbar keeps several explorations open in one browser tab, each with its own query, filters, columns, sort, time, data view, interval and breakdown. `+` opens a tab on the current data view; each tab has a ⋮ menu (Rename, Duplicate, Move left / right, Close) and a close button; double-click renames; tabs drag-reorder. The ⌄ menu lists Opened tabs and Recently closed tabs (with "17 seconds ago"-style times; click to restore) and Clear recently closed. The active tab is in the URL (`_tab`), so reload and back / forward land on it. Up to 20 tabs, 10 recently closed.
+- Grafana's side-menu Discover entry (a URL with no state) reopens the active tab instead of an empty search. A link with Discover state but no `_tab` (shared link, Explore in Discover, trace deep link) loads into the active tab; a link with another session's `_tab` opens as a new tab.
+
+
+### Fixed
+- **Rename from a tab's ⋮ menu closed immediately.** The menu returned focus to its button on close, which blurred (and committed) the new name field; the editor now opens after the menu has closed and focuses a frame later.
+- **Cell Expand popover could be covered or clipped** (pre-existing, exposed by the shorter grid under the tab strip): it was drawn inside the grid, so opening past the grid's edge put it under the histogram or outside the window. It is now portalled with fixed positioning, below the cell when there is room (else above), clamped inside the window and following the cell on scroll.
+---
+
+## [0.40.0] — 2026-11-18
+
+### Added
+- **Inspector on Visualize** (#29, LENS-INSPECT-01; spec 20-lens.md "Inspector"). An `Inspect` button in the Visualize toolbar opens a right drawer with `View: Data | Requests`.
+  - **Data:** the chart's table (bucket columns then one column per metric), sortable headers (ascending → descending → off, `aria-sort`), 20 rows per page, ⊕ / ⊖ on top-values cells through the shared action registry (same names and pills as everywhere else; the synthetic "Other" / "(missing)" buckets and date buckets have none), and `Download CSV ⌄` Formatted (as shown: local date-times, grouped numbers) or Raw (as returned).
+  - **Requests:** "1 request was made", the latest chart query from the diagnostics tracer (the same spans as Discover's Diagnostics drawer) with duration and ClickHouse query id; tabs Statistics (Hits, Rows read, Bytes read, Data view, Data view ID, Table, Query time, Query time (ClickHouse), Memory usage, Request timestamp, Status — server numbers appear once `system.query_log` enrichment lands), Request (the SQL, plus the post-macro SQL when it differs) and Response (columns + first 100 rows), each with Copy.
+
+### Security
+- CSV export never writes a log value a spreadsheet would run as a formula: text starting with `= + - @`, tab or CR is prefixed with `'` (CSV injection); fields are RFC 4180-quoted. File names are reduced to `[A-Za-z0-9_.-]`.
+
+
+### Fixed
+- **Inspector Download CSV saved the file under a random name.** Grafana routes bubbling `<a>` clicks through its router, so the blob link was navigated to, not downloaded. Downloads now go through one helper (`src/utils/download.ts`) that dispatches a non-bubbling click (shared with Discover's CSV export).
+---
+
+## [0.39.0] — 2026-11-18
+
+### Added
+- **Query menu** (#30, DISC-SEARCH-03; spec 10-discover.md "Query menu"). A ⋮ button left of the Discover query input:
+  - **Apply to all** — Enable all, Disable all, Pin all, Unpin all, Invert inclusion (only the items that change something are listed). Pin / unpin / invert update the pinned store (D7) like the pill menu does.
+  - **Clear all** — clears the query and every filter on this page (stored pins are kept, same as the pill bar's Clear all).
+  - **Load query** — saved queries for the active data view (plus view-less ones), by name, with their description.
+  - **Save query** — name (unique per view, case-insensitive: "Name conflicts with an existing saved query"), description, **Include filters**, **Include time filter**. After a load the menu offers **Save changes to "…"** and **Save as new query**.
+  - **Manage saved queries** — list with delete.
+  - **Language** — KQL (checked); Lucene listed as not supported.
+- Saved queries are lighter than saved searches (query + filters + optional time; no columns / sort) and live in localStorage (`poortuna-clickhouse-observe:saved-queries`).
+
+### Security
+- Saved queries read back from storage are rebuilt field by field (`sanitizeSavedQuery`): filters through `sanitizeFilterPills`, a time range kept only when both ends are `now…` math or epoch milliseconds, size caps on name / query / description / entry count; the page re-sanitizes filters before applying them.
+- **Saved searches** (pre-existing): loading one now also runs its filters through `sanitizeFilterPills` (columns were already rebuilt by `sanitizeColumns`).
+
+---
+
 ## [0.38.0] — 2026-11-18
 
 ### Added

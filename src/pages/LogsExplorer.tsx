@@ -30,8 +30,9 @@ import { SpanHandle } from '../diag/types';
 import { buildLogsQuery, buildLogDetailQuery, buildVolumeQuery, resolveVolumeBreakdown, logRowKey } from '../sql/queryBuilder';
 import { buildFieldIndex } from '../sql/fields';
 import { isConvertedTimestamp } from '../sql/timeExpr';
-import { addFilterPill, makeFilter } from '../sql/filters';
+import { addFilterPill, makeFilter, sanitizeFilterPills } from '../sql/filters';
 import { AddFilterPopover } from '../components/AddFilter/AddFilterPopover';
+import { LoadedQuery, QueryMenu } from '../components/QueryMenu/QueryMenu';
 import { SourceConfigContext, DataViewContext } from '../components/App/App';
 import { viewCapabilities } from '../sql/capabilities';
 import {
@@ -49,6 +50,7 @@ import type { FieldModel } from '../sql/fieldModel';
 import { BreakdownUrl, decodeLogsState, encodeLogsState } from '../data/urlState';
 import { loadPinnedFilters, mergePinnedFilters, normalizePinnedFlags, tableKey } from '../state/sharedSearch';
 import { rememberSearchContext } from '../state/lastSearch';
+import { TAB_PARAM } from '../state/discoverTabs';
 import { useAutocompleteSources } from '../autocomplete/service';
 import { compileColumnHighlighter, extractHighlightTerms } from '../sql/kql/highlight';
 import { errMsg } from '../errMsg';
@@ -94,7 +96,14 @@ function defaultTimeRange(): TimeRange {
 }
 
 
-export function LogsExplorer() {
+export interface LogsExplorerProps {
+  /** Session tab (DISC-NAV-01): kept as `_tab` in every URL this page writes. */
+  tabId?: string;
+  /** Session tab strip, rendered above the toolbar. */
+  tabStrip?: React.ReactNode;
+}
+
+export function LogsExplorer({ tabId, tabStrip }: LogsExplorerProps = {}) {
   const styles = useStyles2(getStyles);
   const config = useContext(SourceConfigContext);
   const { activeView, setActiveViewId, views } = useContext(DataViewContext);
@@ -575,6 +584,9 @@ export function LogsExplorer() {
       // or switches view, so a link copied mid-load still carries it.
       breakdown: breakdownToUrl(breakdownChoice, pendingBreakdownFieldId),
     });
+    if (tabId) {
+      next.set(TAB_PARAM, tabId);
+    }
     // Skip no-op navigations (discovery phases re-run this effect with an unchanged URL).
     if (next.toString() !== new URLSearchParams(window.location.search).toString()) {
       setSearchParams(next, { replace: true });
@@ -1170,7 +1182,11 @@ export function LogsExplorer() {
       state: {
         search: search.search,
         // A saved search keeps the user's pinned filters on top of its own.
-        filters: mergePinnedFilters(search.filters, loadPinnedFilters(), tableKey(config.database, config.logsTable)),
+        filters: mergePinnedFilters(
+          sanitizeFilterPills(Array.isArray(search.filters) ? search.filters : []),
+          loadPinnedFilters(),
+          tableKey(config.database, config.logsTable)
+        ),
         // Saved searches are stored data, not trusted SQL: rebuild their columns too.
         columns: sanitizeColumns(search.columns, config),
         sort: search.sort,
@@ -1184,6 +1200,18 @@ export function LogsExplorer() {
     // so by the time this microtask fires React has committed the new state and
     // the ref holds the fresh closure — guaranteeing results load without a manual click.
     queueMicrotask(() => latestExecuteQuery.current('Load saved search'));
+  };
+
+  // DISC-SEARCH-03: a saved query is stored data — its filters are re-sanitized, pins stay on top.
+  const onLoadQuery = ({ query, filters, timeRange: tr }: LoadedQuery) => {
+    dispatch({ type: 'SET_SEARCH', value: query });
+    if (filters) {
+      const table = tableKey(config.database, config.logsTable);
+      dispatch({ type: 'SET_FILTERS', filters: mergePinnedFilters(sanitizeFilterPills(filters), loadPinnedFilters(), table) });
+    }
+    if (tr) {
+      setTimeRange(tr);
+    }
   };
 
   const onHistogramSelectRange = (fromMs: number, toMs: number) => {
@@ -1409,6 +1437,7 @@ export function LogsExplorer() {
     <FieldsContext.Provider value={fieldsState}>
       <PluginPage layout={PageLayoutType.Custom} pageNav={{ text: 'Logs' }}>
       <div ref={containerRef} className={styles.container} style={{ height: availableHeight }}>
+        {tabStrip}
         {/* Row 1: view picker + add filter + search (left/center) + saved/dashboard/time/refresh
             (right) — condensed onto one line (Kibana Discover style) so the table below gets the
             vertical space the search bar's own row used to take. SearchBar itself is the
@@ -1422,6 +1451,19 @@ export function LogsExplorer() {
           {/* SearchBar's own root has width:100% (right for its old standalone row), which alone
               wouldn't grow to fill the remaining space in this shared flex row — wrap it so it
               does, independent of SearchBar's internal styling. */}
+          <QueryMenu
+            query={queryState.search}
+            filters={queryState.filters}
+            timeRange={timeRange}
+            dataViewId={activeView?.id}
+            pinTable={tableKey(config.database, config.logsTable)}
+            onFiltersChange={(f) => dispatch({ type: 'SET_FILTERS', filters: f })}
+            onClearAll={() => {
+              dispatch({ type: 'SET_SEARCH', value: '' });
+              dispatch({ type: 'SET_FILTERS', filters: [] });
+            }}
+            onLoadQuery={onLoadQuery}
+          />
           <div className={styles.headerSearchWrap}>
             <SearchBar
               value={queryState.search}
@@ -1494,6 +1536,7 @@ export function LogsExplorer() {
           onRunRawSql={runRawSql}
           builderSql={builderSql}
           onOpenDiagnostics={() => setShowDiagnostics(true)}
+          session={{ config, queryState: { ...queryState, columns: effectiveColumns }, rawColumns: queryState.columns, timeRange, index: fieldIndex, viewId: activeView?.id, viewName: activeView?.name }}
         />
         {showDiagnostics && <DiagnosticsDrawer onClose={() => setShowDiagnostics(false)} />}
 

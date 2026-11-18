@@ -35,6 +35,8 @@ export type QueryOp =
   | 'lens'
   /** Surrounding documents (DISC-DOC-02): anchor lookup and the newer / older searches. */
   | 'context'
+  /** Discover "Export tab results (CSV)" (DISC-SESSION-01). */
+  | 'export'
   /** The diagnostics drawer's own system.query_log lookup (see diag/serverStats.ts) — reserved so
    *  it can be excluded from log_comment tagging (it must never appear in its own results) and
    *  run untraced (see runQuery.ts's runQueryUntracedRows), so it never clutters the activity
