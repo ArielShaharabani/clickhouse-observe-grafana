@@ -29,6 +29,9 @@ import { TraceViewPickerModal } from '../TraceViewPickerModal';
 // Visualize is its own chunk: Discover users never pay for it.
 const LensPage = React.lazy(() => import('../../lens/LensPage').then((m) => ({ default: m.LensPage })));
 
+// Surrounding documents (DISC-DOC-02), reached from the detail panel.
+const ContextView = React.lazy(() => import('../../pages/ContextView').then((m) => ({ default: m.ContextView })));
+
 const LogsExplorer = React.lazy(() =>
   import('../../pages/LogsExplorer').then((m) => ({ default: m.LogsExplorer }))
 );
@@ -255,6 +258,7 @@ function AppRoutes() {
   return (
     <Routes>
       <Route path="logs" element={<LogsExplorer />} />
+      <Route path="context/:viewId/:anchor" element={<ContextView />} />
       <Route
         path="visualize"
         element={

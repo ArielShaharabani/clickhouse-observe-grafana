@@ -121,3 +121,26 @@ DISC-CHART-02 acceptance:
 | Ctrl+click hides it | jest + e2e |
 | Hover shows ⋮ → popover titled with the value: Filter for / Filter out | jest "⋮ opens a popover…"; e2e "legend ⋮ → Filter for…" |
 | Also reachable from field popover 📊 (DISC-SIDEBAR-02) | e2e "IT: breakdown chosen from the field popover…" |
+
+### DISC-DOC-02 (PR 23)
+| Case | Status |
+| --- | --- |
+| IT-I | Drawer → surrounding documents: filters disabled, query dropped, columns kept; re-enable a filter re-queries; breadcrumb back restores Discover ✅ (`tests/features/disc-doc-02.spec.ts`) |
+| IT-F | Context view part: Discover columns (incl. a Map key column) kept ✅ (`tests/features/disc-doc-02.spec.ts` "IT-F: Discover columns are kept") |
+| IT-B | Pinned filter arrives disabled on the context page, store unchanged ✅ (`disc-doc-02.spec.ts`) |
+| SQL | Surrounding / anchor lookup SQL strings, size clamp, hostile anchors, hostile filter values (jest `src/sql/__tests__/surrounding.test.ts`); URL helpers, hostile `ret`, untrusted `cols` (jest `src/data/__tests__/surrounding.test.ts`) |
+
+DISC-DOC-02 acceptance:
+
+| Criterion | Test / status |
+| --- | --- |
+| Route `#/context/<dataViewId>/<docId>`, breadcrumb `Discover / Surrounding documents` | e2e "opens from the detail panel ..." (path, breadcrumb) |
+| Title `Documents surrounding #<id>` | e2e (heading) |
+| Anchor row highlighted | e2e (`data-anchor` row, position 6 of 11) |
+| `Load [5] newer documents` above / `Load [5] older documents` below, number editable | e2e "Load [N] newer / older documents, with an editable step" |
+| Query dropped; filters carried over but disabled (struck through) | e2e "IT-I: query dropped, filters carried over disabled ..." |
+| Columns kept | e2e "IT-F: Discover columns are kept" |
+| Two searches asc/desc with search_after from the anchor's sort values, size N | jest `buildSurroundingDocsQuery` older / newer / anchor; e2e tie order at 09:00:30 and 09:01:00 |
+| Entry from the document flyout ("View surrounding documents") | e2e (all tests open it from the detail panel); re-anchor e2e |
+| Bad / unknown links | e2e "malformed or unknown document links ..."; jest hostile anchors |
+| "View single document" permalink (DISC-DOC-01 header) | gap: not built |

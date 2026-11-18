@@ -1,7 +1,7 @@
 # Context snapshot — read this to restart
 
 Saved after every feature (and every review-fix round). A new session can resume from this file plus `PROGRESS.md` alone.
-Last saved: 2026-11-18, #18 DISC-CHART-02 merged (PR 22, v0.30.0).
+Last saved: 2026-11-18, #20 DISC-DOC-02 merged (PR 23, v0.31.0).
 
 ## Goal
 Bring Kibana Discover + Lens style exploration to Grafana on ClickHouse by extending the **ClickHouse Observe** app plugin.
@@ -37,6 +37,7 @@ Bring Kibana Discover + Lens style exploration to Grafana on ClickHouse by exten
 | 19 | DISC-FILTER-02: Filter builder: range operators, per-type operators, preview | 19 | `src/components/AddFilter/FilterEditForm.tsx`, `src/sql/filters.ts` (`sanitizeFilterPills`, range validation), `buildFilterClause` |
 | 24 | LENS-DIM-04: Top values editor: rank by / direction, Other, missing, include / exclude with regex | 20 | `src/lens/compile.ts` (top-values SQL, `regexError`), `src/lens/state.ts` (`TermsDim` options, `cleanTerms`), `src/lens/DimensionEditor.tsx` |
 | 18 | DISC-CHART-02: Histogram breakdown label and legend actions | 22 | src/components/VolumeHistogram.tsx, src/components/HistogramControls/BreakdownPicker.tsx |
+| 20 | DISC-DOC-02: Surrounding documents | 23 | src/data/surrounding.ts, src/pages/ContextView.tsx |
 
 ## Key decisions (details in DECISIONS.md)
 - Frontend-only; queries via grafana-clickhouse-datasource (`src/data/runQuery.ts`). Plain React + @grafana/ui, no Scenes.
@@ -84,3 +85,4 @@ Status 2026-11-18 (later): PR 18 merged (v0.27.0; gates 930 jest, 79 e2e). Agent
 - 2026-11-18 (later): all third-wave agents done. Open PRs, none merged, full e2e still owed on each (host memory reaped the runs): 22 (chart-02, folded 0.30.0, port 3014) → 23 (doc-02, 3015) → 24 (url-cols security, 3016, patch) → 25 (lens-dataview #16b/c, 3012) → 27 (dataview-time #16d, 3011; also escapes db/table names in introspection; conflicts expected with 24 in queryBuilder.ts/surrounding.ts; `spec_logs_epoch` fixture already loaded) → 26 (fieldstats #22, 3017; based on 0.28.0). Idle worktree containers stopped to save memory; `docker start co-<id>` before its e2e. Run only ONE Grafana worktree container at a time.
 - 2026-11-18: fourth wave (no containers, no playwright; coordinator runs their e2e at merge): `shared-perf-01` (#25 SHARED-PERF-01) and `lens-dim-03` (#23 formula editor), worktrees under co-wt/. They queue after PR 26.
 - 2026-11-18: PR 22 merged (v0.30.0; 1,040 jest, 110 e2e). PR 23 folded to 0.31.0 (gates green, 1,101 jest), e2e running on 3015. Fourth wave done: PR 28 (#25 SHARED-PERF-01) and PR 29 (#23 formula, AST + whitelist; compileLens gained optional 6th arg `index`), both e2e not run yet. Queue: 23 → 24 → 25 → 27 → 26 → 28 → 29.
+- Gotcha (PR 23): in the Lens metric editor a function switch auto-picks a field asynchronously; Playwright `fill()` on the Field combobox can race it and append ("TraceFlagsSeverityNumber"). Test helpers wait for a value, select-all, then type (`tests/features/lens-dim-01.spec.ts` pickField).

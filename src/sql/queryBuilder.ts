@@ -7,7 +7,7 @@
  */
 
 import { isDateBound, isNumericBound } from './filters';
-import { BreakdownSel, ColumnMapping, FilterPill, FilterOp, LogsQueryState, SourceConfig } from '../types';
+import { BreakdownSel, ColumnMapping, FilterPill, FilterOp, LogsQueryState, SelectedColumn, SourceConfig } from '../types';
 import { resolveField, FieldIndex } from './fields';
 import { parseKql, kqlToSql } from './kql';
 import { configSettingsFragments, queryTimeoutFragments, withSettings } from './settings';
@@ -529,6 +529,42 @@ function coerceEpochMs(value: unknown): number | null {
 }
 
 /**
+ * WHERE conditions matching one grid row (1 ms window around its timestamp + equality on the
+ * mapped body / severity / service) — shared by buildLogDetailQuery and the surrounding-documents
+ * anchor lookup. null when no timestamp is mapped or the row's timestamp can't be parsed.
+ */
+function detailRowConditions(config: SourceConfig, row: Record<string, unknown>): string[] | null {
+  const c = config.columns;
+  if (!c.timestamp) {
+    return null;
+  }
+  const tsMs = coerceEpochMs(row[CORE_ALIAS.timestamp]);
+  if (tsMs === null) {
+    return null;
+  }
+  const conditions = [
+    `${c.timestamp} >= fromUnixTimestamp64Milli(${tsMs})`,
+    `${c.timestamp} < fromUnixTimestamp64Milli(${tsMs + 1})`,
+  ];
+  const coarse = config.columns.partitionTimestamp && config.columns.partitionTimestamp !== '-'
+    ? `${config.columns.partitionTimestamp} >= fromUnixTimestamp64Milli(${tsMs}) - INTERVAL 1 SECOND AND ${config.columns.partitionTimestamp} <= fromUnixTimestamp64Milli(${tsMs + 1}) + INTERVAL 1 SECOND`
+    : null;
+  if (coarse) {
+    conditions.push(coarse);
+  }
+  if (c.body && row[CORE_ALIAS.body] !== undefined) {
+    conditions.push(`${c.body} = ${quoteString(String(row[CORE_ALIAS.body] ?? ''))}`);
+  }
+  if (c.severity && row[CORE_ALIAS.severity] !== undefined) {
+    conditions.push(`${c.severity} = ${quoteString(String(row[CORE_ALIAS.severity] ?? ''))}`);
+  }
+  if (c.serviceName && row[CORE_ALIAS.serviceName] !== undefined) {
+    conditions.push(`${c.serviceName} = ${quoteString(String(row[CORE_ALIAS.serviceName] ?? ''))}`);
+  }
+  return conditions;
+}
+
+/**
  * Fetches just the single row the log detail drawer was opened for, instead of hydratePage's
  * whole-page `SELECT *` (see hydratePage's doc comment in LogsExplorer.tsx for the cost that
  * replaces). WHERE narrows to a one-millisecond window around the clicked row's timestamp rather
@@ -559,35 +595,11 @@ export function buildLogDetailQuery(
   row: Record<string, unknown>,
   index?: FieldIndex
 ): string {
-  const c = config.columns;
-  if (!c.timestamp) {
-    return '';
-  }
-  const tsMs = coerceEpochMs(row[CORE_ALIAS.timestamp]);
-  if (tsMs === null) {
+  const conditions = detailRowConditions(config, row);
+  if (!conditions) {
     return '';
   }
   const tbl = tableRef(config, config.logsTable);
-
-  const conditions = [
-    `${c.timestamp} >= fromUnixTimestamp64Milli(${tsMs})`,
-    `${c.timestamp} < fromUnixTimestamp64Milli(${tsMs + 1})`,
-  ];
-  const coarse = config.columns.partitionTimestamp && config.columns.partitionTimestamp !== '-'
-    ? `${config.columns.partitionTimestamp} >= fromUnixTimestamp64Milli(${tsMs}) - INTERVAL 1 SECOND AND ${config.columns.partitionTimestamp} <= fromUnixTimestamp64Milli(${tsMs + 1}) + INTERVAL 1 SECOND`
-    : null;
-  if (coarse) {
-    conditions.push(coarse);
-  }
-  if (c.body && row[CORE_ALIAS.body] !== undefined) {
-    conditions.push(`${c.body} = ${quoteString(String(row[CORE_ALIAS.body] ?? ''))}`);
-  }
-  if (c.severity && row[CORE_ALIAS.severity] !== undefined) {
-    conditions.push(`${c.severity} = ${quoteString(String(row[CORE_ALIAS.severity] ?? ''))}`);
-  }
-  if (c.serviceName && row[CORE_ALIAS.serviceName] !== undefined) {
-    conditions.push(`${c.serviceName} = ${quoteString(String(row[CORE_ALIAS.serviceName] ?? ''))}`);
-  }
   // index is accepted (not used) to keep this builder's signature interchangeable with
   // buildLogsQuery at call sites — point-match conditions above are raw core columns, never
   // Map-key/JSON-path field references that would need index resolution.
@@ -831,31 +843,153 @@ export function buildNumericStatsQuery(config: SourceConfig, sqlExpr: string, op
   );
 }
 
-export function buildSurroundingDocsQuery(
-  config: SourceConfig,
-  rowTimestamp: string,
-  n = 25,
-  direction: 'before' | 'after' = 'before'
-): string {
+/**
+ * A document's position in the surrounding-documents order (DISC-DOC-02): its timestamp in epoch
+ * nanoseconds and a row id (`cityHash64` of the mapped core columns, see contextIdExpr). Both are
+ * decimal digit strings — 64-bit values a JS number can't hold exactly. They come from a URL or a
+ * query result, so they are validated (isContextAnchor) before reaching SQL.
+ */
+export interface ContextAnchor {
+  ns: string;
+  id: string;
+}
+
+const INT64_MAX = '9223372036854775807';
+const UINT64_MAX = '18446744073709551615';
+
+function isDecimalAtMost(s: unknown, max: string): s is string {
+  if (typeof s !== 'string' || !/^(0|[1-9][0-9]*)$/.test(s)) {
+    return false;
+  }
+  return s.length < max.length || (s.length === max.length && s <= max);
+}
+
+/** True for a well-formed anchor: plain decimal digits within Int64 (ns) / UInt64 (id). */
+export function isContextAnchor(a: unknown): a is ContextAnchor {
+  const v = a as ContextAnchor | null;
+  return !!v && isDecimalAtMost(v.ns, INT64_MAX) && isDecimalAtMost(v.id, UINT64_MAX);
+}
+
+/**
+ * Row id that orders documents sharing a timestamp: `cityHash64` over the timestamp and the mapped
+ * body / severity / trace id / service columns (the fields logRowKey compares). Rows equal on all
+ * of these are indistinguishable everywhere in the app anyway. '' when no timestamp is mapped.
+ */
+export function contextIdExpr(config: SourceConfig): string {
   const c = config.columns;
-  // Finding "surrounding" docs is inherently a time-proximity query — meaningless without a
-  // mapped timestamp column, so gate the whole function rather than emit `undefined` into SQL.
   if (!c.timestamp) {
     return '';
   }
-  const tbl = tableRef(config, config.logsTable);
-  const op = direction === 'before' ? '<' : '>';
-  const order = direction === 'before' ? 'DESC' : 'ASC';
+  return `cityHash64(${[c.timestamp, c.body, c.severity, c.traceId, c.serviceName].filter(Boolean).join(', ')})`;
+}
 
+/** Epoch nanoseconds of the mapped timestamp as a string (DateTime and DateTime64 alike). */
+function contextNsExpr(tsCol: string): string {
+  return `toString(toUnixTimestamp64Nano(toDateTime64(${tsCol}, 9)))`;
+}
+
+/** Row-object keys of the anchor values every surrounding-documents row carries. */
+export const CONTEXT_ALIAS = { ns: '__ctxNs', id: '__ctxId' } as const;
+
+/** Upper bound on neighbours fetched per direction. */
+export const MAX_CONTEXT_SIZE = 500;
+
+/**
+ * Resolves a grid row to its ContextAnchor (one point lookup, same match as buildLogDetailQuery).
+ * '' when no timestamp is mapped or the row's timestamp can't be parsed.
+ */
+export function buildContextAnchorLookupQuery(config: SourceConfig, row: Record<string, unknown>): string {
+  const conditions = detailRowConditions(config, row);
+  if (!conditions) {
+    return '';
+  }
+  const tsCol = config.columns.timestamp;
   return withSettings(
     [
-      `SELECT ${c.timestamp} AS timestamp, ${c.body || "''"} AS body,`,
-      `  ${c.severity || "''"} AS severity, ${c.serviceName || "''"} AS serviceName`,
-      `FROM ${tbl}`,
-      `WHERE ${c.timestamp} ${op} ${quoteString(rowTimestamp)}`,
-      `ORDER BY ${c.timestamp} ${order}`,
-      `LIMIT ${n}`,
+      `SELECT ${contextNsExpr(tsCol)} AS ${CONTEXT_ALIAS.ns}, toString(${contextIdExpr(config)}) AS ${CONTEXT_ALIAS.id}`,
+      `FROM ${tableRef(config, config.logsTable)}`,
+      `WHERE ${conditions.join(' AND ')}`,
+      `LIMIT 1`,
     ],
-    configSettingsFragments(config)
+    [...queryTimeoutFragments(config), ...configSettingsFragments(config)]
+  );
+}
+
+export interface SurroundingDocsOpts {
+  /** 'anchor' fetches the anchor itself; 'newer' / 'older' its neighbours. */
+  direction: 'anchor' | 'newer' | 'older';
+  /** Number of neighbours (ignored for 'anchor'); clamped to 1..MAX_CONTEXT_SIZE. */
+  size: number;
+  /** Grid columns to select (trusted: rebuilt from discovered fields by the caller). */
+  columns: SelectedColumn[];
+  /** Filters for the neighbours; disabled ones are skipped, the anchor ignores them. The search
+   *  query never applies here (spec). */
+  filters: FilterPill[];
+}
+
+/**
+ * Surrounding documents (DISC-DOC-02): Kibana's two `search_after` searches around the anchor's
+ * sort values, here a tuple comparison on (timestamp, row id). Newer rows are read ascending and
+ * older rows descending, `size` each, so documents sharing the anchor's timestamp are split
+ * deterministically by row id. Not bound to the time picker. The plain timestamp bound (and the
+ * coarse partition bound) lets ClickHouse prune parts; the tuple comparison does the exact cut.
+ * '' when no timestamp is mapped or the anchor is malformed.
+ */
+export function buildSurroundingDocsQuery(
+  config: SourceConfig,
+  anchor: ContextAnchor,
+  opts: SurroundingDocsOpts,
+  index?: FieldIndex
+): string {
+  const c = config.columns;
+  if (!c.timestamp || !isContextAnchor(anchor)) {
+    return '';
+  }
+  const ts = c.timestamp;
+  const at = `fromUnixTimestamp64Nano(${anchor.ns})`;
+  const idExpr = contextIdExpr(config);
+  const prune = c.partitionTimestamp && c.partitionTimestamp !== '-' ? c.partitionTimestamp : '';
+  const conditions: string[] = [];
+  let order: string | null = null;
+  let limit = 1;
+  if (opts.direction === 'anchor') {
+    conditions.push(`${ts} = ${at}`, `${idExpr} = ${anchor.id}`);
+    if (prune) {
+      conditions.push(`${prune} >= ${at} - INTERVAL 1 SECOND AND ${prune} <= ${at} + INTERVAL 1 SECOND`);
+    }
+  } else {
+    const newer = opts.direction === 'newer';
+    const cmp = newer ? '>' : '<';
+    conditions.push(`${ts} ${cmp}= ${at}`, `(${ts}, ${idExpr}) ${cmp} (${at}, ${anchor.id})`);
+    if (prune) {
+      conditions.push(newer ? `${prune} >= ${at} - INTERVAL 1 SECOND` : `${prune} <= ${at} + INTERVAL 1 SECOND`);
+    }
+    const dir = newer ? 'ASC' : 'DESC';
+    order = `ORDER BY ${ts} ${dir}, ${idExpr} ${dir}`;
+    limit = Math.min(MAX_CONTEXT_SIZE, Math.max(1, Math.floor(opts.size) || 1));
+  }
+  // Like Kibana, the anchor is fetched by its id alone: filters only narrow the neighbours.
+  if (opts.direction !== 'anchor') {
+    for (const f of opts.filters) {
+      if (!f.disabled) {
+        conditions.push(buildFilterClause(f, config, index));
+      }
+    }
+  }
+  const extraSelect = opts.columns.filter((col) => !col.isCore).map((col) => `${col.sqlExpr} AS ${col.key}`);
+  return withSettings(
+    [
+      `SELECT ${[
+        ...buildCoreSelectAliases(c),
+        ...extraSelect,
+        `${contextNsExpr(ts)} AS ${CONTEXT_ALIAS.ns}`,
+        `toString(${idExpr}) AS ${CONTEXT_ALIAS.id}`,
+      ].join(', ')}`,
+      `FROM ${tableRef(config, config.logsTable)}`,
+      `WHERE ${conditions.join(' AND ')}`,
+      order,
+      `LIMIT ${limit}`,
+    ],
+    [...queryTimeoutFragments(config), ...configSettingsFragments(config)]
   );
 }

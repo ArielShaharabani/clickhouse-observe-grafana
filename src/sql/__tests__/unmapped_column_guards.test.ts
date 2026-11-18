@@ -122,16 +122,20 @@ describe('resolveVolumeBreakdown', () => {
   });
 });
 
+const ANCHOR = { ns: '1767603630000000000', id: '42' };
+const CTX_OPTS = { direction: 'older' as const, size: 5, columns: [], filters: [] };
+
 describe('buildSurroundingDocsQuery', () => {
   it('returns empty string when timestamp is unmapped', () => {
     const cfg: SourceConfig = { ...arbitraryConfig, columns: { ...EMPTY_COLUMN_MAPPING } };
-    expect(buildSurroundingDocsQuery(cfg, '2026-01-01 00:00:00')).toBe('');
+    expect(buildSurroundingDocsQuery(cfg, ANCHOR, CTX_OPTS)).toBe('');
   });
 
   it('degrades gracefully when body is unmapped', () => {
     const cfg: SourceConfig = { ...arbitraryConfig, columns: { ...EMPTY_COLUMN_MAPPING, timestamp: 'ts' } };
-    const sql = buildSurroundingDocsQuery(cfg, '2026-01-01 00:00:00');
+    const sql = buildSurroundingDocsQuery(cfg, ANCHOR, CTX_OPTS);
     expect(sql).not.toContain('undefined');
-    expect(sql).toContain("'' AS body");
+    expect(sql).toContain('cityHash64(ts)');
+    expect(sql).toContain('ts AS __timestamp');
   });
 });
