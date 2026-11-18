@@ -64,7 +64,13 @@ export function compileLens(
   state: LensState,
   config: SourceConfig,
   conditions: string[],
-  timeRange: TimeRange
+  timeRange: TimeRange,
+  /**
+   * 'dashboard': SQL for a saved panel (LENS-SAVE-01) — date buckets use the ClickHouse
+   * datasource's `$__timeInterval` macro and come back as DateTime, so the panel follows the
+   * dashboard's time range and resolution instead of the range it was built on.
+   */
+  mode: 'app' | 'dashboard' = 'app'
 ): CompiledLens {
   const tbl = tableRef(config, config.logsTable);
   const where = conditions.length > 0 ? conditions.join(' AND ') : '';
@@ -74,7 +80,9 @@ export function compileLens(
   const restrictions: string[] = [];
   const selects: string[] = [];
   state.buckets.forEach((b: BucketDim, i) => {
-    if (b.kind === 'date_histogram') {
+    if (b.kind === 'date_histogram' && mode === 'dashboard') {
+      selects.push(`$__timeInterval(${quoteIdentifier(b.field)}) AS ${bucketAlias(i)}`);
+    } else if (b.kind === 'date_histogram') {
       const iv = resolveInterval('auto', timeRange);
       intervalMs = iv.intervalMs;
       selects.push(

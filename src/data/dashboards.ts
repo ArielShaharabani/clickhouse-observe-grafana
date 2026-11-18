@@ -47,3 +47,26 @@ export async function saveDashboard(
     overwrite: opts.overwrite ?? false,
   });
 }
+
+export interface LibraryPanelRef {
+  uid: string;
+  name: string;
+}
+
+/**
+ * Create a library panel from a panel model (POST /api/library-elements, kind 1 = panel), in the
+ * General folder unless a folder is given. Dashboards reference it as `{ libraryPanel: { uid, name } }`.
+ */
+export async function createLibraryPanel(
+  name: string,
+  model: Record<string, unknown>,
+  folderUid?: string
+): Promise<LibraryPanelRef> {
+  const res = await getBackendSrv().post<{ result: LibraryPanelRef }>('/api/library-elements', {
+    name,
+    model,
+    kind: 1,
+    ...(folderUid ? { folderUid } : {}),
+  });
+  return { uid: res.result.uid, name: res.result.name };
+}

@@ -20,6 +20,10 @@ import { buildFieldIndex } from '../sql/fields';
 import { buildWhereConditions } from '../sql/queryBuilder';
 import { tableKey } from '../state/sharedSearch';
 import { discoverColumns, discoverUrl, lensContextFor } from './handoff';
+import { buildLensPanel, defaultPanelTitle } from './panelExport';
+import { SaveLensModal } from './SaveLensModal';
+import { canCreateDashboards } from '../utils/permissions';
+import { loadLensDraft, saveLensDraft } from './draft';
 import { FilterPills } from '../components/FilterPills';
 import { useAutocompleteSources } from '../autocomplete/service';
 import { addFilterPill, makeFilter } from '../sql/filters';
@@ -105,10 +109,29 @@ export function LensPage() {
   const search = urlState.search ?? '';
   const filters = useMemo(() => urlState.filters ?? [], [urlState]);
   const timeRange = useMemo(() => urlState.timeRange ?? defaultRange(), [urlState]);
+  const restored = useRef(false);
+  useEffect(() => {
+    if (restored.current) {
+      return;
+    }
+    restored.current = true;
+    const draft = new URLSearchParams(window.location.search).has('lens') ? undefined : loadLensDraft();
+    if (draft) {
+      setSearchParams(
+        (prev) => {
+          const sp = new URLSearchParams(prev);
+          sp.set('lens', encodeLens(draft));
+          return sp;
+        },
+        { replace: true }
+      );
+    }
+  }, [setSearchParams]);
   const urlLens = useMemo(() => decodeLens(new URLSearchParams(paramsKey).get('lens')) ?? EMPTY_LENS, [paramsKey]);
 
   const setLens = useCallback(
     (next: LensState) => {
+      saveLensDraft(next);
       setSearchParams(
         (prev) => {
           const sp = new URLSearchParams(prev);
@@ -290,6 +313,15 @@ export function LensPage() {
   // LENS-INTERACT-01: one click on a bar / point. One candidate filter → applied at once; several
   // (X value + breakdown value, or a time bucket + breakdown) → "Select filters to apply".
   const [chooser, setChooser] = useState<FilterChoice[] | null>(null);
+  const [saveOpen, setSaveOpen] = useState(false);
+  const buildPanel = (title: string, description: string) =>
+    buildLensPanel(
+      lens,
+      config,
+      buildWhereConditions(config, { ...DEFAULT_LOGS_QUERY_STATE, search, filters }, fieldIndex),
+      timeRange,
+      { id: 1, gridPos: { x: 0, y: 0, w: 12, h: 8 }, title, description }
+    );
   // Same pill the action registry's Filter for / Filter out builds everywhere else.
   const pillFor = (field: string, value: string, mode: 'for' | 'out'): FilterPill =>
     makeFilter(field, value, mode === 'for' ? '=' : '!=');
@@ -387,6 +419,9 @@ export function LensPage() {
         <LinkButton href={exploreUrl} target="_blank" variant="secondary" size="sm" icon="compass" fill="outline">
           Explore in Discover
         </LinkButton>
+        <Button size="sm" icon="save" onClick={() => setSaveOpen(true)} disabled={isEmptyLens(lens) || fieldsLoading}>
+          Save
+        </Button>
         <TimeRangePicker
           value={timeRange}
           onChange={setTimeRange}
@@ -544,6 +579,14 @@ export function LensPage() {
           )}
         </section>
 
+        <SaveLensModal
+          isOpen={saveOpen}
+          onDismiss={() => setSaveOpen(false)}
+          defaultTitle={defaultPanelTitle(lens)}
+          buildPanel={buildPanel}
+          timeRange={timeRange}
+          canSaveDashboards={canCreateDashboards()}
+        />
         {chooser && (
           <FilterChooser
             choices={chooser}
