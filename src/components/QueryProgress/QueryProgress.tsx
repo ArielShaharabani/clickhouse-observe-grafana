@@ -35,25 +35,29 @@ export interface QueryProgressProps {
 
 export function QueryProgress({ active, onCancel, slowAfterMs = SLOW_QUERY_MS }: QueryProgressProps) {
   const styles = useStyles2(getStyles);
-  const [startedAt, setStartedAt] = useState<number | null>(null);
-  const [now, setNow] = useState(() => Date.now());
+  // Whole seconds since this run started; reset on every idle ↔ running edge (adjusted during
+  // render, React's "storing information from previous renders" pattern).
+  const [prevActive, setPrevActive] = useState(active);
+  const [seconds, setSeconds] = useState(0);
   const [cancelled, setCancelled] = useState(false);
+  if (prevActive !== active) {
+    setPrevActive(active);
+    setSeconds(0);
+    if (active) {
+      setCancelled(false);
+    }
+  }
 
   useEffect(() => {
     if (!active) {
-      setStartedAt(null);
       return;
     }
-    const start = Date.now();
-    setStartedAt(start);
-    setNow(start);
-    setCancelled(false);
-    const id = window.setInterval(() => setNow(Date.now()), 1000);
+    const id = window.setInterval(() => setSeconds((s) => s + 1), 1000);
     return () => window.clearInterval(id);
   }, [active]);
 
-  const elapsed = startedAt === null ? 0 : now - startedAt;
-  const slow = active && startedAt !== null && elapsed >= slowAfterMs;
+  const elapsed = seconds * 1000;
+  const slow = active && elapsed >= slowAfterMs;
 
   return (
     <div className={styles.root}>
@@ -86,7 +90,14 @@ export function QueryProgress({ active, onCancel, slowAfterMs = SLOW_QUERY_MS }:
         <div className={styles.chip} role="status" data-testid="query-progress-cancelled">
           <Icon name="info-circle" size="sm" />
           <span>Query cancelled. Results are not up to date; refresh to run it again.</span>
-          <Button size="sm" variant="secondary" fill="text" icon="times" aria-label="Dismiss" onClick={() => setCancelled(false)} />
+          <Button
+            size="sm"
+            variant="secondary"
+            fill="text"
+            icon="times"
+            aria-label="Dismiss"
+            onClick={() => setCancelled(false)}
+          />
         </div>
       )}
     </div>

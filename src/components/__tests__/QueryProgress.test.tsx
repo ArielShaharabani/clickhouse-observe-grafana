@@ -72,6 +72,8 @@ describe('lensApproxNote', () => {
   it('flags unique count only', () => {
     expect(lensApproxNote({ metrics: [{ op: 'count' }] } as any)).toBeNull();
     expect(lensApproxNote({ metrics: [{ op: 'avg', field: 'd' }] } as any)).toBeNull();
-    expect(lensApproxNote({ metrics: [{ op: 'count' }, { op: 'unique', field: 'svc' }] } as any)).toMatch(/approximate/);
+    expect(lensApproxNote({ metrics: [{ op: 'count' }, { op: 'unique', field: 'svc' }] } as any)).toMatch(
+      /approximate/
+    );
   });
 });

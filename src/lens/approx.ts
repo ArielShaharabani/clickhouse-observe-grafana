@@ -6,7 +6,5 @@ import type { LensState } from './state';
  * ~65k distinct values). Returns null when every number is exact.
  */
 export function lensApproxNote(state: Pick<LensState, 'metrics'>): string | null {
-  return state.metrics.some((m) => m.op === 'unique')
-    ? 'Unique counts are approximate (ClickHouse uniq).'
-    : null;
+  return state.metrics.some((m) => m.op === 'unique') ? 'Unique counts are approximate (ClickHouse uniq).' : null;
 }
