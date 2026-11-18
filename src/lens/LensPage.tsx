@@ -11,14 +11,17 @@ import { css, cx } from '@emotion/css';
 import { dateTime, GrafanaTheme2, IconName, locationUtil, TimeRange } from '@grafana/data';
 import { Alert, Button, Icon, IconButton, Input, LinkButton, Spinner, TimeRangePicker, useStyles2 } from '@grafana/ui';
 import { DataViewContext, SourceConfigContext } from '../components/App/App';
-import { useFieldDiscovery } from '../components/FieldsContext';
+import { discoveryKey, useFieldDiscovery } from '../components/FieldsContext';
+import { DataViewPicker } from '../components/DataViewPicker/DataViewPicker';
 import { FIELD_TYPE_ICONS } from '../components/FieldSidebar/fieldIcons';
 import { FIELD_DRAG_MIME } from '../constants';
 import { decodeLogsState, encodeLogsState } from '../data/urlState';
 import { runQueryRows } from '../data/runQuery';
 import { buildFieldIndex } from '../sql/fields';
 import { buildWhereConditions } from '../sql/queryBuilder';
-import { tableKey } from '../state/sharedSearch';
+import { filtersForViewSwitch, loadPinnedFilters, tableKey } from '../state/sharedSearch';
+import { hasSearchContext, rememberSearchContext, restoreSearchContext } from '../state/lastSearch';
+import { draftScopeOf, visualizeEntry } from './entry';
 import { discoverColumns, discoverUrl, lensContextFor } from './handoff';
 import { buildLensPanel, defaultPanelTitle } from './panelExport';
 import { SaveLensModal } from './SaveLensModal';
@@ -102,9 +105,75 @@ export function dimensionGroups(s: LensState): Group[] {
 export function LensPage() {
   const styles = useStyles2(getStyles);
   const config = useContext(SourceConfigContext);
-  const { activeView } = useContext(DataViewContext);
+  const { activeView, views, setActiveViewId } = useContext(DataViewContext);
   const [searchParams, setSearchParams] = useSearchParams();
   const paramsKey = searchParams.toString();
+
+  // Entry (#16b / #16c): restore the tab's last context when the URL has none, apply the URL's
+  // data view, merge pins, restore the draft — computed once, applied in ONE URL update below.
+  const [entry] = useState(() =>
+    visualizeEntry({
+      params: searchParams,
+      views,
+      activeView,
+      storedPins: loadPinnedFilters(),
+      restoreContext: restoreSearchContext,
+      loadDraft: loadLensDraft,
+    })
+  );
+  const [entered, setEntered] = useState(false);
+  useEffect(() => {
+    if (entry.params.toString() !== searchParams.toString()) {
+      setSearchParams(entry.params, { replace: true });
+    }
+    if (entry.view && entry.view.id !== activeView?.id) {
+      setActiveViewId(entry.view.id);
+    }
+    // Mount-once flag: what the page reads before this has applied is not its entry state yet.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setEntered(true);
+    // Once, at mount.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  // The page is on its view once the entry's view is active (App applies it a render later).
+  // Latched: after that, a switch from the picker must not un-settle the page, or the switch
+  // effect below would never run for it.
+  const entryViewActive = entered && (!entry.view || activeView?.id === entry.view.id);
+  const [settledOnce, setSettledOnce] = useState(false);
+  useEffect(() => {
+    if (entryViewActive && !settledOnce) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setSettledOnce(true);
+    }
+  }, [entryViewActive, settledOnce]);
+  const viewSettled = settledOnce || entryViewActive;
+  useEffect(() => {
+    if (!entered) {
+      return;
+    }
+    const sp = new URLSearchParams(paramsKey);
+    if (hasSearchContext(sp)) {
+      rememberSearchContext(sp);
+      return;
+    }
+    // The side-menu link clicked while already on Visualize: same page, URL emptied — enter again.
+    const again = visualizeEntry({
+      params: sp,
+      views,
+      activeView,
+      storedPins: loadPinnedFilters(),
+      restoreContext: restoreSearchContext,
+      loadDraft: loadLensDraft,
+    });
+    if (again.params.toString() !== sp.toString()) {
+      setSearchParams(again.params, { replace: true });
+    }
+    if (again.view && again.view.id !== activeView?.id) {
+      setActiveViewId(again.view.id);
+    }
+    // Driven by the URL only.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [paramsKey, entered]);
 
   // Shared search context from the URL (same params as Discover).
   const urlState = useMemo(() => decodeLogsState(new URLSearchParams(paramsKey)), [paramsKey]);
@@ -112,32 +181,11 @@ export function LensPage() {
   const filters = useMemo(() => urlState.filters ?? [], [urlState]);
   const timeRange = useMemo(() => urlState.timeRange ?? defaultRange(), [urlState]);
   // LENS-SAVE-01 draft, scoped to the datasource + table the chart was built on.
-  const draftScope = `${config.datasourceUid}|${tableKey(config.database, config.logsTable)}`;
-  const restored = useRef(false);
-  useEffect(() => {
-    if (restored.current) {
-      return;
-    }
-    restored.current = true;
-    const draft = new URLSearchParams(window.location.search).has('lens') ? undefined : loadLensDraft(draftScope);
-    if (draft) {
-      setSearchParams(
-        (prev) => {
-          const sp = new URLSearchParams(prev);
-          sp.set('lens', encodeLens(draft));
-          return sp;
-        },
-        { replace: true }
-      );
-    }
-  }, [setSearchParams, draftScope]);
+  const draftScope = draftScopeOf(config);
   const urlLens = useMemo(() => decodeLens(new URLSearchParams(paramsKey).get('lens')) ?? EMPTY_LENS, [paramsKey]);
-  // Every chart shown (also one opened from a Discover link) becomes the draft; clearing happens in setLens.
-  useEffect(() => {
-    if (restored.current && !isEmptyLens(urlLens)) {
-      saveLensDraft(draftScope, urlLens);
-    }
-  }, [urlLens, draftScope]);
+  // Every chart shown (also one opened from a Discover link) becomes the draft; clearing happens in
+  // setLens. Only once this view's fields are in (the effect is declared below, after discovery):
+  // mid-switch the URL still holds the previous view's chart, which must not become this view's draft.
 
   const setLens = useCallback(
     (raw: LensState) => {
@@ -203,7 +251,10 @@ export function LensPage() {
   );
 
   // Fields of the active data view.
-  const { fields, loading: fieldsLoading } = useFieldDiscovery(config, timeRange);
+  const { fields, loading: discovering, fieldsFor } = useFieldDiscovery(config, timeRange);
+  // Fields are usable only when they are this view's: right after a view switch `fields` still
+  // holds the previous table's until the new discovery publishes (#16b).
+  const fieldsLoading = discovering || !viewSettled || fieldsFor !== discoveryKey(config);
   const fieldIndex = useMemo(() => buildFieldIndex(fields), [fields]);
   const fieldIndexRef = useRef(fieldIndex);
   useLayoutEffect(() => {
@@ -226,6 +277,53 @@ export function LensPage() {
     () => (fieldsLoading ? urlLens : sanitizeLens(urlLens, allowedFields)),
     [urlLens, allowedFields, fieldsLoading]
   );
+  useEffect(() => {
+    if (!fieldsLoading && !isEmptyLens(lens)) {
+      saveLensDraft(draftScope, lens);
+    }
+  }, [lens, draftScope, fieldsLoading]);
+
+  // Data view switch on this page (#16b): the URL names the new view, query and time stay, filters
+  // follow filtersForViewSwitch (D7 for pins; other pills disabled on a different table), and once
+  // the new view's fields are in, the chart keeps only dimensions on fields that view has.
+  const prevView = useRef<{ id: string; table: string } | undefined>(undefined);
+  const resanitize = useRef(false);
+  useEffect(() => {
+    if (!viewSettled || !activeView) {
+      return;
+    }
+    const now = { id: activeView.id, table: tableKey(activeView.database, activeView.logsTable) };
+    const before = prevView.current;
+    prevView.current = now;
+    if (!before || before.id === now.id) {
+      return;
+    }
+    resanitize.current = true;
+    const nextFilters = filtersForViewSwitch(filters, loadPinnedFilters(), before.table, now.table);
+    setSearchParams(
+      (prev) => {
+        const sp = new URLSearchParams(prev);
+        sp.set('ds', now.id);
+        if (nextFilters.length > 0) {
+          sp.set('filters', JSON.stringify(nextFilters));
+        } else {
+          sp.delete('filters');
+        }
+        return sp;
+      },
+      { replace: false }
+    );
+    // Only the view change drives this; `filters` is read as it is at the switch.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeView, viewSettled]);
+  useEffect(() => {
+    if (resanitize.current && !fieldsLoading) {
+      resanitize.current = false;
+      if (encodeLens(lens) !== encodeLens(urlLens)) {
+        setLens(lens);
+      }
+    }
+  }, [fieldsLoading, lens, urlLens, setLens]);
   const { loadValues } = useAutocompleteSources({
     config,
     query: { ...DEFAULT_LOGS_QUERY_STATE, search, filters },
@@ -431,6 +529,7 @@ export function LensPage() {
     <div className={styles.page}>
       <div className={styles.toolbar}>
         <span className={styles.title}>Visualize</span>
+        <DataViewPicker />
         <span className={styles.context} title={`${config.database}.${config.logsTable}`}>
           {config.database}.{config.logsTable}
           {search && ` · ${search}`}

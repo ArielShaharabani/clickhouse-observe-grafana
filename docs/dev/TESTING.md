@@ -152,7 +152,30 @@ DISC-DOC-02 acceptance:
 | `buildLogsQuery` never emits an unsafe alias / expression; hostile sort column and direction fall back (jest `sanitizeColumns.test.ts`) | ✅ |
 | Crafted link renders without the injected column; hostile core column uses the mapping; hostile sort falls back; a legitimate Map key column from a link is kept (`tests/features/sec-url-cols.spec.ts`) | ✅ |
 
-### DATAVIEW-TIME (PR 27)
+### LENS-DATAVIEW (PR 25)
+| Case | Status |
+| --- | --- |
+| IT-G | Discover → Visualize via the toolbar "Explore in Visualize" keeps q, filters, ds and relative time (`tests/features/lens-dataview.spec.ts`) ✅ |
+| IT-K | Visualize from a static link restores the tab context (`lens-dataview.spec.ts` side-menu test); a link with its own context wins ✅ |
+| Pins (D7) on Visualize | stored pin merged when the URL has no filters; pinned pill disabled on another table and enabled again on its own; plain pill disabled on another table (`lens-dataview.spec.ts`; jest `dataview.test.ts`) ✅ |
+| View switch | dimensions on missing fields dropped, query/time kept, chart re-queried against the new table, URL ds applied on load and carried by Explore in Discover (`lens-dataview.spec.ts`) ✅ |
+| Discovery | `fieldsFor` keeps the old table's key until the new table publishes (jest `FieldsContext.test.tsx`) ✅ |
+
+LENS-DATAVIEW acceptance:
+
+| Criterion | Test / status |
+| --- | --- |
+| Data view picker in the Visualize search bar | e2e "#16b: Visualize has a data view picker …" |
+| Switch keeps query, time; drops fields the view lacks | same e2e; jest `visualizeEntry` / `filtersForViewSwitch` |
+| Chart re-queries the new view | e2e "the chart re-queries the new view" |
+| Pins follow D7 on a switch | e2e "#16b / D7 …"; jest `filtersForViewSwitch` |
+| URL data view applied on Visualize; carried to Discover | e2e "the URL data view applies on Visualize …" |
+| Labeled Explore in Visualize on Discover, same context incl. time | e2e "#16c / IT-G …"; jest "Explore in Visualize link" |
+| Side-menu Visualize restores the last context | e2e "#16c: Visualize from the side menu …"; jest last-context suite (untrusted input) |
+| Side-menu Visualize clicked while already on Visualize | re-enters via the same `visualizeEntry` (effect on an emptied URL); jest covers the function, no e2e (Grafana's nav menu docking varies) |
+| Per-layer data view (spec 20-lens.md:13) | gap left: LENS-LAYER-01 (#28) |
+
+### DATAVIEW-TIME (PR 30)
 | Case | Status |
 | --- | --- |
 | Converted time fields (epoch s / ms / ns, ISO text) find every fixture row in the fixture range and filter by level (`tests/features/dataview-time.spec.ts`, fixture view `default.spec_logs_epoch` from `scripts/clickhouse-init/05_dataview_time_fixture.sql`) | ✅ |
@@ -162,7 +185,7 @@ DISC-DOC-02 acceptance:
 | `timeExpr` per format, hostile stored config, column kinds, every query builder + Lens through `timeExpr` (jest `src/sql/__tests__/timeExpr.test.ts`) | ✅ |
 | Picker options / defaults / guess / note, `omitKeys`, schema-query escaping (jest `src/components/__tests__/TimeFieldSelect.test.tsx`) | ✅ |
 
-### DISC-FIELDSTATS-01 (PR 26)
+### DISC-FIELDSTATS-01 (PR 30)
 | Case | Status |
 | --- | --- |
 | IT-A | Stats tab as producer (expanded row Filter for → count + stats refresh) and consumer (URL filter → 1 category, 27.4% payments errors) (`tests/features/disc-fieldstats-01.spec.ts`) ✅ |
@@ -170,7 +193,7 @@ DISC-DOC-02 acceptance:
 | Table | documents %, distinct, keyword strip / numeric sparkline, eye toggle, name filter, back to Documents (`disc-fieldstats-01.spec.ts`; jest `FieldStatsTab.test.tsx`) ✅ |
 | SQL | one sample per batch, positional aliases, numeric-only summary, absent stand-ins dropped (jest `field_stats.test.ts`); checked against ClickHouse on the fixture (3,483 / 792 / 487 / 238) ✅ |
 
-### SHARED-PERF-01 (PR 28)
+### SHARED-PERF-01 (PR 30)
 | Case | Status |
 | --- | --- |
 | Loading bar on Discover appears while queries run, disappears after (`tests/features/shared-perf-01.spec.ts`, queries delayed with page.route) | written, e2e not run (coordinator) |
@@ -179,7 +202,7 @@ DISC-DOC-02 acceptance:
 | QueryProgress unit: idle renders nothing, bar immediate, chip after delay, Cancel → onCancel + notice, new run clears notice, finished run leaves none; `formatElapsed`; `lensApproxNote` (jest `QueryProgress.test.tsx`) | ✅ |
 | Map keys popover caption says "sample records" (jest `FieldKeysPopover.test.tsx`) | ✅ |
 
-### LENS-DIM-03 (PR 29)
+### LENS-DIM-03 (PR 30)
 | Case | Status |
 | --- | --- |
 | Formula parse / compile / precedence / functions | jest `src/lens/__tests__/formula.test.ts` ✅ |

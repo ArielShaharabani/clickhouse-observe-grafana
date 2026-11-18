@@ -1,7 +1,7 @@
 # Context snapshot — read this to restart
 
 Saved after every feature (and every review-fix round). A new session can resume from this file plus `PROGRESS.md` alone.
-Last saved: 2026-11-18, #23 LENS-DIM-03 merged (PR 29, v0.35.0).
+Last saved: 2026-11-18, #23 LENS-DIM-03 merged (PR 30, v0.36.0).
 
 ## Goal
 Bring Kibana Discover + Lens style exploration to Grafana on ClickHouse by extending the **ClickHouse Observe** app plugin.
@@ -39,10 +39,11 @@ Bring Kibana Discover + Lens style exploration to Grafana on ClickHouse by exten
 | 18 | DISC-CHART-02: Histogram breakdown label and legend actions | 22 | src/components/VolumeHistogram.tsx, src/components/HistogramControls/BreakdownPicker.tsx |
 | 20 | DISC-DOC-02: Surrounding documents | 23 | src/data/surrounding.ts, src/pages/ContextView.tsx |
 | sec | URL-COLS: Security: sanitize URL / saved-search columns and sort | 24 | src/data/columns.ts, src/sql/queryBuilder.ts, src/data/surrounding.ts |
-| 16d | DATAVIEW-TIME: Data view time field on Configuration (converted epoch / text time columns) | 27 | src/sql/timeExpr.ts, src/components/DataViewPicker/TimeFieldSelect.tsx, src/components/AppConfig/AppConfig.tsx |
-| 22 | DISC-FIELDSTATS-01: Field statistics tab | 26 | src/sql/fieldStats.ts, src/components/FieldStatsTab/FieldStatsTab.tsx |
-| 25 | SHARED-PERF-01: Loading and sampling cues | 28 | src/components/QueryProgress/QueryProgress.tsx, src/lens/approx.ts |
-| 23 | LENS-DIM-03: Formula editor | 29 | src/lens/formula.ts, src/lens/FormulaEditor.tsx |
+| 16b/16c | LENS-DATAVIEW: Visualize data view picker, Explore in Visualize, side-menu context restore (#16b/#16c) | 25 | src/lens/entry.ts, src/state/sharedSearch.ts, src/lens/LensPage.tsx, src/pages/LogsExplorer.tsx |
+| 16d | DATAVIEW-TIME: Data view time field on Configuration (converted epoch / text time columns) | 30 | src/sql/timeExpr.ts, src/components/DataViewPicker/TimeFieldSelect.tsx, src/components/AppConfig/AppConfig.tsx |
+| 22 | DISC-FIELDSTATS-01: Field statistics tab | 30 | src/sql/fieldStats.ts, src/components/FieldStatsTab/FieldStatsTab.tsx |
+| 25 | SHARED-PERF-01: Loading and sampling cues | 30 | src/components/QueryProgress/QueryProgress.tsx, src/lens/approx.ts |
+| 23 | LENS-DIM-03: Formula editor | 30 | src/lens/formula.ts, src/lens/FormulaEditor.tsx |
 
 ## Key decisions (details in DECISIONS.md)
 - Frontend-only; queries via grafana-clickhouse-datasource (`src/data/runQuery.ts`). Plain React + @grafana/ui, no Scenes.

@@ -1,8 +1,8 @@
 # Progress — read this first when resuming
 
-**Current item:** batch PR (feat/batch-1: #16d PR 27, #22 PR 26, #25 PR 28, #23 PR 29 — folded 0.32.0–0.35.0, D28–D31); PR 25 (lens-dataview #16b/#16c) being fixed separately.
-**Last completed step:** batch-1 folded (#16d DATAVIEW-TIME 0.32.0, #22 DISC-FIELDSTATS-01 0.33.0, #25 SHARED-PERF-01 0.34.0, #23 LENS-DIM-03 0.35.0).
-**Next step:** merge the batch PR (squash), close PRs 26/27/28/29 as superseded. PR 25: whichever of 25 / batch merges second renumbers its version and D number after the other (both currently claim 0.32.0 / D28). Then PLAN todos: #26 LENS-CHART-01 next. E2E: `--workers=3`, jest `--maxWorkers 1` (ClickHouse memory-capped); `scripts/dev/e2e-affected.sh` lists the per-branch specs.
+**Current item:** none in flight.
+**Last completed step:** batch PR 30 (supersedes PRs 27, 26, 28, 29): #16d data view time field (0.33.0), #22 field statistics (0.34.0), #25 loading cues (0.35.0), #23 formula editor (0.36.0).
+**Next step:** next PLAN todos: #26 LENS-CHART-01, #27 LENS-STYLE-01, #28 LENS-LAYER-01, #29 LENS-INSPECT-01, then importance-2 Verify items (#30, #32, #33) and #31. Fan out agents (no containers; coordinator runs e2e), merge in batches: one batch branch, one full e2e `--workers=3`, one PR. Per merge: `git merge origin/master`, fold with `scripts/dev/fold-pending.py`, gates (jest --maxWorkers 1), e2e under `.e2e-lock`, squash-merge.
 **Open issues:** none. Deferred Lens items: per-group drag-and-drop (LENS-DIM-01 DnD; workspace drop works), formula (#23), advanced metric options (filter by, time shift), value format/colour/axis side (LENS-STYLE-01), date interval picker, "Other" bucket. Deferred elsewhere: DISC-DOC-02 links (#20); histogram now-line; field list Empty/Meta; grid Summary column etc. (#16); popover Visualize (#15).
 
 ## Environment notes

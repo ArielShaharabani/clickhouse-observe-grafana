@@ -10,7 +10,7 @@ Versions track the plugin's release history. `Unreleased` collects commits not y
 
 ---
 
-## [0.35.0] — 2026-11-18
+## [0.36.0] — 2026-11-18
 
 ### Added
 - **Formula metrics on Visualize** (#23, LENS-DIM-03; spec 20-lens.md "Formula editor"). A metric's editor has a `Quick function | Formula` switch; switching converts the quick function (`median(SeverityNumber)`, `percentile(x, percentile=95)`, `count()`). Formulas combine aggregations with `+ - * /`, parentheses and numbers, e.g. the error rate `count(kql='SeverityText : error') / count()`.
@@ -22,7 +22,7 @@ Versions track the plugin's release history. `Unreleased` collects commits not y
 
 ---
 
-## [0.34.0] — 2026-11-18
+## [0.35.0] — 2026-11-18
 
 ### Added
 - **Loading bar** (SHARED-PERF-01): a thin indeterminate bar under the toolbar on Discover (list + histogram queries) and Visualize (field discovery + chart query). Zero-height, so it never shifts the layout; respects reduced motion.
@@ -34,7 +34,7 @@ Versions track the plugin's release history. `Unreleased` collects commits not y
 
 ---
 
-## [0.33.0] — 2026-11-18
+## [0.34.0] — 2026-11-18
 
 ### Added
 - **Field statistics tab on Discover** (#22, DISC-FIELDSTATS-01; spec 10-discover.md). A `Documents | Field statistics` switch in the results toolbar. The tab lists every field of the data view, sorted by name: type icon · name · `Documents (%)` (sampled documents with a value) · `Distinct values` · `Distributions` (keyword: bar strip of the top values + `N categories` / `top 10 of N categories`; number: 10-bucket density sparkline with min and max labels; an eye switch hides the column) · Visualize action (same Lens hand-off as the field popover). Rows expand to Documents stats (count, %, distinct), Summary (min / median / max for numbers), Top values (count and %, Filter for / Filter out) and, for numbers, a distribution chart. Name filter; 25 fields per page.
@@ -43,7 +43,7 @@ Versions track the plugin's release history. `Unreleased` collects commits not y
 
 ---
 
-## [0.32.0] — 2026-11-18
+## [0.33.0] — 2026-11-18
 
 ### Added
 - **Time field on the Configuration page's shared data views** (#16d). Shared views get the same column mapping as Create data view: the table's columns are listed (debounced lookup of the typed datasource / database / table, falls back to typed names when the table can't be listed), a dedicated Timestamp field picker, and every other mapping chosen from the table's columns. The time field stays editable after creation (shared views here, personal views through Edit data view).
@@ -57,6 +57,25 @@ Versions track the plugin's release history. `Unreleased` collects commits not y
 ### Security
 - `buildColumnsQuery` / `buildTablesQuery` now quote the database and table as string literals (`quoteString`); the Configuration page runs them on admin-typed names. The time sample query quotes column and table through `quoteIdentifier` / `tableRef`. `timestampFormat` from stored config is checked against the enum (unknown = native) and never inserted into SQL.
 
+---
+
+## [0.32.0] — 2026-11-18
+
+### Added
+- **Data view picker on Visualize** (#16b, LENS-AUTO-01 gap; spec 20-lens.md "Search bar: Data view …"). The same picker as Discover sits in the Visualize toolbar. Switching keeps the query and time; the chart keeps only dimensions on fields the new view has (re-validated with `sanitizeLens` once that view's fields are discovered, and written back to the URL); filters follow D7 — pinned pills are enabled only on the table they were pinned on, other pills arrive disabled on a view of a different table (kept as-is on a view of the same table). The URL now always names the view (`ds`), so Explore in Discover and reloads land on it.
+- **Visualize applies the URL's data view** (`ds`), like Discover; it used to chart whatever view was last active.
+- **Pinned filters on Visualize** (D7): a Visualize URL without `filters` gets the stored pins, like Discover.
+- **"Explore in Visualize" button in the Discover toolbar** (#16c). Same link as the histogram's Edit visualization (Bar over time with the current breakdown), or an empty workspace for a view without a time field; carries query, filters, time (relative stays relative) and data view.
+- **Visualize opened without a search context** (Grafana's side-menu entry is a static link) restores the tab's last query, filters, time and data view (session storage `clickhouse-observe.lastSearch`, written by Discover and Visualize), then the view's draft chart.
+
+### Changed
+- `useFieldDiscovery` also returns `fieldsFor` (the `discoveryKey` of the table `fields` belong to); Visualize waits until it matches the active view, so a switch never compiles the new table with the previous table's fields.
+- The Lens draft is saved only once the view's fields are in (sanitized chart), never mid-switch.
+
+
+### Fixed
+- **Discover link to a different data view lost its query and filters** (pre-existing): opening a link whose `ds` differed from the stored active view was treated as a user view switch, which resets query and filters to the pins. The reset now waits until the link's view is active.
+- **Visualize view switch never applied** after the page settled on its entry view (`ds`, filter disabling and chart re-validation were skipped).
 ---
 
 ## [0.31.1] — 2026-11-18
