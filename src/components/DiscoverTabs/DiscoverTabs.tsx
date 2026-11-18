@@ -30,7 +30,7 @@ export function DiscoverTabs(props: DiscoverTabsProps) {
   const atMax = state.tabs.length >= MAX_TABS;
   const canClose = state.tabs.length > 1;
 
-  const tabMenu = (id: string, index: number) => () => (
+  const tabMenu = (id: string, index: number) => (
     <Menu>
       <Menu.Item label="Rename" icon="pen" onClick={() => setEditing(id)} />
       <Menu.Item label="Duplicate" icon="copy" disabled={atMax} onClick={() => onDuplicate(id)} />
@@ -46,7 +46,7 @@ export function DiscoverTabs(props: DiscoverTabsProps) {
     </Menu>
   );
 
-  const listMenu = () => (
+  const listMenu = (
     <Menu>
       <Menu.Group label="Opened tabs">
         {state.tabs.map((t) => (

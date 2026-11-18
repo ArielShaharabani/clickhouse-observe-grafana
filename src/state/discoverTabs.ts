@@ -96,7 +96,10 @@ function cleanTitle(raw: unknown): string {
     return DEFAULT_TITLE;
   }
   // Display text only (rendered as a React text node), but keep it one short line.
-  const t = raw.replace(/[\u0000-\u001f\u007f]/g, ' ').trim().slice(0, MAX_TITLE_LENGTH);
+  const t = raw
+    .replace(/[\u0000-\u001f\u007f]/g, ' ')
+    .trim()
+    .slice(0, MAX_TITLE_LENGTH);
   return t || DEFAULT_TITLE;
 }
 

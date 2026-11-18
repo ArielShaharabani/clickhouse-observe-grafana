@@ -64,6 +64,8 @@ export function DiscoverTabsHost() {
       return;
     }
     if (urlTab === null) {
+      // Syncing from an external source (the URL), not deriving render state.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setState((s) => setTabParams(s, s.activeId, current));
       setSearchParams(withTab(current, state.activeId), { replace: true });
       return;
@@ -83,6 +85,8 @@ export function DiscoverTabsHost() {
   // URL write LogsExplorer makes.
   useEffect(() => {
     if (known && urlTab) {
+      // Syncing from an external source (the URL), not deriving render state.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setState((s) => setTabParams(activate(s, urlTab), urlTab, paramsWithoutTab(searchParams)));
     }
   }, [known, urlTab, searchParams]);

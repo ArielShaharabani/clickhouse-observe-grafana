@@ -73,7 +73,10 @@ describe('parseTabsState', () => {
         { id: 'tabc1234', title: 'dup', params: '' },
       ],
       activeId: 'nope0000',
-      closed: [{ tab: { id: 'tdef5678', title: 'Old', params: '' }, closedAt: 5 }, { tab: null, closedAt: 1 }],
+      closed: [
+        { tab: { id: 'tdef5678', title: 'Old', params: '' }, closedAt: 5 },
+        { tab: null, closedAt: 1 },
+      ],
     });
     expect(s?.tabs.map((t) => t.id)).toEqual(['tabc1234']);
     expect(s?.activeId).toBe('tabc1234');
@@ -94,7 +97,11 @@ describe('parseTabsState', () => {
   });
 
   it('caps the tab and closed lists', () => {
-    const tabs = Array.from({ length: 30 }, (_, i) => ({ id: `tab${String(i).padStart(4, '0')}`, title: 't', params: '' }));
+    const tabs = Array.from({ length: 30 }, (_, i) => ({
+      id: `tab${String(i).padStart(4, '0')}`,
+      title: 't',
+      params: '',
+    }));
     const closed = Array.from({ length: 30 }, (_, i) => ({
       tab: { id: `cls${String(i).padStart(4, '0')}`, title: 'c', params: '' },
       closedAt: i,
