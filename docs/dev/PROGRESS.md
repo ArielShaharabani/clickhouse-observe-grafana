@@ -1,8 +1,8 @@
 # Progress — read this first when resuming
 
-**Current item:** #16 LENS-SAVE-01 save Lens chart to dashboard (in progress on `feat/lens-save-01`; PR 16 merged)
-**Last completed step:** #16 core built on `feat/lens-save-01`: `compileLens(..., "dashboard")` ($__timeInterval buckets), `src/lens/panelExport.ts` (buildLensPanel per chart type, transformations, defaultPanelTitle), `src/lens/SaveLensModal.tsx` (saveLens: library first, then new/existing dashboard), `createLibraryPanel` in `src/data/dashboards.ts`, `src/lens/draft.ts` session draft, Save button on Visualize
-**Next step:** PR 17 open. Code-review fixes committed (library rollback, new-dashboard title field, multi-metric category split via partition+join, readable names on time+split, draft scoped to datasource+table and written on every shown chart, dashboard-list load error + retry, library-save toast, shared FORMAT_TABLE, compile header). Rebuild dist, rerun full e2e, merge.
+**Current item:** none — #16 merged (PR 17, v0.26.0)
+**Last completed step:** #16 LENS-SAVE-01 in PR 17 (v0.26.0): Save on Visualize → dashboard (new/existing) and/or library; `src/lens/panelExport.ts`, `SaveLensModal.tsx`, `draft.ts`. e2e lens-save-01 (5), unit save.test (19), full e2e 67 green.
+**Next step:** importance-3 queue (#17 DISC-TIME-01/02 …), fanned out to parallel agents in worktrees (see CONTEXT).
 **Open issues:** none. Deferred Lens items: per-group drag-and-drop (LENS-DIM-01 DnD; workspace drop works), formula (#23), advanced metric options (filter by, time shift), value format/colour/axis side (LENS-STYLE-01), date interval picker, "Other" bucket. Deferred elsewhere: DISC-DOC-02 links (#20); histogram now-line; field list Empty/Meta; grid Summary column etc. (#16); popover Visualize (#15).
 
 ## Environment notes

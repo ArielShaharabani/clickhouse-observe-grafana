@@ -25,8 +25,9 @@ test('save a metric to a new dashboard: the panel runs the same query (payments 
 
   const title = unique('Payments volume');
   const dialog = await openSave(page);
-  await expect(dialog.getByLabel('Title')).toHaveValue('Count of records');
-  await dialog.getByLabel('Title').fill(title);
+  await expect(dialog.getByLabel(/^Title/)).toHaveValue('Count of records');
+  await dialog.getByLabel(/^Title/).fill(title);
+  await expect(dialog.getByLabel(/^Dashboard title/)).toHaveValue(title); // follows the panel title until edited
   await dialog.getByLabel('Description').fill('From the Lens e2e');
   await dialog.getByRole('radio', { name: 'New' }).check({ force: true });
   await dialog.getByRole('button', { name: 'Save and go to dashboard' }).click();
@@ -50,7 +51,7 @@ test('save to an existing dashboard appends the panel', async ({ page }) => {
   await viz.addField('ServiceName');
   const dialog = await openSave(page);
   const title = unique('By service');
-  await dialog.getByLabel('Title').fill(title);
+  await dialog.getByLabel(/^Title/).fill(title);
   await dialog.getByRole('radio', { name: 'Existing' }).check({ force: true });
   await dialog.getByLabel('Select dashboard').click();
   await dialog.getByLabel('Select dashboard').fill(dashTitle);
@@ -68,7 +69,7 @@ test('save to the library only: a library panel is created, no navigation', asyn
   await viz.addField('SeverityText');
   const dialog = await openSave(page);
   const title = unique('Levels');
-  await dialog.getByLabel('Title').fill(title);
+  await dialog.getByLabel(/^Title/).fill(title);
   await dialog.getByRole('radio', { name: 'None' }).check({ force: true });
   await expect(dialog.getByRole('button', { name: 'Save to library' })).toBeDisabled();
   await dialog.getByLabel('Add to library').check({ force: true });

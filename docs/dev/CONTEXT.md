@@ -1,7 +1,7 @@
 # Context snapshot — read this to restart
 
 Saved after every feature (and every review-fix round). A new session can resume from this file plus `PROGRESS.md` alone.
-Last saved: 2026-11-18, #16 PR 17 open; code-review fixes committed (9 findings); rebuild + e2e next.
+Last saved: 2026-11-18, #16 merged (PR 17, v0.26.0).
 
 ## Goal
 Bring Kibana Discover + Lens style exploration to Grafana on ClickHouse by extending the **ClickHouse Observe** app plugin.
