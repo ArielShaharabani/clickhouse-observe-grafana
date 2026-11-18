@@ -52,7 +52,7 @@ import { TimeShorthandInput } from '../components/TimeShorthandInput';
 import { shiftTimeRange, zoomOutTimeRange } from '../utils/timeRangeNav';
 import { useAvailableHeight } from '../utils/useAvailableHeight';
 import { lensContextFor, lensFieldOf, lensForField, lensForHistogram, visualizeUrl } from '../lens/handoff';
-import { defaultColumns } from '../data/columns';
+import { defaultColumns, sanitizeColumns } from '../data/columns';
 // Re-exported for existing importers (tests).
 export { defaultColumns } from '../data/columns';
 import { logsQueryReducer } from './_logsQueryReducer';
@@ -126,7 +126,8 @@ export function LogsExplorer() {
         ...init,
         ...(initialUrlState.search !== undefined ? { search: initialUrlState.search } : {}),
         ...(initialUrlState.filters || filters !== urlFilters ? { filters } : {}),
-        ...(initialUrlState.columns ? { columns: initialUrlState.columns } : {}),
+        // URL columns are untrusted (their sqlExpr / key would reach SQL): rebuild them.
+        ...(initialUrlState.columns ? { columns: sanitizeColumns(initialUrlState.columns, initialView) } : {}),
         ...(initialUrlState.sort ? { sort: initialUrlState.sort } : {}),
       };
     }
@@ -1134,7 +1135,8 @@ export function LogsExplorer() {
         search: search.search,
         // A saved search keeps the user's pinned filters on top of its own.
         filters: mergePinnedFilters(search.filters, loadPinnedFilters(), tableKey(config.database, config.logsTable)),
-        columns: search.columns,
+        // Saved searches are stored data, not trusted SQL: rebuild their columns too.
+        columns: sanitizeColumns(search.columns, config),
         sort: search.sort,
         useRawSql: false, // always exit raw SQL mode when loading a saved search
       },

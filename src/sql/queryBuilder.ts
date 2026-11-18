@@ -82,6 +82,34 @@ export function looksLikeMapAccessor(name: string): boolean {
   return MAP_ACCESSOR_RE.test(name);
 }
 
+const SAFE_ALIAS_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
+const BARE_IDENT_RE = new RegExp(`^${BARE_IDENT}$`);
+
+/**
+ * A SELECT alias / ORDER BY name that is safe to emit unquoted: a plain identifier. Column keys are
+ * generated this way (makeColumnKey, CORE_ALIAS), so anything else came from a URL or storage.
+ */
+export function isSafeAlias(name: unknown): name is string {
+  return typeof name === 'string' && SAFE_ALIAS_RE.test(name);
+}
+
+/**
+ * A column expression that is safe to emit as-is: a bare identifier, a well-formed Map accessor
+ * (`Col['key']`) or a dotted identifier path (`Payload.user.id`, quoted segments allowed) — the
+ * shapes field discovery produces. None of these grammars can express anything but a column
+ * reference, so a hostile string from a URL or saved search can't pass.
+ */
+export function isSafeColumnExpr(expr: unknown): expr is string {
+  return typeof expr === 'string' && (BARE_IDENT_RE.test(expr) || looksLikeTrustedExpr(expr));
+}
+
+/** `expr AS key` for the user-added (non-core) columns that pass both checks; others are skipped. */
+function extraColumnSelects(columns: SelectedColumn[]): string[] {
+  return columns
+    .filter((col) => !col.isCore && isSafeAlias(col.key) && isSafeColumnExpr(col.sqlExpr))
+    .map((col) => `${col.sqlExpr} AS ${col.key}`);
+}
+
 /**
  * Recognizes a `name` that is already a well-formed, self-contained SQL expression this codebase
  * itself constructed — a Map accessor (see `looksLikeMapAccessor`) or a dotted identifier chain
@@ -396,9 +424,9 @@ export function buildLogsQuery(
   // Extra SELECT for user-added non-core columns — kept in every projection, including the bare
   // SELECT * one: a user-added column's sqlExpr can be an arbitrary expression (a Map accessor, a
   // JSON path, a function call), not necessarily a real column `*` would already cover.
-  const extraSelect = (state.columns ?? [])
-    .filter((col) => !col.isCore)
-    .map((col) => `${col.sqlExpr} AS ${col.key}`);
+  // Defence in depth: columns are rebuilt from trusted sources when restored (sanitizeColumns in
+  // data/columns.ts), and an unsafe alias or expression is still never emitted here.
+  const extraSelect = extraColumnSelects(state.columns ?? []);
 
   // Grid projection has no `*` to fall back on, so it still needs the core columns aliased
   // in — that's the one thing this projection's own SELECT list has to provide. Grid projection
@@ -410,7 +438,10 @@ export function buildLogsQuery(
   const selectParts = isGrid && gridSelect.length > 0 ? gridSelect : ['*', ...extraSelect];
   const conditions = buildWhereConditions(config, state, index);
 
-  let sortCol = state.sort?.col ?? (c.timestamp ? CORE_ALIAS.timestamp : null);
+  // The sort column comes from the URL / saved searches: only a plain identifier (a CORE_ALIAS or
+  // a column key) is accepted; anything else falls back to the default sort.
+  const defaultSort = c.timestamp ? CORE_ALIAS.timestamp : null;
+  let sortCol = isSafeAlias(state.sort?.col) ? state.sort!.col : defaultSort;
   if (sortCol && !isGrid) {
     // A sort column carried over from the grid (either the default above, or a value the user
     // picked by clicking a grid column header — those are always CORE_ALIAS names, since that's
@@ -420,7 +451,7 @@ export function buildLogsQuery(
     // through unchanged; extraSelect's aliases are still emitted in every projection.
     sortCol = coreAliasToRawColumn(sortCol, c) ?? sortCol;
   }
-  const sortDir = (state.sort?.dir ?? 'desc').toUpperCase();
+  const sortDir = state.sort?.dir === 'asc' ? 'ASC' : 'DESC';
 
   return withSettings(
     [
@@ -937,7 +968,7 @@ export function buildSurroundingDocsQuery(
       }
     }
   }
-  const extraSelect = opts.columns.filter((col) => !col.isCore).map((col) => `${col.sqlExpr} AS ${col.key}`);
+  const extraSelect = extraColumnSelects(opts.columns);
   return withSettings(
     [
       `SELECT ${[

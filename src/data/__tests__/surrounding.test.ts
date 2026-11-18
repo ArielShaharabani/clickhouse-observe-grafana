@@ -147,7 +147,7 @@ describe('contextColumns (URL columns are untrusted)', () => {
     key: 'evil key',
     sqlExpr,
     displayName: 'http.method',
-    type: 'json',
+    type: 'exact',
     isCore: false,
     ...extra,
   });
@@ -172,7 +172,7 @@ describe('contextColumns (URL columns are untrusted)', () => {
     "LogAttributes['x\\']",
     "Other['x']",
     "(SELECT 1)['x']",
-    'LogAttributes',
+    'Unknown',
   ])('drops a non-accessor or unknown Map root: %p', (expr) => {
     expect(contextColumns([mapCol(expr)], withMap, cfg)).toEqual(defaultColumns(cfg));
   });
