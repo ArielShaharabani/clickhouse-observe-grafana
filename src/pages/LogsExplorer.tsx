@@ -30,8 +30,9 @@ import { SpanHandle } from '../diag/types';
 import { buildLogsQuery, buildLogDetailQuery, buildVolumeQuery, resolveVolumeBreakdown, logRowKey } from '../sql/queryBuilder';
 import { buildFieldIndex } from '../sql/fields';
 import { isConvertedTimestamp } from '../sql/timeExpr';
-import { addFilterPill, makeFilter } from '../sql/filters';
+import { addFilterPill, makeFilter, sanitizeFilterPills } from '../sql/filters';
 import { AddFilterPopover } from '../components/AddFilter/AddFilterPopover';
+import { LoadedQuery, QueryMenu } from '../components/QueryMenu/QueryMenu';
 import { SourceConfigContext, DataViewContext } from '../components/App/App';
 import { viewCapabilities } from '../sql/capabilities';
 import {
@@ -1170,7 +1171,11 @@ export function LogsExplorer() {
       state: {
         search: search.search,
         // A saved search keeps the user's pinned filters on top of its own.
-        filters: mergePinnedFilters(search.filters, loadPinnedFilters(), tableKey(config.database, config.logsTable)),
+        filters: mergePinnedFilters(
+          sanitizeFilterPills(Array.isArray(search.filters) ? search.filters : []),
+          loadPinnedFilters(),
+          tableKey(config.database, config.logsTable)
+        ),
         // Saved searches are stored data, not trusted SQL: rebuild their columns too.
         columns: sanitizeColumns(search.columns, config),
         sort: search.sort,
@@ -1184,6 +1189,18 @@ export function LogsExplorer() {
     // so by the time this microtask fires React has committed the new state and
     // the ref holds the fresh closure — guaranteeing results load without a manual click.
     queueMicrotask(() => latestExecuteQuery.current('Load saved search'));
+  };
+
+  // DISC-SEARCH-03: a saved query is stored data — its filters are re-sanitized, pins stay on top.
+  const onLoadQuery = ({ query, filters, timeRange: tr }: LoadedQuery) => {
+    dispatch({ type: 'SET_SEARCH', value: query });
+    if (filters) {
+      const table = tableKey(config.database, config.logsTable);
+      dispatch({ type: 'SET_FILTERS', filters: mergePinnedFilters(sanitizeFilterPills(filters), loadPinnedFilters(), table) });
+    }
+    if (tr) {
+      setTimeRange(tr);
+    }
   };
 
   const onHistogramSelectRange = (fromMs: number, toMs: number) => {
@@ -1422,6 +1439,19 @@ export function LogsExplorer() {
           {/* SearchBar's own root has width:100% (right for its old standalone row), which alone
               wouldn't grow to fill the remaining space in this shared flex row — wrap it so it
               does, independent of SearchBar's internal styling. */}
+          <QueryMenu
+            query={queryState.search}
+            filters={queryState.filters}
+            timeRange={timeRange}
+            dataViewId={activeView?.id}
+            pinTable={tableKey(config.database, config.logsTable)}
+            onFiltersChange={(f) => dispatch({ type: 'SET_FILTERS', filters: f })}
+            onClearAll={() => {
+              dispatch({ type: 'SET_SEARCH', value: '' });
+              dispatch({ type: 'SET_FILTERS', filters: [] });
+            }}
+            onLoadQuery={onLoadQuery}
+          />
           <div className={styles.headerSearchWrap}>
             <SearchBar
               value={queryState.search}
