@@ -17,7 +17,7 @@ test('Metric → Bar/Line and back: one open + one selection, query and time unc
   const before = new URL(page.url()).searchParams;
 
   await switchTo(page, 'Line', 'Metric');
-  await expect(viz.chart).toHaveAttribute('data-panel', 'stat');
+  await expect(viz.chart).toHaveAttribute('data-panel', 'tiles');
   await expect(viz.group('Primary metric')).toContainText('Count of records');
 
   await switchTo(page, 'Metric', 'Bar');
