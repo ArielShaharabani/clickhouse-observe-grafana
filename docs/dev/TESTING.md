@@ -235,3 +235,35 @@ LENS-DATAVIEW acceptance:
 | Generated SQL (shift + filter + normalize + formula + breakdown; reduced range + month shift percentile; dashboard shift) runs on ClickHouse 26.3 against the fixture (manual, read-only) | ✅ |
 | Field config defaults / per-metric overrides, no colour with a breakdown, metric/table panels and exported dashboard panels; XyChart colour, format and right axis; editor: KQL validation, shift presets / typed / garbage, reduced range disabled with a date histogram, normalize, formula note (jest `metricAppearance.test.tsx`) | ✅ |
 | e2e `tests/features/lens-dim-02-adv.spec.ts`: Filter by gives per-service error counts and lands in the URL; invalid KQL not applied; time shift preset → ARRAY JOIN + "(1d ago)" label; tampered shift in a link never reaches SQL; XY right axis with Bytes format and fixed colour | ⏳ (coordinator) |
+
+### DISC-SEARCH-03 (PR 38)
+| Case | Status |
+| --- | --- |
+| Saved queries store: add / update / delete, sort by name, data-view scoping, case-insensitive name conflict (jest `savedQueries.test.ts`) | ✅ |
+| Hostile storage: malformed entries dropped, bad filter ops / non-string values dropped, SQL-ish time bounds dropped, oversize entries dropped, corrupt JSON → [] (jest `savedQueries.test.ts`) | ✅ |
+| Apply to all: enable / disable / pin / unpin / invert, applicable items only, pinned-store mirror for pin / invert / unpin (jest `queryMenu.test.ts`) | ✅ |
+| Menu: save with filters + time and load back, Save changes / Save as new after load, duplicate name rejected, Apply to all + Clear all callbacks, KQL / Lucene section (jest `QueryMenu.test.tsx`) | ✅ |
+| E2E: save → Clear all → load restores query + filters and counts; duplicate name; Apply to all disable / enable / invert counts; hostile stored query sanitized on load; language section (`tests/features/disc-search-03.spec.ts`) | ⏳ coordinator |
+
+### LENS-INSPECT-01 (PR 38)
+| Case | Status |
+| --- | --- |
+| Table columns / roles, cell filter values (synthetic and "(value)" spelling), sorting with empty cells last, CSV quoting + formula-injection prefix, raw vs formatted CSV, safe file name (jest `inspector.test.tsx`) | ✅ |
+| Inspector UI: 20 rows per page, sort toggles `aria-sort`, Filter for / out add `=` / `!=` pills, no actions on metric cells; Requests view shows only `lens` roots with Hits / Rows read / Data view and the SQL / response tabs; empty states (jest `inspector.test.tsx`) | ✅ |
+| E2E: Inspect on a top-values bar → table rows match the fixture, sort by count, Filter for payments adds the pill + URL filter and the table re-runs; Download Raw CSV content; Requests view Hits 5, Table, Status, SQL, response (`tests/features/lens-inspect-01.spec.ts`) | written, not run (coordinator) |
+
+### DISC-NAV-01 (PR 38)
+| Case | Status |
+| --- | --- |
+| Model: sanitize round-trip, tampered store (bad ids, dup ids, unknown view / params, malformed filters, oversized params, control-char titles), caps, add / duplicate / close / restore / clear / rename / move, last tab can't close (jest `src/state/__tests__/discoverTabs.test.ts`) | ✅ |
+| Host: link without `_tab` loads into the active tab; side-menu entry reopens the active tab; unknown `_tab` opens a new tab; switch / add / close keep each tab's state; rename Enter / Escape; tampered storage sanitized before the URL, titles rendered as text (jest `src/pages/__tests__/DiscoverTabsHost.test.tsx`, LogsExplorer mocked) | ✅ |
+| E2E: tabs keep their own query and counts, `+` keeps the data view; duplicate = identical state; close → Recently closed ("seconds ago") → restore; rename survives reload and the side-menu link reopens the active tab; Visualize side-menu restore uses the active tab's context; tampered store never reaches the query (`tests/features/disc-nav-01.spec.ts`) | ⏳ written, not run (coordinator) |
+
+### DISC-SESSION-01 (PR 38)
+| Case | Status |
+| --- | --- |
+| CSV: formula guard (`= + - @ \t \r`), RFC 4180 quoting, CRLF, cell formatting by column type, safe file name (jest `src/data/__tests__/sessionActions.test.ts`) | ✅ |
+| Share link: codec parameters only (trace hand-off and unknown params dropped), relative by default, epoch ms when absolute; unsaved-changes detection by view / search / filters / columns / sort (jest `sessionActions.test.ts`) | ✅ |
+| Alert rule: `$` escaped only inside literals, count query keeps time macros, no time field → no rule, defaults shape (A count, B threshold, condition B, window = range clamped) (jest `sessionActions.test.ts`) | ✅ |
+| Share modal + ⋮ menu render, absolute toggle, unsaved warning hidden when a saved search matches, Inspect callback (jest `src/components/__tests__/SessionActions.test.tsx`) | ✅ |
+| Share link round trip, absolute toggle, toggle disabled on absolute ranges; CSV download of the current search; Create alert rule prefill; Inspect from ⋮; New session clears the search (`tests/features/disc-session-01.spec.ts`) | written, e2e not run (coordinator) |
