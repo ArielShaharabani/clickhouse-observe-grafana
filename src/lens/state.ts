@@ -9,6 +9,7 @@
  */
 import { FieldType } from '../sql/fieldModel';
 import { formulaErrors, FormulaFields, MAX_FORMULA_LEN } from './formula';
+import { isIntervalValue } from './interval';
 
 export type ChartType = 'line' | 'area' | 'bar' | 'metric' | 'table' | 'pie';
 export type XySubType = 'stacked' | 'percentage' | 'unstacked';
@@ -21,10 +22,47 @@ export interface DateHistogramDim {
   /** SQL expression of the time column. */
   field: string;
   label: string;
-  /** 'auto' ≈ 60 buckets over the time range (same rule as the Discover histogram). */
-  interval: 'auto';
+  /**
+   * 'auto' ≈ 60 buckets over the time range (same rule as the Discover histogram), or a typed
+   * minimum interval `<n><unit>` (LENS-DIM-05, parsed by `interval.ts`; scaled up past the cap).
+   */
+  interval: string;
+  /** Include empty rows (default on): gap-fill buckets without documents. Stored only when off. */
+  emptyRows?: false;
+  /** Drop the first / last bucket when the time range only partly covers it. */
+  dropPartial?: true;
+  /**
+   * Bind to global time picker turned off (only offered for a field other than the view's time
+   * field): empty rows are filled over the data's own span instead of the whole picker range.
+   */
+  unbound?: true;
   /** User-edited name; undefined = automatic label (LENS-DIM-02). */
   name?: string;
+}
+
+/** Keeps only the known, well-typed date histogram options of untrusted input. */
+export function cleanDateHistogram(b: DateHistogramDim): DateHistogramDim {
+  const raw = b as unknown as Record<string, unknown>;
+  const out: DateHistogramDim = {
+    kind: 'date_histogram',
+    id: b.id,
+    field: b.field,
+    label: b.label,
+    interval: isIntervalValue(raw.interval) ? (raw.interval as string).trim() : 'auto',
+  };
+  if (typeof raw.name === 'string') {
+    out.name = raw.name;
+  }
+  if (raw.emptyRows === false) {
+    out.emptyRows = false;
+  }
+  if (raw.dropPartial === true) {
+    out.dropPartial = true;
+  }
+  if (raw.unbound === true) {
+    out.unbound = true;
+  }
+  return out;
 }
 
 export interface TermsDim {
@@ -383,10 +421,10 @@ export function decodeLens(raw: string | null | undefined): LensState | undefine
           str(b.field) &&
           str(b.label) &&
           okName(b.name) &&
-          ((b.kind === 'date_histogram' && b.interval === 'auto') ||
+          ((b.kind === 'date_histogram' && isIntervalValue(b.interval)) ||
             (b.kind === 'terms' && Number.isInteger(b.size) && b.size > 0))
       )
-      .map((b) => (b.kind === 'terms' ? cleanTerms(b) : b));
+      .map((b) => (b.kind === 'terms' ? cleanTerms(b) : cleanDateHistogram(b)));
     const metrics = (v.metrics as MetricDim[])
       .filter(
         (m) =>

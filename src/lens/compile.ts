@@ -1,7 +1,8 @@
 /**
  * LensState → ClickHouse SQL (blueprint "Query layer → Lens chart") and query rows → chart series.
  *
- * - date histogram → `toStartOfInterval(ts, INTERVAL n SECOND)` with the Discover auto interval
+ * - date histogram → `toStartOfInterval(ts, INTERVAL n SECOND)` with the Discover auto interval, or
+ *   a typed minimum interval (LENS-DIM-05, `interval.ts`: parsed number + unit keyword, never text)
  * - top values → `toString(field)` restricted to the top N by count (`GLOBAL IN` a ranked CTE, the
  *   same shape as the histogram breakdown); options (rank, Other, missing, include/exclude)
  * - median → `quantile(0.5)`, unique count → `uniq`, average/sum/min/max → the same-named aggregate
@@ -20,7 +21,16 @@ import { SourceConfig } from '../types';
 import { quoteIdentifier, quoteString, tableRef } from '../sql/queryBuilder';
 import { configSettingsFragments, withSettings } from '../sql/settings';
 import { isConvertedTimestamp, timeExpr } from '../sql/timeExpr';
-import { resolveInterval } from '../components/_histogramInterval';
+import {
+  bucketStartSql,
+  dashboardBucketSql,
+  intervalMs as ivMs,
+  LensInterval,
+  parseInterval,
+  ResolvedLensInterval,
+  resolveLensInterval,
+  stepBucket,
+} from './interval';
 import { FieldIndex } from '../sql/fields';
 import { formulaToSql, FormulaSqlContext } from './formula';
 import {
@@ -122,8 +132,10 @@ function missingAwareRaw(field: string): string {
 
 export interface CompiledLens {
   sql: string;
-  /** Interval of the date histogram, when there is one (ms). */
+  /** Interval of the date histogram, when there is one (ms; months / years approximated). */
   intervalMs?: number;
+  /** The date histogram's interval as used (exact stepping for gap filling / click ranges). */
+  interval?: ResolvedLensInterval;
 }
 
 export function compileLens(
@@ -144,6 +156,7 @@ export function compileLens(
   const tbl = tableRef(config, config.logsTable);
   const where = conditions.length > 0 ? conditions.join(' AND ') : '';
   let intervalMs: number | undefined;
+  let interval: ResolvedLensInterval | undefined;
 
   // A date histogram on the view's time field reads it the way every other query does: a
   // converted time field (epoch / text, PLAN #16d) is not a real DateTime column. Any other field
@@ -155,7 +168,10 @@ export function compileLens(
   const restrictions: string[] = [];
   const selects: string[] = [];
   state.buckets.forEach((b: BucketDim, i) => {
-    if (b.kind === 'date_histogram' && mode === 'dashboard') {
+    const custom = b.kind === 'date_histogram' ? parseInterval(b.interval) : null;
+    if (b.kind === 'date_histogram' && mode === 'dashboard' && custom) {
+      selects.push(`${dashboardBucketSql(dateSql(b.field), custom)} AS ${bucketAlias(i)}`);
+    } else if (b.kind === 'date_histogram' && mode === 'dashboard') {
       const col = dateSql(b.field);
       // The datasource's macro parser counts parentheses and commas without regard to quotes, so
       // an expression field (e.g. a Map key with ')' in it) gets the explicit form instead.
@@ -165,11 +181,10 @@ export function compileLens(
           : `$__timeInterval(${col}) AS ${bucketAlias(i)}`
       );
     } else if (b.kind === 'date_histogram') {
-      const iv = resolveInterval('auto', timeRange);
-      intervalMs = iv.intervalMs;
-      selects.push(
-        `toUnixTimestamp(toStartOfInterval(${dateSql(b.field)}, INTERVAL ${iv.value} ${iv.unit})) * 1000 AS ${bucketAlias(i)}`
-      );
+      const iv = resolveLensInterval(b.interval, timeRange);
+      interval = iv;
+      intervalMs = ivMs(iv);
+      selects.push(`${bucketStartSql(dateSql(b.field), iv)} AS ${bucketAlias(i)}`);
     } else {
       const field = quoteIdentifier(b.field);
       const size = Math.max(1, Math.floor(b.size));
@@ -256,7 +271,7 @@ export function compileLens(
     ],
     configSettingsFragments(config)
   );
-  return { sql, intervalMs };
+  return { sql, intervalMs, interval };
 }
 
 /** Metric labels made unique ("Median of x", "Median of x (2)") so series never merge. */
@@ -338,10 +353,34 @@ function termCell(b: TermsDim, r: Record<string, unknown>, i: number): TermCell 
   };
 }
 
+/** Date histogram shaping inputs (LENS-DIM-05): exact bucket stepping and the time picker range. */
+export interface ShapeOptions {
+  interval?: LensInterval;
+  /** Time picker range (epoch ms): bound empty rows and partial buckets. */
+  range?: { from: number; to: number };
+}
+
 /** Shapes query rows into chart series: X = buckets[0], one series per metric × breakdown value. */
-export function shapeLensRows(state: LensState, rows: Array<Record<string, unknown>>, bucketMs?: number): LensResult {
+export function shapeLensRows(
+  state: LensState,
+  rowsIn: Array<Record<string, unknown>>,
+  bucketMs?: number,
+  opts: ShapeOptions = {}
+): LensResult {
   const [x, breakdown] = state.buckets;
   const xIsTime = x?.kind === 'date_histogram';
+  const xd = x?.kind === 'date_histogram' ? x : undefined;
+  const { interval, range } = opts;
+  const canStep = !!interval || (!!bucketMs && bucketMs > 0);
+  const step = (t: number, k: number) => (interval ? stepBucket(t, interval, k) : t + k * (bucketMs ?? 0));
+  // Drop partial intervals: buckets the time range covers only in part (first / last).
+  const rows =
+    xd?.dropPartial && range && canStep
+      ? rowsIn.filter((r) => {
+          const t = toMs(r[bucketAlias(0)]);
+          return t >= range.from && step(t, 1) <= range.to;
+        })
+      : rowsIn;
   const xs: Array<string | number> = [];
   const xInfo = new Map<string | number, TermCell>();
   const seenX = new Set<string | number>();
@@ -383,15 +422,32 @@ export function shapeLensRows(state: LensState, rows: Array<Record<string, unkno
   if (xIsTime) {
     xs.sort((a, b) => Number(a) - Number(b));
     // ClickHouse returns no row for an empty bucket; fill the gaps so the axis is linear in time
-    // (bars and the brush line up with real time).
-    if (bucketMs && bucketMs > 0 && xs.length > 1) {
-      const first = Number(xs[0]);
-      const last = Number(xs[xs.length - 1]);
-      if ((last - first) / bucketMs <= MAX_FILLED_BUCKETS) {
-        xs.length = 0;
-        for (let t = first; t <= last; t += bucketMs) {
-          xs.push(t);
+    // (bars and the brush line up with real time). Include empty rows (default on) fills the whole
+    // time picker range when bound to it, else only between the first and last bucket with data.
+    // Stepping starts from a real bucket so generated starts line up with ClickHouse's.
+    if (canStep && xd?.emptyRows !== false && xs.length > 0) {
+      let start = Number(xs[0]);
+      let end = Number(xs[xs.length - 1]);
+      if (range && !xd?.unbound) {
+        const keep = (t: number) => (xd?.dropPartial ? t >= range.from : step(t, 1) > range.from);
+        for (let n = 0; n < MAX_FILLED_BUCKETS && keep(step(start, -1)); n++) {
+          start = step(start, -1);
         }
+        const keepEnd = (t: number) => (xd?.dropPartial ? step(t, 1) <= range.to : t < range.to);
+        for (let n = 0; n < MAX_FILLED_BUCKETS && keepEnd(step(end, 1)); n++) {
+          end = step(end, 1);
+        }
+      }
+      const filled: number[] = [];
+      for (let t = start; t <= end && filled.length <= MAX_FILLED_BUCKETS; t = step(t, 1)) {
+        filled.push(t);
+      }
+      if (filled.length <= MAX_FILLED_BUCKETS && filled.length >= xs.length) {
+        const seen = new Set(xs.map(Number));
+        // Keep any data bucket the stepping did not land on (e.g. a DST shift), in time order.
+        const merged = [...new Set([...filled, ...seen])].sort((a, b) => a - b);
+        xs.length = 0;
+        xs.push(...merged);
       }
     }
   }
