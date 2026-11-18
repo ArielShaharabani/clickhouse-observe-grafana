@@ -22,6 +22,8 @@ export type QueryOp =
   | 'mapKeys'
   | 'jsonPaths'
   | 'fieldValues'
+  /** Field statistics tab batch profile (src/sql/fieldStats.ts). */
+  | 'fieldStats'
   | 'traceLink'
   | 'wizardDatabases'
   | 'wizardTables'
