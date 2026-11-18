@@ -7,6 +7,7 @@
  * Deferred: Monaco (red squiggles at the error position) — a plain text box with positioned
  * messages keeps the bundle and the tests light.
  */
+import { metricOptionsOf } from './metricOptions';
 import React, { useId, useMemo, useRef, useState } from 'react';
 import { css, cx } from '@emotion/css';
 import { GrafanaTheme2 } from '@grafana/data';
@@ -49,7 +50,15 @@ export function formulaMetric(dim: MetricDim, text: string, all: FormulaFields):
       used[n] = all[n];
     }
   }
-  return { kind: 'metric', id: dim.id, op: 'formula', formula: text, formulaFields: used, name: dim.name };
+  return {
+    kind: 'metric',
+    id: dim.id,
+    op: 'formula',
+    formula: text,
+    formulaFields: used,
+    name: dim.name,
+    ...metricOptionsOf(dim),
+  };
 }
 
 interface Suggestion {

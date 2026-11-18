@@ -10,6 +10,31 @@ Versions track the plugin's release history. `Unreleased` collects commits not y
 
 ---
 
+## [0.38.0] — 2026-11-18
+
+### Added
+- **Metric Advanced options** (PLAN 16g, spec 20-lens.md LENS-DIM-02 "Advanced"): a collapsible Advanced section in the metric editor.
+  - **Filter by**: KQL applied to this metric only, compiled by the search bar's KQL compiler into a conditional aggregate (`countIf`, `avgIf`, `quantileIf`, …). Invalid KQL stays in the box with a message.
+  - **Time shift**: presets 3h, 6h, 12h, 1d, 1w, 1M, 3M, 6M or a typed `<n><unit>` (s m h d w M y). One query reads each row once per distinct shift (`ARRAY JOIN` over a copy index), moves its time forward by the shift, and checks the window on the shifted time; each metric aggregates only its own copy. The label shows `(1d ago)`.
+  - **Reduced time range**: only the last span of the time range counts (presets 30s, 1m, 5m, 15m, 1h or typed); as in Kibana, not available with a date histogram.
+  - **Normalize by unit**: per second / minute / hour / day of the date bucket. The value is scaled by unit ÷ bucket width (`$__interval_s` in saved panels). Needs a date histogram.
+- **Metric Appearance options** (LENS-DIM-02 "Appearance"):
+  - **Value format**: Default, Number, Percent, Bytes (1024), Bits (1000), Duration (input unit ms/s/m/h) and Custom format (numeral-style pattern such as `0,0.00`, `0.0a`, `$0,0`, `0.0%`), with decimals. It applies to tooltips and axis ticks on XY charts, and to the Grafana unit and decimals on metric, table and pie charts and exported dashboard panels.
+  - **Series color**, used when the chart has no breakdown.
+  - **Axis side** Left / Auto / Right on unstacked line, area and bar charts, which then get a right axis with its own scale and format. Exported panels set `axisPlacement`.
+- Format, colour and axis side are display-only and don't re-run the query.
+
+---
+
+## [0.37.0] — 2026-11-18
+
+### Added
+- **Date histogram interval on the horizontal axis** (#16e, LENS-DIM-05; user request). The date histogram editor has a Field picker (date fields), a `Customize time interval` switch and a `Minimum interval` box: presets Millisecond … Year or a typed `<n><unit>` (`ms s m h d w M y`, e.g. `5m`, `3h`, `2w`, `1M`); invalid text shows an error and is never applied. The interval is a minimum, as in Kibana: past 500 buckets it is scaled up (same unit) and the editor says `Interval scaled to … to stay under 500 buckets`; otherwise it shows `Bucket size: …`. Months and years bucket on calendar boundaries. The interval is in the URL / saved chart; Discover's Edit visualization / Explore in Visualize carry the histogram's interval over, and Explore in Discover carries it back when Discover has the same unit. Saved dashboard panels follow the dashboard resolution but never go below the minimum (`greatest(n, $__interval_s)`), calendar units stay calendar.
+- **Date histogram advanced options** (#16e): `Include empty rows` (default on — empty buckets are filled across the whole time picker range, before only between the first and last bucket with data), `Drop partial intervals` (first / last bucket the range only partly covers is dropped from chart and table), `Bind to global time picker` (for a date field other than the view's time field; off = empty rows only between the data's first and last bucket).
+- **Intervals and Filters bucket functions** (#16f). Every bucket dimension now has a Functions grid (Date histogram, Intervals, Filters, Top values; a function without a compatible field is disabled, the field is kept when compatible). Intervals (number fields): automatic buckets of a power-of-ten width sized from the data's span with a Granularity slider (coarse ↔ fine) and Include empty rows, or `Create custom ranges` (`from ≤ x < to`, open ends, optional labels, first matching range wins). Filters: one bucket per KQL query with an optional label (empty query = `All records`); a document counts in every bucket it matches; invalid KQL stays in the box with an error and is not applied. Both work on X, as a breakdown, and as Metric / Pie "break down by"; saved panels show their labels.
+
+---
+
 ## [0.36.0] — 2026-11-18
 
 ### Added

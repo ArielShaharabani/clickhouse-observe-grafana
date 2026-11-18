@@ -526,6 +526,11 @@ export interface FormulaSqlContext {
    * variable expander never sees `$…` text that came from a formula.
    */
   dashboard?: boolean;
+  /**
+   * Extra row condition every aggregate of the formula must also apply (our own SQL, e.g. the
+   * time-shift copy selector `__s = 0` when another metric of the chart is time-shifted).
+   */
+  rowCond?: string;
 }
 
 /**
@@ -595,7 +600,8 @@ function emitAgg(
   const f = ref ? quoteIdentifier(ref.expr) : undefined;
   const kql = n.named.kql?.value.trim();
   const kqlSql = kql ? kqlToSql(parseKql(kql), ctx.config, ctx.index) : undefined;
-  const cond = kqlSql ? `(${ctx.dashboard ? kqlSql.replace(/\$/g, () => '\\x24') : kqlSql})` : undefined;
+  const kqlCond = kqlSql ? `(${ctx.dashboard ? kqlSql.replace(/\$/g, () => '\\x24') : kqlSql})` : undefined;
+  const cond = [ctx.rowCond, kqlCond].filter(Boolean).join(' AND ') || undefined;
   // Same cast the quick functions use for a field not typed as a number.
   const x = f && (ref!.numeric ? f : `toFloat64OrNull(toString(${f}))`);
 

@@ -28,6 +28,41 @@ Grafana's time picker applies a range immediately (no pending state), so only th
 ## D10 — Action registry (SHARED-ACTION-01)
 `src/actions/registry.ts` defines each value/field action once (icon, short tooltip, specific accessible name, compatibility, behaviour): `valueActions(ctx, host, ids?)` → filter for / filter out / copy; `fieldActions` → exists / does not exist. A surface passes an `ActionHost` (`addFilter` omitted = read-only → copy only) and keeps its own layout. Grafana's `IconButton` uses `tooltip` as its accessible name, so icon surfaces use `ActionIconButton` (Tooltip wrapper) to keep names like "Filter for Service: payments". The field list's "filter out rows that have this field" is now a `not_exists` pill (same SQL as the old `= ''`).
 
+## D34 — Metric advanced options (Filter by, Time shift, Reduced time range, Normalize) and appearance (LENS-DIM-02-ADV)
+LENS-DIM-02-ADV (PLAN 16g).
+
+**Options are stored on `MetricDim`, validated on decode.** The options live on `MetricDim` (`MetricOptions` in `src/lens/metricOptions.ts`). `decodeLens` now rebuilds every metric from known keys only: before this, quick-function metrics passed through with any extra keys. `cleanMetricOptions` validates each option:
+- shift and reduced range must parse as `<1–99999><unit>` within 10 years, and are stored canonical;
+- the colour must be `#rrggbb`;
+- enums are checked, and a custom pattern must match the numeral grammar.
+
+**SQL is printed only from parsed values.** SQL uses only the parsed integer and a fixed unit keyword (`chInterval`), never the text. Filter by goes through `kqlToSql`, which escapes values and resolves fields. In dashboard mode a `$` in a Filter by becomes `\x24`, as for formula `kql=`.
+
+**Time shift is one query (ARRAY JOIN), not one query per shift.**
+- `compileLens` swaps the standard time condition (and its coarse partition bound) for two things: a prefilter that ORs the main window with each shifted window, and an exact check on the shifted time.
+- Date buckets use the shifted time. In dashboard mode that is the explicit `toStartOfInterval(…, $__interval_s)` form, not `$__timeInterval`.
+- Each metric's aggregate is conditioned on `__s = k`. Formula metrics get `__s = 0` through the new `FormulaSqlContext.rowCond`, which every aggregate in the formula ANDs with its own `kql=`.
+- Ranking by count uses `countIf(__s = 0)`.
+- A top-values CTE still ranks over the unshifted window.
+
+**Filter by, shift and reduced range don't apply to formulas.** Formulas have their own `kql=` argument, and `shift=` remains deferred. The editor points users to the arguments.
+
+**A metric's Filter by also applies when a top-values bucket ranks by that metric.**
+
+**Appearance:**
+- XY charts are custom SVG, so `XyChart` applies the format, the colour (only without a breakdown) and a right axis. Stacked charts keep one axis, since stacks are per axis in Kibana and mixing them is confusing.
+- PanelRenderer charts and exported panels use one shared mapping, `withMetricAppearance`. With one metric the options go in field defaults; with several, each metric gets a `byRegexp` override on its label.
+
+**Function changes keep the options.** `withOp` and `formulaMetric` carry them over, so a switch never loses them.
+
+Deferred: - Time shift and reduced range inside formulas (`shift=` / `reducedTimeRange=` arguments).
+- Value format on the date histogram axis and in Discover-style number fields.
+- Right axis on stacked charts.
+- A colour picker with Grafana's palette (a native colour input is used).
+
+## D33 — Date histogram custom interval and advanced options; Intervals and Filters bucket functions (#16e/#16f) (LENS-DIM-05)
+LENS-DIM-05 (PLAN 16e / 16f). (1) The interval text is untrusted (URL, saved charts): `src/lens/interval.ts` parses it with a strict grammar `^[1-9][0-9]{0,3}(ms|s|m|h|d|w|M|y)$` into a number and a unit from a fixed table; SQL is built only from those (`INTERVAL <n> <UNIT keyword>`), and `decodeLens` drops a date histogram whose interval does not parse. (2) "Minimum interval" semantics as in Kibana: over `LENS_MAX_BUCKETS` (500) the count is multiplied up in the same unit, so calendar units stay calendar; auto keeps the Discover auto interval (~60 buckets, unchanged SQL). (3) Sub-second buckets use `toStartOfInterval(toDateTime64(x, 3), INTERVAL n MILLISECOND)`; everything else keeps the whole-second form. (4) Empty rows / partial intervals are applied when shaping (app mode), stepping from a real bucket start returned by ClickHouse (calendar-exact for months / years in UTC), so generated buckets line up with the query's; saved dashboard panels leave gap filling to Grafana and do not drop partial buckets. (5) Default change: Include empty rows now fills the whole picker range (Kibana's extended bounds) instead of only between the first and last bucket with data. (6) Intervals (automatic) compute the width once in a CTE (`exp10(ceil(log10(span / target)))`, target 5…500 by granularity) and return it as `w<i>` for labels; custom ranges and Filters return the index of the matching range / query (`multiIf` / `arrayJoin(arrayFilter(...))`), labels are attached in the page, and saved panels get the labels as escaped literals (`transform`, `$` → `\x24`). Range bounds are numbers we validated (finite), Filters queries go through the search bar's KQL compiler (`kqlToSql`), an unparsable query matches nothing. (7) Filters buckets have no field (`field: ''`), so `sanitizeLens` keeps them; their queries resolve fields like the search bar.
+
 ## D32 — Formula editor (LENS-DIM-03)
 LENS-DIM-03. A formula is a metric with `op: 'formula'`, `formula` (text) and `formulaFields` (name as written → `{ expr, numeric }`, only the fields it uses). The URL carries both; `decodeLens` keeps only well-formed entries and `sanitizeLens` drops a formula that does not parse / validate or names a field expression outside the discovered fields. `compileLens` re-parses and compiles the AST (`src/lens/formula.ts`); anything invalid compiles to `NULL`, never to its text. KQL filters per aggregation use ClickHouse `-If` combinators (`countIf`, `avgIf`, `quantileIf(q)(x, cond)`), compiled with the page's field index (new optional `index` argument of `compileLens`; saved panels compile without it, like their search conditions). Deferred: Monaco editor with positioned red squiggles (a plain monospace text box lists errors with their character position instead), `shift=` (time shift; reported as "not supported yet"), `reducedTimeRange`, `lucene=`, `last_value`, `counter_rate` / time-series functions (`cumulative_sum`, `differences`, `moving_average`), formula value formatting.
 

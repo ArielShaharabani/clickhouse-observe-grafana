@@ -1,7 +1,7 @@
 # Context snapshot — read this to restart
 
 Saved after every feature (and every review-fix round). A new session can resume from this file plus `PROGRESS.md` alone.
-Last saved: 2026-11-18, #23 LENS-DIM-03 merged (PR 30, v0.36.0).
+Last saved: 2026-11-18, #16g LENS-DIM-02-ADV merged (PR 33, v0.38.0).
 
 ## Goal
 Bring Kibana Discover + Lens style exploration to Grafana on ClickHouse by extending the **ClickHouse Observe** app plugin.
@@ -44,6 +44,8 @@ Bring Kibana Discover + Lens style exploration to Grafana on ClickHouse by exten
 | 22 | DISC-FIELDSTATS-01: Field statistics tab | 30 | src/sql/fieldStats.ts, src/components/FieldStatsTab/FieldStatsTab.tsx |
 | 25 | SHARED-PERF-01: Loading and sampling cues | 30 | src/components/QueryProgress/QueryProgress.tsx, src/lens/approx.ts |
 | 23 | LENS-DIM-03: Formula editor | 30 | src/lens/formula.ts, src/lens/FormulaEditor.tsx |
+| 16e/16f | LENS-DIM-05: Date histogram custom interval and advanced options; Intervals and Filters bucket functions (#16e/#16f) | 33 | src/lens/interval.ts, src/lens/BucketEditors.tsx, src/lens/compile.ts |
+| 16g | LENS-DIM-02-ADV: Metric advanced options (Filter by, Time shift, Reduced time range, Normalize) and appearance | 33 | src/lens/metricOptions.ts, src/lens/MetricAdvanced.tsx, src/lens/render/fieldConfig.ts |
 
 ## Key decisions (details in DECISIONS.md)
 - Frontend-only; queries via grafana-clickhouse-datasource (`src/data/runQuery.ts`). Plain React + @grafana/ui, no Scenes.
@@ -99,3 +101,5 @@ Status 2026-11-18 (later): PR 18 merged (v0.27.0; gates 930 jest, 79 e2e). Agent
 - 2026-11-18: PR 25 merged (v0.32.0) and batch PR 30 merged (v0.33.0–0.36.0: #16d, #22, #25, #23; 1,275 jest, 150 e2e in 9.0 min with 3 workers); PRs 26–29 closed as superseded. User request: Kibana-style Visualize dimension advanced options at importance 4 → spec LENS-DIM-05 (date histogram custom interval + advanced, Intervals, Filters) and PLAN rows 16e/16f/16g. Agents: `lens-dim-05` (16e+16f) and `lens-dim-02-adv` (16g), no containers; they merge as one batch.
 - 2026-11-18 (evening): PR 31 open = 16g metric advanced options (feat/lens-dim-02-adv; gates green, 1,300 jest; e2e spec not run). `lens-dim-05` (16e/16f) hit the 5-hour usage limit mid-work and was resumed (worktree co-wt/lens-dim-05; bucket Functions grid + Intervals/Filters panels next). Then: batch-2 = lens-dim-05 + lens-dim-02-adv → one full e2e `--workers=3` → one PR → merge.
 - 2026-11-18 (evening): fifth wave (no containers, no playwright, jest --maxWorkers 1): `lens-inspect-01` (#29), `disc-search-03` (#30), `disc-nav-01` (#31), `disc-session-01` (#32), worktrees under co-wt/. Held back: #26–#28 (overlap with the running 16e/16f/16g Visualize work), #33 a11y (touches everything; last). Merge plan: batch-2 (16e/16f + 16g) first, then batch-3 (#29–#32), each one full e2e `--workers=3`.
+- 2026-11-18 (night): batch-2 = PR 33 (feat/batch-2: PR 32 16e/16f + PR 31 16g, folded 0.37.0 / 0.38.0; gates green, 1,359 jest), full e2e running on `co-batch-2` port 3019. Fifth wave done: PRs 34 (#30 query menu), 35 (#29 Inspector), 36 (#31 session tabs), 37 (#32 share/export/alert) — merged cleanly into `feat/batch-3` (worktree co-wt/batch-3; typecheck + lint green); fold after PR 33 merges (0.39.0–0.42.0), then one full e2e. New containers: `docker run ... --env-file` built from `docker inspect co-batch-1` GF_* env (a value has a space, so `-e` splicing breaks).
+- Batch-2 (PR 33) full e2e: 160 passed, 3 failed in the new specs (time shift SQL missing ARRAY JOIN; Minimum interval shows "Day" vs "1d"; toolbar Explore in Visualize doesn't carry Discover's interval). Fix agent on co-wt/batch-2 (port 3019). Then merge PR 33 → fold + e2e batch-3.

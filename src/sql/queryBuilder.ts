@@ -391,7 +391,7 @@ export function buildSearchClause(search: string, config: SourceConfig, index?: 
  * This is why pruneColumn.ts requires the whitelist (rather than accepting any DEFAULT/
  * MATERIALIZED expression) and why this predicate is additive, never a replacement.
  */
-function coarsePrunePredicate(config: SourceConfig): string | null {
+export function coarsePrunePredicate(config: SourceConfig): string | null {
   const p = config.columns.partitionTimestamp;
   if (!p || p === '-') {
     return null;

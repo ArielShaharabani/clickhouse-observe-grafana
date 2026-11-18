@@ -210,3 +210,28 @@ LENS-DATAVIEW acceptance:
 | URL codec + sanitizeLens for formulas (unknown keys dropped, foreign field expr dropped, invalid formula dropped) | jest `formula.test.ts` ✅ |
 | Editor: convert quick → formula, apply on blur, error badge, autocomplete + bracket auto-close, function reference, back to quick | jest `src/lens/__tests__/FormulaEditor.test.tsx` ✅ |
 | E2E: URL formula runs (errors per service 1,575 / 445); convert + edit + reload; autocomplete + error badge; foreign-field formula from a shared link dropped and no SQL from it sent | `tests/features/lens-dim-03.spec.ts` — not run yet (coordinator) |
+
+### LENS-DIM-05 (PR 33)
+| Case | Status |
+| --- | --- |
+| Interval grammar: accepts `5m`, `3h`, `1M`, `250ms`, `9999d`; rejects `0m`, `1.5h`, `1H`, SQL fragments, macros, non-strings (jest `dateHistogram.test.tsx`) | ✅ |
+| Resolution: auto unchanged; typed interval used as is; scaled up past 500 buckets in the same unit; calendar stepping (jest) | ✅ |
+| SQL: typed units, ms on DateTime64, scaled interval used, saved panels `greatest(n, $__interval_s)` / calendar (jest) | ✅ |
+| URL: options round-trip; hostile interval drops the dimension; unknown keys stripped (jest) | ✅ |
+| Shaping: empty rows over the picker range (bound), off, unbound, drop partial (chart + table), calendar months (jest) | ✅ |
+| Hand-offs: Discover interval → Visualize and back (jest) | ✅ |
+| Editor: switch reveals Minimum interval and bucket size; scaled notice; advanced options; Bind only for another date field (jest) | ✅ |
+| e2e: typed `1d` → 7 bars, reload keeps it; invalid `1x` rejected; hostile interval in a link never reaches SQL; Drop partial 7 → 6 bars; Discover `interval=day` → Visualize `1d` → Explore in Discover `day` (`tests/features/lens-dim-05.spec.ts`) | e2e not run (coordinator) |
+| Intervals / Filters SQL: automatic width CTE, custom ranges `multiIf`, Filters `arrayJoin`, KQL escaping, invalid KQL matches nothing, saved-panel labels escaped (jest `rangeFilters.test.tsx`) | ✅ |
+| Intervals / Filters state: round-trip, untrusted input cleaned, sanitize keeps Filters; shaping labels, empty widths, breakdown series; function switching; Metric/Pie keep them; saved panel partitions by a Filters breakdown (jest) | ✅ |
+| Editor: Functions grid → Intervals, custom range edited on blur (non-number rejected), Add range; Filters invalid KQL message, Add a filter; Date histogram disabled without a date field (jest) | ✅ |
+| e2e: Filters counts (errors 3,191, payments 9,264, All records 41,520); Intervals labels; Functions grid → Intervals custom ranges → Filters with invalid then valid KQL (`lens-dim-05.spec.ts`) | e2e not run (coordinator) |
+
+### LENS-DIM-02-ADV (PR 33)
+| Case | Status |
+| --- | --- |
+| Span parser rejects sign / decimals / unknown unit / injection text; formats (number, percent, bytes, bits, duration, custom) and Grafana units; `cleanMetricOptions` / `decodeLens` drop unknown keys and invalid values; options survive a function change; labels (jest `metricOptions.test.ts`) | ✅ |
+| Filter by → conditional aggregate, escaped values, invalid KQL → `countIf(0)`; time shift ARRAY JOIN / copy conditions / window prefilter; tampered shift never reaches SQL; formulas get `__s = 0`; reduced range (not with a date histogram); normalize (app constant, dashboard `$__interval_s`); `$` escaped in dashboard mode (jest `metricOptions.test.ts`) | ✅ |
+| Generated SQL (shift + filter + normalize + formula + breakdown; reduced range + month shift percentile; dashboard shift) runs on ClickHouse 26.3 against the fixture (manual, read-only) | ✅ |
+| Field config defaults / per-metric overrides, no colour with a breakdown, metric/table panels and exported dashboard panels; XyChart colour, format and right axis; editor: KQL validation, shift presets / typed / garbage, reduced range disabled with a date histogram, normalize, formula note (jest `metricAppearance.test.tsx`) | ✅ |
+| e2e `tests/features/lens-dim-02-adv.spec.ts`: Filter by gives per-service error counts and lands in the URL; invalid KQL not applied; time shift preset → ARRAY JOIN + "(1d ago)" label; tampered shift in a link never reaches SQL; XY right axis with Bytes format and fixed colour | ⏳ (coordinator) |

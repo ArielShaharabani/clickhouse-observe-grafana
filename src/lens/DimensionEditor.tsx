@@ -1,17 +1,19 @@
 /**
  * Dimension editor flyout (spec LENS-DIM-02): replaces the dimension groups while open, titled by
  * the group (e.g. "Vertical axis"). Metric: Quick function grid, Field, Percentile, Name. Top
- * values: Field, Number of values, Name. Date histogram: Name (interval stays Auto).
+ * values: Field, Number of values, Name. Date histogram (LENS-DIM-05): Field, Customize time
+ * interval / Minimum interval, Include empty rows, Drop partial intervals, Bind to global time picker.
  */
 import React, { useId, useState } from 'react';
 import { css, cx } from '@emotion/css';
-import { GrafanaTheme2 } from '@grafana/data';
+import { dateTime, GrafanaTheme2 } from '@grafana/data';
 import {
   Button,
   Checkbox,
   Combobox,
   Field,
   IconButton,
+  InlineSwitch,
   Input,
   RadioButtonGroup,
   TextArea,
@@ -20,8 +22,10 @@ import {
 import {
   bucketFields,
   compatibleFields,
+  dateFields,
   QUICK_FUNCTIONS,
   withBucketField,
+  withDateOptions,
   withMetricField,
   withName,
   parseLines,
@@ -33,7 +37,9 @@ import {
   autoLabelIn,
   BucketDim,
   clampPercentile,
+  DateHistogramDim,
   LensField,
+  LensState,
   listError,
   MetricDim,
   opName,
@@ -41,8 +47,19 @@ import {
   TermsRankBy,
 } from './state';
 import { uniqueMetricLabels } from './compile';
+import { BucketFunctions, FiltersEditor, RangeEditor } from './BucketEditors';
 import { FormulaEditor, formulaFieldsOf, formulaMetric } from './FormulaEditor';
+import { MetricAdvanced } from './MetricAdvanced';
 import { formulaErrors, quickToFormula } from './formula';
+import {
+  describeInterval,
+  formatInterval,
+  INTERVAL_PRESETS,
+  intervalError,
+  LENS_MAX_BUCKETS,
+  parseInterval,
+  resolveLensInterval,
+} from './interval';
 
 interface Props {
   dim: BucketDim | MetricDim;
@@ -50,12 +67,29 @@ interface Props {
   fields: LensField[];
   /** The chart's metrics (candidates for Custom metric ranking). */
   metrics?: MetricDim[];
+  /** Time picker range (epoch ms): the effective date histogram interval shown in the editor. */
+  timeRange?: { from: number; to: number };
+  /** The data view's time field (Bind to global time picker only applies to other date fields). */
+  timeField?: string;
+  /** The whole chart (metric Advanced / Appearance options depend on it). */
+  chart?: LensState;
   onChange: (d: BucketDim | MetricDim) => void;
   onRemove: () => void;
   onClose: () => void;
 }
 
-export function DimensionEditor({ dim, group, fields, metrics = [], onChange, onRemove, onClose }: Props) {
+export function DimensionEditor({
+  dim,
+  group,
+  fields,
+  metrics = [],
+  timeRange,
+  timeField,
+  chart,
+  onChange,
+  onRemove,
+  onClose,
+}: Props) {
   const styles = useStyles2(getStyles);
   const fieldId = useId();
   const fnLabelId = useId();
@@ -69,6 +103,8 @@ export function DimensionEditor({ dim, group, fields, metrics = [], onChange, on
         <span className={styles.title}>{group}</span>
         <IconButton name="times" tooltip="Close editor" onClick={onClose} />
       </div>
+
+      {dim.kind !== 'metric' && <BucketFunctions dim={dim} fields={fields} onChange={onChange} />}
 
       {dim.kind === 'metric' && (
         <RadioButtonGroup<'quick' | 'formula'>
@@ -150,9 +186,12 @@ export function DimensionEditor({ dim, group, fields, metrics = [], onChange, on
         </>
       )}
 
+      {dim.kind === 'range' && <RangeEditor key={dim.id} dim={dim} fields={fields} onChange={onChange} />}
+      {dim.kind === 'filters' && <FiltersEditor key={dim.id} dim={dim} onChange={onChange} />}
+      {dim.kind === 'metric' && <MetricAdvanced dim={dim} chart={chart} onChange={onChange} />}
+
       {dim.kind === 'terms' && (
         <>
-          <div className={styles.label}>Top values</div>
           <Field label="Field" htmlFor={fieldId}>
             <Combobox
               id={fieldId}
@@ -262,10 +301,13 @@ export function DimensionEditor({ dim, group, fields, metrics = [], onChange, on
       )}
 
       {dim.kind === 'date_histogram' && (
-        <>
-          <div className={styles.label}>Date histogram</div>
-          <div className={styles.note}>{dim.label} · interval Auto (about 60 buckets over the time range)</div>
-        </>
+        <DateHistogramEditor
+          dim={dim}
+          fields={fields}
+          timeRange={timeRange}
+          timeField={timeField}
+          onChange={onChange}
+        />
       )}
 
       <Field label="Name">
@@ -287,6 +329,139 @@ export function DimensionEditor({ dim, group, fields, metrics = [], onChange, on
       </div>
     </div>
   );
+}
+
+/**
+ * Date histogram options (LENS-DIM-05). The interval is a minimum: over a wide range it is scaled up
+ * to stay under LENS_MAX_BUCKETS, and the editor says so.
+ */
+function DateHistogramEditor({
+  dim,
+  fields,
+  timeRange,
+  timeField,
+  onChange,
+}: {
+  dim: DateHistogramDim;
+  fields: LensField[];
+  timeRange?: { from: number; to: number };
+  timeField?: string;
+  onChange: (d: BucketDim) => void;
+}) {
+  const styles = useStyles2(getStyles);
+  const fieldId = useId();
+  const intervalId = useId();
+  const switchId = useId();
+  const custom = dim.interval !== 'auto';
+  const [error, setError] = useState<string | null>(null);
+  const options = withCurrentDate(dateFields(fields), dim, fields);
+  const presets = INTERVAL_PRESETS.some((p) => p.value === dim.interval)
+    ? INTERVAL_PRESETS
+    : custom
+      ? [{ label: dim.interval, value: dim.interval }, ...INTERVAL_PRESETS]
+      : INTERVAL_PRESETS;
+  const resolved = timeRange
+    ? resolveLensInterval(dim.interval, { from: dateTime(timeRange.from), to: dateTime(timeRange.to) })
+    : undefined;
+  return (
+    <>
+      <Field label="Field" htmlFor={fieldId}>
+        <Combobox
+          id={fieldId}
+          options={options.map((f) => ({ label: f.label, value: f.sqlExpr }))}
+          value={dim.field}
+          onChange={(o) => {
+            const f = fields.find((x) => x.sqlExpr === o?.value);
+            if (f) {
+              onChange(withBucketField(dim, f));
+            }
+          }}
+        />
+      </Field>
+      <InlineSwitch
+        id={switchId}
+        label="Customize time interval"
+        aria-label="Customize time interval"
+        showLabel
+        transparent
+        value={custom}
+        onChange={(e) => {
+          setError(null);
+          const on = e.currentTarget.checked;
+          onChange(withDateOptions(dim, { interval: on ? (custom ? dim.interval : '1h') : 'auto' }));
+        }}
+      />
+      {custom && (
+        <Field
+          label="Minimum interval"
+          htmlFor={intervalId}
+          description="Pick a unit or type a number and unit (5m, 3h, 2w, 1M)"
+          invalid={!!error}
+          error={error}
+        >
+          <Combobox
+            id={intervalId}
+            createCustomValue
+            customValueDescription="Use this interval"
+            options={presets}
+            value={dim.interval}
+            invalid={!!error}
+            onChange={(o) => {
+              const text = String(o?.value ?? '').trim();
+              const e = intervalError(text);
+              setError(e);
+              const iv = parseInterval(text);
+              if (!e && iv) {
+                onChange(withDateOptions(dim, { interval: formatInterval(iv) }));
+              }
+            }}
+          />
+        </Field>
+      )}
+      {resolved && (
+        <div className={styles.note} role="status">
+          {resolved.requested
+            ? resolved.scaled
+              ? `Interval scaled to ${describeInterval(resolved)} to stay under ${LENS_MAX_BUCKETS} buckets`
+              : `Bucket size: ${describeInterval(resolved)}`
+            : `Auto: ${describeInterval(resolved)} buckets (about 60 over the time range)`}
+        </div>
+      )}
+      <div className={styles.label}>Advanced</div>
+      <Checkbox
+        label="Include empty rows"
+        value={dim.emptyRows !== false}
+        onChange={(e) => onChange(withDateOptions(dim, { emptyRows: e.currentTarget.checked ? undefined : false }))}
+      />
+      <Checkbox
+        label="Drop partial intervals"
+        value={!!dim.dropPartial}
+        onChange={(e) => onChange(withDateOptions(dim, { dropPartial: e.currentTarget.checked ? true : undefined }))}
+      />
+      {timeField !== undefined && dim.field !== timeField && (
+        <Checkbox
+          label="Bind to global time picker"
+          description="Fill empty rows over the whole time range (off: only between the first and last value)"
+          value={!dim.unbound}
+          onChange={(e) => onChange(withDateOptions(dim, { unbound: e.currentTarget.checked ? undefined : true }))}
+        />
+      )}
+    </>
+  );
+}
+
+/** Keeps the histogram's current field selectable even when it is not a discovered date field. */
+function withCurrentDate(list: LensField[], dim: DateHistogramDim, all: LensField[]): LensField[] {
+  if (list.some((f) => f.sqlExpr === dim.field)) {
+    return list;
+  }
+  const f = all.find((x) => x.sqlExpr === dim.field) ?? {
+    id: dim.field,
+    sqlExpr: dim.field,
+    label: dim.label,
+    type: 'time' as const,
+  };
+  return [f, ...list];
 }
 
 /**

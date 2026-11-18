@@ -261,9 +261,9 @@ describe('top values state (untrusted URL)', () => {
 
   it('labels follow the rank', () => {
     expect(autoLabelIn(svc)).toBe('Top 3 values of ServiceName');
-    expect(autoLabelIn({ ...svc, rankDir: 'asc' })).toBe('Bottom 3 values of ServiceName');
-    expect(autoLabelIn({ ...svc, rankBy: 'alpha' })).toBe('First 3 values of ServiceName');
-    expect(autoLabelIn({ ...svc, rankBy: 'alpha', rankDir: 'desc' })).toBe('Last 3 values of ServiceName');
+    expect(autoLabelIn({ ...svc, rankDir: 'asc' as const })).toBe('Bottom 3 values of ServiceName');
+    expect(autoLabelIn({ ...svc, rankBy: 'alpha' as const })).toBe('First 3 values of ServiceName');
+    expect(autoLabelIn({ ...svc, rankBy: 'alpha' as const, rankDir: 'desc' as const })).toBe('Last 3 values of ServiceName');
     const m: TermsDim = { ...svc, rankBy: 'metric', rankMetric: 'm1' };
     expect(autoLabelIn(m, [count, median])).toBe('Top 3 values of ServiceName by Median of SeverityNumber');
     expect(autoLabelIn(m)).toBe('Top 3 values of ServiceName');

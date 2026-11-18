@@ -9,6 +9,8 @@
  */
 import { FieldType } from '../sql/fieldModel';
 import { formulaErrors, FormulaFields, MAX_FORMULA_LEN } from './formula';
+import { isIntervalValue } from './interval';
+import { cleanMetricOptions, MetricOptions, optionsLabelSuffix } from './metricOptions';
 
 export type ChartType = 'line' | 'area' | 'bar' | 'metric' | 'table' | 'pie';
 export type XySubType = 'stacked' | 'percentage' | 'unstacked';
@@ -21,10 +23,47 @@ export interface DateHistogramDim {
   /** SQL expression of the time column. */
   field: string;
   label: string;
-  /** 'auto' ≈ 60 buckets over the time range (same rule as the Discover histogram). */
-  interval: 'auto';
+  /**
+   * 'auto' ≈ 60 buckets over the time range (same rule as the Discover histogram), or a typed
+   * minimum interval `<n><unit>` (LENS-DIM-05, parsed by `interval.ts`; scaled up past the cap).
+   */
+  interval: string;
+  /** Include empty rows (default on): gap-fill buckets without documents. Stored only when off. */
+  emptyRows?: false;
+  /** Drop the first / last bucket when the time range only partly covers it. */
+  dropPartial?: true;
+  /**
+   * Bind to global time picker turned off (only offered for a field other than the view's time
+   * field): empty rows are filled over the data's own span instead of the whole picker range.
+   */
+  unbound?: true;
   /** User-edited name; undefined = automatic label (LENS-DIM-02). */
   name?: string;
+}
+
+/** Keeps only the known, well-typed date histogram options of untrusted input. */
+export function cleanDateHistogram(b: DateHistogramDim): DateHistogramDim {
+  const raw = b as unknown as Record<string, unknown>;
+  const out: DateHistogramDim = {
+    kind: 'date_histogram',
+    id: b.id,
+    field: b.field,
+    label: b.label,
+    interval: isIntervalValue(raw.interval) ? (raw.interval as string).trim() : 'auto',
+  };
+  if (typeof raw.name === 'string') {
+    out.name = raw.name;
+  }
+  if (raw.emptyRows === false) {
+    out.emptyRows = false;
+  }
+  if (raw.dropPartial === true) {
+    out.dropPartial = true;
+  }
+  if (raw.unbound === true) {
+    out.unbound = true;
+  }
+  return out;
 }
 
 export interface TermsDim {
@@ -208,7 +247,8 @@ export function cleanTerms(b: TermsDim): TermsDim {
   return out;
 }
 
-export interface MetricDim {
+/** A metric; `MetricOptions` holds its Advanced / Appearance options (LENS-DIM-02, PLAN 16g). */
+export interface MetricDim extends MetricOptions {
   kind: 'metric';
   id: string;
   op: MetricOp;
@@ -227,7 +267,146 @@ export interface MetricDim {
   name?: string;
 }
 
-export type BucketDim = DateHistogramDim | TermsDim;
+export type BucketDim = DateHistogramDim | TermsDim | RangeDim | FiltersDim;
+
+/** One custom range of an Intervals bucket: `from <= x < to`, either end open. */
+export interface RangeSpec {
+  from?: number;
+  to?: number;
+  label?: string;
+}
+
+/**
+ * Intervals (LENS-DIM-05, number fields): automatic buckets of a "nice" width (a power of ten
+ * sized from the data's min / max and the granularity), or custom ranges.
+ */
+export interface RangeDim {
+  kind: 'range';
+  id: string;
+  field: string;
+  label: string;
+  /** Whether the field is numeric — chooses a direct value vs a cast in SQL. */
+  numeric?: boolean;
+  /** Custom ranges; absent = automatic granularity. */
+  ranges?: RangeSpec[];
+  /** 1 (coarse) … 7 (fine); default 4. */
+  granularity?: number;
+  /** Include empty rows (automatic buckets; default on). Stored only when off. */
+  emptyRows?: false;
+  name?: string;
+}
+
+/** One Filters bucket: a KQL query (through the search bar's compiler) and an optional label. */
+export interface FilterSpec {
+  query: string;
+  label?: string;
+}
+
+/** Filters (LENS-DIM-05): one bucket per KQL query; a document can fall in several. */
+export interface FiltersDim {
+  kind: 'filters';
+  id: string;
+  /** No field: '' (the queries name their own fields). */
+  field: '';
+  label: string;
+  filters: FilterSpec[];
+  name?: string;
+}
+
+export const MAX_RANGES = 20;
+export const MAX_FILTERS = 20;
+export const MAX_FILTER_QUERY = 1000;
+export const DEFAULT_GRANULARITY = 4;
+/** Target bucket count per granularity step (1 … 7). */
+export const GRANULARITY_TARGETS = [5, 10, 20, 50, 100, 200, 500];
+export const ALL_RECORDS = 'All records';
+
+const finite = (x: unknown): x is number => typeof x === 'number' && Number.isFinite(x);
+const shortText = (x: unknown): string | undefined =>
+  typeof x === 'string' && x.trim() && x.length <= MAX_NAME ? x : undefined;
+
+/** Keeps only the known, well-typed Intervals options of untrusted input. */
+export function cleanRange(b: RangeDim): RangeDim {
+  const raw = b as unknown as Record<string, unknown>;
+  const out: RangeDim = { kind: 'range', id: b.id, field: b.field, label: b.label };
+  if (raw.numeric === true) {
+    out.numeric = true;
+  }
+  if (typeof raw.name === 'string') {
+    out.name = raw.name;
+  }
+  if (Number.isInteger(raw.granularity) && (raw.granularity as number) >= 1 && (raw.granularity as number) <= 7) {
+    if (raw.granularity !== DEFAULT_GRANULARITY) {
+      out.granularity = raw.granularity as number;
+    }
+  }
+  if (raw.emptyRows === false) {
+    out.emptyRows = false;
+  }
+  if (Array.isArray(raw.ranges)) {
+    const ranges = (raw.ranges as unknown[])
+      .filter((r): r is Record<string, unknown> => !!r && typeof r === 'object')
+      .slice(0, MAX_RANGES)
+      .map((r) => {
+        const spec: RangeSpec = {};
+        if (finite(r.from)) {
+          spec.from = r.from;
+        }
+        if (finite(r.to)) {
+          spec.to = r.to;
+        }
+        const label = shortText(r.label);
+        if (label) {
+          spec.label = label;
+        }
+        return spec;
+      });
+    out.ranges = ranges;
+  }
+  return out;
+}
+
+/** Keeps only well-formed filters of untrusted input (text only; compiled by the KQL compiler). */
+export function cleanFilters(b: FiltersDim): FiltersDim {
+  const raw = b as unknown as Record<string, unknown>;
+  const list = Array.isArray(raw.filters) ? (raw.filters as unknown[]) : [];
+  const filters = list
+    .filter((f): f is Record<string, unknown> => !!f && typeof f === 'object')
+    .filter((f) => typeof f.query === 'string' && (f.query as string).length <= MAX_FILTER_QUERY)
+    .slice(0, MAX_FILTERS)
+    .map((f) => {
+      const spec: FilterSpec = { query: f.query as string };
+      const label = shortText(f.label);
+      if (label) {
+        spec.label = label;
+      }
+      return spec;
+    });
+  const out: FiltersDim = { kind: 'filters', id: b.id, field: '', label: 'Filters', filters };
+  if (typeof raw.name === 'string') {
+    out.name = raw.name;
+  }
+  return out;
+}
+
+/** Display label of a custom range ("0 – 100", "≥ 500", "< 10") unless it has its own. */
+export function rangeLabel(r: RangeSpec): string {
+  if (r.label) {
+    return r.label;
+  }
+  if (r.from !== undefined && r.to !== undefined) {
+    return `${r.from} – ${r.to}`;
+  }
+  if (r.from !== undefined) {
+    return `≥ ${r.from}`;
+  }
+  return r.to !== undefined ? `< ${r.to}` : 'All values';
+}
+
+/** Display label of a Filters bucket: its label, else the query, else "All records". */
+export function filterLabel(f: FilterSpec): string {
+  return f.label ?? (f.query.trim() || ALL_RECORDS);
+}
 
 export interface LensState {
   chartType: ChartType;
@@ -303,17 +482,7 @@ export const autoLabel = (d: BucketDim | MetricDim): string => autoLabelIn(d);
 /** The automatic label, ignoring any user-edited name. */
 export function autoLabelIn(d: BucketDim | MetricDim, metrics?: MetricDim[]): string {
   if (d.kind === 'metric') {
-    if (d.op === 'count') {
-      return 'Count of records';
-    }
-    if (d.op === 'formula') {
-      const f = (d.formula ?? '').trim();
-      return f.length > 60 ? `${f.slice(0, 57)}…` : f || 'Formula';
-    }
-    const what = d.fieldLabel ?? d.field;
-    return d.op === 'percentile'
-      ? `${ordinal(clampPercentile(d.percentile))} percentile of ${what}`
-      : `${OP_NAMES[d.op]} of ${what}`;
+    return metricBaseLabel(d) + optionsLabelSuffix(d);
   }
   if (d.kind === 'terms') {
     const dir = rankDirOf(d);
@@ -324,7 +493,27 @@ export function autoLabelIn(d: BucketDim | MetricDim, metrics?: MetricDim[]): st
     const rm = d.rankBy === 'metric' ? metrics?.find((m) => m.id === d.rankMetric) : undefined;
     return rm ? `${lead} by ${autoLabelIn(rm)}` : lead;
   }
+  if (d.kind === 'filters') {
+    return d.filters.length === 1 ? filterLabel(d.filters[0]) : 'Filters';
+  }
+  if (d.kind === 'range') {
+    return d.ranges ? `${d.label} ranges` : d.label;
+  }
   return d.label;
+}
+
+function metricBaseLabel(d: MetricDim): string {
+  if (d.op === 'count') {
+    return 'Count of records';
+  }
+  if (d.op === 'formula') {
+    const f = (d.formula ?? '').trim();
+    return f.length > 60 ? `${f.slice(0, 57)}…` : f || 'Formula';
+  }
+  const what = d.fieldLabel ?? d.field;
+  return d.op === 'percentile'
+    ? `${ordinal(clampPercentile(d.percentile))} percentile of ${what}`
+    : `${OP_NAMES[d.op]} of ${what}`;
 }
 
 export const CHART_LABELS: Record<ChartType, string> = {
@@ -383,10 +572,23 @@ export function decodeLens(raw: string | null | undefined): LensState | undefine
           str(b.field) &&
           str(b.label) &&
           okName(b.name) &&
-          ((b.kind === 'date_histogram' && b.interval === 'auto') ||
-            (b.kind === 'terms' && Number.isInteger(b.size) && b.size > 0))
+          ((b.kind === 'date_histogram' && isIntervalValue(b.interval)) ||
+            (b.kind === 'terms' && Number.isInteger(b.size) && b.size > 0) ||
+            b.kind === 'range' ||
+            (b.kind === 'filters' && b.field === '' && Array.isArray(b.filters)))
       )
-      .map((b) => (b.kind === 'terms' ? cleanTerms(b) : b));
+      .map((b): BucketDim => {
+        switch (b.kind) {
+          case 'terms':
+            return cleanTerms(b);
+          case 'range':
+            return cleanRange(b);
+          case 'filters':
+            return cleanFilters(b);
+          default:
+            return cleanDateHistogram(b);
+        }
+      });
     const metrics = (v.metrics as MetricDim[])
       .filter(
         (m) =>
@@ -400,18 +602,31 @@ export function decodeLens(raw: string | null | undefined): LensState | undefine
           okName(m.name) &&
           okPct(m.percentile)
       )
-      .map((m): MetricDim =>
-        m.op === 'formula'
-          ? {
-              kind: 'metric',
-              id: m.id,
-              op: 'formula',
-              formula: m.formula,
-              formulaFields: cleanFormulaFields(m.formulaFields) ?? {},
-              name: m.name,
-            }
-          : m
-      );
+      .map((m): MetricDim => {
+        // Only known, well-typed keys survive (the URL is untrusted).
+        const opts = cleanMetricOptions(m as unknown as Record<string, unknown>);
+        if (m.op === 'formula') {
+          return {
+            kind: 'metric',
+            id: m.id,
+            op: 'formula',
+            formula: m.formula,
+            formulaFields: cleanFormulaFields(m.formulaFields) ?? {},
+            name: m.name,
+            ...opts,
+          };
+        }
+        const out: MetricDim = { kind: 'metric', id: m.id, op: m.op, name: m.name, ...opts };
+        if (m.op !== 'count') {
+          out.field = m.field;
+          out.fieldLabel = typeof m.fieldLabel === 'string' ? m.fieldLabel.slice(0, 500) : undefined;
+          out.numeric = m.numeric === true;
+        }
+        if (m.op === 'percentile') {
+          out.percentile = m.percentile;
+        }
+        return out;
+      });
     const subType = ['stacked', 'percentage', 'unstacked'].includes(v.subType) ? (v.subType as XySubType) : undefined;
     return { chartType: v.chartType, subType, buckets, metrics };
   } catch {
@@ -425,7 +640,8 @@ export function decodeLens(raw: string | null | undefined): LensState | undefine
  * own SQL — so this runs before anything is compiled.
  */
 export function sanitizeLens(s: LensState, allowed: ReadonlySet<string>): LensState {
-  const kept = s.buckets.filter((b) => allowed.has(b.field));
+  // Filters buckets have no field: their queries go through the KQL compiler like the search bar.
+  const kept = s.buckets.filter((b) => b.kind === 'filters' || allowed.has(b.field));
   const metrics = s.metrics.filter((m) =>
     m.op === 'formula'
       ? formulaAllowed(m, allowed)
