@@ -10,6 +10,13 @@ Versions track the plugin's release history. `Unreleased` collects commits not y
 
 ---
 
+## [0.31.1] — 2026-11-18
+
+### Security
+- **SQL injection through shared links and saved searches** (pre-existing). A Discover URL's `cols` (and a saved search's columns) carried each column's `sqlExpr` and `key`, which `buildLogsQuery` emitted verbatim as `${sqlExpr} AS ${key}`; the URL `sort` column and direction reached `ORDER BY` the same way. A crafted link could run arbitrary SELECTs (e.g. `system.users`) as the datasource user. Restored columns are now rebuilt from trusted sources (`sanitizeColumns`, `src/data/columns.ts`): core columns from the view mapping, discovered fields by id, pinned columns by id, otherwise only a plain column reference (identifier, well-formed Map accessor, dotted path) with a regenerated alias and a checked type. The query builder additionally never emits a non-identifier alias or a non-column-reference expression (`extraColumnSelects`), accepts only an identifier as the sort column (else the default sort) and only `asc`/`desc`. The surrounding-documents page uses the same sanitizer (strict mode).
+
+---
+
 ## [0.31.0] — 2026-11-18
 
 ### Added
