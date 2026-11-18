@@ -371,6 +371,7 @@ function DateHistogramEditor({
       <InlineSwitch
         id={switchId}
         label="Customize time interval"
+        aria-label="Customize time interval"
         showLabel
         transparent
         value={custom}
