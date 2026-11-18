@@ -63,7 +63,9 @@ describe('timeExpr', () => {
   });
 
   it('a Map value can be a converted time field (trusted accessor form passes unquoted)', () => {
-    expect(timeExpr(epoch('epoch_ms', "LogAttributes['ts']"))).toBe(`fromUnixTimestamp64Milli(toInt64(LogAttributes['ts']))`);
+    expect(timeExpr(epoch('epoch_ms', "LogAttributes['ts']"))).toBe(
+      `fromUnixTimestamp64Milli(toInt64(LogAttributes['ts']))`
+    );
   });
 
   describe('hostile stored config', () => {
@@ -161,7 +163,12 @@ describe('every query reads a converted time field through timeExpr', () => {
 
   it('grid and full rows of the same log get the same row key', () => {
     const v = '2026-01-05 09:00:00.000';
-    const grid = { [CORE_ALIAS.timestamp]: v, [CORE_ALIAS.body]: 'b', [CORE_ALIAS.severity]: 'info', [CORE_ALIAS.serviceName]: 's' };
+    const grid = {
+      [CORE_ALIAS.timestamp]: v,
+      [CORE_ALIAS.body]: 'b',
+      [CORE_ALIAS.severity]: 'info',
+      [CORE_ALIAS.serviceName]: 's',
+    };
     const full = { [CORE_ALIAS.timestamp]: v, ts_ms: 1767603600000, Body: 'b', SeverityText: 'info', ServiceName: 's' };
     expect(logRowKey(full, cfg)).toBe(logRowKey(grid, cfg));
   });
@@ -179,7 +186,9 @@ describe('every query reads a converted time field through timeExpr', () => {
 
   it('histogram exported to a dashboard: explicit form, not the comma-splitting macro', () => {
     const sql = buildVolumeQuery(epoch('epoch_s'), state, { interval: { macro: true }, breakdown: { kind: 'none' } });
-    expect(sql).toContain('toStartOfInterval(toDateTime(toDateTime64(toInt64("ts_ms"), 3)), INTERVAL $__interval_s second) AS time');
+    expect(sql).toContain(
+      'toStartOfInterval(toDateTime(toDateTime64(toInt64("ts_ms"), 3)), INTERVAL $__interval_s second) AS time'
+    );
     expect(sql).not.toContain('$__timeInterval(');
     // native keeps the macro
     expect(buildVolumeQuery(native, state, { interval: { macro: true }, breakdown: { kind: 'none' } })).toContain(
@@ -188,11 +197,15 @@ describe('every query reads a converted time field through timeExpr', () => {
   });
 
   it('samples: top values, numeric stats, map keys order by the converted time', () => {
-    expect(buildFieldTopValuesQuery(cfg, 'ServiceName', { table: 'spec_logs_epoch', conditions: [] })).toContain(`ORDER BY ${TS} DESC`);
-    expect(buildNumericStatsQuery(cfg, 'SeverityNumber', { table: 'spec_logs_epoch', conditions: [], sampleSize: 100 })).toContain(
+    expect(buildFieldTopValuesQuery(cfg, 'ServiceName', { table: 'spec_logs_epoch', conditions: [] })).toContain(
       `ORDER BY ${TS} DESC`
     );
-    expect(buildMapKeysQuery(cfg, 'LogAttributes', { table: 'spec_logs_epoch', conditions: [] })).toContain(`ORDER BY ${TS} DESC`);
+    expect(
+      buildNumericStatsQuery(cfg, 'SeverityNumber', { table: 'spec_logs_epoch', conditions: [], sampleSize: 100 })
+    ).toContain(`ORDER BY ${TS} DESC`);
+    expect(buildMapKeysQuery(cfg, 'LogAttributes', { table: 'spec_logs_epoch', conditions: [] })).toContain(
+      `ORDER BY ${TS} DESC`
+    );
   });
 
   it('surrounding documents (legacy builder)', () => {
@@ -223,7 +236,9 @@ describe('every query reads a converted time field through timeExpr', () => {
     });
 
     it('native time field and other fields are quoted as before', () => {
-      expect(compileLens(lens('Timestamp'), native, [], range).sql).toContain('toStartOfInterval("Timestamp", INTERVAL');
+      expect(compileLens(lens('Timestamp'), native, [], range).sql).toContain(
+        'toStartOfInterval("Timestamp", INTERVAL'
+      );
       expect(compileLens(lens('other_ts'), cfg, [], range).sql).toContain('toStartOfInterval("other_ts", INTERVAL');
     });
   });

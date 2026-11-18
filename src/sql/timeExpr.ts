@@ -25,7 +25,8 @@ export const TIMESTAMP_FORMATS: Record<TimestampFormat, { label: string; descrip
   epoch_ns: { label: 'Epoch nanoseconds', description: 'Number of nanoseconds since 1970-01-01 UTC.' },
   string: {
     label: 'Text date',
-    description: 'Parsed with parseDateTime64BestEffort (ISO 8601 and common formats); text without a zone is read as UTC.',
+    description:
+      'Parsed with parseDateTime64BestEffort (ISO 8601 and common formats); text without a zone is read as UTC.',
   },
 };
 
@@ -126,7 +127,9 @@ export function formatsForKind(kind: TimeColumnKind): TimestampFormat[] {
  * 13 → ms, 16 → µs, 19 → ns). Only a default for the picker; the user can change it.
  */
 export function guessEpochFormat(sample: unknown): TimestampFormat {
-  const s = String(sample ?? '').replace(/^-/, '').split('.')[0];
+  const s = String(sample ?? '')
+    .replace(/^-/, '')
+    .split('.')[0];
   if (!/^\d+$/.test(s)) {
     return 'epoch_ms';
   }

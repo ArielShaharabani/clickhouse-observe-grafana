@@ -28,6 +28,7 @@ import { makeColumnKey, fieldToColumn } from './FieldSidebar/FieldSidebar';
 import { FIELD_TYPE_ICONS } from './FieldSidebar/fieldIcons';
 import { fieldTypeColor } from './FieldSidebar/fieldTypeColors';
 import { JsonTree, allContainerPaths } from './JsonTree';
+import { isConvertedTimestamp } from '../sql/timeExpr';
 
 interface FlatAttrRow {
   key: string;
@@ -268,8 +269,11 @@ export function LogDetailDrawer({
     () => new Map((fields ?? []).map((f) => [f.sqlExpr, f.type] as const)),
     [fields]
   );
+  // A converted time field (epoch / text, PLAN #16d): the raw column is an ordinary number / text
+  // field; only the converted value (CORE_ALIAS.timestamp, in every projection) is the time.
+  const rawTimeCol = isConvertedTimestamp(config) ? '' : c.timestamp;
   const resolveType = (sqlExpr: string): FieldType => {
-    if (sqlExpr === c.timestamp || sqlExpr === CORE_ALIAS.timestamp) {
+    if ((rawTimeCol && sqlExpr === rawTimeCol) || sqlExpr === CORE_ALIAS.timestamp) {
       return 'time';
     }
     return typeByExpr.get(sqlExpr) ?? 'string';
@@ -293,12 +297,12 @@ export function LogDetailDrawer({
   );
   const allRows = useMemo(() => {
     const flat = [
-      ...flattenRowEntries(effectiveRow, containerCols, jsonColumns, c.timestamp, resolveType),
+      ...flattenRowEntries(effectiveRow, containerCols, jsonColumns, rawTimeCol, resolveType),
       ...flattenAttrGroups(attrGroups, resolveType),
     ];
     return flat.sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [effectiveRow, containerCols, attrGroups, c.timestamp, jsonColumns, typeByExpr]);
+  }, [effectiveRow, containerCols, attrGroups, rawTimeCol, jsonColumns, typeByExpr]);
 
 
   // Reset per-log UI state (not the search/selected-only filters, which the user likely wants to

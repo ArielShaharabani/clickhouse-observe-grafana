@@ -81,7 +81,7 @@ export function TimeFieldSelect({
     return opts;
   }, [columns, kindByName, timestamp]);
 
-  const kind = timestamp ? kindByName.get(timestamp) ?? null : null;
+  const kind = timestamp ? (kindByName.get(timestamp) ?? null) : null;
   const current = normalizeTimestampFormat(format);
   const converted = Boolean(timestamp) && current !== 'native';
 
