@@ -10,6 +10,12 @@ Versions track the plugin's release history. `Unreleased` collects commits not y
 
 ---
 
+## [0.26.1] — 2026-11-18
+
+### Security
+
+- **Quoted identifiers escape backslashes.** ClickHouse treats `\` as an escape inside `"quoted"` identifiers, so a field name ending in `\"` (e.g. a filter pill in a shared link) could close the identifier early and append SQL that the viewer then ran. `quoteIdentifier`, dotted paths and table references now escape backslashes before doubling quotes, and the trusted-expression check mirrors ClickHouse's lexer. Found by the security review of PR 19.
+
 ## [0.26.0] — 2026-11-18
 
 ### Added
