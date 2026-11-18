@@ -32,8 +32,9 @@ const LensPage = React.lazy(() => import('../../lens/LensPage').then((m) => ({ d
 // Surrounding documents (DISC-DOC-02), reached from the detail panel.
 const ContextView = React.lazy(() => import('../../pages/ContextView').then((m) => ({ default: m.ContextView })));
 
+// Discover with its session tabs (DISC-NAV-01) wrapping LogsExplorer.
 const LogsExplorer = React.lazy(() =>
-  import('../../pages/LogsExplorer').then((m) => ({ default: m.LogsExplorer }))
+  import('../../pages/DiscoverTabsHost').then((m) => ({ default: m.DiscoverTabsHost }))
 );
 
 /** Shared context so all pages can access the current SourceConfig (= active DataView). */

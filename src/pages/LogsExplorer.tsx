@@ -50,6 +50,7 @@ import type { FieldModel } from '../sql/fieldModel';
 import { BreakdownUrl, decodeLogsState, encodeLogsState } from '../data/urlState';
 import { loadPinnedFilters, mergePinnedFilters, normalizePinnedFlags, tableKey } from '../state/sharedSearch';
 import { rememberSearchContext } from '../state/lastSearch';
+import { TAB_PARAM } from '../state/discoverTabs';
 import { useAutocompleteSources } from '../autocomplete/service';
 import { compileColumnHighlighter, extractHighlightTerms } from '../sql/kql/highlight';
 import { errMsg } from '../errMsg';
@@ -95,7 +96,14 @@ function defaultTimeRange(): TimeRange {
 }
 
 
-export function LogsExplorer() {
+export interface LogsExplorerProps {
+  /** Session tab (DISC-NAV-01): kept as `_tab` in every URL this page writes. */
+  tabId?: string;
+  /** Session tab strip, rendered above the toolbar. */
+  tabStrip?: React.ReactNode;
+}
+
+export function LogsExplorer({ tabId, tabStrip }: LogsExplorerProps = {}) {
   const styles = useStyles2(getStyles);
   const config = useContext(SourceConfigContext);
   const { activeView, setActiveViewId, views } = useContext(DataViewContext);
@@ -576,6 +584,9 @@ export function LogsExplorer() {
       // or switches view, so a link copied mid-load still carries it.
       breakdown: breakdownToUrl(breakdownChoice, pendingBreakdownFieldId),
     });
+    if (tabId) {
+      next.set(TAB_PARAM, tabId);
+    }
     // Skip no-op navigations (discovery phases re-run this effect with an unchanged URL).
     if (next.toString() !== new URLSearchParams(window.location.search).toString()) {
       setSearchParams(next, { replace: true });
@@ -1426,6 +1437,7 @@ export function LogsExplorer() {
     <FieldsContext.Provider value={fieldsState}>
       <PluginPage layout={PageLayoutType.Custom} pageNav={{ text: 'Logs' }}>
       <div ref={containerRef} className={styles.container} style={{ height: availableHeight }}>
+        {tabStrip}
         {/* Row 1: view picker + add filter + search (left/center) + saved/dashboard/time/refresh
             (right) — condensed onto one line (Kibana Discover style) so the table below gets the
             vertical space the search bar's own row used to take. SearchBar itself is the
