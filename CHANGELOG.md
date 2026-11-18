@@ -10,6 +10,19 @@ Versions track the plugin's release history. `Unreleased` collects commits not y
 
 ---
 
+## [0.28.0] — 2026-11-18
+
+### Added
+- **Filter builder: greater or equal, less than, is between, is not between.** The spec lists these operators; the builder only had is / is not / one of / exists / contains. New `FilterOp`s `gte`, `lt`, `between`, `not_between` (bounds in `values: [low, high]`, inclusive), with labels, negate pairing (gte <-> lt, between <-> not_between) and pill rendering (`NOT` badge for not-between). `samePill` compares a between pair in order. Bounds are validated in the form (numbers for number fields and Map keys, dates for time fields, From <= To, with a message) and again in SQL: an invalid, missing or empty bound skips the pill (matches nothing; not_between matches everything) instead of sending `BETWEEN '1s' AND '5s'` to ClickHouse. A Map value is read as `toFloat64OrNull(toString(col))` (works for `Map(String, String)` and `Map(String, Float64)`; `'9' < '10'`), and there `lt` / `not_between` are `NOT ifNull(positive, 0)` so rows with a missing or non-numeric key fall on exactly one side of an include / exclude pair.
+- **Filter builder: live Preview line** showing the pill text before it is added.
+
+### Changed
+- **Filter builder: operator list depends on the field type.** Ranges only for number / time / unknown scalars and Map keys (never a whole Map / JSON / Tuple / Array column); substring match not for number / time (ILIKE needs a string). An edited pill keeps its own operator even if the type would not offer it.
+- **Filter builder: Value stays disabled ("Please select operator first...") until an operator is picked.** The operator no longer defaults to "is"; Add filter is enabled only when the draft is complete (field, operator, and the values the operator needs). Matches the spec.
+- Editing a pill now keeps its `pinned` flag as well as id / disabled.
+
+---
+
 ## [0.27.0] — 2026-11-18
 
 ### Added

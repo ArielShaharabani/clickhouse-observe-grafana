@@ -1,7 +1,7 @@
 # Progress — read this first when resuming
 
 **Current item:** fan-out: #17, #19, #24 in parallel worktrees (see CONTEXT "Parallel work")
-**Last completed step:** #16 LENS-SAVE-01 in PR 17 (v0.26.0): Save on Visualize → dashboard (new/existing) and/or library; `src/lens/panelExport.ts`, `SaveLensModal.tsx`, `draft.ts`. e2e lens-save-01 (5), unit save.test (19), full e2e 67 green.
+**Last completed step:** #19 DISC-FILTER-02 (Filter builder: range operators, per-type operators, preview) in PR 19 (v0.28.0).
 **Next step:** importance-3 queue (#17 DISC-TIME-01/02 …), fanned out to parallel agents in worktrees (see CONTEXT).
 **Open issues:** none. Deferred Lens items: per-group drag-and-drop (LENS-DIM-01 DnD; workspace drop works), formula (#23), advanced metric options (filter by, time shift), value format/colour/axis side (LENS-STYLE-01), date interval picker, "Other" bucket. Deferred elsewhere: DISC-DOC-02 links (#20); histogram now-line; field list Empty/Meta; grid Summary column etc. (#16); popover Visualize (#15).
 
