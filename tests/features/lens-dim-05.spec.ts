@@ -107,3 +107,68 @@ test('Discover histogram interval → Edit visualization keeps it', async ({ pag
   const back = await page.getByRole('link', { name: 'Explore in Discover' }).getAttribute('href');
   expect(new URLSearchParams(back!.split('?')[1]).get('interval')).toBe('day');
 });
+
+// PLAN 16f: Intervals and Filters bucket functions. Tables show plain numbers (bars abbreviate: 3.2K).
+const tableLens = (bucket: Record<string, unknown>) =>
+  JSON.stringify({ chartType: 'table', buckets: [bucket], metrics: [{ kind: 'metric', id: 'm0', op: 'count' }] });
+const compact = (v: number) => (v >= 1e3 ? `${+(v / 1e3).toFixed(1)}K` : String(v));
+
+test('Filters: one bucket per KQL query, counted on ClickHouse', async ({ page }) => {
+  const viz = new VisualizePage(page);
+  await viz.open({
+    lens: tableLens({
+      kind: 'filters',
+      id: 'b0',
+      field: '',
+      label: 'Filters',
+      filters: [{ query: 'SeverityText : error', label: 'Errors' }, { query: 'ServiceName : payments' }, { query: '' }],
+    }),
+  });
+  await expect(viz.chart.getByText('Errors', { exact: true })).toBeVisible();
+  await expect(viz.chart.getByText(String(FIXTURE.counts.byLevel.error), { exact: true })).toBeVisible();
+  await expect(viz.chart.getByText('ServiceName : payments', { exact: true })).toBeVisible();
+  await expect(viz.chart.getByText(String(FIXTURE.counts.payments), { exact: true })).toBeVisible();
+  await expect(viz.chart.getByText('All records', { exact: true })).toBeVisible();
+  await expect(viz.chart.getByText(String(FIXTURE.counts.total), { exact: true })).toBeVisible();
+});
+
+test('Intervals: automatic buckets are labelled by their range; custom ranges by their label', async ({ page }) => {
+  const viz = new VisualizePage(page);
+  const field = { id: 'b0', field: 'SeverityNumber', label: 'SeverityNumber', numeric: true };
+  await viz.open({ lens: tableLens({ kind: 'range', ...field }) });
+  await expect(viz.chart.getByText(/^\d+ – \d+$/).first()).toBeVisible();
+  await viz.open({ lens: tableLens({ kind: 'range', ...field, ranges: [{ label: 'Everything' }] }) });
+  await expect(viz.chart.getByText('Everything', { exact: true })).toBeVisible();
+  await expect(viz.chart.getByText(String(FIXTURE.counts.total), { exact: true })).toBeVisible();
+});
+
+test('Functions grid: Top values → Intervals with custom ranges; Filters with an invalid query', async ({ page }) => {
+  const viz = new VisualizePage(page);
+  await viz.open();
+  await viz.addField('SeverityNumber');
+  await viz.dimensions
+    .getByRole('button', { name: /^Edit / })
+    .first()
+    .click();
+  const ed = page.getByRole('dialog', { name: /^Edit / });
+  await ed.getByRole('button', { name: 'Intervals' }).click();
+  await expect(ed.getByRole('button', { name: 'Intervals' })).toHaveAttribute('aria-pressed', 'true');
+  await ed.getByRole('switch', { name: 'Create custom ranges' }).click({ force: true });
+  await ed.getByRole('textbox', { name: 'Range 1 to' }).fill('13');
+  await ed.getByRole('textbox', { name: 'Range 1 to' }).press('Enter');
+  await ed.getByRole('button', { name: 'Add range' }).click();
+  await expect(ed.getByRole('textbox', { name: 'Range 2 from' })).toHaveValue('13');
+  expect(new URL(page.url()).searchParams.get('lens')).toContain('"ranges":[{"from":0,"to":13},{"from":13}]');
+
+  await ed.getByRole('button', { name: 'Filters' }).click();
+  await ed.getByRole('textbox', { name: 'Filter 1 query' }).fill('SeverityText : (');
+  await ed.getByRole('textbox', { name: 'Filter 1 query' }).press('Enter');
+  await expect(ed.getByRole('alert')).toContainText('Invalid KQL');
+  await ed.getByRole('textbox', { name: 'Filter 1 query' }).fill('SeverityText : error');
+  await ed.getByRole('textbox', { name: 'Filter 1 query' }).press('Enter');
+  await expect(
+    viz.chart
+      .getByRole('button', { name: new RegExp(`: ${compact(FIXTURE.counts.byLevel.error).replace('.', '\.')}$`) })
+      .first()
+  ).toBeVisible();
+});
