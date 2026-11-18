@@ -14,7 +14,7 @@ import pluginJson from '../../src/plugin.json';
 // 09:00:36 payments 75172 · 09:00:42 payments 6617ms · 09:00:45 inventory 46162 ·
 // 09:00:48 payments 66150 · 09:00:54 payments 6550ms · 09:01:00 payments 44302 · 09:01:00 auth cache hit.
 // Older, closest first: 09:00:30 payments 3821ms · 09:00:24 payments 48058 · 09:00:18 payments 3179ms ·
-// 09:00:12 payments 56873 · 09:00:06 payments 5423ms · 09:00:00 (checkout / payments).
+// 09:00:15 frontend retrying · 09:00:12 payments 56873 · 09:00:06 payments 5423ms · 09:00:00 (checkout / payments).
 
 // Each test runs several pages and queries; give them room on a loaded Docker VM.
 test.describe.configure({ timeout: 120_000 });
@@ -55,7 +55,8 @@ test('opens from the detail panel: 5 newer + anchor + 5 older, anchor highlighte
   await expect(rows(page).nth(0)).toContainText('Timeout after 6550ms calling inventory');
   // Same timestamp as the anchor, ordered just below it by row id.
   await expect(rows(page).nth(6)).toContainText('Timeout after 3821ms calling inventory');
-  await expect(rows(page).nth(10)).toContainText('Timeout after 5423ms calling inventory');
+  await expect(rows(page).nth(9)).toContainText('Retrying request to auth (attempt 2)');
+  await expect(rows(page).nth(10)).toContainText('Payment declined for order 56873');
   await expect(page.getByTestId('newer-status')).toHaveText('5 newer documents');
   await expect(page.getByTestId('older-status')).toHaveText('5 older documents');
 });
