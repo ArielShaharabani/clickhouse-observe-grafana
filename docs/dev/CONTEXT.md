@@ -71,3 +71,4 @@ Update 2026-11-18 (after a PC restart): Docker restarted, all containers resumed
 - `disc-doc-02` → #20 DISC-DOC-02, port 3015
 New containers: `docker run -d --name co-<id> --network clickhouse-observe-grafana-dev_default -p <port>:3000 -v <wt>/provisioning:/etc/grafana/provisioning -v <wt>/dist:/var/lib/grafana/plugins/poortuna-clickhouse-observe-app` + the GF_* env of the compose `grafana` service + `GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS=poortuna-clickhouse-observe-app`, image `clickhouse-observe-grafana-dev-grafana`.
 Then merge order: 18 → 19 → 20 → chart-02 → doc-02.
+Status 2026-11-18 (later): PR 18 merged (v0.27.0; gates 930 jest, 79 e2e). Agents hit the 5-hour usage limit once and were resumed. Next: PR 19 → 0.28.0, PR 20 → 0.29.0, then chart-02 / doc-02 PRs.
