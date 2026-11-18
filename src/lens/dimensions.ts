@@ -4,8 +4,12 @@
 import {
   BucketDim,
   cleanDateHistogram,
+  cleanFilters,
+  cleanRange,
   cleanTerms,
   DateHistogramDim,
+  FilterSpec,
+  RangeDim,
   clampPercentile,
   DEFAULT_PERCENTILE,
   LensField,
@@ -79,6 +83,9 @@ export function withMetricField(m: MetricDim, field: LensField): MetricDim {
 export function withBucketField(b: BucketDim, field: LensField): BucketDim {
   if (b.kind === 'date_histogram') {
     return field.type === 'time' ? cleanDateHistogram({ ...b, field: field.sqlExpr, label: field.label }) : b;
+  }
+  if (b.kind === 'range') {
+    return field.type === 'number' ? { ...b, field: field.sqlExpr, label: field.label, numeric: true } : b;
   }
   return b.kind === 'terms' ? { ...b, field: field.sqlExpr, label: field.label } : b;
 }
@@ -162,4 +169,54 @@ export function queryShape(s: LensState): LensState {
     buckets: s.buckets.map(({ name: _n, ...b }) => b as BucketDim),
     metrics: s.metrics.map(({ name: _n, ...m }) => m as MetricDim),
   };
+}
+
+/** Bucket functions of the editor (LENS-DIM-05), in Kibana's order. */
+export const BUCKET_FUNCTIONS: Array<{ kind: BucketDim['kind']; label: string }> = [
+  { kind: 'date_histogram', label: 'Date histogram' },
+  { kind: 'range', label: 'Intervals' },
+  { kind: 'filters', label: 'Filters' },
+  { kind: 'terms', label: 'Top values' },
+];
+
+/** Number fields an Intervals bucket can use. */
+export function numberFields(fields: LensField[]): LensField[] {
+  return fields.filter((f) => f.type === 'number' && isLensField(f));
+}
+
+/**
+ * Switches a bucket's function, keeping its field where the new function accepts it, else the first
+ * compatible field. Undefined when the function needs a field and none is compatible.
+ */
+export function withBucketFunction(b: BucketDim, kind: BucketDim['kind'], fields: LensField[]): BucketDim | undefined {
+  if (b.kind === kind) {
+    return b;
+  }
+  const pick = (list: LensField[]) => list.find((f) => f.sqlExpr === b.field) ?? list[0];
+  switch (kind) {
+    case 'filters':
+      return { kind: 'filters', id: b.id, field: '', label: 'Filters', filters: [{ query: '' }] };
+    case 'date_histogram': {
+      const f = pick(dateFields(fields));
+      return f ? { kind, id: b.id, field: f.sqlExpr, label: f.label, interval: 'auto' } : undefined;
+    }
+    case 'range': {
+      const f = pick(numberFields(fields));
+      return f ? { kind, id: b.id, field: f.sqlExpr, label: f.label, numeric: true } : undefined;
+    }
+    case 'terms': {
+      const f = pick(bucketFields(fields));
+      return f ? { kind, id: b.id, field: f.sqlExpr, label: f.label, size: 9 } : undefined;
+    }
+  }
+}
+
+/** Applies Intervals options, normalised like URL input. */
+export function withRangeOptions(b: BucketDim, patch: Partial<Omit<RangeDim, 'kind' | 'id'>>): BucketDim {
+  return b.kind === 'range' ? cleanRange({ ...b, ...patch }) : b;
+}
+
+/** Replaces a Filters bucket's list, normalised like URL input. */
+export function withFilterList(b: BucketDim, filters: FilterSpec[]): BucketDim {
+  return b.kind === 'filters' ? cleanFilters({ ...b, filters }) : b;
 }

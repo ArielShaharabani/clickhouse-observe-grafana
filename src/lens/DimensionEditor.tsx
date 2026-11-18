@@ -46,6 +46,7 @@ import {
   TermsRankBy,
 } from './state';
 import { uniqueMetricLabels } from './compile';
+import { BucketFunctions, FiltersEditor, RangeEditor } from './BucketEditors';
 import { FormulaEditor, formulaFieldsOf, formulaMetric } from './FormulaEditor';
 import { formulaErrors, quickToFormula } from './formula';
 import {
@@ -97,6 +98,8 @@ export function DimensionEditor({
         <span className={styles.title}>{group}</span>
         <IconButton name="times" tooltip="Close editor" onClick={onClose} />
       </div>
+
+      {dim.kind !== 'metric' && <BucketFunctions dim={dim} fields={fields} onChange={onChange} />}
 
       {dim.kind === 'metric' && (
         <RadioButtonGroup<'quick' | 'formula'>
@@ -178,9 +181,11 @@ export function DimensionEditor({
         </>
       )}
 
+      {dim.kind === 'range' && <RangeEditor key={dim.id} dim={dim} fields={fields} onChange={onChange} />}
+      {dim.kind === 'filters' && <FiltersEditor key={dim.id} dim={dim} onChange={onChange} />}
+
       {dim.kind === 'terms' && (
         <>
-          <div className={styles.label}>Top values</div>
           <Field label="Field" htmlFor={fieldId}>
             <Combobox
               id={fieldId}
@@ -354,7 +359,6 @@ function DateHistogramEditor({
     : undefined;
   return (
     <>
-      <div className={styles.label}>Date histogram</div>
       <Field label="Field" htmlFor={fieldId}>
         <Combobox
           id={fieldId}
