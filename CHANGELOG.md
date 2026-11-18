@@ -10,11 +10,25 @@ Versions track the plugin's release history. `Unreleased` collects commits not y
 
 ---
 
+## [0.27.0] — 2026-11-18
+
+### Added
+- **Typed time shorthand next to the time picker** (`-7d`, `-30m`, `now-1h`, `td`, `yd`, `tw`, `tm`, `ty`): Enter or Update applies it; relative ranges stay relative in the URL (`from=now-7d`). Spec DISC-TIME-01 gap (`src/utils/timeShorthand.ts`, `src/components/TimeShorthandInput.tsx`).
+- **Duration badge** (`~7d`, `~17h`) beside the picker showing the window length.
+- **Pending-time cue**: typed-but-unapplied shorthand shows a green Update button (DISC-TIME-02 dirty state for time).
+### Changed
+- **URL `from`/`to` also accept ISO-8601 with an explicit zone** (`Z` or `+hh:mm`, as Kibana writes `_g.time`); the plugin still writes epoch ms. Zone-less/date-only/non-ISO strings and invalid `now…` expressions are dropped instead of guessed.
+- Shorthand units s/h/d/w/y are case-insensitive (`m` minutes vs `M` months are not); overflowing counts are rejected. The badge uses the larger unit from 2 of it (`~36h`, `~90m`).
+
+---
+
 ## [0.26.1] — 2026-11-18
 
 ### Security
 
 - **Quoted identifiers escape backslashes.** ClickHouse treats `\` as an escape inside `"quoted"` identifiers, so a field name ending in `\"` (e.g. a filter pill in a shared link) could close the identifier early and append SQL that the viewer then ran. `quoteIdentifier`, dotted paths and table references now escape backslashes before doubling quotes, and the trusted-expression check mirrors ClickHouse's lexer. Found by the security review of PR 19.
+
+---
 
 ## [0.26.0] — 2026-11-18
 
@@ -22,6 +36,8 @@ Versions track the plugin's release history. `Unreleased` collects commits not y
 
 - **Save a Visualize chart.** Save opens "Save Lens visualization": title (suggested from the chart), description, add to an existing or new dashboard or none, and add to the panel library. The panel runs the same query on the ClickHouse datasource as a core Grafana panel (time series, bar chart, stat, pie, table) and follows the dashboard's time picker. Spec LENS-SAVE-01.
 - **Unsaved charts survive a refresh.** The chart is kept in the URL and in this tab's session, so opening Visualize again restores it.
+
+---
 
 ## [0.25.0] — 2026-11-18
 
@@ -376,6 +392,8 @@ Versions track the plugin's release history. `Unreleased` collects commits not y
 - The drawer's warnings computation ran twice per rail row per render (once for grouping, once per
   row) on every tracer mutation; now computed once per root per version and shared.
 
+---
+
 ## [0.6.0] — 2026-08-14
 
 ### Added
@@ -519,6 +537,8 @@ Versions track the plugin's release history. `Unreleased` collects commits not y
 - The ClickHouse datasource resolves (never rejects) its query response even when a query failed server-side — the failure surfaces via `DataQueryResponse.error`/`.errors` alongside an empty/partial result, not by throwing. Nothing in this plugin checked those fields, so every ClickHouse error (bad SQL, a query hitting its execution-time budget, permissions) silently looked like "0 results" instead of a catchable error — including every timeout guardrail already in this codebase, whose whole point was to fail loudly rather than return a wrong-looking answer. Fixed at the single chokepoint all queries run through.
 
 
+
+---
 
 ## [0.4.8] — 2026-08-04
 
