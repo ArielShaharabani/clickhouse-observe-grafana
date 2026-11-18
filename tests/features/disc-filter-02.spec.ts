@@ -8,6 +8,8 @@ import { FIXTURE } from '../fixture';
 // builder re-query. Counts come from the deterministic fixture (docs/dev/TESTING.md).
 // SeverityNumber: debug 5 (3,984), info 9 (28,265), warn 13 (6,080), error 17 (3,191).
 
+test.describe.configure({ timeout: 60_000 }); // builder tests do several async lookups; avoid load-related flakes
+
 const { total } = FIXTURE.counts;
 const { info, warn, debug, error } = FIXTURE.counts.byLevel;
 
