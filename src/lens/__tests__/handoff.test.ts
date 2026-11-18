@@ -86,7 +86,16 @@ describe('Discover → Lens: histogram Edit visualization (DISC-CHART-03)', () =
   });
 
   it('carries the breakdown as the series split', () => {
-    expect(shape(lensForHistogram(ctx, { id: 'col:SeverityText', sqlExpr: 'SeverityText', label: 'SeverityText', type: 'string' })!)).toEqual({
+    expect(
+      shape(
+        lensForHistogram(ctx, {
+          id: 'col:SeverityText',
+          sqlExpr: 'SeverityText',
+          label: 'SeverityText',
+          type: 'string',
+        })!
+      )
+    ).toEqual({
       chart: 'bar',
       sub: 'stacked',
       x: 'Timestamp',
@@ -101,7 +110,10 @@ describe('Discover → Lens: histogram Edit visualization (DISC-CHART-03)', () =
 });
 
 describe('Lens → Discover: Explore in Discover (LENS-INTERACT-02)', () => {
-  const METHOD: FieldModel = { ...field('LogAttributes.http.method', 'string'), sqlExpr: "LogAttributes['http.method']" };
+  const METHOD: FieldModel = {
+    ...field('LogAttributes.http.method', 'string'),
+    sqlExpr: "LogAttributes['http.method']",
+  };
   const lens: LensState = {
     chartType: 'bar',
     subType: 'stacked',
@@ -112,7 +124,8 @@ describe('Lens → Discover: Explore in Discover (LENS-INTERACT-02)', () => {
     ],
     metrics: [{ kind: 'metric', id: 'm', op: 'count', field: '', fieldLabel: 'Records', numeric: false }],
   };
-  const sqls = (lensState: LensState) => discoverColumns(lensState, [SERVICE, LEVEL, METHOD], config).map((c) => c.sqlExpr);
+  const sqls = (lensState: LensState) =>
+    discoverColumns(lensState, [SERVICE, LEVEL, METHOD], config).map((c) => c.sqlExpr);
 
   it('default columns first, then new top-values fields; shown, time and unknown fields skipped', () => {
     expect(sqls(lens)).toEqual(['Timestamp', 'SeverityText', 'ServiceName', 'Body', "LogAttributes['http.method']"]);

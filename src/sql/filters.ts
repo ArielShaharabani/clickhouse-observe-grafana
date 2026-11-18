@@ -5,6 +5,45 @@
 
 import { FilterPill, FilterOp } from '../types';
 
+/** Every operator a pill may carry; anything else in a link is dropped (see sanitizeFilterPills). */
+export const FILTER_OPS: readonly FilterOp[] = [
+  '=', '!=', 'contains', 'not_contains', 'one_of', 'not_one_of', 'exists', 'not_exists',
+  'gte', 'lt', 'between', 'not_between',
+];
+
+/**
+ * Keeps only well-formed pills from untrusted input (a URL): `op` must be a known FilterOp, `field`
+ * a string, `value` a string (a missing one becomes ''), `values` an array of strings when present,
+ * `label` a string when present. A missing id is generated. Anything else is dropped.
+ */
+export function sanitizeFilterPills(raw: unknown[]): FilterPill[] {
+  const out: FilterPill[] = [];
+  for (const p of raw) {
+    if (typeof p !== 'object' || p === null) {
+      continue;
+    }
+    const r = p as Record<string, unknown>;
+    if (typeof r.op !== 'string' || !(FILTER_OPS as readonly string[]).includes(r.op) || typeof r.field !== 'string') {
+      continue;
+    }
+    if (r.value !== undefined && typeof r.value !== 'string') {
+      continue;
+    }
+    if (r.values !== undefined && !(Array.isArray(r.values) && r.values.every((v) => typeof v === 'string'))) {
+      continue;
+    }
+    if (r.label !== undefined && typeof r.label !== 'string') {
+      continue;
+    }
+    out.push({
+      ...(r as unknown as FilterPill),
+      id: typeof r.id === 'string' && r.id ? r.id : nextId(),
+      value: (r.value as string | undefined) ?? '',
+    });
+  }
+  return out;
+}
+
 let _idCounter = 0;
 /** Fresh unique pill id. */
 export function nextId(): string {
@@ -28,12 +67,32 @@ export function samePill(
   if (a.field !== b.field || a.op !== b.op) {
     return false;
   }
+  if (a.op === 'between' || a.op === 'not_between') {
+    // A range is an ordered pair: [1, 5] and [5, 1] are different filters.
+    const av = a.values ?? [];
+    const bv = b.values ?? [];
+    return av.length === bv.length && av.every((v, i) => v === bv[i]);
+  }
   if (a.values || b.values) {
     const av = [...(a.values ?? [])].sort();
     const bv = [...(b.values ?? [])].sort();
     return av.length === bv.length && av.every((v, i) => v === bv[i]);
   }
   return a.value === b.value;
+}
+
+const NUMBER_RE = /^[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?$/;
+const DATE_RE = /^\d{4}-\d{2}-\d{2}([ T]\d{2}:\d{2}(:\d{2}(\.\d{1,9})?)?)?Z?$/;
+
+/** A finite decimal number literal ("5", "-1.5", "1e3"). */
+export function isNumericBound(v: string): boolean {
+  return NUMBER_RE.test(v.trim());
+}
+
+/** An ISO-like date or date-time ("2026-01-05", "2026-01-05 09:00:00", "2026-01-05T09:00:00.5Z"). */
+export function isDateBound(v: string): boolean {
+  const t = v.trim();
+  return DATE_RE.test(t) && !Number.isNaN(Date.parse(t.replace(' ', 'T')));
 }
 
 export function addFilter(
@@ -103,6 +162,10 @@ const NEGATED_OP: Record<FilterOp, FilterOp> = {
   not_one_of: 'one_of',
   exists: 'not_exists',
   not_exists: 'exists',
+  gte: 'lt',
+  lt: 'gte',
+  between: 'not_between',
+  not_between: 'between',
 };
 
 /** Flip a pill's polarity (Exclude results / Include results in the pill menu). */
@@ -128,6 +191,10 @@ export function filterLabel(f: FilterPill): string {
       ? `${f.field} is one of [${vals}]`
       : `${f.field} is not one of [${vals}]`;
   }
+  if (f.op === 'between' || f.op === 'not_between') {
+    const [lo = '', hi = ''] = f.values ?? [];
+    return `${f.field} ${f.op === 'between' ? 'is between' : 'is not between'} ${lo} and ${hi}`;
+  }
   if (f.value === '' && f.op === '=') {
     return `${f.field} is empty`;
   }
@@ -140,6 +207,10 @@ export function filterLabel(f: FilterPill): string {
     not_one_of: 'not in',
     exists: 'exists',
     not_exists: '!exists',
+    gte: '≥',
+    lt: '<',
+    between: 'between',
+    not_between: 'not between',
   };
   return `${f.field} ${opSymbol[f.op]} ${f.value}`;
 }
