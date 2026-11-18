@@ -29,7 +29,17 @@ import {
   withSize,
   withTermsOptions,
 } from './dimensions';
-import { autoLabel, BucketDim, clampPercentile, LensField, MetricDim, opName, rankDirOf, TermsRankBy } from './state';
+import {
+  autoLabelIn,
+  BucketDim,
+  clampPercentile,
+  LensField,
+  listError,
+  MetricDim,
+  opName,
+  rankDirOf,
+  TermsRankBy,
+} from './state';
 import { uniqueMetricLabels } from './compile';
 
 interface Props {
@@ -144,9 +154,14 @@ export function DimensionEditor({ dim, group, fields, metrics = [], onChange, on
               options={[
                 { label: 'Count of records', value: 'count' },
                 { label: 'Alphabetical', value: 'alpha' },
-                { label: 'Custom metric', value: 'metric' },
+                {
+                  label: 'Custom metric',
+                  value: 'metric',
+                  description: metrics.length ? undefined : 'Add a metric first',
+                },
               ]}
               value={dim.rankBy ?? 'count'}
+              disabledOptions={metrics.length === 0 ? ['metric'] : []}
               onChange={(v) =>
                 onChange(
                   withTermsOptions(dim, {
@@ -198,6 +213,7 @@ export function DimensionEditor({ dim, group, fields, metrics = [], onChange, on
           />
           <Field label="Include values" description="One per line">
             <LinesInput
+              regex={!!dim.regex}
               key={`inc-${(dim.include ?? []).join('\n')}`}
               label="Include values"
               value={dim.include ?? []}
@@ -206,6 +222,7 @@ export function DimensionEditor({ dim, group, fields, metrics = [], onChange, on
           </Field>
           <Field label="Exclude values" description="One per line">
             <LinesInput
+              regex={!!dim.regex}
               key={`exc-${(dim.exclude ?? []).join('\n')}`}
               label="Exclude values"
               value={dim.exclude ?? []}
@@ -225,7 +242,7 @@ export function DimensionEditor({ dim, group, fields, metrics = [], onChange, on
       <Field label="Name">
         <Input
           aria-label="Name"
-          placeholder={autoLabel(dim)}
+          placeholder={autoLabelIn(dim, metrics)}
           value={dim.name ?? ''}
           onChange={(e) => onChange(withName(dim, e.currentTarget.value))}
         />
@@ -243,22 +260,46 @@ export function DimensionEditor({ dim, group, fields, metrics = [], onChange, on
   );
 }
 
-/** One value per line; applied on blur (applying per keystroke would re-run the query each time). */
-function LinesInput({ label, value, onCommit }: { label: string; value: string[]; onCommit: (l: string[]) => void }) {
+/**
+ * One value per line; applied on blur (applying per keystroke would re-run the query each time).
+ * Text that cannot be applied (too many / too long values, invalid regular expression) stays in the
+ * box with a message under it instead of being cut or dropped.
+ */
+function LinesInput({
+  label,
+  value,
+  regex,
+  onCommit,
+}: {
+  label: string;
+  value: string[];
+  regex: boolean;
+  onCommit: (l: string[]) => void;
+}) {
   const [draft, setDraft] = useState(value.join('\n'));
+  const lines = parseLines(draft);
+  const error = listError(lines, regex);
   return (
-    <TextArea
-      aria-label={label}
-      rows={2}
-      value={draft}
-      onChange={(e) => setDraft(e.currentTarget.value)}
-      onBlur={() => {
-        const l = parseLines(draft);
-        if (l.join('\n') !== value.join('\n')) {
-          onCommit(l);
-        }
-      }}
-    />
+    <>
+      <TextArea
+        aria-label={label}
+        aria-invalid={!!error}
+        rows={2}
+        value={draft}
+        invalid={!!error}
+        onChange={(e) => setDraft(e.currentTarget.value)}
+        onBlur={() => {
+          if (!error && lines.join('\n') !== value.join('\n')) {
+            onCommit(lines);
+          }
+        }}
+      />
+      {error && (
+        <div role="alert" style={{ color: 'var(--error-text, #d44)' }}>
+          {error}
+        </div>
+      )}
+    </>
   );
 }
 

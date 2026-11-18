@@ -75,7 +75,7 @@ export function panelSpec(state: LensState, result: LensResult): PanelSpec {
         pluginId: 'barchart',
         frames: [
           createDataFrame({
-            fields: [{ name: 'x', type: FieldType.string, values: result.xs.map(String) }, ...numberFields(result)],
+            fields: [{ name: 'x', type: FieldType.string, values: result.xLabels }, ...numberFields(result)],
           }),
         ],
         options: { legend, stacking, xField: 'x', showValue: 'never', orientation: 'auto', xTickLabelRotation: 0 },
@@ -85,7 +85,7 @@ export function panelSpec(state: LensState, result: LensResult): PanelSpec {
     case 'pie': {
       const byCategory = result.xs.length > 0 && result.xs[0] !== '';
       const fields = byCategory
-        ? [{ name: 'category', type: FieldType.string, values: result.xs.map(String) }, ...numberFields(result)]
+        ? [{ name: 'category', type: FieldType.string, values: result.xLabels }, ...numberFields(result)]
         : numberFields(result);
       return {
         pluginId: state.chartType === 'pie' ? 'piechart' : 'stat',

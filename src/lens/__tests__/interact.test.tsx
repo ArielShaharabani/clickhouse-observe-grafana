@@ -7,6 +7,8 @@ import { makeFilter } from '../../sql/filters';
 
 const result: LensResult = {
   xs: ['a', 'b'],
+  xLabels: ['a', 'b'],
+  xSynthetic: [false, false],
   xIsTime: false,
   series: [
     {

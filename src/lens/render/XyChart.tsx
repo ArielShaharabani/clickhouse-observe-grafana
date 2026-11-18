@@ -55,6 +55,13 @@ const fmt = (v: number) =>
       ? `${+(v / 1e3).toFixed(1)}K`
       : `${+v.toFixed(2)}`;
 
+/** Text of X position `xi`: the display label of a category (Other / (missing) included), else the time. */
+export function xText(result: LensResult, xi: number, spanMs: number): string {
+  return result.xIsTime
+    ? xLabel(result.xs[xi], true, spanMs)
+    : xLabel(result.xLabels?.[xi] ?? result.xs[xi], false, spanMs);
+}
+
 export function xLabel(x: string | number, isTime: boolean, spanMs: number): string {
   if (!isTime) {
     return String(x) === '' ? '(empty)' : String(x);
@@ -173,7 +180,7 @@ export function XyChart({ chartType, subType, result, bucketMs, onSelect, onBrus
     });
   };
   const itemLabel = (xi: number, si: number) =>
-    `${xLabel(result.xs[xi], result.xIsTime, spanMs)} · ${result.series[si].name}: ${fmt(pointValue(result.series[si], result.xs[xi]) ?? 0)}`;
+    `${xText(result, xi, spanMs)} · ${result.series[si].name}: ${fmt(pointValue(result.series[si], result.xs[xi]) ?? 0)}`;
 
   // Brush (time X only): drag across the plot to pick a range.
   const pxToTime = (px: number) => {
@@ -234,7 +241,7 @@ export function XyChart({ chartType, subType, result, bucketMs, onSelect, onBrus
             {result.xs.map((x, xi) =>
               xi % labelEvery === 0 ? (
                 <text key={xi} x={cx0(xi)} y={H - 8} textAnchor="middle" className={styles.tick}>
-                  {xLabel(x, result.xIsTime, spanMs).slice(0, 14)}
+                  {xText(result, xi, spanMs).slice(0, 14)}
                 </text>
               ) : null
             )}

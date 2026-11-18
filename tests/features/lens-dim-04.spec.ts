@@ -102,3 +102,34 @@ test('a hostile include value is just a value (no rows, no error)', async ({ pag
   await expect(viz.chart.getByText('auth', { exact: true })).toHaveCount(0);
   await expect(viz.chart.getByText('payments', { exact: true })).toHaveCount(0);
 });
+
+/** First cell of every body row of the table chart, in order. */
+async function firstColumn(viz: VisualizePage) {
+  const rows = viz.chart.getByRole('row');
+  await expect(rows.nth(1)).toBeVisible();
+  return rows.evaluateAll((els) =>
+    els
+      .slice(1)
+      .map((r) => (r.querySelector('td,[role=cell],[role=gridcell]') as HTMLElement | null)?.innerText.trim() ?? '')
+  );
+}
+
+test('alphabetical rank lists values in alphabetical order, Other always last', async ({ page }) => {
+  const viz = await openTable(page);
+  await tick(page, 'Alphabetical');
+  await setSize(page, '5');
+  await toTable(page);
+  await expect.poll(() => firstColumn(viz)).toEqual(['auth', 'checkout', 'frontend', 'inventory', 'payments']);
+  await tick(page, 'Descending');
+  await expect.poll(() => firstColumn(viz)).toEqual(['payments', 'inventory', 'frontend', 'checkout', 'auth']);
+  await setSize(page, '2');
+  await tick(page, 'Group remaining values as Other');
+  await expect.poll(() => firstColumn(viz)).toEqual(['payments', 'inventory', 'Other']);
+});
+
+test('invalid regular expression shows a message under the field', async ({ page }) => {
+  await openTable(page);
+  await tick(page, 'Use regular expression');
+  await editor(page).getByLabel('Include values').fill('a)|(.*');
+  await expect(editor(page).getByRole('alert')).toContainText('Unbalanced parentheses');
+});

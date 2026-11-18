@@ -59,11 +59,94 @@ export const MAX_PATTERNS = 50;
 export const MAX_PATTERN_LEN = 200;
 
 /**
- * True for the synthetic "Other" / "(missing)" values of a top-values dimension that has them
- * switched on: they stand for many values / no value, so a click on them does not become a filter.
+ * Row kind of a top-values bucket that has "Other" / "(missing)" on: the query returns it in a
+ * separate column next to the value, so a real value spelled "Other" is never confused with the
+ * synthetic bucket.
  */
-export function isSyntheticValue(b: TermsDim, value: string): boolean {
-  return (!!b.other && value === OTHER_VALUE) || (!!b.missing && value === MISSING_VALUE);
+export const KIND_VALUE = 0;
+export const KIND_OTHER = 1;
+export const KIND_MISSING = 2;
+
+/** Whether a top-values bucket returns a row-kind column (Other and / or missing is on). */
+export const hasKindColumn = (b: TermsDim): boolean => !!(b.other || b.missing);
+
+/**
+ * Why a regular expression cannot be used, or null. The query wraps it as `^(?:p)$` (RE2), so
+ * anything that could break out of the wrapper (unbalanced parentheses, a trailing backslash) or
+ * that RE2 does not support (lookaround, back-references) is rejected up front.
+ */
+export function regexError(p: string): string | null {
+  if (p.length > MAX_PATTERN_LEN) {
+    return `Pattern too long (max ${MAX_PATTERN_LEN} characters)`;
+  }
+  let depth = 0;
+  let inClass = false;
+  for (let i = 0; i < p.length; i++) {
+    const c = p[i];
+    if (c === '\\') {
+      const n = p[i + 1];
+      if (n === undefined) {
+        return 'Pattern ends with a backslash';
+      }
+      if (/[1-9k]/.test(n)) {
+        return 'Back-references are not supported';
+      }
+      i++;
+    } else if (inClass) {
+      inClass = c !== ']';
+    } else if (c === '[') {
+      inClass = true;
+    } else if (c === '(') {
+      depth++;
+    } else if (c === ')' && --depth < 0) {
+      return 'Unbalanced parentheses';
+    }
+  }
+  if (depth !== 0 || inClass) {
+    return 'Unbalanced parentheses or brackets';
+  }
+  if (/\(\?<?[=!]/.test(p)) {
+    return 'Lookaround is not supported';
+  }
+  try {
+    new RegExp(p);
+  } catch {
+    return 'Invalid regular expression';
+  }
+  return null;
+}
+
+/** Message for an include / exclude list that cannot be applied as typed, or null. */
+export function listError(list: string[], regex: boolean): string | null {
+  if (list.length > MAX_PATTERNS) {
+    return `Max ${MAX_PATTERNS} values`;
+  }
+  if (list.some((v) => v.length > MAX_PATTERN_LEN)) {
+    return `Max ${MAX_PATTERN_LEN} characters per value`;
+  }
+  if (regex) {
+    for (const p of list) {
+      const e = regexError(p);
+      if (e) {
+        return `${e}: ${p.slice(0, 40)}`;
+      }
+    }
+  }
+  return null;
+}
+
+/** Resets a rank-by-metric that points at a metric the state no longer has (back to count). */
+export function dropMissingRankMetric(s: LensState): LensState {
+  const ids = new Set(s.metrics.map((m) => m.id));
+  let changed = false;
+  const buckets = s.buckets.map((b) => {
+    if (b.kind === 'terms' && b.rankBy === 'metric' && !(b.rankMetric && ids.has(b.rankMetric))) {
+      changed = true;
+      return { ...b, rankBy: undefined, rankMetric: undefined, rankDir: undefined };
+    }
+    return b;
+  });
+  return changed ? { ...s, buckets } : s;
 }
 
 /** Effective direction: explicit, else descending (alphabetical: ascending). */
@@ -187,13 +270,19 @@ export function clampPercentile(p: unknown): number {
 /** Longest custom name kept (display only). */
 export const MAX_NAME = 120;
 
-/** Default dimension label, as Kibana words it ("Count of records", "Median of x", "Top 9 values of y"). */
-export function dimLabel(d: BucketDim | MetricDim): string {
-  return d.name?.trim() ? d.name : autoLabel(d);
+/**
+ * Default dimension label, as Kibana words it ("Count of records", "Median of x", "Top 9 values of
+ * y"). `metrics` names the rank metric of a top-values dimension ranked by a custom metric.
+ */
+export function dimLabelIn(d: BucketDim | MetricDim, metrics?: MetricDim[]): string {
+  return d.name?.trim() ? d.name : autoLabelIn(d, metrics);
 }
 
+export const dimLabel = (d: BucketDim | MetricDim): string => dimLabelIn(d);
+export const autoLabel = (d: BucketDim | MetricDim): string => autoLabelIn(d);
+
 /** The automatic label, ignoring any user-edited name. */
-export function autoLabel(d: BucketDim | MetricDim): string {
+export function autoLabelIn(d: BucketDim | MetricDim, metrics?: MetricDim[]): string {
   if (d.kind === 'metric') {
     if (d.op === 'count') {
       return 'Count of records';
@@ -204,7 +293,13 @@ export function autoLabel(d: BucketDim | MetricDim): string {
       : `${OP_NAMES[d.op]} of ${what}`;
   }
   if (d.kind === 'terms') {
-    return `Top ${d.size} values of ${d.label}`;
+    const dir = rankDirOf(d);
+    if (d.rankBy === 'alpha') {
+      return `${dir === 'asc' ? 'First' : 'Last'} ${d.size} values of ${d.label}`;
+    }
+    const lead = `${dir === 'asc' ? 'Bottom' : 'Top'} ${d.size} values of ${d.label}`;
+    const rm = d.rankBy === 'metric' ? metrics?.find((m) => m.id === d.rankMetric) : undefined;
+    return rm ? `${lead} by ${autoLabelIn(rm)}` : lead;
   }
   return d.label;
 }
