@@ -142,15 +142,14 @@ test('Intervals: automatic buckets are labelled by their range; custom ranges by
   await expect(viz.chart.getByText(String(FIXTURE.counts.total), { exact: true })).toBeVisible();
 });
 
-test('Functions grid: Top values → Intervals with custom ranges; Filters with an invalid query', async ({ page }) => {
+test('Functions grid: Date histogram → Intervals with custom ranges; Filters with an invalid query', async ({
+  page,
+}) => {
   const viz = new VisualizePage(page);
   await viz.open();
-  await viz.addField('SeverityNumber');
-  await viz.dimensions
-    .getByRole('button', { name: /^Edit / })
-    .first()
-    .click();
-  const ed = page.getByRole('dialog', { name: /^Edit / });
+  await viz.addField('Records'); // Count of records over time
+  await viz.dimensions.getByRole('button', { name: 'Edit Timestamp' }).click();
+  const ed = editor(page);
   await ed.getByRole('button', { name: 'Intervals' }).click();
   await expect(ed.getByRole('button', { name: 'Intervals' })).toHaveAttribute('aria-pressed', 'true');
   await ed.getByRole('switch', { name: 'Create custom ranges' }).click({ force: true });
