@@ -1,7 +1,8 @@
 import React, { useCallback, useContext, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { css, cx } from '@emotion/css';
-import { dateTime, GrafanaTheme2, PageLayoutType, rangeUtil, TimeRange } from '@grafana/data';
-import { locationService, PluginPage } from '@grafana/runtime';
+import { AppEvents, dateTime, GrafanaTheme2, PageLayoutType, rangeUtil, TimeRange } from '@grafana/data';
+import { getAppEvents, locationService, PluginPage } from '@grafana/runtime';
+import { buildContextUrl, resolveContextAnchor } from '../data/surrounding';
 import { Button, Icon, LinkButton, Spinner, useStyles2, TimeRangePicker, RefreshPicker, useSplitter } from '@grafana/ui';
 import { GridDisplay, GridDisplayOptions, loadGridDisplay, saveGridDisplay } from '../components/GridDisplayOptions';
 import { useSearchParams } from 'react-router-dom';
@@ -52,7 +53,7 @@ import { TimeShorthandInput } from '../components/TimeShorthandInput';
 import { shiftTimeRange, zoomOutTimeRange } from '../utils/timeRangeNav';
 import { useAvailableHeight } from '../utils/useAvailableHeight';
 import { lensContextFor, lensFieldOf, lensForField, lensForHistogram, visualizeUrl } from '../lens/handoff';
-import { defaultColumns } from '../data/columns';
+import { defaultColumns, sanitizeColumns } from '../data/columns';
 // Re-exported for existing importers (tests).
 export { defaultColumns } from '../data/columns';
 import { logsQueryReducer } from './_logsQueryReducer';
@@ -126,7 +127,8 @@ export function LogsExplorer() {
         ...init,
         ...(initialUrlState.search !== undefined ? { search: initialUrlState.search } : {}),
         ...(initialUrlState.filters || filters !== urlFilters ? { filters } : {}),
-        ...(initialUrlState.columns ? { columns: initialUrlState.columns } : {}),
+        // URL columns are untrusted (their sqlExpr / key would reach SQL): rebuild them.
+        ...(initialUrlState.columns ? { columns: sanitizeColumns(initialUrlState.columns, initialView) } : {}),
         ...(initialUrlState.sort ? { sort: initialUrlState.sort } : {}),
       };
     }
@@ -1060,6 +1062,35 @@ export function LogsExplorer() {
   // Stable identity: memoized action rows (drawer, field list) don't rebuild on every render.
   const onAddFilter = useCallback((filter: FilterPill) => dispatch({ type: 'ADD_FILTER', pill: filter }), []);
 
+  // DISC-DOC-02: open the surrounding documents of a row (filters carried over, disabled).
+  const onViewSurrounding = useCallback(
+    async (row: LogRow) => {
+      try {
+        const anchor = await resolveContextAnchor(config, row, timeRange);
+        if (!anchor || !activeView) {
+          throw new Error('This document could not be found again.');
+        }
+        locationService.push(
+          buildContextUrl({
+            viewId: activeView.id,
+            anchor,
+            filters: queryState.filters,
+            columns: queryState.columns,
+            timeRange,
+            ret: searchParams.toString(),
+            disableFilters: true,
+          })
+        );
+      } catch (e) {
+        getAppEvents().publish({
+          type: AppEvents.alertError.name,
+          payload: [`Could not open surrounding documents: ${errMsg(e)}`],
+        });
+      }
+    },
+    [config, timeRange, activeView, queryState.filters, queryState.columns, searchParams]
+  );
+
   // Matched-term highlighting in the grid (DISC-SEARCH-02): terms from the committed query and
   // the enabled positive filters; bare terms apply to the body column.
   const highlightTerms = useMemo(
@@ -1105,7 +1136,8 @@ export function LogsExplorer() {
         search: search.search,
         // A saved search keeps the user's pinned filters on top of its own.
         filters: mergePinnedFilters(search.filters, loadPinnedFilters(), tableKey(config.database, config.logsTable)),
-        columns: search.columns,
+        // Saved searches are stored data, not trusted SQL: rebuild their columns too.
+        columns: sanitizeColumns(search.columns, config),
         sort: search.sort,
         useRawSql: false, // always exit raw SQL mode when loading a saved search
       },
@@ -1625,6 +1657,11 @@ export function LogsExplorer() {
                           : undefined
                       }
                       navLabel={selectedIndex >= 0 ? `${selectedIndex + 1} of ${pageRows.length}` : undefined}
+                      onViewSurrounding={
+                        !queryState.useRawSql && config.columns.timestamp && selectedRow
+                          ? () => onViewSurrounding(selectedRow)
+                          : undefined
+                      }
                     />
                   </div>
                 </>

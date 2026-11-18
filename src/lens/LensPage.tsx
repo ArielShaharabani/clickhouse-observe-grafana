@@ -33,7 +33,7 @@ import { addFilterPill, makeFilter } from '../sql/filters';
 import { FilterChoice, FilterChooser } from './FilterChooser';
 import { XySelection, xLabel } from './render/XyChart';
 import { DEFAULT_LOGS_QUERY_STATE, FilterPill } from '../types';
-import { compileLens, LensResult, shapeLensRows } from './compile';
+import { compileLens, LensResult, realKey, shapeLensRows } from './compile';
 import { LensChart } from './render/LensChart';
 import { CHART_ICONS, ChartTypeSwitcher } from './ChartTypeSwitcher';
 import { DimensionEditor } from './DimensionEditor';
@@ -41,7 +41,8 @@ import { addBucket, addMetric, metricForField, nextBucketField, queryShape, repl
 import {
   BucketDim,
   decodeLens,
-  dimLabel,
+  dimLabelIn,
+  dropMissingRankMetric,
   EMPTY_LENS,
   encodeLens,
   isEmptyLens,
@@ -175,7 +176,9 @@ export function LensPage() {
   // mid-switch the URL still holds the previous view's chart, which must not become this view's draft.
 
   const setLens = useCallback(
-    (next: LensState) => {
+    (raw: LensState) => {
+      // A rank metric that was removed goes back to ranking by count in the stored state too.
+      const next = dropMissingRankMetric(raw);
       if (isEmptyLens(next)) {
         saveLensDraft(draftScope, next);
       }
@@ -427,8 +430,11 @@ export function LensPage() {
     const [x, breakdown] = lens.buckets;
     const xv = data.xs[sel.xIndex];
     const series = data.series[sel.seriesIndex];
-    if (x?.kind === 'terms') {
-      out.push({ label: `${x.label}: ${xLabel(xv, false, 0)}`, pill: pillFor(x.field, String(xv), 'for') });
+    if (x?.kind === 'terms' && !data.xSynthetic[sel.xIndex]) {
+      out.push({
+        label: `${x.label}: ${xLabel(data.xLabels[sel.xIndex] ?? xv, false, 0)}`,
+        pill: pillFor(x.field, realKey(String(xv)), 'for'),
+      });
     } else if (x?.kind === 'date_histogram' && bucketMs) {
       const from = Number(xv);
       out.push({
@@ -436,7 +442,7 @@ export function LensPage() {
         time: [from, from + bucketMs],
       });
     }
-    if (breakdown?.kind === 'terms' && series?.breakdown !== undefined) {
+    if (breakdown?.kind === 'terms' && series?.breakdown !== undefined && !series.synthetic) {
       out.push({
         label: `${breakdown.label}: ${series.breakdown || '(empty)'}`,
         pill: pillFor(breakdown.field, series.breakdown, 'for'),
@@ -486,7 +492,7 @@ export function LensPage() {
   const onLegendFilter = (seriesIndex: number, mode: 'for' | 'out') => {
     const breakdown = lens.buckets[1];
     const s = current?.data?.series[seriesIndex];
-    if (breakdown?.kind === 'terms' && s?.breakdown !== undefined) {
+    if (breakdown?.kind === 'terms' && s?.breakdown !== undefined && !s.synthetic) {
       addFilters([pillFor(breakdown.field, s.breakdown, mode)]);
     }
   };
@@ -709,6 +715,7 @@ export function LensPage() {
               dim={editingDim}
               group={editingGroup.name}
               fields={lensFields}
+              metrics={lens.metrics}
               onChange={(d) => setLens(replaceDim(lens, d))}
               onRemove={() => {
                 setEditingId(null);
@@ -727,15 +734,15 @@ export function LensPage() {
                     <button
                       type="button"
                       className={styles.dimLabel}
-                      aria-label={`Edit ${dimLabel(d)}`}
+                      aria-label={`Edit ${dimLabelIn(d, lens.metrics)}`}
                       onClick={() => setEditingId(d.id)}
                     >
-                      {dimLabel(d)}
+                      {dimLabelIn(d, lens.metrics)}
                     </button>
                     <IconButton
                       name="times"
                       size="sm"
-                      tooltip={`Remove ${dimLabel(d)}`}
+                      tooltip={`Remove ${dimLabelIn(d, lens.metrics)}`}
                       onClick={() => removeDim(d.id)}
                     />
                   </div>

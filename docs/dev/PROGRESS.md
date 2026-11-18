@@ -1,8 +1,8 @@
 # Progress — read this first when resuming
 
-**Current item:** coordinator merging fan-out PRs (see CONTEXT "Parallel work", last bullets). PR 20 (LENS-DIM-04) folded to 0.29.0 in worktree co-wt/lens-dim-04, full e2e was running under the lock (log: rerun if unknown) → then `gh pr merge 20 --squash`.
-**Last completed step:** #19 DISC-FILTER-02 (Filter builder: range operators, per-type operators, preview) in PR 19 (v0.28.0).
-**Next step:** merge order 20 → 22 (DISC-CHART-02) → 23 (DISC-DOC-02) → url-cols security fix (branch fix/url-cols-sanitize, based on 23) → lens-dataview (16b/16c) → dataview-time (16d). Per PR: in its worktree `git merge origin/master`, `python scripts/dev/fold-pending.py <SPEC> <row> <PR> <next minor> "<title>" "<files>"` (security fix: patch bump, no PLAN row — fold by hand), gates + full e2e under `.e2e-lock` on its port, push, wait for MERGEABLE, squash-merge, stop its container. Then next PLAN todo: #22 DISC-FIELDSTATS-01, #25 SHARED-PERF-01.
+**Current item:** coordinator merging fan-out PRs (see CONTEXT "Parallel work", last bullets). Agents running: fix-url-cols (3016), lens-dataview (3012), dataview-time (3011), disc-fieldstats-01 (#22, 3017).
+**Last completed step:** URL-COLS (Security: sanitize URL / saved-search columns and sort) in PR 24 (v0.31.1; 1,124 jest, 122 e2e).
+**Next step:** merge order lens-dataview (16b/16c) → dataview-time (16d) → disc-fieldstats-01 (#22, PR 26) → shared-perf-01 (#25, PR 28) → lens-dim-03 (#23). Open PRs: 25 (lens-dataview), 27 (dataview-time), 26, 28, 29 (formula). Per PR: in its worktree `git merge origin/master`, `python scripts/dev/fold-pending.py <SPEC> <row> <PR> <next minor> "<title>" "<files>"`, gates + full e2e under `.e2e-lock` on its port, push, wait for MERGEABLE, squash-merge, stop its container. Then next PLAN todo: #26 LENS-CHART-01.
 **Open issues:** none. Deferred Lens items: per-group drag-and-drop (LENS-DIM-01 DnD; workspace drop works), formula (#23), advanced metric options (filter by, time shift), value format/colour/axis side (LENS-STYLE-01), date interval picker, "Other" bucket. Deferred elsewhere: DISC-DOC-02 links (#20); histogram now-line; field list Empty/Meta; grid Summary column etc. (#16); popover Visualize (#15).
 
 ## Environment notes

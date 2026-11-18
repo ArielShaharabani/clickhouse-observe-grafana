@@ -27,7 +27,10 @@ export function lensContextFor(config: Pick<SourceConfig, 'columns'>): LensConte
 }
 
 /** Field popover "Visualize": the chart Lens builds when this field is the first one added. */
-export function lensForField(field: Pick<FieldModel, 'id' | 'sqlExpr' | 'displayName' | 'type'>, ctx: LensContext): LensState | undefined {
+export function lensForField(
+  field: Pick<FieldModel, 'id' | 'sqlExpr' | 'displayName' | 'type'>,
+  ctx: LensContext
+): LensState | undefined {
   const f = lensFieldOf(field);
   return isLensField(f) ? addField(EMPTY_LENS, f, ctx) : undefined;
 }

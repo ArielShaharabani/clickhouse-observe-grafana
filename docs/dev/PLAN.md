@@ -29,12 +29,12 @@ Status values: `todo` · `in-progress` · `done` (with PR link) · `skipped` (wi
 | 16c | LENS-INTERACT-02 (gap) | Labeled "Explore in Visualize" button in the Discover toolbar (same hand-off as Edit visualization: query, filters, time, data view); Visualize opened from the Grafana side menu with no URL context restores the tab's last search context | 4 | Build | todo | |
 | 16d | DATA-VIEW time field (gap, spec 00-preamble "Data view = index pattern + time field") | Shared data views on the Configuration page get the same column mapping as Create data view, including Timestamp field (today: none); time field editable after creation; numeric epoch / string time columns selectable via conversion (flagged as converted) | 4 | Build | todo | |
 | 17 | DISC-TIME-01/02 | Time picker, Update state | 3 | Verify | done | PR 18 |
-| 18 | DISC-CHART-02 | Breakdown + legend actions | 3 | Verify | in-progress | |
+| 18 | DISC-CHART-02 | Breakdown + legend actions | 3 | Verify | done | PR 22 |
 | 19 | DISC-FILTER-02 | Filter builder | 3 | Verify | done | PR 19 |
-| 20 | DISC-DOC-02 | Surrounding documents | 3 | Build | in-progress | |
+| 20 | DISC-DOC-02 | Surrounding documents | 3 | Build | done | PR 23 |
 | 21 | DISC-PATTERNS-01 | Log patterns | 3 | Build | skipped (user: not a focus, 2026-11-18) | |
 | 22 | DISC-FIELDSTATS-01 | Field statistics tab | 3 | Build | todo | |
-| 24 | LENS-DIM-04 | Top values editor | 3 | Build | in-progress | |
+| 24 | LENS-DIM-04 | Top values editor | 3 | Build | done | PR 20 |
 | 25 | SHARED-PERF-01 | Loading / sampling cues | 3 | Verify | todo | |
 | 23 | LENS-DIM-03 | Formula editor | 2 | Build | todo | |
 | 26 | LENS-CHART-01 | Table + Metric specifics | 2 | Build | todo | |

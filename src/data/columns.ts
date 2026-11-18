@@ -3,7 +3,7 @@
  * Discover hand-off. No React / page imports, so any module can use them without import cycles.
  */
 import { FieldModel } from '../sql/fieldModel';
-import { CORE_ALIAS } from '../sql/queryBuilder';
+import { CORE_ALIAS, isSafeColumnExpr, looksLikeMapAccessor } from '../sql/queryBuilder';
 import { ColumnType, SelectedColumn, SourceConfig } from '../types';
 
 /** Sanitize a field id into a SQL-safe alias. Shared with LogDetailDrawer's "add as column" action. */
@@ -43,4 +43,86 @@ export function defaultColumns(config: SourceConfig): SelectedColumn[] {
   const coreExprs = new Set(core.map((col) => col.sqlExpr));
   const pinned = (config.pinnedColumns ?? []).filter((col) => !coreExprs.has(col.sqlExpr));
   return [...core, ...pinned];
+}
+
+const COLUMN_TYPES: readonly ColumnType[] = [
+  'time',
+  'level',
+  'text',
+  'number',
+  'string',
+  'exact',
+  'map',
+  'json',
+  'tuple',
+  'array',
+  'unknown',
+];
+
+/**
+ * Rebuilds columns restored from an untrusted source (URL `cols`, saved searches) so nothing but
+ * trusted SQL reaches a query. Each column is resolved by id:
+ * - core → the view's own core column (mapping);
+ * - a discovered field (when `fields` is given) → fieldToColumn;
+ * - a pinned column of the view config → that entry;
+ * - otherwise its expression must be a plain column reference (isSafeColumnExpr: identifier, Map
+ *   accessor or dotted path), and with `fields` given it must also name something discovered
+ *   (a field's expression, or a key of a discovered Map column — Map keys are found on demand).
+ * The SELECT alias is always regenerated from the id (makeColumnKey), the type checked, and the
+ * display name kept only as text. Anything that does not resolve is dropped, as are duplicates.
+ * Returns [] when nothing survives (callers then use the view's default columns).
+ */
+export function sanitizeColumns(raw: unknown, config: SourceConfig, fields?: FieldModel[]): SelectedColumn[] {
+  if (!Array.isArray(raw)) {
+    return [];
+  }
+  const defaults = defaultColumns(config);
+  const out: SelectedColumn[] = [];
+  for (const item of raw) {
+    if (!item || typeof item !== 'object') {
+      continue;
+    }
+    const col = item as Partial<SelectedColumn>;
+    if (typeof col.id !== 'string' || !col.id) {
+      continue;
+    }
+    let trusted: SelectedColumn | undefined;
+    if (col.isCore) {
+      trusted = defaults.find((d) => d.isCore && d.id === col.id);
+    } else {
+      const field = fields?.find((f) => f.id === col.id);
+      trusted = field
+        ? fieldToColumn(field)
+        : ((config.pinnedColumns ?? []).find((p) => p.id === col.id) ?? exprColumn(col, fields));
+    }
+    if (trusted && !out.some((c) => c.id === trusted!.id || c.key === trusted!.key)) {
+      out.push(trusted);
+    }
+  }
+  return out;
+}
+
+function exprColumn(col: Partial<SelectedColumn>, fields?: FieldModel[]): SelectedColumn | undefined {
+  const expr = col.sqlExpr;
+  if (!isSafeColumnExpr(expr)) {
+    return undefined;
+  }
+  if (fields) {
+    const known =
+      fields.some((f) => f.sqlExpr === expr) ||
+      (looksLikeMapAccessor(expr) &&
+        fields.some((f) => f.type === 'map' && f.sqlExpr === expr.slice(0, expr.indexOf('['))));
+    if (!known) {
+      return undefined;
+    }
+  }
+  const id = col.id as string;
+  return {
+    id,
+    key: makeColumnKey(id),
+    sqlExpr: expr,
+    displayName: typeof col.displayName === 'string' && col.displayName ? col.displayName : expr,
+    type: COLUMN_TYPES.includes(col.type as ColumnType) ? (col.type as ColumnType) : 'unknown',
+    isCore: false,
+  };
 }

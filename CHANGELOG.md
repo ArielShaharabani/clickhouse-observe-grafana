@@ -10,6 +10,49 @@ Versions track the plugin's release history. `Unreleased` collects commits not y
 
 ---
 
+## [0.31.1] — 2026-11-18
+
+### Security
+- **SQL injection through shared links and saved searches** (pre-existing). A Discover URL's `cols` (and a saved search's columns) carried each column's `sqlExpr` and `key`, which `buildLogsQuery` emitted verbatim as `${sqlExpr} AS ${key}`; the URL `sort` column and direction reached `ORDER BY` the same way. A crafted link could run arbitrary SELECTs (e.g. `system.users`) as the datasource user. Restored columns are now rebuilt from trusted sources (`sanitizeColumns`, `src/data/columns.ts`): core columns from the view mapping, discovered fields by id, pinned columns by id, otherwise only a plain column reference (identifier, well-formed Map accessor, dotted path) with a regenerated alias and a checked type. The query builder additionally never emits a non-identifier alias or a non-column-reference expression (`extraColumnSelects`), accepts only an identifier as the sort column (else the default sort) and only `asc`/`desc`. The surrounding-documents page uses the same sanitizer (strict mode).
+
+---
+
+## [0.31.0] — 2026-11-18
+
+### Added
+- **Surrounding documents (DISC-DOC-02).** "View surrounding documents" in the document detail panel opens `context/<dataViewId>/<docId>` (breadcrumb `Discover / Surrounding documents`, title `Documents surrounding #<id>`): the anchor document highlighted in pale yellow, 5 newer documents above and 5 older below, `Load [5] newer documents` / `Load [5] older documents` with an editable step (up to 500 per side), and a status line ("7 newer documents · no more newer documents"). The search query is dropped; filters come along disabled (struck through) and can be re-enabled; Discover's columns are kept. Documents sharing a timestamp are ordered by a row id, so paging never skips or repeats one. The page is not bound to the time picker. Rows open the same detail panel, where "View surrounding documents" re-anchors on that document; the breadcrumb returns to Discover with its original query and filters.
+
+---
+
+## [0.30.0] — 2026-11-18
+
+### Added
+- **Histogram legend ⋮ menu.** Hovering (or keyboard-focusing) a legend row shows ⋮; it opens a popover titled with the value with `Filter for` / `Filter out` (from the shared action registry). Focus moves into the popover; Escape or a click outside closes it. Shift-click still opens the same popover.
+- **Hidden legend series show an eye-slash icon** instead of their colour swatch; legend rows expose `aria-pressed` (shown / hidden) and the legend is a labelled list ("Histogram legend").
+
+### Changed
+- **Breakdown picker label reads `Breakdown by <field>`** (`Breakdown by Severity` for the severity breakdown); `No breakdown` until one is chosen. The trigger has `aria-expanded`, the list is a labelled dialog with a labelled search box, the chosen entry has `aria-current`, and Escape closes it and returns focus to the trigger.
+- **Ctrl/Cmd+click on a legend entry hides that series** (tooltip wording; behaviour unchanged: a second Ctrl+click shows it again).
+
+### Fixed
+- The synthetic `other` series of a field breakdown could be "filtered" from the legend (shift-click) or a bar-segment click, adding a pill for the literal value `other`. It no longer offers filter actions anywhere (right-click bucket actions already excluded it).
+- Hidden legend series were kept when the breakdown changed, so a series isolated under one field could hide every series of the next. Changing the breakdown (field or mode) now clears hidden / hovered series and closes the legend menu.
+
+---
+
+## [0.29.0] — 2026-11-18
+
+### Added
+- **Top values: Rank by and Rank direction.** Rank by Count of records (default), Alphabetical, or a Custom metric (any metric of the chart); ascending or descending. Needed to answer "least common" and "first alphabetically" questions.
+- **Top values: "Group remaining values as Other".** Values outside the top N collapse into one `Other` value so totals stay complete.
+- **Top values: "Include documents without this field".** Rows without the field appear as `(missing)` instead of being dropped.
+- **Top values: Include values / Exclude values with "Use regular expression".** One value or pattern per line; regex patterns are full-match (`match(expr, '^(?:p)$')`).
+
+### Changed
+- **Lens URL/state validation covers the new options.** `decodeLens` rebuilds each top-values bucket from known, well-typed fields only (`cleanTerms`); lists are capped at 50 entries of 200 characters; `sanitizeLens` resets a rank metric that no longer exists.
+
+---
+
 ## [0.28.0] — 2026-11-18
 
 ### Added

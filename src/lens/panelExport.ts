@@ -9,7 +9,7 @@ import { TimeRange } from '@grafana/data';
 import { chDatasourceRef, ExportedPanel, FORMAT_TABLE, GridPos } from '../data/panelExport';
 import { SourceConfig } from '../types';
 import { bucketAlias, compileLens, metricAlias, uniqueMetricLabels } from './compile';
-import { dimLabel, LensState } from './state';
+import { dimLabelIn, LensState } from './state';
 import { chartTitle } from './suggest';
 
 export interface LensPanelOpts {
@@ -37,7 +37,7 @@ function stackingOf(state: LensState): 'normal' | 'percent' | 'none' {
 /** Readable column names for the SQL aliases (b0 → "Top 9 values of ServiceName", m0 → "Count of records"). */
 export function columnNames(state: LensState): Record<string, string> {
   const names: Record<string, string> = {};
-  state.buckets.forEach((b, i) => (names[bucketAlias(i)] = dimLabel(b)));
+  state.buckets.forEach((b, i) => (names[bucketAlias(i)] = dimLabelIn(b, state.metrics)));
   uniqueMetricLabels(state.metrics).forEach((l, i) => (names[metricAlias(i)] = l));
   return names;
 }

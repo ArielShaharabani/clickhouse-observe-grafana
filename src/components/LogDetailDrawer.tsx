@@ -154,6 +154,8 @@ interface LogDetailDrawerProps {
   onLast?: () => void;
   /** e.g. "3 of 50" */
   navLabel?: string;
+  /** DISC-DOC-02 "View surrounding documents" action. Omit to hide it (no timestamp, raw SQL). */
+  onViewSurrounding?: () => void;
 }
 
 type DrawerTab = 'table' | 'json';
@@ -192,6 +194,7 @@ export function LogDetailDrawer({
   onFirst,
   onLast,
   navLabel,
+  onViewSurrounding,
 }: LogDetailDrawerProps) {
   const styles = useStyles2(getStyles);
   const theme = useTheme2();
@@ -440,6 +443,9 @@ export function LogDetailDrawer({
         <div className={styles.panelTitleRow}>
           <span className={styles.summaryTime}>{timestamp}</span>
           <div className={styles.summarySpacer} />
+          {onViewSurrounding && (
+            <IconButton name="list-ul" size="sm" tooltip="View surrounding documents" onClick={onViewSurrounding} />
+          )}
           {(onPrev || onNext) && (
             <div className={styles.navGroup}>
               <IconButton name="angle-double-up" size="sm" tooltip="First log on this page" onClick={onFirst} disabled={!onFirst} />
