@@ -9,6 +9,7 @@
  */
 import { FieldType } from '../sql/fieldModel';
 import { formulaErrors, FormulaFields, MAX_FORMULA_LEN } from './formula';
+import { cleanMetricOptions, MetricOptions, optionsLabelSuffix } from './metricOptions';
 
 export type ChartType = 'line' | 'area' | 'bar' | 'metric' | 'table' | 'pie';
 export type XySubType = 'stacked' | 'percentage' | 'unstacked';
@@ -208,7 +209,8 @@ export function cleanTerms(b: TermsDim): TermsDim {
   return out;
 }
 
-export interface MetricDim {
+/** A metric; `MetricOptions` holds its Advanced / Appearance options (LENS-DIM-02, PLAN 16g). */
+export interface MetricDim extends MetricOptions {
   kind: 'metric';
   id: string;
   op: MetricOp;
@@ -303,17 +305,7 @@ export const autoLabel = (d: BucketDim | MetricDim): string => autoLabelIn(d);
 /** The automatic label, ignoring any user-edited name. */
 export function autoLabelIn(d: BucketDim | MetricDim, metrics?: MetricDim[]): string {
   if (d.kind === 'metric') {
-    if (d.op === 'count') {
-      return 'Count of records';
-    }
-    if (d.op === 'formula') {
-      const f = (d.formula ?? '').trim();
-      return f.length > 60 ? `${f.slice(0, 57)}…` : f || 'Formula';
-    }
-    const what = d.fieldLabel ?? d.field;
-    return d.op === 'percentile'
-      ? `${ordinal(clampPercentile(d.percentile))} percentile of ${what}`
-      : `${OP_NAMES[d.op]} of ${what}`;
+    return metricBaseLabel(d) + optionsLabelSuffix(d);
   }
   if (d.kind === 'terms') {
     const dir = rankDirOf(d);
@@ -325,6 +317,20 @@ export function autoLabelIn(d: BucketDim | MetricDim, metrics?: MetricDim[]): st
     return rm ? `${lead} by ${autoLabelIn(rm)}` : lead;
   }
   return d.label;
+}
+
+function metricBaseLabel(d: MetricDim): string {
+  if (d.op === 'count') {
+    return 'Count of records';
+  }
+  if (d.op === 'formula') {
+    const f = (d.formula ?? '').trim();
+    return f.length > 60 ? `${f.slice(0, 57)}…` : f || 'Formula';
+  }
+  const what = d.fieldLabel ?? d.field;
+  return d.op === 'percentile'
+    ? `${ordinal(clampPercentile(d.percentile))} percentile of ${what}`
+    : `${OP_NAMES[d.op]} of ${what}`;
 }
 
 export const CHART_LABELS: Record<ChartType, string> = {
@@ -400,18 +406,31 @@ export function decodeLens(raw: string | null | undefined): LensState | undefine
           okName(m.name) &&
           okPct(m.percentile)
       )
-      .map((m): MetricDim =>
-        m.op === 'formula'
-          ? {
-              kind: 'metric',
-              id: m.id,
-              op: 'formula',
-              formula: m.formula,
-              formulaFields: cleanFormulaFields(m.formulaFields) ?? {},
-              name: m.name,
-            }
-          : m
-      );
+      .map((m): MetricDim => {
+        // Only known, well-typed keys survive (the URL is untrusted).
+        const opts = cleanMetricOptions(m as unknown as Record<string, unknown>);
+        if (m.op === 'formula') {
+          return {
+            kind: 'metric',
+            id: m.id,
+            op: 'formula',
+            formula: m.formula,
+            formulaFields: cleanFormulaFields(m.formulaFields) ?? {},
+            name: m.name,
+            ...opts,
+          };
+        }
+        const out: MetricDim = { kind: 'metric', id: m.id, op: m.op, name: m.name, ...opts };
+        if (m.op !== 'count') {
+          out.field = m.field;
+          out.fieldLabel = typeof m.fieldLabel === 'string' ? m.fieldLabel.slice(0, 500) : undefined;
+          out.numeric = m.numeric === true;
+        }
+        if (m.op === 'percentile') {
+          out.percentile = m.percentile;
+        }
+        return out;
+      });
     const subType = ['stacked', 'percentage', 'unstacked'].includes(v.subType) ? (v.subType as XySubType) : undefined;
     return { chartType: v.chartType, subType, buckets, metrics };
   } catch {

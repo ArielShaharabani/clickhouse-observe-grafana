@@ -17,7 +17,9 @@
  */
 import { TimeRange } from '@grafana/data';
 import { SourceConfig } from '../types';
-import { quoteIdentifier, quoteString, tableRef } from '../sql/queryBuilder';
+import { coarsePrunePredicate, quoteIdentifier, quoteString, tableRef } from '../sql/queryBuilder';
+import { parseKql, kqlToSql } from '../sql/kql';
+import { chInterval, NORMALIZE_SECONDS, parseSpan, spanText, TimeSpan } from './metricOptions';
 import { configSettingsFragments, withSettings } from '../sql/settings';
 import { isConvertedTimestamp, timeExpr } from '../sql/timeExpr';
 import { resolveInterval } from '../components/_histogramInterval';
@@ -54,32 +56,62 @@ export const kindAlias = (i: number) => `k${i}`;
 
 const MAP_ACCESSOR = /^("(?:[^"]|"")*"|[A-Za-z_][A-Za-z0-9_]*)\[(.+)\]$/;
 
-function metricSql(m: MetricDim, fctx: FormulaSqlContext): string {
+/**
+ * A metric's aggregate. `cond` (our own SQL: the metric's Filter by / reduced range / time-shift copy
+ * selector) turns it into the conditional form (`countIf`, `avgIf`, `quantileIf`, …).
+ */
+function metricSql(m: MetricDim, fctx: FormulaSqlContext, cond?: string): string {
   if (m.op === 'formula') {
     // Parsed, validated and compiled from the AST (formula.ts); an invalid formula yields no value.
-    return formulaToSql(m.formula ?? '', m.formulaFields ?? {}, fctx) ?? 'NULL';
+    return formulaToSql(m.formula ?? '', m.formulaFields ?? {}, { ...fctx, rowCond: cond }) ?? 'NULL';
   }
   if (m.op === 'count' || !m.field) {
-    return 'count()';
+    return cond ? `countIf(${cond})` : 'count()';
   }
   const f = quoteIdentifier(m.field);
   const x = m.numeric ? f : `toFloat64OrNull(toString(${f}))`;
+  const agg = (fn: string, arg: string) => (cond ? `${fn}If(${arg}, ${cond})` : `${fn}(${arg})`);
   switch (m.op) {
     case 'median':
-      return `quantile(0.5)(${x})`;
+      return cond ? `quantileIf(0.5)(${x}, ${cond})` : `quantile(0.5)(${x})`;
     case 'avg':
-      return `avg(${x})`;
+      return agg('avg', x);
     case 'sum':
-      return `sum(${x})`;
+      return agg('sum', x);
     case 'min':
-      return `min(${x})`;
+      return agg('min', x);
     case 'max':
-      return `max(${x})`;
+      return agg('max', x);
     case 'unique':
-      return `uniq(${f})`;
-    case 'percentile':
+      return agg('uniq', f);
+    case 'percentile': {
       // A number we produce (clamped 1–99), never text from the URL.
-      return `quantile(${(clampPercentile(m.percentile) / 100).toFixed(2)})(${x})`;
+      const q = (clampPercentile(m.percentile) / 100).toFixed(2);
+      return cond ? `quantileIf(${q})(${x}, ${cond})` : `quantile(${q})(${x})`;
+    }
+  }
+}
+
+/** Alias of the time-shift copy index (ARRAY JOIN) — see `compileLens`. */
+const SHIFT_ALIAS = '__s';
+
+/**
+ * Filter by (KQL) of a quick-function metric as a condition, compiled by the search bar's KQL
+ * compiler. KQL that does not parse yields `0` (the metric matches nothing) rather than being
+ * dropped silently. Formulas use their own `kql=` argument instead.
+ */
+function metricFilterSql(m: MetricDim, fctx: FormulaSqlContext): string | undefined {
+  const q = m.op === 'formula' ? '' : m.filter?.trim();
+  if (!q) {
+    return undefined;
+  }
+  try {
+    const sql = kqlToSql(parseKql(q), fctx.config, fctx.index);
+    // Saved panels: `$` (only possible inside string literals / quoted identifiers) must not reach
+    // the datasource's macro expander.
+    return `(${fctx.dashboard ? sql.replace(/\$/g, () => '\\x24') : sql})`;
+  } catch {
+    return '0';
   }
 }
 
@@ -144,12 +176,62 @@ export function compileLens(
   const tbl = tableRef(config, config.logsTable);
   const where = conditions.length > 0 ? conditions.join(' AND ') : '';
   let intervalMs: number | undefined;
+  const ts = config.columns.timestamp ? timeExpr(config) : '';
+  const hasDateHistogram = state.buckets.some((b) => b.kind === 'date_histogram');
+
+  // Time shift (LENS-DIM-02 Advanced): every row is read once per distinct shift (ARRAY JOIN over
+  // the copy index `__s`); copy k moves the row's time forward by shift k, so "1d ago" data lands
+  // in today's buckets. The time window is checked on the shifted time, and each metric only
+  // aggregates its own copy (`__s = k`; unshifted metrics and formulas `__s = 0`). Needs the view's
+  // time field and the standard time condition (built by buildWhereConditions).
+  const timeCond = ts ? `${ts} >= $__fromTime AND ${ts} <= $__toTime` : '';
+  const shifts: TimeSpan[] = [];
+  if (ts && conditions.includes(timeCond)) {
+    for (const m of state.metrics) {
+      const sp = m.op === 'formula' ? null : parseSpan(m.shift);
+      if (sp && !shifts.some((x) => spanText(x) === spanText(sp))) {
+        shifts.push(sp);
+      }
+    }
+  }
+  const shifting = shifts.length > 0;
+  const shiftIndex = (m: MetricDim): number => {
+    const sp = m.op === 'formula' ? null : parseSpan(m.shift);
+    return sp ? shifts.findIndex((x) => spanText(x) === spanText(sp)) + 1 : 0;
+  };
+  /** A time expression as seen by the shift copy (unchanged without shifts). */
+  const shifted = (expr: string): string =>
+    shifting
+      ? `multiIf(${shifts.map((sp, k) => `${SHIFT_ALIAS} = ${k + 1}, ${expr} + ${chInterval(sp)}`).join(', ')}, ${expr})`
+      : expr;
+  const rowTs = ts ? shifted(ts) : '';
 
   // A date histogram on the view's time field reads it the way every other query does: a
   // converted time field (epoch / text, PLAN #16d) is not a real DateTime column. Any other field
   // is quoted as before.
   const dateSql = (field: string) =>
-    field === config.columns.timestamp && isConvertedTimestamp(config) ? timeExpr(config) : quoteIdentifier(field);
+    shifted(
+      field === config.columns.timestamp && isConvertedTimestamp(config) ? timeExpr(config) : quoteIdentifier(field)
+    );
+
+  /** Row condition of a metric: its copy, Filter by, and reduced time range. */
+  const metricCond = (m: MetricDim): string | undefined => {
+    const parts: string[] = [];
+    if (shifting) {
+      parts.push(`${SHIFT_ALIAS} = ${shiftIndex(m)}`);
+    }
+    const f = metricFilterSql(m, fctx);
+    if (f) {
+      parts.push(f);
+    }
+    // Reduced time range: only the last span of the time range counts (as in Kibana, not with a
+    // date histogram, where every bucket would need its own window).
+    const reduced = m.op === 'formula' || hasDateHistogram ? null : parseSpan(m.reducedRange);
+    if (reduced && rowTs) {
+      parts.push(`${rowTs} > $__toTime - ${chInterval(reduced)}`);
+    }
+    return parts.length > 0 ? parts.join(' AND ') : undefined;
+  };
 
   const ctes: string[] = [];
   const restrictions: string[] = [];
@@ -160,7 +242,7 @@ export function compileLens(
       // The datasource's macro parser counts parentheses and commas without regard to quotes, so
       // an expression field (e.g. a Map key with ')' in it) gets the explicit form instead.
       selects.push(
-        /[(),]/.test(col)
+        /[(),]/.test(col) || shifting
           ? `toStartOfInterval(toDateTime(${col}), INTERVAL $__interval_s second) AS ${bucketAlias(i)}`
           : `$__timeInterval(${col}) AS ${bucketAlias(i)}`
       );
@@ -180,7 +262,7 @@ export function compileLens(
         b.rankBy === 'alpha'
           ? `v ${dir}`
           : rankMetric
-            ? `${metricSql(rankMetric, fctx)} ${dir}, v`
+            ? `${metricSql(rankMetric, fctx, metricFilterSql(rankMetric, fctx))} ${dir}, v`
             : b.rankDir === 'asc'
               ? 'count() ASC, v'
               : 'count() DESC';
@@ -219,9 +301,42 @@ export function compileLens(
       );
     }
   });
-  state.metrics.forEach((m, i) => selects.push(`${metricSql(m, fctx)} AS ${metricAlias(i)}`));
+  state.metrics.forEach((m, i) => {
+    let expr = metricSql(m, fctx, metricCond(m));
+    // Normalize by unit: value per second / minute / hour / day of the date bucket.
+    if (m.normalize && hasDateHistogram) {
+      const unitS = NORMALIZE_SECONDS[m.normalize];
+      const factor =
+        mode === 'dashboard'
+          ? `(${unitS} / $__interval_s)`
+          : intervalMs
+            ? String(Number(((unitS * 1000) / intervalMs).toPrecision(12)))
+            : null;
+      if (factor) {
+        expr = `(${expr}) * ${factor}`;
+      }
+    }
+    selects.push(`${expr} AS ${metricAlias(i)}`);
+  });
 
-  const allWhere = [where, ...restrictions].filter(Boolean).join(' AND ');
+  // With shifts the plain time condition (and its coarse partition bound) is replaced by a
+  // prefilter covering every shifted window plus the exact check on the shifted time.
+  let outer = conditions;
+  if (shifting) {
+    const coarse = coarsePrunePredicate(config);
+    const windows = [
+      `(${timeCond})`,
+      ...shifts.map(
+        (sp) => `(${ts} >= $__fromTime - ${chInterval(sp)} AND ${ts} <= $__toTime - ${chInterval(sp)})`
+      ),
+    ];
+    outer = [
+      ...conditions.filter((c) => c !== timeCond && c !== coarse),
+      `(${windows.join(' OR ')})`,
+      `${rowTs} >= $__fromTime AND ${rowTs} <= $__toTime`,
+    ];
+  }
+  const allWhere = [...outer, ...restrictions].filter(Boolean).join(' AND ');
   const groupBy = state.buckets.flatMap((b, i) =>
     b.kind === 'terms' && hasKindColumn(b) ? [bucketAlias(i), kindAlias(i)] : [bucketAlias(i)]
   );
@@ -233,7 +348,12 @@ export function compileLens(
     // Ordered by the chosen rank; the synthetic Other / (missing) rows always come last.
     const dir = rankDirOf(first).toUpperCase();
     const rm = first.rankBy === 'metric' ? state.metrics.findIndex((m) => m.id === first.rankMetric) : -1;
-    const byCount = state.metrics[0]?.op === 'count' ? metricAlias(0) : 'count()';
+    const byCount =
+      state.metrics[0]?.op === 'count' && !state.metrics[0].shift
+        ? metricAlias(0)
+        : shifting
+          ? `countIf(${SHIFT_ALIAS} = 0)`
+          : 'count()';
     const rank =
       first.rankBy === 'alpha'
         ? `${bucketAlias(0)} ${dir}`
@@ -249,6 +369,7 @@ export function compileLens(
       ctes.length > 0 ? `WITH ${ctes.join(',\n     ')}` : null,
       `SELECT ${selects.join(', ')}`,
       `FROM ${tbl}`,
+      shifting ? `ARRAY JOIN [${[0, ...shifts.map((_x, k) => k + 1)].join(', ')}] AS ${SHIFT_ALIAS}` : null,
       allWhere ? `WHERE ${allWhere}` : null,
       groupBy.length > 0 ? `GROUP BY ${groupBy.join(', ')}` : null,
       orderBy,
