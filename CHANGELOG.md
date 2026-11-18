@@ -10,6 +10,35 @@ Versions track the plugin's release history. `Unreleased` collects commits not y
 
 ---
 
+## [0.44.0] — 2026-11-18
+
+### Added
+- **Style and Legend panels on Visualize** (#27, LENS-STYLE-01; spec 20-lens.md "Style and Legend panels"). XY charts (bar, line, area) get `Style` and `Legend` toolbar buttons above the dimension panel; each swaps the panel for a settings view with `← Back`.
+  - **Style → Appearance:** Bar orientation Vertical / Horizontal (horizontal bars put the categories on the left and the values along the bottom).
+  - **Style → Titles and text:** Bar values Hide / Show, if able (a value is drawn on a bar segment only when it fits).
+  - **Style → Left / Bottom / Right axis:** Axis title None / Auto / Custom (Auto = the metric names on the value axis, the bucket on the category axis), Gridlines, Tick labels, label Orientation Horizontal / Vertical / Angled; on value axes Axis scale Linear / Logarithmic / Square root, Bounds Full / Data / Custom (lower / upper, validated; Data is off for bar charts, as in Kibana) and Round to nice values. The right axis section appears when a metric is on the right axis (LENS-DIM-02).
+  - **Legend:** Visibility Auto / Show / Hide (Auto hides a single series without a breakdown, as in Kibana), Position Outside / Inside, Alignment (outside: Right / Left / Top / Bottom; inside: a corner of the plot), Layout List / Grid.
+  - Settings live in the chart (`lens` URL param, saved chart, draft) and carry over to exported dashboard panels where Grafana has an equivalent (legend show / placement, axis label, gridlines, log scale, min / max, soft min 0 for Full bounds, bar orientation, value labels, x tick rotation).
+
+### Changed
+- XY charts show automatic axis titles, and the legend is hidden for a single series without a breakdown (Kibana's defaults). Every other default draws as before (legend below the chart as a list).
+
+---
+
+## [0.43.0] — 2026-11-18
+
+### Added
+- **Table: Split metrics by** (LENS-CHART-01; spec 20-lens.md "Table: groups Rows / Split metrics by / Metrics"). A Table now has three groups. Buckets in *Split metrics by* turn their values into metric columns (`error › Count of records`, one column per value × metric, in first-seen order, capped at 100 value combinations); *Rows* keep one row per value combination. A row without a combination shows an empty cell, not 0. Moving a bucket between the two needs no new query.
+- **Table: Summary row** per metric column (None, Sum, Average, Value count, Minimum, Maximum — Grafana table footer reducers) and **Color by value** (None / Cell / Text, continuous green-yellow-red scale), in the metric editor when the chart is a Table. Both apply to every pivot column of that metric and carry over to the exported dashboard panel.
+- **Metric chart tiles**: a grid of tiles (one per *Break down by* value, or one tile) with the label top-left and the big value bottom-right in the metric's Value format; a tile without a value shows a dash. The *Secondary metric* is shown under the label, and the new **Maximum value** group draws a progress bar (primary ÷ maximum, capped at 100 %). The primary metric's series colour colours the value and the bar.
+- Table and Metric options are kept in the URL / saved chart (`pivot` on buckets; `summary`, `colorBy`, `role: "max"` on metrics). Unknown or ill-typed values from a link are dropped.
+
+### Changed
+- The Metric chart renders its own tiles instead of Grafana's Stat panel (`data-panel="tiles"`). Exported dashboard panels still use Stat.
+- Switching chart type drops Table pivots and the Metric chart's Maximum value role (they become ordinary rows / metrics); a Metric chart left with only a maximum gets a Count of records as its primary metric.
+
+---
+
 ## [0.42.0] — 2026-11-18
 
 ### Added
