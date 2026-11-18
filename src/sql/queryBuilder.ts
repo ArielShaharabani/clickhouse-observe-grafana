@@ -7,10 +7,11 @@
  */
 
 import { isDateBound, isNumericBound } from './filters';
-import { BreakdownSel, ColumnMapping, FilterPill, FilterOp, LogsQueryState, SourceConfig } from '../types';
+import { BreakdownSel, FilterPill, FilterOp, LogsQueryState, SourceConfig } from '../types';
 import { resolveField, FieldIndex } from './fields';
 import { parseKql, kqlToSql } from './kql';
 import { configSettingsFragments, queryTimeoutFragments, withSettings } from './settings';
+import { isConvertedTimestamp, timeExpr } from './timeExpr';
 
 /**
  * Row-object keys for buildLogsQuery's core (fixed-role) columns. `__`-prefixed so they can't
@@ -184,9 +185,10 @@ export function tableRef(config: SourceConfig, table: string): string {
  * `*` to fall back on, so it's the one projection that still needs a fixed, collision-proof name
  * here; logRowKey() bridges the two shapes by also checking the raw name when the alias is absent.
  */
-function buildCoreSelectAliases(c: ColumnMapping): string[] {
+function buildCoreSelectAliases(config: SourceConfig): string[] {
+  const c = config.columns;
   return [
-    c.timestamp ? `${c.timestamp} AS ${CORE_ALIAS.timestamp}` : null,
+    c.timestamp ? `${timeExpr(config)} AS ${CORE_ALIAS.timestamp}` : null,
     c.body ? `${c.body} AS ${CORE_ALIAS.body}` : null,
     c.severity ? `${c.severity} AS ${CORE_ALIAS.severity}` : null,
     c.traceId ? `${c.traceId} AS ${CORE_ALIAS.traceId}` : null,
@@ -374,9 +376,8 @@ export function buildWhereConditions(config: SourceConfig, state: LogsQueryState
   const conditions: string[] = [];
   // Only add the time filter when a timestamp column is mapped (no-time views skip this).
   if (config.columns.timestamp) {
-    conditions.push(
-      `${config.columns.timestamp} >= $__fromTime AND ${config.columns.timestamp} <= $__toTime`
-    );
+    const ts = timeExpr(config);
+    conditions.push(`${ts} >= $__fromTime AND ${ts} <= $__toTime`);
     const coarse = coarsePrunePredicate(config);
     if (coarse) {
       conditions.push(coarse);
@@ -410,9 +411,10 @@ export interface BuildLogsQueryOpts {
 /** Maps a CORE_ALIAS name back to the real column it was standing in for, so a sort column chosen
  *  against the grid projection (which is always aliased) still resolves against a non-grid
  *  projection (bare SELECT *, no aliases) — see buildLogsQuery's sortCol handling below. */
-function coreAliasToRawColumn(alias: string, c: ColumnMapping): string | undefined {
+function coreAliasToRawColumn(alias: string, config: SourceConfig): string | undefined {
+  const c = config.columns;
   switch (alias) {
-    case CORE_ALIAS.timestamp: return c.timestamp;
+    case CORE_ALIAS.timestamp: return timeExpr(config);
     case CORE_ALIAS.body: return c.body;
     case CORE_ALIAS.severity: return c.severity;
     case CORE_ALIAS.serviceName: return c.serviceName;
@@ -444,9 +446,13 @@ export function buildLogsQuery(
   // only ever omits `*` when there's at least one aliased/extra column to take its place — an
   // arbitrary table with nothing mapped and no user-added columns would otherwise produce an
   // empty (invalid) SELECT list, so fall back to `*` in that case.
-  const coreSelect = isGrid ? buildCoreSelectAliases(c) : [];
+  const coreSelect = isGrid ? buildCoreSelectAliases(config) : [];
   const gridSelect = [...coreSelect, ...extraSelect];
-  const selectParts = isGrid && gridSelect.length > 0 ? gridSelect : ['*', ...extraSelect];
+  // A converted time field (PLAN #16d) is not a real column, so a bare SELECT * row would only
+  // carry the raw epoch / text value. Alias the converted value in every projection so grid and
+  // hydrated rows share the same time value (logRowKey, detail panel, compare).
+  const convertedTime = !isGrid && isConvertedTimestamp(config) ? [`${timeExpr(config)} AS ${CORE_ALIAS.timestamp}`] : [];
+  const selectParts = isGrid && gridSelect.length > 0 ? gridSelect : ['*', ...convertedTime, ...extraSelect];
   const conditions = buildWhereConditions(config, state, index);
 
   let sortCol = state.sort?.col ?? (c.timestamp ? CORE_ALIAS.timestamp : null);
@@ -457,7 +463,7 @@ export function buildLogsQuery(
     // query, which emits no such alias. Translate it back to the real column name `*` already
     // provides. Anything else — an extraSelect column's own key, or an already-raw name — passes
     // through unchanged; extraSelect's aliases are still emitted in every projection.
-    sortCol = coreAliasToRawColumn(sortCol, c) ?? sortCol;
+    sortCol = coreAliasToRawColumn(sortCol, config) ?? sortCol;
   }
   const sortDir = (state.sort?.dir ?? 'desc').toUpperCase();
 
@@ -569,9 +575,10 @@ export function buildLogDetailQuery(
   }
   const tbl = tableRef(config, config.logsTable);
 
+  const ts = timeExpr(config);
   const conditions = [
-    `${c.timestamp} >= fromUnixTimestamp64Milli(${tsMs})`,
-    `${c.timestamp} < fromUnixTimestamp64Milli(${tsMs + 1})`,
+    `${ts} >= fromUnixTimestamp64Milli(${tsMs})`,
+    `${ts} < fromUnixTimestamp64Milli(${tsMs + 1})`,
   ];
   const coarse = config.columns.partitionTimestamp && config.columns.partitionTimestamp !== '-'
     ? `${config.columns.partitionTimestamp} >= fromUnixTimestamp64Milli(${tsMs}) - INTERVAL 1 SECOND AND ${config.columns.partitionTimestamp} <= fromUnixTimestamp64Milli(${tsMs + 1}) + INTERVAL 1 SECOND`
@@ -663,9 +670,15 @@ export function buildVolumeQuery(
   }
   const tbl = tableRef(config, config.logsTable);
   const { interval, breakdown } = opts;
-  const timeExpr = 'macro' in interval
-    ? `$__timeInterval(${c.timestamp})`
-    : `toStartOfInterval(${c.timestamp}, INTERVAL ${interval.value} ${interval.unit})`;
+  const ts = timeExpr(config);
+  // The datasource's $__timeInterval macro splits its argument on commas and counts parentheses,
+  // so a converted time field (e.g. `toDateTime64(toInt64("ts"), 3)`) gets the explicit form —
+  // same rule as Lens's dashboard export (compile.ts).
+  const bucketExpr = 'macro' in interval
+    ? /[(),]/.test(ts)
+      ? `toStartOfInterval(toDateTime(${ts}), INTERVAL $__interval_s second)`
+      : `$__timeInterval(${ts})`
+    : `toStartOfInterval(${ts}, INTERVAL ${interval.value} ${interval.unit})`;
   const conditions = buildWhereConditions(config, state, index);
   const condSql = conditions.join(' AND ');
 
@@ -675,7 +688,7 @@ export function buildVolumeQuery(
     // Single series: constant empty-string level so the fold loop stays generic.
     return withSettings(
       [
-        `SELECT ${timeExpr} AS time, '' AS level, count() AS count`,
+        `SELECT ${bucketExpr} AS time, '' AS level, count() AS count`,
         `FROM ${tbl}`,
         whereSql || null,
         `GROUP BY time, level`,
@@ -695,7 +708,7 @@ export function buildVolumeQuery(
     // real data to show as real data, not something to paper over here.
     return withSettings(
       [
-        `SELECT ${timeExpr} AS time, toString(${breakdown.expr}) AS level, count() AS count`,
+        `SELECT ${bucketExpr} AS time, toString(${breakdown.expr}) AS level, count() AS count`,
         `FROM ${tbl}`,
         whereSql || null,
         `GROUP BY time, level`,
@@ -716,7 +729,7 @@ export function buildVolumeQuery(
       whereSql ? `  ${whereSql}` : null,
       `  GROUP BY v ORDER BY count() DESC LIMIT ${limit}`,
       `)`,
-      `SELECT ${timeExpr} AS time,`,
+      `SELECT ${bucketExpr} AS time,`,
       `       if(${exprStr} GLOBAL IN (SELECT v FROM top), ${exprStr}, 'Other') AS level,`,
       `       count() AS count`,
       `FROM ${tbl}`,
@@ -760,7 +773,7 @@ export function buildFieldTopValuesQuery(
 ): string {
   const { table, conditions, limit = 10, sampleSize = 500 } = opts;
   const tbl = tableRef(config, table);
-  const tsCol = config.columns.timestamp;
+  const tsCol = timeExpr(config);
 
   // Sample the most-recent sampleSize rows then aggregate within the sample.
   // Keeps query cost O(sampleSize) regardless of table size.
@@ -809,7 +822,7 @@ export interface NumericStatsOpts {
  */
 export function buildNumericStatsQuery(config: SourceConfig, sqlExpr: string, opts: NumericStatsOpts): string {
   const tbl = tableRef(config, opts.table);
-  const tsCol = config.columns.timestamp;
+  const tsCol = timeExpr(config);
   const condClause = opts.conditions.length > 0 ? `    WHERE ${opts.conditions.join(' AND ')}` : null;
   return withSettings(
     [
@@ -846,14 +859,15 @@ export function buildSurroundingDocsQuery(
   const tbl = tableRef(config, config.logsTable);
   const op = direction === 'before' ? '<' : '>';
   const order = direction === 'before' ? 'DESC' : 'ASC';
+  const ts = timeExpr(config);
 
   return withSettings(
     [
-      `SELECT ${c.timestamp} AS timestamp, ${c.body || "''"} AS body,`,
+      `SELECT ${ts} AS timestamp, ${c.body || "''"} AS body,`,
       `  ${c.severity || "''"} AS severity, ${c.serviceName || "''"} AS serviceName`,
       `FROM ${tbl}`,
-      `WHERE ${c.timestamp} ${op} ${quoteString(rowTimestamp)}`,
-      `ORDER BY ${c.timestamp} ${order}`,
+      `WHERE ${ts} ${op} ${quoteString(rowTimestamp)}`,
+      `ORDER BY ${ts} ${order}`,
       `LIMIT ${n}`,
     ],
     configSettingsFragments(config)

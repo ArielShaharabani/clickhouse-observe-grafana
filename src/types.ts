@@ -42,10 +42,19 @@ export const EMPTY_COLUMN_MAPPING: ColumnMapping = {
   partitionTimestamp: '',
 };
 
+/**
+ * How the time field (`columns.timestamp`) is read: `native` (or unset) = a Date / DateTime /
+ * DateTime64 column used as is; `epoch_*` = an integer epoch in that unit; `string` = text parsed
+ * as a date. Every query reads the field through `timeExpr` (src/sql/timeExpr.ts).
+ */
+export type TimestampFormat = 'native' | 'epoch_s' | 'epoch_ms' | 'epoch_us' | 'epoch_ns' | 'string';
+
 export interface SourceConfig {
   datasourceUid: string;
   database: string;
   logsTable: string;
+  /** How `columns.timestamp` is read (see TimestampFormat). Unset = native. */
+  timestampFormat?: TimestampFormat;
   // Legacy flag, no longer read by SQL generation — all paths use columns.* mapping.
   // Kept for backwards-compat with persisted jsonData; new views leave it false.
   isOtel: boolean;

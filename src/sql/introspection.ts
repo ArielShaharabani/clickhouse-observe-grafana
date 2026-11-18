@@ -1,5 +1,6 @@
 import { SourceConfig } from '../types';
 import { configSettingsFragments, queryTimeoutFragments, withSettings } from './settings';
+import { timeExpr } from './timeExpr';
 
 /**
  * Execution guardrail for field-discovery scans (Map keys / JSON paths) — these queries scan
@@ -81,7 +82,7 @@ export function buildMapKeysQuery(
 ): string {
   const { table, conditions, sampleSize = 500 } = opts;
   const tbl = `"${config.database}"."${table}"`;
-  const tsCol = config.columns.timestamp;
+  const tsCol = timeExpr(config);
   const condClause = conditions.length > 0 ? `  WHERE ${conditions.join(' AND ')}` : null;
   return withSettings(
     [

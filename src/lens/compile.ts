@@ -19,6 +19,7 @@ import { TimeRange } from '@grafana/data';
 import { SourceConfig } from '../types';
 import { quoteIdentifier, tableRef } from '../sql/queryBuilder';
 import { configSettingsFragments, withSettings } from '../sql/settings';
+import { isConvertedTimestamp, timeExpr } from '../sql/timeExpr';
 import { resolveInterval } from '../components/_histogramInterval';
 import { BucketDim, clampPercentile, dimLabel, LensState, MetricDim } from './state';
 
@@ -78,12 +79,18 @@ export function compileLens(
   const where = conditions.length > 0 ? conditions.join(' AND ') : '';
   let intervalMs: number | undefined;
 
+  // A date histogram on the view's time field reads it the way every other query does: a
+  // converted time field (epoch / text, PLAN #16d) is not a real DateTime column. Any other field
+  // is quoted as before.
+  const dateSql = (field: string) =>
+    field === config.columns.timestamp && isConvertedTimestamp(config) ? timeExpr(config) : quoteIdentifier(field);
+
   const ctes: string[] = [];
   const restrictions: string[] = [];
   const selects: string[] = [];
   state.buckets.forEach((b: BucketDim, i) => {
     if (b.kind === 'date_histogram' && mode === 'dashboard') {
-      const col = quoteIdentifier(b.field);
+      const col = dateSql(b.field);
       // The datasource's macro parser counts parentheses and commas without regard to quotes, so
       // an expression field (e.g. a Map key with ')' in it) gets the explicit form instead.
       selects.push(
@@ -95,7 +102,7 @@ export function compileLens(
       const iv = resolveInterval('auto', timeRange);
       intervalMs = iv.intervalMs;
       selects.push(
-        `toUnixTimestamp(toStartOfInterval(${quoteIdentifier(b.field)}, INTERVAL ${iv.value} ${iv.unit})) * 1000 AS ${bucketAlias(i)}`
+        `toUnixTimestamp(toStartOfInterval(${dateSql(b.field)}, INTERVAL ${iv.value} ${iv.unit})) * 1000 AS ${bucketAlias(i)}`
       );
     } else {
       const expr = `toString(${quoteIdentifier(b.field)})`;
