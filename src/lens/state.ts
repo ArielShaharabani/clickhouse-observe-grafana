@@ -93,9 +93,22 @@ export function regexError(p: string): string | null {
       }
       i++;
     } else if (inClass) {
-      inClass = c !== ']';
+      // A POSIX item ([:alpha:]) is one unit inside a class; `]` ends the class otherwise.
+      const posix = /^\[:\^?[a-z]+:\]/.exec(p.slice(i));
+      if (posix) {
+        i += posix[0].length - 1;
+      } else {
+        inClass = c !== ']';
+      }
     } else if (c === '[') {
       inClass = true;
+      // As in RE2, a `]` right after `[` or `[^` is a literal, not the end of the class.
+      if (p[i + 1] === '^') {
+        i++;
+      }
+      if (p[i + 1] === ']') {
+        i++;
+      }
     } else if (c === '(') {
       depth++;
     } else if (c === ')' && --depth < 0) {

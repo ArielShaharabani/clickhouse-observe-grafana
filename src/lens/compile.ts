@@ -48,8 +48,6 @@ export const bucketAlias = (i: number) => `b${i}`;
 export const metricAlias = (i: number) => `m${i}`;
 /** Row-kind column of a top-values bucket with Other / missing on (see KIND_* in state.ts). */
 export const kindAlias = (i: number) => `k${i}`;
-/** Internal alias of a bucket's string value (underscore-prefixed to stay clear of real columns). */
-const rawAlias = (i: number) => `_r${i}`;
 
 const MAP_ACCESSOR = /^("(?:[^"]|"")*"|[A-Za-z_][A-Za-z0-9_]*)\[(.+)\]$/;
 
@@ -183,10 +181,11 @@ export function compileLens(
         selects.push(`${raw} AS ${bucketAlias(i)}`);
         return;
       }
-      // Other and / or "(missing)": the value is computed once (`_rN`), the row kind goes in its
-      // own column so a real value spelled "Other" / "(missing)" stays a real value.
+      // Other and / or "(missing)": the row kind goes in its own column so a real value spelled
+      // "Other" / "(missing)" stays a real value. The value expression is inlined (not selected under
+      // an alias of its own): only the GROUP BY keys k / b and aggregates may be selected.
       const raw = b.missing ? missingAwareRaw(field) : `toString(${field})`;
-      const r = rawAlias(i);
+      const r = raw;
       const pred = valuePredicate(b, r);
       const nonNull = pred ? `${r} IS NOT NULL AND ${pred}` : `${r} IS NOT NULL`;
       const cpred = valuePredicate(b, 'v');
@@ -199,7 +198,6 @@ export function compileLens(
         b.other ? (b.missing ? `(${r} IS NULL OR (${nonNull}))` : nonNull) : `(${r} IS NULL OR ${inTop})`
       );
       selects.push(
-        `${raw} AS ${r}`,
         `multiIf(${r} IS NULL, ${KIND_MISSING}, ${inTop}, ${KIND_VALUE}, ${KIND_OTHER}) AS ${kindAlias(i)}`,
         `if(${kindAlias(i)} = ${KIND_VALUE}, ${r}, '') AS ${bucketAlias(i)}`
       );

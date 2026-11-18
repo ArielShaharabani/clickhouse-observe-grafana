@@ -22,7 +22,7 @@ async function toTable(page: Page) {
   await editor(page).getByRole('button', { name: 'Close', exact: true }).click();
   await page.getByRole('button', { name: 'Chart type: Bar' }).click();
   await page.getByRole('option', { name: /^Table/ }).click();
-  await page.getByRole('button', { name: /^Edit Top \d+ values of ServiceName/ }).click();
+  await page.getByRole('button', { name: /^Edit (Top|Bottom|First|Last) \d+ values of ServiceName/ }).click();
 }
 
 /** Grafana's checkbox / radio inputs sit under their label, so click the label text. */

@@ -56,17 +56,19 @@ describe('top values SQL (LENS-DIM-04)', () => {
 
   it('Other: the value is computed once, the row kind is its own column, Other sorts last', () => {
     const sql = sqlOf({ ...svc, other: true });
-    expect(sql).toContain(`toString("ServiceName") AS _r0`);
-    expect(sql).toContain('multiIf(_r0 IS NULL, 2, _r0 GLOBAL IN (SELECT v FROM top0), 0, 1) AS k0');
-    expect(sql).toContain(`if(k0 = 0, _r0, '') AS b0`);
+    // Only GROUP BY keys and aggregates are selected (ClickHouse NOT_AN_AGGREGATE otherwise).
+    expect(sql).not.toContain('_r0');
+    expect(sql).toContain('multiIf(toString("ServiceName") IS NULL, 2, toString("ServiceName") GLOBAL IN (SELECT v FROM top0), 0, 1) AS k0');
+    expect(sql).toContain(`if(k0 = 0, toString("ServiceName"), '') AS b0`);
     expect(sql).not.toContain("'Other'");
     expect(sql).toContain(
-      'WHERE Timestamp >= $__fromTime AND Timestamp <= $__toTime AND _r0 IS NOT NULL\nGROUP BY b0, k0'
+      'WHERE Timestamp >= $__fromTime AND Timestamp <= $__toTime AND toString("ServiceName") IS NOT NULL\nGROUP BY b0, k0'
     );
     expect(sql).toContain('ORDER BY k0, m0 DESC, b0, k0');
-    // The predicate of include / exclude is evaluated on the alias, once per row.
+    // The include / exclude predicate is on the value expression.
     const inc = sqlOf({ ...svc, other: true, include: ['a'] });
-    expect(inc).toContain(`_r0 IS NOT NULL AND (_r0 IN ('a'))`);
+    expect(inc).toContain(`toString("ServiceName") IS NOT NULL AND (toString("ServiceName") IN ('a'))`);
+    expect(inc).not.toMatch(/ AS _r0/);
     expect(inc.split("IN ('a')").length - 1).toBe(2); // once in the CTE, once in the outer WHERE
   });
 
@@ -88,13 +90,13 @@ describe('top values SQL (LENS-DIM-04)', () => {
     const sql = sqlOf({ ...svc, missing: true });
     expect(sql).toContain(`toString("ServiceName") AS v FROM "default"."spec_logs" WHERE`);
     expect(sql).toContain('v IS NOT NULL GROUP BY v');
-    expect(sql).toContain('(_r0 IS NULL OR _r0 GLOBAL IN (SELECT v FROM top0))');
+    expect(sql).toContain('(toString("ServiceName") IS NULL OR toString("ServiceName") GLOBAL IN (SELECT v FROM top0))');
   });
 
   it('missing on a Map key uses mapContains (an absent key reads as an empty string otherwise)', () => {
     const map = { ...svc, field: "LogAttributes['k']", missing: true };
     const sql = sqlOf(map);
-    expect(sql).toContain(`if(mapContains(LogAttributes, 'k'), toString(LogAttributes['k']), NULL) AS _r0`);
+    expect(sql).toContain(`multiIf(if(mapContains(LogAttributes, 'k'), toString(LogAttributes['k']), NULL) IS NULL, 2`);
     // Without the option the field is read as before.
     expect(sqlOf({ ...map, missing: false })).toContain(`toString(LogAttributes['k'])`);
     expect(sqlOf({ ...map, missing: false })).not.toContain('mapContains');
@@ -215,6 +217,13 @@ describe('top values state (untrusted URL)', () => {
     expect(regexError('pay.*')).toBeNull();
     expect(regexError('(a|b)+[(]x\\)')).toBeNull();
     expect(regexError('a)|(.*')).toMatch(/Unbalanced/);
+    // RE2 reads `]` right after `[` / `[^` as a literal: the class hides the `(`, so the `)` would
+    // close the ^(?:…)$ wrapper and the last class hides the `)` that balances it again.
+    expect(regexError('[](]).*|(.*[])]')).toMatch(/Unbalanced/);
+    expect(regexError('[^](]).*|(.*[^])]')).toMatch(/Unbalanced/);
+    expect(regexError('[]a]+')).toBeNull();
+    expect(regexError('[[:alpha:]]+(x)')).toBeNull();
+    expect(regexError('[[:alpha:](]).*|(.*[])]')).toMatch(/Unbalanced/);
     expect(regexError('(a')).toMatch(/Unbalanced/);
     expect(regexError('[a')).toMatch(/Unbalanced/);
     expect(regexError('a\\')).toMatch(/backslash/);
