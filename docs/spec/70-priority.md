@@ -26,7 +26,7 @@ Build the shared search context, KQL/Lucene-style query bar, filter pills and cl
 | DISC-DOC-02 | Surrounding documents | 3 | Very useful in incidents and simple to build with search\_after-style paging, but used less often. | DISC-DOC-01 (4), DISC-FILTER-01 (5) |
 | DISC-PATTERNS-01 | Log pattern analysis | 3 | High value for noisy logs, but the costliest feature on ClickHouse, which has no built-in text categorization. | DISC-FILTER-01 (5), DISC-TABLE-01 (5) |
 | DISC-FIELDSTATS-01 | Field statistics tab | 3 | Useful for profiling unknown data, and cheap once the popover backend exists. | DISC-SIDEBAR-02 (5), LENS-AUTO-01 (4) |
-| LENS-DIM-03 | Formula editor | 3 | Ratios like error rate need it, but quick functions cover most questions. | LENS-DIM-02 (4), DISC-SEARCH-02 (5) |
+| LENS-DIM-03 | Formula editor | 2 | Ratios like error rate need it, but quick functions cover most questions. (Lowered from 3 by the user, 2026-11-18; no other feature depends on it.) | LENS-DIM-02 (4), DISC-SEARCH-02 (5) |
 | LENS-DIM-04 | Top values editor (size, rank, other, missing) | 3 | Defaults work for most cases; the options matter for high-cardinality fields. | LENS-DIM-01 (4), LENS-AUTO-01 (4) |
 | SHARED-PERF-01 | Loading, sampling and cancel cues | 3 | Sample labels keep statistics trustworthy and loading cues keep large queries usable. | DISC-SIDEBAR-02 (5), DISC-PATTERNS-01 (3) |
 | LENS-CHART-01 | Table and Metric chart specifics | 2 | Grafana's Table and Stat panels already cover most of this. | LENS-TYPE-01 (4) |

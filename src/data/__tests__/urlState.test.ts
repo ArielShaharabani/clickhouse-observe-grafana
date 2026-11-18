@@ -129,4 +129,61 @@ describe('encodeLogsState / decodeLogsState round-trip', () => {
     expect(encoded.has('traceId')).toBe(false);
     expect(encoded.has('dsUid')).toBe(false);
   });
+
+  it('decodes ISO-8601 from/to (as Kibana writes them) and rejects garbage', () => {
+    const iso = decodeLogsState(new URLSearchParams({ from: '2026-01-01T00:00:00.000Z', to: '2026-01-08T00:00:00Z' }));
+    expect(iso.timeRange?.from.valueOf()).toBe(Date.UTC(2026, 0, 1));
+    expect(iso.timeRange?.to.valueOf()).toBe(Date.UTC(2026, 0, 8));
+    expect(decodeLogsState(new URLSearchParams({ from: 'junk', to: 'junk' })).timeRange).toBeUndefined();
+  });
+
+  const decodeTime = (from: string, to: string) => decodeLogsState(new URLSearchParams({ from, to })).timeRange;
+  it('ISO needs a time zone; zone offsets are honoured; non-ISO strings are dropped', () => {
+    expect(decodeTime('2026-01-01T02:00:00+02:00', '2026-01-02T00:00:00Z')?.from.valueOf()).toBe(Date.UTC(2026, 0, 1));
+    expect(decodeTime('2026-01-01T00:00:00', '2026-01-02T00:00:00Z')).toBeUndefined();
+    expect(decodeTime('2026-01-01', '2026-01-02')).toBeUndefined();
+    expect(decodeTime('Jan 1 2026', 'Jan 2 2026')).toBeUndefined();
+  });
+
+  it('invalid now-expressions are dropped, valid ones kept', () => {
+    expect(decodeTime('nowgarbage', 'now')).toBeUndefined();
+    expect(decodeTime('now-1h', 'now')?.raw.from).toBe('now-1h');
+    expect(decodeTime('now/d', 'now/d')?.raw.to).toBe('now/d');
+  });
+
+  it('accepts any finite number as epoch ms (decimal, exponent), rejects empty/NaN', () => {
+    expect(decodeTime('1700000000000.5', '1.7000036e12')?.to.valueOf()).toBe(1700003600000);
+    expect(decodeTime('abc', '1700000000000')).toBeUndefined();
+  });
+});
+
+describe('decodeLogsState drops untrusted filter pills', () => {
+  const decode = (pills: unknown) => decodeLogsState(new URLSearchParams({ filters: JSON.stringify(pills) })).filters;
+  const ok = { id: 'a', field: 'ServiceName', op: '=', value: 'x' };
+
+  it('drops a pill with an unknown op', () => {
+    expect(decode([ok, { ...ok, id: 'b', op: 'LIKE' }, { ...ok, id: 'c', op: "= '' OR 1=1 --" }])).toEqual([ok]);
+    expect(decode([{ ...ok, op: undefined }])).toEqual([]);
+  });
+
+  it('drops a pill whose field is not a string', () => {
+    expect(decode([ok, { ...ok, id: 'b', field: { a: 1 } }, { ...ok, id: 'c', field: 5 }])).toEqual([ok]);
+  });
+
+  it('drops a pill whose value is not a string; a missing value becomes empty', () => {
+    expect(decode([ok, { ...ok, id: 'b', value: 5 }, { ...ok, id: 'c', value: ['x'] }])).toEqual([ok]);
+    expect(decode([{ id: 'e', field: 'ServiceName', op: 'exists' }])).toEqual([
+      { id: 'e', field: 'ServiceName', op: 'exists', value: '' },
+    ]);
+  });
+
+  it('drops a pill whose values are not an array of strings', () => {
+    const oneOf = { id: 'o', field: 'ServiceName', op: 'one_of', value: '', values: ['a', 'b'] };
+    expect(decode([oneOf, { ...oneOf, id: 'p', values: 'a' }, { ...oneOf, id: 'q', values: ['a', 1] }])).toEqual([oneOf]);
+  });
+
+  it('drops non-object entries and keeps the range operators', () => {
+    const between = { id: 'r', field: 'n', op: 'between', value: '', values: ['1', '2'] };
+    expect(decode([null, 'x', 3, between])).toEqual([between]);
+  });
 });
