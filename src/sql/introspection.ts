@@ -1,5 +1,7 @@
 import { SourceConfig } from '../types';
 import { configSettingsFragments, queryTimeoutFragments, withSettings } from './settings';
+import { timeExpr } from './timeExpr';
+import { quoteString } from './queryBuilder';
 
 /**
  * Execution guardrail for field-discovery scans (Map keys / JSON paths) — these queries scan
@@ -32,7 +34,7 @@ export function buildDatabasesQuery(): string {
 
 /** All tables (and views) in a given database. */
 export function buildTablesQuery(database: string): string {
-  return `SELECT name FROM system.tables WHERE database = '${database}' ORDER BY name`;
+  return `SELECT name FROM system.tables WHERE database = ${quoteString(database)} ORDER BY name`;
 }
 
 /**
@@ -47,7 +49,7 @@ export function buildColumnsQuery(config: SourceConfig, table: string): string {
     [
       `SELECT name, type, default_kind, default_expression, is_in_partition_key, is_in_primary_key, position`,
       `FROM system.columns`,
-      `WHERE database = '${config.database}' AND table = '${table}'`,
+      `WHERE database = ${quoteString(config.database)} AND table = ${quoteString(table)}`,
       `ORDER BY position`,
     ],
     configSettingsFragments(config)
@@ -81,7 +83,7 @@ export function buildMapKeysQuery(
 ): string {
   const { table, conditions, sampleSize = 500 } = opts;
   const tbl = `"${config.database}"."${table}"`;
-  const tsCol = config.columns.timestamp;
+  const tsCol = timeExpr(config);
   const condClause = conditions.length > 0 ? `  WHERE ${conditions.join(' AND ')}` : null;
   return withSettings(
     [

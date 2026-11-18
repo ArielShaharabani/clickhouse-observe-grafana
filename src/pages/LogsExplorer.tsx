@@ -27,6 +27,7 @@ import { startAction } from '../diag/tracer';
 import { SpanHandle } from '../diag/types';
 import { buildLogsQuery, buildLogDetailQuery, buildVolumeQuery, resolveVolumeBreakdown, logRowKey } from '../sql/queryBuilder';
 import { buildFieldIndex } from '../sql/fields';
+import { isConvertedTimestamp } from '../sql/timeExpr';
 import { addFilterPill, makeFilter } from '../sql/filters';
 import { AddFilterPopover } from '../components/AddFilter/AddFilterPopover';
 import { SourceConfigContext, DataViewContext } from '../components/App/App';
@@ -1579,6 +1580,7 @@ export function LogsExplorer() {
                   onToggleCompare={onToggleCompare}
                   highlighterFor={highlighterFor}
                   onAddFilter={onAddFilter}
+                  timeFilterable={!isConvertedTimestamp(config)}
                   onDropField={onDropField}
                 />
                 <PaginationBar
