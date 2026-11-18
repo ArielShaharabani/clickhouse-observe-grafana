@@ -99,3 +99,25 @@ LENS-DIM-04 acceptance:
 | Missing on Map keys, real "Other" kept apart | jest `missing on a Map key ...`, `shaping: synthetic ...` |
 | Regex / list validation | jest `regexError`, `listError`, editor UI test; e2e `invalid regular expression` |
 | Hostile values | jest `hostile values stay inside a string literal`, `macro text ... hex-escaped`; e2e hostile include |
+
+### DISC-CHART-02 (PR 22)
+| Case | Status |
+| --- | --- |
+| Breakdown picker | `No breakdown` → search `servicen` → ServiceName: label `Breakdown by ServiceName`, URL `bd=field:col:ServiceName`, five services in the legend; Escape closes (e2e `disc-chart-02.spec.ts`) |
+| Legend isolate / hide | click auth isolates (4 eye-slash icons, rows unchanged 41,520); Ctrl+click hides payments only (e2e); y-axis rescales to the visible series (jest `VolumeHistogram.legend.test.tsx`) |
+| Legend ⋮ actions | Filter for payments → 9,264 rows + pill; Filter out → 32,256 (e2e); no menu for `other` or without a target field; Escape; focus moves in (jest) |
+| IT: DISC-SIDEBAR-02 × DISC-CHART-02 | field popover "Break down histogram by ServiceName" → label + legend Filter for auth → 8,064 (e2e) |
+| IT: SHARED-ACTION-01 × DISC-CHART-02 | legend filter pill comes from `valueActions`, same pill shape as cells / popover (e2e + jest) |
+| IT: severity breakdown | `Breakdown by Severity`; legend Filter for error → 3,191 (e2e) |
+
+DISC-CHART-02 acceptance:
+
+| Criterion | Test / status |
+| --- | --- |
+| `No breakdown ⌄` opens a searchable list of aggregatable fields | e2e "No breakdown → search and pick a field"; field list = `isBreakdownField` (existing) |
+| `_index`, `_ignored` entries | gap: Elasticsearch meta fields, nothing equivalent in ClickHouse |
+| Label becomes `Breakdown by <field>`; bars stack by top values; legend on the right | e2e (label, legend); jest `triggerLabel`; stacking is the existing top-10 query |
+| Legend click isolates; others show eye-slash; y-axis rescales | jest "click isolates a series…"; e2e "legend: click isolates…" |
+| Ctrl+click hides it | jest + e2e |
+| Hover shows ⋮ → popover titled with the value: Filter for / Filter out | jest "⋮ opens a popover…"; e2e "legend ⋮ → Filter for…" |
+| Also reachable from field popover 📊 (DISC-SIDEBAR-02) | e2e "IT: breakdown chosen from the field popover…" |
