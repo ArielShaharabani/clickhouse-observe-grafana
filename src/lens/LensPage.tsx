@@ -44,6 +44,7 @@ import {
   isEmptyLens,
   LensField,
   LensState,
+  isSyntheticValue,
   MetricDim,
   RECORDS_FIELD,
   sanitizeLens,
@@ -339,7 +340,7 @@ export function LensPage() {
     const [x, breakdown] = lens.buckets;
     const xv = data.xs[sel.xIndex];
     const series = data.series[sel.seriesIndex];
-    if (x?.kind === 'terms') {
+    if (x?.kind === 'terms' && !isSyntheticValue(x, String(xv))) {
       out.push({ label: `${x.label}: ${xLabel(xv, false, 0)}`, pill: pillFor(x.field, String(xv), 'for') });
     } else if (x?.kind === 'date_histogram' && bucketMs) {
       const from = Number(xv);
@@ -348,7 +349,11 @@ export function LensPage() {
         time: [from, from + bucketMs],
       });
     }
-    if (breakdown?.kind === 'terms' && series?.breakdown !== undefined) {
+    if (
+      breakdown?.kind === 'terms' &&
+      series?.breakdown !== undefined &&
+      !isSyntheticValue(breakdown, series.breakdown)
+    ) {
       out.push({
         label: `${breakdown.label}: ${series.breakdown || '(empty)'}`,
         pill: pillFor(breakdown.field, series.breakdown, 'for'),
@@ -398,7 +403,7 @@ export function LensPage() {
   const onLegendFilter = (seriesIndex: number, mode: 'for' | 'out') => {
     const breakdown = lens.buckets[1];
     const s = current?.data?.series[seriesIndex];
-    if (breakdown?.kind === 'terms' && s?.breakdown !== undefined) {
+    if (breakdown?.kind === 'terms' && s?.breakdown !== undefined && !isSyntheticValue(breakdown, s.breakdown)) {
       addFilters([pillFor(breakdown.field, s.breakdown, mode)]);
     }
   };
@@ -620,6 +625,7 @@ export function LensPage() {
               dim={editingDim}
               group={editingGroup.name}
               fields={lensFields}
+              metrics={lens.metrics}
               onChange={(d) => setLens(replaceDim(lens, d))}
               onRemove={() => {
                 setEditingId(null);

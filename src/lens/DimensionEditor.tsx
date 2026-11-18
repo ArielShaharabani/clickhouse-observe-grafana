@@ -6,7 +6,17 @@
 import React, { useId, useState } from 'react';
 import { css, cx } from '@emotion/css';
 import { GrafanaTheme2 } from '@grafana/data';
-import { Button, Combobox, Field, IconButton, Input, useStyles2 } from '@grafana/ui';
+import {
+  Button,
+  Checkbox,
+  Combobox,
+  Field,
+  IconButton,
+  Input,
+  RadioButtonGroup,
+  TextArea,
+  useStyles2,
+} from '@grafana/ui';
 import {
   bucketFields,
   compatibleFields,
@@ -14,24 +24,31 @@ import {
   withBucketField,
   withMetricField,
   withName,
+  parseLines,
   withOp,
   withSize,
+  withTermsOptions,
 } from './dimensions';
-import { autoLabel, BucketDim, clampPercentile, LensField, MetricDim, opName } from './state';
+import { autoLabel, BucketDim, clampPercentile, LensField, MetricDim, opName, rankDirOf, TermsRankBy } from './state';
+import { uniqueMetricLabels } from './compile';
 
 interface Props {
   dim: BucketDim | MetricDim;
   group: string;
   fields: LensField[];
+  /** The chart's metrics (candidates for Custom metric ranking). */
+  metrics?: MetricDim[];
   onChange: (d: BucketDim | MetricDim) => void;
   onRemove: () => void;
   onClose: () => void;
 }
 
-export function DimensionEditor({ dim, group, fields, onChange, onRemove, onClose }: Props) {
+export function DimensionEditor({ dim, group, fields, metrics = [], onChange, onRemove, onClose }: Props) {
   const styles = useStyles2(getStyles);
   const fieldId = useId();
   const fnLabelId = useId();
+  const rankMetricId = useId();
+  const metricLabels = uniqueMetricLabels(metrics);
   const fieldOptions = (list: LensField[]) => list.map((f) => ({ label: f.label, value: f.sqlExpr }));
 
   return (
@@ -120,6 +137,81 @@ export function DimensionEditor({ dim, group, fields, onChange, onRemove, onClos
               onCommit={(n) => onChange(withSize(dim, n))}
             />
           </Field>
+          <Field label="Rank by">
+            <RadioButtonGroup<TermsRankBy>
+              aria-label="Rank by"
+              size="sm"
+              options={[
+                { label: 'Count of records', value: 'count' },
+                { label: 'Alphabetical', value: 'alpha' },
+                { label: 'Custom metric', value: 'metric' },
+              ]}
+              value={dim.rankBy ?? 'count'}
+              onChange={(v) =>
+                onChange(
+                  withTermsOptions(dim, {
+                    rankBy: v,
+                    rankDir: undefined,
+                    rankMetric: v === 'metric' ? (dim.rankMetric ?? metrics[0]?.id) : undefined,
+                  })
+                )
+              }
+            />
+          </Field>
+          {dim.rankBy === 'metric' && (
+            <Field label="Rank metric" htmlFor={rankMetricId}>
+              <Combobox
+                id={rankMetricId}
+                options={metricLabels.map((l, i) => ({ label: l, value: metrics[i].id }))}
+                value={dim.rankMetric}
+                onChange={(o) => o && onChange(withTermsOptions(dim, { rankMetric: o.value }))}
+              />
+            </Field>
+          )}
+          <Field label="Rank direction">
+            <RadioButtonGroup<'asc' | 'desc'>
+              aria-label="Rank direction"
+              size="sm"
+              options={[
+                { label: 'Descending', value: 'desc' },
+                { label: 'Ascending', value: 'asc' },
+              ]}
+              value={rankDirOf(dim)}
+              onChange={(v) => onChange(withTermsOptions(dim, { rankDir: v }))}
+            />
+          </Field>
+          <div className={styles.label}>Advanced</div>
+          <Checkbox
+            label="Group remaining values as Other"
+            value={!!dim.other}
+            onChange={(e) => onChange(withTermsOptions(dim, { other: e.currentTarget.checked }))}
+          />
+          <Checkbox
+            label="Include documents without this field"
+            value={!!dim.missing}
+            onChange={(e) => onChange(withTermsOptions(dim, { missing: e.currentTarget.checked }))}
+          />
+          <Checkbox
+            label="Use regular expression"
+            value={!!dim.regex}
+            onChange={(e) => onChange(withTermsOptions(dim, { regex: e.currentTarget.checked }))}
+          />
+          <Field label="Include values" description="One per line">
+            <LinesInput
+              key={`inc-${(dim.include ?? []).join('\n')}`}
+              label="Include values"
+              value={dim.include ?? []}
+              onCommit={(l) => onChange(withTermsOptions(dim, { include: l }))}
+            />
+          </Field>
+          <Field label="Exclude values" description="One per line">
+            <LinesInput
+              key={`exc-${(dim.exclude ?? []).join('\n')}`}
+              label="Exclude values"
+              value={dim.exclude ?? []}
+              onCommit={(l) => onChange(withTermsOptions(dim, { exclude: l }))}
+            />
+          </Field>
         </>
       )}
 
@@ -148,6 +240,25 @@ export function DimensionEditor({ dim, group, fields, onChange, onRemove, onClos
         </Button>
       </div>
     </div>
+  );
+}
+
+/** One value per line; applied on blur (applying per keystroke would re-run the query each time). */
+function LinesInput({ label, value, onCommit }: { label: string; value: string[]; onCommit: (l: string[]) => void }) {
+  const [draft, setDraft] = useState(value.join('\n'));
+  return (
+    <TextArea
+      aria-label={label}
+      rows={2}
+      value={draft}
+      onChange={(e) => setDraft(e.currentTarget.value)}
+      onBlur={() => {
+        const l = parseLines(draft);
+        if (l.join('\n') !== value.join('\n')) {
+          onCommit(l);
+        }
+      }}
+    />
   );
 }
 

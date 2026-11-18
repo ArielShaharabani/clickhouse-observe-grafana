@@ -23,17 +23,28 @@ const to = dateTime(Date.UTC(2026, 0, 8));
 const range = { from, to, raw: { from: 'now-7d', to: 'now' } };
 const conds = ['Timestamp >= $__fromTime AND Timestamp <= $__toTime'];
 
-const date = { kind: 'date_histogram' as const, id: 'b0', field: 'Timestamp', label: 'Timestamp', interval: 'auto' as const };
+const date = {
+  kind: 'date_histogram' as const,
+  id: 'b0',
+  field: 'Timestamp',
+  label: 'Timestamp',
+  interval: 'auto' as const,
+};
 const service = { kind: 'terms' as const, id: 'bs', field: 'ServiceName', label: 'ServiceName', size: 9 };
 const level = { kind: 'terms' as const, id: 'b1', field: 'SeverityText', label: 'SeverityText', size: 3 };
 const count = { kind: 'metric' as const, id: 'm0', op: 'count' as const };
-const lens = (chartType: LensState['chartType'], buckets: LensState['buckets'], subType?: LensState['subType']): LensState => ({
+const lens = (
+  chartType: LensState['chartType'],
+  buckets: LensState['buckets'],
+  subType?: LensState['subType']
+): LensState => ({
   chartType,
   subType,
   buckets,
   metrics: [count],
 });
-const panel = (s: LensState) => buildLensPanel(s, config, conds, range, { id: 1, gridPos: { x: 0, y: 0, w: 12, h: 8 } });
+const panel = (s: LensState) =>
+  buildLensPanel(s, config, conds, range, { id: 1, gridPos: { x: 0, y: 0, w: 12, h: 8 } });
 const ids = (p: ReturnType<typeof panel>) => (p.transformations ?? []).map((t) => t.id);
 
 describe('LENS-SAVE-01 dashboard SQL', () => {
@@ -49,13 +60,17 @@ describe('LENS-SAVE-01 dashboard SQL', () => {
     const odd = { ...date, field: "LogAttributes['t(1),x']" };
     const sql = compileLens(lens('bar', [odd]), config, conds, range, 'dashboard').sql;
     expect(sql).not.toContain('$__timeInterval');
-    expect(sql).toContain("toStartOfInterval(toDateTime(LogAttributes['t(1),x']), INTERVAL $__interval_s second) AS b0");
+    expect(sql).toContain(
+      "toStartOfInterval(toDateTime(LogAttributes['t(1),x']), INTERVAL $__interval_s second) AS b0"
+    );
   });
 
   it('a hostile lens from the URL stays quoted in dashboard mode', () => {
     const raw = JSON.stringify({
       chartType: 'bar',
-      buckets: [{ kind: 'date_histogram', id: 'x', field: 'Timestamp) FROM system.users --', label: 'x', interval: 'auto' }],
+      buckets: [
+        { kind: 'date_histogram', id: 'x', field: 'Timestamp) FROM system.users --', label: 'x', interval: 'auto' },
+      ],
       metrics: [{ kind: 'metric', id: 'm', op: 'count' }],
     });
     const safe = sanitizeLens(decodeLens(raw)!, new Set(['Timestamp']));
@@ -67,11 +82,21 @@ describe('LENS-SAVE-01 panel per chart type', () => {
   it('time × count → timeseries bars, stacked, readable names', () => {
     const p = panel(lens('bar', [date], 'stacked'));
     expect(p.type).toBe('timeseries');
-    expect(p.targets[0]).toEqual(expect.objectContaining({ refId: 'A', format: 1, datasource: { type: 'grafana-clickhouse-datasource', uid: 'ds' } }));
-    expect(p.fieldConfig?.defaults).toEqual(
-      expect.objectContaining({ custom: expect.objectContaining({ drawStyle: 'bars', stacking: { mode: 'normal', group: 'A' } }) })
+    expect(p.targets[0]).toEqual(
+      expect.objectContaining({
+        refId: 'A',
+        format: 1,
+        datasource: { type: 'grafana-clickhouse-datasource', uid: 'ds' },
+      })
     );
-    expect(p.transformations?.[0].options).toEqual(expect.objectContaining({ renameByName: { b0: 'Timestamp', m0: 'Count of records' } }));
+    expect(p.fieldConfig?.defaults).toEqual(
+      expect.objectContaining({
+        custom: expect.objectContaining({ drawStyle: 'bars', stacking: { mode: 'normal', group: 'A' } }),
+      })
+    );
+    expect(p.transformations?.[0].options).toEqual(
+      expect.objectContaining({ renameByName: { b0: 'Timestamp', m0: 'Count of records' } })
+    );
   });
 
   it('time × breakdown → one series per value', () => {
@@ -79,7 +104,9 @@ describe('LENS-SAVE-01 panel per chart type', () => {
     expect(p.type).toBe('timeseries');
     expect(ids(p)).toEqual(['organize', 'partitionByValues', 'prepareTimeSeries']);
     // Metric and X keep readable names; the split column stays b1 for the partition.
-    expect(p.transformations?.[0].options).toEqual(expect.objectContaining({ renameByName: { b0: 'Timestamp', m0: 'Count of records' } }));
+    expect(p.transformations?.[0].options).toEqual(
+      expect.objectContaining({ renameByName: { b0: 'Timestamp', m0: 'Count of records' } })
+    );
     expect(p.transformations?.[1].options).toEqual({ fields: ['b1'], keepFields: false });
     expect((p.fieldConfig?.defaults as any).custom.stacking.mode).toBe('percent');
     expect((p.fieldConfig?.defaults as any).custom.fillOpacity).toBe(50);
@@ -87,12 +114,17 @@ describe('LENS-SAVE-01 panel per chart type', () => {
 
   it('category X → barchart; with a breakdown, values become columns', () => {
     expect(panel(lens('bar', [service], 'stacked'))).toEqual(
-      expect.objectContaining({ type: 'barchart', options: expect.objectContaining({ xField: 'Top 9 values of ServiceName', stacking: 'normal' }) })
+      expect.objectContaining({
+        type: 'barchart',
+        options: expect.objectContaining({ xField: 'Top 9 values of ServiceName', stacking: 'normal' }),
+      })
     );
     const p = panel(lens('bar', [service, level], 'unstacked'));
     expect(ids(p)).toEqual(['groupingToMatrix', 'organize']);
     expect(p.transformations?.[0].options).toEqual({ columnField: 'b1', rowField: 'b0', valueField: 'm0' });
-    expect(p.transformations?.[1].options).toEqual(expect.objectContaining({ renameByName: { 'b0\\b1': 'Top 9 values of ServiceName' } }));
+    expect(p.transformations?.[1].options).toEqual(
+      expect.objectContaining({ renameByName: { 'b0\\b1': 'Top 9 values of ServiceName' } })
+    );
     expect((p.options as any).stacking).toBe('none');
   });
 
@@ -120,7 +152,12 @@ describe('LENS-SAVE-01 panel per chart type', () => {
     const s = lens('bar', [date, service], 'stacked');
     expect(defaultPanelTitle(s)).toBe('Count of records by ServiceName over time');
     expect(panel(s).title).toBe('Bar stacked');
-    const named = buildLensPanel(s, config, conds, range, { id: 1, gridPos: { x: 0, y: 0, w: 1, h: 1 }, title: ' Errors ', description: ' why ' });
+    const named = buildLensPanel(s, config, conds, range, {
+      id: 1,
+      gridPos: { x: 0, y: 0, w: 1, h: 1 },
+      title: ' Errors ',
+      description: ' why ',
+    });
     expect([named.title, named.description]).toEqual(['Errors', 'why']);
     expect(panel(s).description).toBeUndefined();
     expect(columnNames(s)).toEqual({ b0: 'Timestamp', b1: 'Top 9 values of ServiceName', m0: 'Count of records' });
@@ -141,7 +178,9 @@ describe('saveLens', () => {
   });
 
   it('new dashboard: the panel, titled after it, on the chart’s time range', async () => {
-    expect(await saveLens({ panel: p, destination: 'new', library: false, timeRange: range })).toEqual({ url: '/d/d1/x' });
+    expect(await saveLens({ panel: p, destination: 'new', library: false, timeRange: range })).toEqual({
+      url: '/d/d1/x',
+    });
     const [dash] = api.saveDashboard.mock.calls[0];
     expect(dash).toEqual(expect.objectContaining({ title: 'Bar stacked', time: { from: 'now-7d', to: 'now' } }));
     await saveLens({ panel: p, destination: 'new', dashboardTitle: ' Ops view ', library: false, timeRange: range });
@@ -168,12 +207,19 @@ describe('saveLens', () => {
     expect(model).not.toHaveProperty('gridPos');
     expect(model).toEqual(expect.objectContaining({ type: 'timeseries', targets: p.targets }));
     const [dash] = api.saveDashboard.mock.calls[0];
-    expect((dash.panels as any[])[0]).toEqual({ id: 1, gridPos: p.gridPos, title: 'Bar stacked', libraryPanel: { uid: 'lib1', name: 'Bar stacked' } });
+    expect((dash.panels as any[])[0]).toEqual({
+      id: 1,
+      gridPos: p.gridPos,
+      title: 'Bar stacked',
+      libraryPanel: { uid: 'lib1', name: 'Bar stacked' },
+    });
   });
 
   it('a failed dashboard save deletes the library panel just created', async () => {
     api.saveDashboard.mockRejectedValue(new Error('name taken'));
-    await expect(saveLens({ panel: p, destination: 'new', library: true, timeRange: range })).rejects.toThrow('name taken');
+    await expect(saveLens({ panel: p, destination: 'new', library: true, timeRange: range })).rejects.toThrow(
+      'name taken'
+    );
     expect(api.deleteLibraryPanel).toHaveBeenCalledWith('lib1');
   });
 

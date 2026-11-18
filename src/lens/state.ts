@@ -33,7 +33,82 @@ export interface TermsDim {
   label: string;
   /** Top N by count (LENS-AUTO-01 rule 2: 9). */
   size: number;
+  /** Rank by (LENS-DIM-04): record count (default), alphabetical, or a custom metric (`rankMetric`). */
+  rankBy?: TermsRankBy;
+  /** Id of the metric ranked by when `rankBy` is 'metric'; a missing metric falls back to count. */
+  rankMetric?: string;
+  /** Rank direction; default descending, except alphabetical (ascending). */
+  rankDir?: 'asc' | 'desc';
+  /** Group the values outside the top N into one "Other" value. */
+  other?: boolean;
+  /** Include documents without the field, as the value "(missing)". */
+  missing?: boolean;
+  /** Include / exclude values: exact values, or regular expressions (full match) when `regex`. */
+  include?: string[];
+  exclude?: string[];
+  regex?: boolean;
   name?: string;
+}
+
+export type TermsRankBy = 'count' | 'alpha' | 'metric';
+export const RANK_BYS: readonly TermsRankBy[] = ['count', 'alpha', 'metric'];
+/** Labels of the synthetic values (also what a chart click must not turn into a filter). */
+export const OTHER_VALUE = 'Other';
+export const MISSING_VALUE = '(missing)';
+export const MAX_PATTERNS = 50;
+export const MAX_PATTERN_LEN = 200;
+
+/**
+ * True for the synthetic "Other" / "(missing)" values of a top-values dimension that has them
+ * switched on: they stand for many values / no value, so a click on them does not become a filter.
+ */
+export function isSyntheticValue(b: TermsDim, value: string): boolean {
+  return (!!b.other && value === OTHER_VALUE) || (!!b.missing && value === MISSING_VALUE);
+}
+
+/** Effective direction: explicit, else descending (alphabetical: ascending). */
+export function rankDirOf(b: TermsDim): 'asc' | 'desc' {
+  return b.rankDir ?? (b.rankBy === 'alpha' ? 'asc' : 'desc');
+}
+
+const cleanList = (x: unknown): string[] | undefined => {
+  if (!Array.isArray(x)) {
+    return undefined;
+  }
+  const out = x.filter((v): v is string => typeof v === 'string' && v.length > 0 && v.length <= MAX_PATTERN_LEN);
+  return out.length > 0 ? out.slice(0, MAX_PATTERNS) : undefined;
+};
+
+/** Keeps only the known, well-typed top-values options of untrusted input (nothing else rides along). */
+export function cleanTerms(b: TermsDim): TermsDim {
+  const raw = b as unknown as Record<string, unknown>;
+  const out: TermsDim = { kind: 'terms', id: b.id, field: b.field, label: b.label, size: b.size };
+  if (typeof raw.name === 'string') {
+    out.name = raw.name;
+  }
+  if (RANK_BYS.includes(raw.rankBy as TermsRankBy) && raw.rankBy !== 'count') {
+    out.rankBy = raw.rankBy as TermsRankBy;
+  }
+  if (typeof raw.rankMetric === 'string' && raw.rankMetric.length <= MAX_NAME) {
+    out.rankMetric = raw.rankMetric;
+  }
+  if (raw.rankDir === 'asc' || raw.rankDir === 'desc') {
+    out.rankDir = raw.rankDir;
+  }
+  for (const k of ['other', 'missing', 'regex'] as const) {
+    if (raw[k] === true) {
+      out[k] = true;
+    }
+  }
+  const inc = cleanList(raw.include);
+  const exc = cleanList(raw.exclude);
+  if (inc) {
+    out.include = inc;
+  }
+  if (exc) {
+    out.exclude = exc;
+  }
+  return out;
 }
 
 export interface MetricDim {
@@ -167,16 +242,18 @@ export function decodeLens(raw: string | null | undefined): LensState | undefine
     const str = (x: unknown) => typeof x === 'string';
     const okName = (n: unknown) => n === undefined || (str(n) && (n as string).length <= MAX_NAME);
     const okPct = (p: unknown) => p === undefined || (typeof p === 'number' && Number.isFinite(p) && p >= 1 && p <= 99);
-    const buckets = (v.buckets as BucketDim[]).filter(
-      (b) =>
-        b &&
-        str(b.id) &&
-        str(b.field) &&
-        str(b.label) &&
-        okName(b.name) &&
-        ((b.kind === 'date_histogram' && b.interval === 'auto') ||
-          (b.kind === 'terms' && Number.isInteger(b.size) && b.size > 0))
-    );
+    const buckets = (v.buckets as BucketDim[])
+      .filter(
+        (b) =>
+          b &&
+          str(b.id) &&
+          str(b.field) &&
+          str(b.label) &&
+          okName(b.name) &&
+          ((b.kind === 'date_histogram' && b.interval === 'auto') ||
+            (b.kind === 'terms' && Number.isInteger(b.size) && b.size > 0))
+      )
+      .map((b) => (b.kind === 'terms' ? cleanTerms(b) : b));
     const metrics = (v.metrics as MetricDim[]).filter(
       (m) =>
         m &&
@@ -200,9 +277,20 @@ export function decodeLens(raw: string | null | undefined): LensState | undefine
  * own SQL — so this runs before anything is compiled.
  */
 export function sanitizeLens(s: LensState, allowed: ReadonlySet<string>): LensState {
-  const buckets = s.buckets.filter((b) => allowed.has(b.field));
+  const kept = s.buckets.filter((b) => allowed.has(b.field));
   const metrics = s.metrics.filter((m) => m.op === 'count' || (m.field !== undefined && allowed.has(m.field)));
-  if (buckets.length === s.buckets.length && metrics.length === s.metrics.length) {
+  // A rank metric that no longer exists falls back to ranking by count.
+  const ids = new Set(metrics.map((m) => m.id));
+  const buckets = kept.map((b) =>
+    b.kind === 'terms' && b.rankBy === 'metric' && !(b.rankMetric && ids.has(b.rankMetric))
+      ? { ...b, rankBy: undefined, rankMetric: undefined }
+      : b
+  );
+  if (
+    kept.length === s.buckets.length &&
+    metrics.length === s.metrics.length &&
+    buckets.every((b, i) => b === kept[i])
+  ) {
     return s;
   }
   if (buckets.length === 0 && metrics.length === 0) {

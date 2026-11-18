@@ -3,7 +3,7 @@
  *
  * - date histogram → `toStartOfInterval(ts, INTERVAL n SECOND)` with the Discover auto interval
  * - top values → `toString(field)` restricted to the top N by count (`GLOBAL IN` a ranked CTE, the
- *   same shape as the histogram breakdown); no "Other" bucket yet
+ *   same shape as the histogram breakdown); options (rank, Other, missing, include/exclude)
  * - median → `quantile(0.5)`, unique count → `uniq`, average/sum/min/max → the same-named aggregate
  *
  * Field expressions must come from the field model (discovered columns / Map keys / JSON paths):
@@ -17,10 +17,20 @@
  */
 import { TimeRange } from '@grafana/data';
 import { SourceConfig } from '../types';
-import { quoteIdentifier, tableRef } from '../sql/queryBuilder';
+import { quoteIdentifier, quoteString, tableRef } from '../sql/queryBuilder';
 import { configSettingsFragments, withSettings } from '../sql/settings';
 import { resolveInterval } from '../components/_histogramInterval';
-import { BucketDim, clampPercentile, dimLabel, LensState, MetricDim } from './state';
+import {
+  BucketDim,
+  clampPercentile,
+  dimLabel,
+  LensState,
+  MetricDim,
+  MISSING_VALUE,
+  OTHER_VALUE,
+  rankDirOf,
+  TermsDim,
+} from './state';
 
 /** Safety cap on result rows (a date histogram × 9 breakdown values stays far below it). */
 export const LENS_ROW_LIMIT = 10_000;
@@ -54,6 +64,28 @@ function metricSql(m: MetricDim): string {
       // A number we produce (clamped 1–99), never text from the URL.
       return `quantile(${(clampPercentile(m.percentile) / 100).toFixed(2)})(${x})`;
   }
+}
+
+/**
+ * String literal for a top-values option. quoteString escapes quotes and backslashes; `$` is also
+ * written as $ so a saved panel's macro expander never sees `$__…` text from a value.
+ */
+const lit = (v: string): string => quoteString(v).replace(/\$/g, () => '\\x24');
+
+/** Row filter of a top-values bucket's include / exclude lists, on its (non-null) string expression. */
+function valuePredicate(b: TermsDim, expr: string): string | null {
+  const test = (list: string[]) =>
+    b.regex
+      ? list.map((p) => `match(${expr}, ${lit(`^(?:${p})$`)})`).join(' OR ')
+      : `${expr} IN (${list.map(lit).join(', ')})`;
+  const parts: string[] = [];
+  if (b.include?.length) {
+    parts.push(`(${test(b.include)})`);
+  }
+  if (b.exclude?.length) {
+    parts.push(`NOT (${test(b.exclude)})`);
+  }
+  return parts.length > 0 ? parts.join(' AND ') : null;
 }
 
 export interface CompiledLens {
@@ -98,14 +130,35 @@ export function compileLens(
         `toUnixTimestamp(toStartOfInterval(${quoteIdentifier(b.field)}, INTERVAL ${iv.value} ${iv.unit})) * 1000 AS ${bucketAlias(i)}`
       );
     } else {
-      const expr = `toString(${quoteIdentifier(b.field)})`;
+      const raw = `toString(${quoteIdentifier(b.field)})`;
+      // "(missing)": documents without the field become a value of their own.
+      const expr = b.missing ? `ifNull(${raw}, ${lit(MISSING_VALUE)})` : raw;
+      const pred = valuePredicate(b, raw);
+      // NULL never matches a GLOBAL IN, so without `missing` it must not take a top-N slot either.
+      const notNull = pred ? `${raw} IS NOT NULL AND ${pred}` : `${raw} IS NOT NULL`;
+      const eligible = b.missing ? `(${raw} IS NULL OR (${notNull}))` : notNull;
       const cte = `top${i}`;
+      const dir = rankDirOf(b).toUpperCase();
+      const rankMetric = b.rankBy === 'metric' ? state.metrics.find((m) => m.id === b.rankMetric) : undefined;
+      const rank =
+        b.rankBy === 'alpha'
+          ? `v ${dir}`
+          : rankMetric
+            ? `${metricSql(rankMetric)} ${dir}, v`
+            : b.rankDir === 'asc'
+              ? 'count() ASC, v'
+              : 'count() DESC';
       ctes.push(
-        // NULL never matches the outer GLOBAL IN, so it must not take one of the top-N slots either.
-        `${cte} AS (SELECT ${expr} AS v FROM ${tbl} WHERE ${where ? `${where} AND ` : ''}${expr} IS NOT NULL GROUP BY v ORDER BY count() DESC LIMIT ${Math.max(1, Math.floor(b.size))})`
+        `${cte} AS (SELECT ${expr} AS v FROM ${tbl} WHERE ${where ? `${where} AND ` : ''}${eligible} GROUP BY v ORDER BY ${rank} LIMIT ${Math.max(1, Math.floor(b.size))})`
       );
-      restrictions.push(`${expr} GLOBAL IN (SELECT v FROM ${cte})`);
-      selects.push(`${expr} AS ${bucketAlias(i)}`);
+      if (b.other) {
+        // Everything eligible stays; values outside the top N collapse into one "Other" value.
+        restrictions.push(eligible);
+        selects.push(`if(${expr} GLOBAL IN (SELECT v FROM ${cte}), ${expr}, ${lit(OTHER_VALUE)}) AS ${bucketAlias(i)}`);
+      } else {
+        restrictions.push(`${expr} GLOBAL IN (SELECT v FROM ${cte})`);
+        selects.push(`${expr} AS ${bucketAlias(i)}`);
+      }
     }
   });
   state.metrics.forEach((m, i) => selects.push(`${metricSql(m)} AS ${metricAlias(i)}`));
