@@ -103,6 +103,10 @@ const NEGATED_OP: Record<FilterOp, FilterOp> = {
   not_one_of: 'one_of',
   exists: 'not_exists',
   not_exists: 'exists',
+  gte: 'lt',
+  lt: 'gte',
+  between: 'not_between',
+  not_between: 'between',
 };
 
 /** Flip a pill's polarity (Exclude results / Include results in the pill menu). */
@@ -128,6 +132,10 @@ export function filterLabel(f: FilterPill): string {
       ? `${f.field} is one of [${vals}]`
       : `${f.field} is not one of [${vals}]`;
   }
+  if (f.op === 'between' || f.op === 'not_between') {
+    const [lo = '', hi = ''] = f.values ?? [];
+    return `${f.field} ${f.op === 'between' ? 'is between' : 'is not between'} ${lo} and ${hi}`;
+  }
   if (f.value === '' && f.op === '=') {
     return `${f.field} is empty`;
   }
@@ -140,6 +148,10 @@ export function filterLabel(f: FilterPill): string {
     not_one_of: 'not in',
     exists: 'exists',
     not_exists: '!exists',
+    gte: '≥',
+    lt: '<',
+    between: 'between',
+    not_between: 'not between',
   };
   return `${f.field} ${opSymbol[f.op]} ${f.value}`;
 }

@@ -199,6 +199,10 @@ function filterOpToSql(op: FilterOp): string {
       return 'NOT IN';
     case 'exists':
     case 'not_exists':
+    case 'gte':
+    case 'lt':
+    case 'between':
+    case 'not_between':
       return ''; // handled separately below
   }
 }
@@ -231,6 +235,28 @@ function buildFilterClause(filter: FilterPill, config: SourceConfig, index?: Fie
     return filter.op === 'one_of'
       ? `${col} IN (${list})`
       : `${col} NOT IN (${list})`;
+  }
+
+  // Range ops — gte / lt / between / not_between. Every bound goes through quoteString(); the
+  // column through quoteIdentifier(). A Map value is a String, so a lexical compare would put
+  // '9' above '10': compare numerically (toFloat64OrNull on both sides, so a non-numeric bound
+  // or value is NULL and matches nothing) instead.
+  if (filter.op === 'gte' || filter.op === 'lt' || filter.op === 'between' || filter.op === 'not_between') {
+    const numeric = resolved?.kind === 'map';
+    const lhs = numeric ? `toFloat64OrNull(${quoteIdentifier(sqlExprRaw)})` : quoteIdentifier(sqlExprRaw);
+    const lit = (v: string) => (numeric ? `toFloat64OrNull(${quoteString(v.trim())})` : quoteString(v.trim()));
+    if (filter.op === 'gte') {
+      return `${lhs} >= ${lit(value)}`;
+    }
+    if (filter.op === 'lt') {
+      return `${lhs} < ${lit(value)}`;
+    }
+    const [lo, hi] = filter.values ?? [];
+    if (lo === undefined || hi === undefined || lo.trim() === '' || hi.trim() === '') {
+      // Incomplete range: always false / always true, like an empty one_of set.
+      return filter.op === 'between' ? '1=0' : '1=1';
+    }
+    return `${lhs} ${filter.op === 'between' ? 'BETWEEN' : 'NOT BETWEEN'} ${lit(lo)} AND ${lit(hi)}`;
   }
 
   // Standard single-value ops: =, !=, contains, not_contains
