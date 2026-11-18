@@ -4,13 +4,25 @@
  * drawn here). One click on a bar segment or point reports {x, series}; dragging across a time axis
  * reports a time range; legend items toggle visibility and offer Filter for / Filter out.
  */
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useId, useRef, useState } from 'react';
 import { css, cx } from '@emotion/css';
 import { dateTime, GrafanaTheme2 } from '@grafana/data';
 import { IconButton, useStyles2, useTheme2 } from '@grafana/ui';
 import { LensResult } from '../compile';
 import { ChartType, MetricDim, XySubType } from '../state';
 import { formatValue } from '../metricOptions';
+import {
+  AxisScale,
+  axisOf,
+  axisTitle,
+  legendOf,
+  legendVisible,
+  LensStyle,
+  scalePos,
+  tickRotation,
+  valueDomain,
+  valueTicks,
+} from '../style';
 
 export interface XySelection {
   xIndex: number;
@@ -31,6 +43,10 @@ interface Props {
   onLegendFilter?: (seriesIndex: number, mode: 'for' | 'out') => void;
   /** The chart's metrics: per-metric value format, series colour and axis side (LENS-DIM-02). */
   metrics?: MetricDim[];
+  /** Style / Legend settings (LENS-STYLE-01). */
+  style?: LensStyle;
+  /** Automatic axis titles (Style → Axis title Auto). */
+  axisTitles?: { left: string; bottom: string; right: string };
 }
 
 /** A series' value at x: missing → 0 for counts, null (gap) otherwise. */
@@ -41,15 +57,6 @@ function pointValue(s: LensResult['series'][number], x: string | number): number
 
 const M = { top: 8, right: 8, bottom: 28, left: 52 };
 const HEIGHT_MIN = 200;
-
-function niceMax(v: number): number {
-  if (v <= 0) {
-    return 1;
-  }
-  const p = Math.pow(10, Math.floor(Math.log10(v)));
-  const n = v / p;
-  return (n <= 1 ? 1 : n <= 2 ? 2 : n <= 5 ? 5 : 10) * p;
-}
 
 const fmt = (v: number) =>
   Math.abs(v) >= 1e6
@@ -118,9 +125,21 @@ export function stackValues(
   return { spans, max: mode === 'percentage' ? 100 : max, min: mode === 'percentage' ? Math.max(-100, min) : min };
 }
 
-export function XyChart({ chartType, subType, result, bucketMs, onSelect, onBrush, onLegendFilter, metrics }: Props) {
+export function XyChart({
+  chartType,
+  subType,
+  result,
+  bucketMs,
+  onSelect,
+  onBrush,
+  onLegendFilter,
+  metrics,
+  style,
+  axisTitles,
+}: Props) {
   const styles = useStyles2(getStyles);
   const theme = useTheme2();
+  const clipId = `lens-clip-${useId().replace(/[^a-zA-Z0-9_-]/g, '')}`;
   const boxRef = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ w: 0, h: 0 });
   const [hidden, setHidden] = useState<Set<string>>(() => new Set());
@@ -156,8 +175,11 @@ export function XyChart({ chartType, subType, result, bucketMs, onSelect, onBrus
   const visible = result.series.map((s) => !hidden.has(s.name));
   const mode: 'stacked' | 'percentage' | 'none' =
     subType === 'percentage' ? 'percentage' : chartType === 'line' || subType === 'unstacked' ? 'none' : 'stacked';
-  // Axis side: a right axis for metrics set to Right (unstacked charts; stacks share one axis).
-  const side = (si: number): 'left' | 'right' => (mode === 'none' && metricOf(si)?.axis === 'right' ? 'right' : 'left');
+  // Horizontal bars (Style → Bar orientation): categories run down the left, values along the bottom.
+  const horizontal = chartType === 'bar' && style?.orientation === 'horizontal';
+  // Axis side: a right axis for metrics set to Right (unstacked vertical charts; stacks share one axis).
+  const side = (si: number): 'left' | 'right' =>
+    mode === 'none' && !horizontal && metricOf(si)?.axis === 'right' ? 'right' : 'left';
   const sides = result.series.map((_s, si) => side(si));
   const hasRight = sides.some((sd, si) => sd === 'right' && visible[si]);
   const hasLeft = sides.some((sd, si) => sd === 'left' && visible[si]);
@@ -174,28 +196,64 @@ export function XyChart({ chartType, subType, result, bucketMs, onSelect, onBrus
     ),
   };
   const spans = result.series.map((_s, si) => stacked[sides[si]].spans[si]);
-  const { max, min } = stacked.left;
   const firstOn = (sd: 'left' | 'right') => sides.findIndex((x, i) => x === sd && visible[i]);
+
+  // Axis settings ("left" / "right" are the value axes, "bottom" the category axis, by role).
+  const ax = { left: axisOf(style, 'left'), right: axisOf(style, 'right'), bottom: axisOf(style, 'bottom') };
+  const titles = {
+    left: axisTitle(style, 'left', axisTitles?.left ?? ''),
+    right: hasRight ? axisTitle(style, 'right', axisTitles?.right ?? '') : '',
+    bottom: axisTitle(style, 'bottom', axisTitles?.bottom ?? ''),
+  };
+  const percent = mode === 'percentage';
+  const [lo, hi] = valueDomain(stacked.left.min, stacked.left.max, ax.left, percent);
+  const [loR, hiR] = valueDomain(stacked.right.min, stacked.right.max, ax.right, percent);
+  const leftScale = percent ? 'linear' : ax.left.scale;
+  const rightScale = percent ? 'linear' : ax.right.scale;
+
+  // Margins grow for tick labels, rotated labels and titles.
+  const catRot = tickRotation(ax.bottom.orientation);
+  const valRot = tickRotation(ax.left.orientation);
+  const TITLE = 18;
+  const catTicksDepth = !ax.bottom.ticks ? 8 : horizontal ? 96 : catRot === 0 ? 28 : catRot === -45 ? 56 : 76;
+  const valTicksDepth = !ax.left.ticks ? 8 : horizontal ? (valRot === 0 ? 28 : 56) : 52;
+  const m = horizontal
+    ? {
+        top: M.top,
+        right: M.right + 8,
+        left: catTicksDepth + (titles.bottom ? TITLE : 0),
+        bottom: valTicksDepth + (titles.left ? TITLE : 0),
+      }
+    : {
+        top: M.top,
+        left: valTicksDepth + (titles.left ? TITLE : 0),
+        right: hasRight ? (ax.right.ticks ? 52 : 8) + (titles.right ? TITLE : 0) : M.right,
+        bottom: catTicksDepth + (titles.bottom ? TITLE : 0),
+      };
 
   const W = Math.max(size.w, 0);
   const H = Math.max(size.h, HEIGHT_MIN);
-  const marginRight = hasRight ? M.left : M.right;
-  const plotW = Math.max(1, W - M.left - marginRight);
-  const plotH = Math.max(1, H - M.top - M.bottom);
-  const yMax = niceMax(max);
-  const yMin = min < 0 ? -niceMax(-min) : 0;
-  const y = (v: number) => M.top + plotH - ((v - yMin) / (yMax - yMin)) * plotH;
-  const yMaxR = niceMax(stacked.right.max);
-  const yMinR = stacked.right.min < 0 ? -niceMax(-stacked.right.min) : 0;
-  const yR = (v: number) => M.top + plotH - ((v - yMinR) / (yMaxR - yMinR)) * plotH;
+  const plotW = Math.max(1, W - m.left - m.right);
+  const plotH = Math.max(1, H - m.top - m.bottom);
+  // Value → pixel along the value axis (y for vertical charts, x for horizontal bars).
+  const vPos = (v: number, a: number, b: number, sc: AxisScale) =>
+    horizontal ? m.left + scalePos(v, a, b, sc) * plotW : m.top + plotH - scalePos(v, a, b, sc) * plotH;
+  const y = (v: number) => vPos(v, lo, hi, leftScale);
+  const yR = (v: number) => vPos(v, loR, hiR, rightScale);
   const ys = (si: number) => (sides[si] === 'right' ? yR : y);
-  const leftFmt = (v: number) => (firstOn('left') >= 0 ? fmtOf(firstOn('left'), v) : fmt(v));
+  const leftFmt = (v: number) =>
+    percent ? `${Math.round(v)}%` : firstOn('left') >= 0 ? fmtOf(firstOn('left'), v) : fmt(v);
   const n = Math.max(1, result.xs.length);
-  const band = plotW / n;
-  const cx0 = (xi: number) => M.left + band * xi + band / 2;
+  const catLen = horizontal ? plotH : plotW;
+  const band = catLen / n;
+  // Category centre along the category axis (x for vertical charts, y for horizontal bars).
+  const cx0 = (xi: number) => (horizontal ? m.top + band * xi + band / 2 : m.left + band * xi + band / 2);
   const spanMs =
     result.xIsTime && result.xs.length > 1 ? Number(result.xs[result.xs.length - 1]) - Number(result.xs[0]) : 0;
-  const labelEvery = Math.max(1, Math.ceil(n / Math.max(2, Math.floor(plotW / 90))));
+  const labelEvery = Math.max(
+    1,
+    Math.ceil(n / Math.max(2, Math.floor(catLen / (horizontal || catRot !== 0 ? 18 : 90))))
+  );
 
   const select = (e: React.MouseEvent | React.KeyboardEvent, xIndex: number, seriesIndex: number) => {
     e.stopPropagation();
@@ -210,21 +268,22 @@ export function XyChart({ chartType, subType, result, bucketMs, onSelect, onBrus
   const itemLabel = (xi: number, si: number) =>
     `${xText(result, xi, spanMs)} · ${result.series[si].name}: ${fmtOf(si, pointValue(result.series[si], result.xs[xi]) ?? 0)}`;
 
-  // Brush (time X only): drag across the plot to pick a range.
+  // Brush (time X on a vertical chart only): drag across the plot to pick a range.
+  const brushable = result.xIsTime && !!onBrush && !horizontal;
   const pxToTime = (px: number) => {
     const t0 = Number(result.xs[0]);
     const tEnd = Number(result.xs[result.xs.length - 1]) + (bucketMs ?? 0);
-    return t0 + ((px - M.left) / plotW) * (tEnd - t0);
+    return t0 + ((px - m.left) / plotW) * (tEnd - t0);
   };
   const onDown = (e: React.MouseEvent<SVGRectElement>) => {
-    if (!result.xIsTime || !onBrush || e.button !== 0) {
+    if (!brushable || !onBrush || e.button !== 0) {
       return;
     }
     const left = (e.currentTarget.ownerSVGElement as SVGSVGElement).getBoundingClientRect().left;
     const x = e.clientX - left;
     setBrush({ x0: x, x1: x });
     const move = (ev: MouseEvent) =>
-      setBrush((b) => (b ? { ...b, x1: Math.min(M.left + plotW, Math.max(M.left, ev.clientX - left)) } : b));
+      setBrush((b) => (b ? { ...b, x1: Math.min(m.left + plotW, Math.max(m.left, ev.clientX - left)) } : b));
     const stop = () => {
       window.removeEventListener('mousemove', move);
       window.removeEventListener('mouseup', up);
@@ -232,7 +291,7 @@ export function XyChart({ chartType, subType, result, bucketMs, onSelect, onBrus
     };
     const up = (ev: MouseEvent) => {
       stop();
-      const x1 = Math.min(M.left + plotW, Math.max(M.left, ev.clientX - left));
+      const x1 = Math.min(m.left + plotW, Math.max(m.left, ev.clientX - left));
       setBrush(null);
       if (Math.abs(x1 - x) > 4) {
         onBrush(Math.round(pxToTime(Math.min(x, x1))), Math.round(pxToTime(Math.max(x, x1))));
@@ -246,154 +305,427 @@ export function XyChart({ chartType, subType, result, bucketMs, onSelect, onBrus
   const visibleIdx = result.series.map((_s, i) => i).filter((i) => visible[i]);
   const grouped = chartType === 'bar' && mode === 'none';
   const barW = band * 0.7;
+  const showValues = chartType === 'bar' && style?.barValues === 'show';
+
+  // Legend (Style → Legend): visibility, outside side / inside corner, list or grid.
+  const lg = legendOf(style);
+  const hasBreakdown = result.series.some((s) => s.breakdown !== undefined);
+  const showLegend = legendVisible(style, result.series.length, hasBreakdown);
+  const inside = lg.position === 'inside';
+  const sideLegend = !inside && (lg.alignment === 'left' || lg.alignment === 'right');
+
+  const valueTickVals = valueTicks(lo, hi, leftScale);
+  const rightTickVals = valueTicks(loR, hiR, rightScale);
+  const catTick = (xi: number) => xText(result, xi, spanMs).slice(0, horizontal ? 16 : 14);
+
+  const legendEl = showLegend ? (
+    <div
+      className={cx(
+        styles.legend,
+        sideLegend && styles.legendSide,
+        lg.layout === 'grid' && (sideLegend ? styles.legendGridSide : styles.legendGrid),
+        inside && styles.legendInside
+      )}
+      style={
+        inside
+          ? {
+              top: lg.alignment.startsWith('top') ? m.top + 4 : undefined,
+              bottom: lg.alignment.startsWith('bottom') ? m.bottom + 4 : undefined,
+              left: lg.alignment.endsWith('left') ? m.left + 4 : undefined,
+              right: lg.alignment.endsWith('right') ? m.right + 4 : undefined,
+            }
+          : undefined
+      }
+      role="list"
+      aria-label="Legend"
+      data-legend-position={inside ? 'inside' : 'outside'}
+      data-legend-alignment={lg.alignment}
+      data-legend-layout={lg.layout}
+    >
+      {result.series.map((s, si) => (
+        <div key={s.name} role="listitem" className={styles.legendItem}>
+          <button
+            type="button"
+            className={cx(styles.legendBtn, !visible[si] && styles.legendHidden)}
+            aria-pressed={visible[si]}
+            title={visible[si] ? 'Click to hide' : 'Click to show'}
+            onClick={() =>
+              setHidden((h) => {
+                const next = new Set(h);
+                if (next.has(s.name)) {
+                  next.delete(s.name);
+                } else {
+                  next.add(s.name);
+                }
+                return next;
+              })
+            }
+          >
+            <span className={styles.swatch} style={{ background: color(si) }} />
+            {s.name || '(empty)'}
+          </button>
+          {onLegendFilter && s.breakdown !== undefined && (
+            <IconButton
+              name="ellipsis-v"
+              size="sm"
+              tooltip={`Legend actions for ${s.name || '(empty)'}`}
+              onClick={() => setMenuFor(menuFor === s.name ? null : s.name)}
+            />
+          )}
+          {menuFor === s.name && onLegendFilter && (
+            <div
+              className={cx(styles.menu, (lg.alignment.startsWith('top') || inside) && styles.menuDown)}
+              role="menu"
+              aria-label={`Actions for ${s.name}`}
+            >
+              <div className={styles.menuTitle}>{s.breakdown || '(empty)'}</div>
+              {(['for', 'out'] as const).map((mo) => (
+                <button
+                  key={mo}
+                  type="button"
+                  role="menuitem"
+                  className={styles.menuItem}
+                  onClick={() => {
+                    setMenuFor(null);
+                    onLegendFilter?.(si, mo);
+                  }}
+                >
+                  {mo === 'for' ? 'Filter for' : 'Filter out'}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+  ) : null;
+
+  /** A value label for a bar segment, when it fits ("Show, if able"). */
+  const barValue = (si: number, xi: number, x0: number, y0: number, w: number, h: number, sp: [number, number]) => {
+    if (!showValues) {
+      return null;
+    }
+    const v = pointValue(result.series[si], result.xs[xi]) ?? 0;
+    const text = percent ? `${+(sp[1] - sp[0]).toFixed(1)}%` : fmtOf(si, v);
+    const tw = text.length * 6.5 + 4;
+    const fits = horizontal ? w >= tw && h >= 12 : w >= tw && h >= 14;
+    if (!fits) {
+      return null;
+    }
+    return (
+      <text
+        key={`v-${si}-${xi}`}
+        x={x0 + w / 2}
+        y={y0 + h / 2 + 4}
+        textAnchor="middle"
+        className={styles.barValue}
+        pointerEvents="none"
+        data-testid="lens-bar-value"
+      >
+        {text}
+      </text>
+    );
+  };
+
+  const rotated = (x: number, yy: number, deg: number) => (deg ? `rotate(${deg} ${x} ${yy})` : undefined);
 
   return (
-    <div className={styles.wrap} data-testid="lens-xy">
+    <div
+      className={cx(styles.wrap, sideLegend && styles.wrapRow)}
+      data-testid="lens-xy"
+      data-orientation={horizontal ? 'horizontal' : 'vertical'}
+    >
+      {!inside && (lg.alignment === 'top' || lg.alignment === 'left') && legendEl}
       <div ref={boxRef} className={styles.plot}>
         {W > 0 && (
           <svg width={W} height={H} role="group" aria-label={`${chartType} chart`}>
-            {[0, 0.25, 0.5, 0.75, 1].map((f) => (
-              <g key={f}>
-                <line
-                  x1={M.left}
-                  x2={M.left + plotW}
-                  y1={y(yMin + (yMax - yMin) * f)}
-                  y2={y(yMin + (yMax - yMin) * f)}
-                  className={styles.grid}
-                />
-                <text x={M.left - 6} y={y(yMin + (yMax - yMin) * f) + 4} textAnchor="end" className={styles.tick}>
-                  {mode === 'percentage'
-                    ? `${Math.round(yMin + (yMax - yMin) * f)}%`
-                    : hasLeft || !hasRight
-                      ? leftFmt(yMin + (yMax - yMin) * f)
-                      : ''}
+            <defs>
+              <clipPath id={clipId}>
+                <rect x={m.left} y={m.top} width={plotW} height={plotH} />
+              </clipPath>
+            </defs>
+            {/* Value axis: gridlines and tick labels. */}
+            {valueTickVals.map((v, k) => {
+              const p = y(v);
+              return (
+                <g key={`v${k}`}>
+                  {ax.left.gridlines &&
+                    (horizontal ? (
+                      <line x1={p} x2={p} y1={m.top} y2={m.top + plotH} className={styles.grid} />
+                    ) : (
+                      <line x1={m.left} x2={m.left + plotW} y1={p} y2={p} className={styles.grid} />
+                    ))}
+                  {ax.left.ticks &&
+                    (hasLeft || !hasRight || horizontal) &&
+                    (horizontal ? (
+                      <text
+                        x={p}
+                        y={m.top + plotH + 16}
+                        textAnchor={valRot ? 'end' : 'middle'}
+                        transform={rotated(p, m.top + plotH + 16, valRot)}
+                        className={styles.tick}
+                        data-testid="lens-value-tick"
+                      >
+                        {leftFmt(v)}
+                      </text>
+                    ) : (
+                      <text
+                        x={m.left - 6}
+                        y={p + 4}
+                        textAnchor="end"
+                        transform={rotated(m.left - 6, p + 4, valRot)}
+                        className={styles.tick}
+                        data-testid="lens-value-tick"
+                      >
+                        {leftFmt(v)}
+                      </text>
+                    ))}
+                </g>
+              );
+            })}
+            {hasRight &&
+              rightTickVals.map((v, k) => (
+                <g key={`r${k}`}>
+                  {ax.right.gridlines && !ax.left.gridlines && (
+                    <line x1={m.left} x2={m.left + plotW} y1={yR(v)} y2={yR(v)} className={styles.grid} />
+                  )}
+                  {ax.right.ticks && (
+                    <text
+                      x={m.left + plotW + 6}
+                      y={yR(v) + 4}
+                      textAnchor="start"
+                      transform={rotated(m.left + plotW + 6, yR(v) + 4, tickRotation(ax.right.orientation))}
+                      className={styles.tick}
+                      data-testid="lens-right-tick"
+                    >
+                      {percent ? `${Math.round(v)}%` : fmtOf(firstOn('right'), v)}
+                    </text>
+                  )}
+                </g>
+              ))}
+            {/* Category axis: optional gridlines and labels. */}
+            {result.xs.map((_x, xi) => {
+              if (xi % labelEvery !== 0) {
+                return null;
+              }
+              const c = cx0(xi);
+              return (
+                <g key={`c${xi}`}>
+                  {ax.bottom.gridlines &&
+                    (horizontal ? (
+                      <line x1={m.left} x2={m.left + plotW} y1={c} y2={c} className={styles.grid} />
+                    ) : (
+                      <line x1={c} x2={c} y1={m.top} y2={m.top + plotH} className={styles.grid} />
+                    ))}
+                  {ax.bottom.ticks &&
+                    (horizontal ? (
+                      <text
+                        x={m.left - 6}
+                        y={c + 4}
+                        textAnchor="end"
+                        transform={rotated(m.left - 6, c + 4, catRot)}
+                        className={styles.tick}
+                        data-testid="lens-category-tick"
+                      >
+                        {catTick(xi)}
+                      </text>
+                    ) : (
+                      <text
+                        x={c}
+                        y={m.top + plotH + 16}
+                        textAnchor={catRot ? 'end' : 'middle'}
+                        transform={rotated(c, m.top + plotH + 16, catRot)}
+                        className={styles.tick}
+                        data-testid="lens-category-tick"
+                      >
+                        {catTick(xi)}
+                      </text>
+                    ))}
+                </g>
+              );
+            })}
+            {/* Axis titles. */}
+            {titles.left &&
+              (horizontal ? (
+                <text
+                  x={m.left + plotW / 2}
+                  y={H - 4}
+                  textAnchor="middle"
+                  className={styles.axisTitle}
+                  data-testid="lens-axis-title-left"
+                >
+                  {titles.left}
                 </text>
-                {hasRight && (
-                  <text
-                    x={M.left + plotW + 6}
-                    y={yR(yMinR + (yMaxR - yMinR) * f) + 4}
-                    textAnchor="start"
-                    className={styles.tick}
-                    data-testid="lens-right-tick"
-                  >
-                    {fmtOf(firstOn('right'), yMinR + (yMaxR - yMinR) * f)}
-                  </text>
-                )}
-              </g>
-            ))}
-            {result.xs.map((x, xi) =>
-              xi % labelEvery === 0 ? (
-                <text key={xi} x={cx0(xi)} y={H - 8} textAnchor="middle" className={styles.tick}>
-                  {xText(result, xi, spanMs).slice(0, 14)}
+              ) : (
+                <text
+                  x={12}
+                  y={m.top + plotH / 2}
+                  textAnchor="middle"
+                  transform={`rotate(-90 12 ${m.top + plotH / 2})`}
+                  className={styles.axisTitle}
+                  data-testid="lens-axis-title-left"
+                >
+                  {titles.left}
                 </text>
-              ) : null
+              ))}
+            {titles.bottom &&
+              (horizontal ? (
+                <text
+                  x={12}
+                  y={m.top + plotH / 2}
+                  textAnchor="middle"
+                  transform={`rotate(-90 12 ${m.top + plotH / 2})`}
+                  className={styles.axisTitle}
+                  data-testid="lens-axis-title-bottom"
+                >
+                  {titles.bottom}
+                </text>
+              ) : (
+                <text
+                  x={m.left + plotW / 2}
+                  y={H - 4}
+                  textAnchor="middle"
+                  className={styles.axisTitle}
+                  data-testid="lens-axis-title-bottom"
+                >
+                  {titles.bottom}
+                </text>
+              ))}
+            {titles.right && (
+              <text
+                x={W - 6}
+                y={m.top + plotH / 2}
+                textAnchor="middle"
+                transform={`rotate(90 ${W - 6} ${m.top + plotH / 2})`}
+                className={styles.axisTitle}
+                data-testid="lens-axis-title-right"
+              >
+                {titles.right}
+              </text>
             )}
             <rect
-              x={M.left}
-              y={M.top}
+              x={m.left}
+              y={m.top}
               width={plotW}
               height={plotH}
               fill="transparent"
-              className={result.xIsTime && onBrush ? styles.brushable : undefined}
+              className={brushable ? styles.brushable : undefined}
               onMouseDown={onDown}
               data-testid="lens-plot-area"
             />
 
-            {chartType === 'bar' &&
-              result.series.map((s, si) =>
-                visible[si]
-                  ? result.xs.map((x, xi) => {
-                      const sp = spans[si][xi];
-                      if (!sp || sp[1] === sp[0]) {
-                        return null;
-                      }
-                      const gi = visibleIdx.indexOf(si);
-                      const w = grouped ? barW / visibleIdx.length : barW;
-                      const left = cx0(xi) - barW / 2 + (grouped ? gi * w : 0);
-                      return (
-                        <rect
-                          key={`${si}-${xi}`}
-                          x={left}
-                          width={Math.max(1, w - 1)}
-                          y={Math.min(ys(si)(sp[0]), ys(si)(sp[1]))}
-                          height={Math.max(1, Math.abs(ys(si)(sp[0]) - ys(si)(sp[1])))}
-                          fill={color(si)}
-                          role="button"
-                          tabIndex={0}
-                          aria-label={itemLabel(xi, si)}
-                          className={styles.mark}
-                          onClick={(e) => select(e, xi, si)}
-                          onKeyDown={(e) => e.key === 'Enter' && select(e, xi, si)}
-                        >
-                          <title>{itemLabel(xi, si)}</title>
-                        </rect>
-                      );
-                    })
-                  : null
-              )}
+            <g clipPath={`url(#${clipId})`}>
+              {chartType === 'bar' &&
+                result.series.map((s, si) =>
+                  visible[si]
+                    ? result.xs.map((x, xi) => {
+                        const sp = spans[si][xi];
+                        if (!sp || sp[1] === sp[0]) {
+                          return null;
+                        }
+                        const gi = visibleIdx.indexOf(si);
+                        const w = grouped ? barW / visibleIdx.length : barW;
+                        const along = cx0(xi) - barW / 2 + (grouped ? gi * w : 0);
+                        const a = ys(si)(sp[0]);
+                        const b = ys(si)(sp[1]);
+                        const rect = horizontal
+                          ? {
+                              x: Math.min(a, b),
+                              y: along,
+                              width: Math.max(1, Math.abs(a - b)),
+                              height: Math.max(1, w - 1),
+                            }
+                          : {
+                              x: along,
+                              y: Math.min(a, b),
+                              width: Math.max(1, w - 1),
+                              height: Math.max(1, Math.abs(a - b)),
+                            };
+                        return (
+                          <React.Fragment key={`${si}-${xi}`}>
+                            <rect
+                              {...rect}
+                              fill={color(si)}
+                              role="button"
+                              tabIndex={0}
+                              aria-label={itemLabel(xi, si)}
+                              className={styles.mark}
+                              onClick={(e) => select(e, xi, si)}
+                              onKeyDown={(e) => e.key === 'Enter' && select(e, xi, si)}
+                            >
+                              <title>{itemLabel(xi, si)}</title>
+                            </rect>
+                            {barValue(si, xi, rect.x, rect.y, rect.width, rect.height, sp)}
+                          </React.Fragment>
+                        );
+                      })
+                    : null
+                )}
 
-            {(chartType === 'line' || chartType === 'area') &&
-              result.series.map((s, si) => {
-                if (!visible[si]) {
-                  return null;
-                }
-                // Gaps (no data) break the line; each unbroken run is its own path segment.
-                const pts = result.xs.map((_x, xi) => {
-                  const sp = spans[si][xi];
-                  return sp ? ([cx0(xi), ys(si)(sp[1]), ys(si)(sp[0])] as const) : null;
-                });
-                const runs: Array<Array<readonly [number, number, number]>> = [];
-                pts.forEach((p, i) => {
-                  if (!p) {
-                    return;
+              {(chartType === 'line' || chartType === 'area') &&
+                result.series.map((s, si) => {
+                  if (!visible[si]) {
+                    return null;
                   }
-                  if (i === 0 || !pts[i - 1]) {
-                    runs.push([]);
-                  }
-                  runs[runs.length - 1].push(p);
-                });
-                const line = runs.map((r) => r.map(([px, py], i) => `${i ? 'L' : 'M'}${px},${py}`).join(' ')).join(' ');
-                const area = runs
-                  .map(
-                    (r) =>
-                      `${r.map(([px, py], i) => `${i ? 'L' : 'M'}${px},${py}`).join(' ')} ${[...r]
-                        .reverse()
-                        .map(([px, , py0]) => `L${px},${py0}`)
-                        .join(' ')} Z`
-                  )
-                  .join(' ');
-                const top = pts;
-                return (
-                  <g key={si}>
-                    {chartType === 'area' && <path d={area} fill={color(si)} opacity={0.35} pointerEvents="none" />}
-                    <path d={line} fill="none" stroke={color(si)} strokeWidth={2} pointerEvents="none" />
-                    {top.map((p, xi) =>
-                      p ? (
-                        <circle
-                          key={xi}
-                          cx={p[0]}
-                          cy={p[1]}
-                          r={n > 80 ? 2 : 3}
-                          fill={color(si)}
-                          role="button"
-                          tabIndex={0}
-                          aria-label={itemLabel(xi, si)}
-                          className={styles.mark}
-                          onClick={(e) => select(e, xi, si)}
-                          onKeyDown={(e) => e.key === 'Enter' && select(e, xi, si)}
-                        >
-                          <title>{itemLabel(xi, si)}</title>
-                        </circle>
-                      ) : null
-                    )}
-                  </g>
-                );
-              })}
+                  // Gaps (no data) break the line; each unbroken run is its own path segment.
+                  const pts = result.xs.map((_x, xi) => {
+                    const sp = spans[si][xi];
+                    return sp ? ([cx0(xi), ys(si)(sp[1]), ys(si)(sp[0])] as const) : null;
+                  });
+                  const runs: Array<Array<readonly [number, number, number]>> = [];
+                  pts.forEach((p, i) => {
+                    if (!p) {
+                      return;
+                    }
+                    if (i === 0 || !pts[i - 1]) {
+                      runs.push([]);
+                    }
+                    runs[runs.length - 1].push(p);
+                  });
+                  const line = runs
+                    .map((r) => r.map(([px, py], i) => `${i ? 'L' : 'M'}${px},${py}`).join(' '))
+                    .join(' ');
+                  const area = runs
+                    .map(
+                      (r) =>
+                        `${r.map(([px, py], i) => `${i ? 'L' : 'M'}${px},${py}`).join(' ')} ${[...r]
+                          .reverse()
+                          .map(([px, , py0]) => `L${px},${py0}`)
+                          .join(' ')} Z`
+                    )
+                    .join(' ');
+                  return (
+                    <g key={si}>
+                      {chartType === 'area' && <path d={area} fill={color(si)} opacity={0.35} pointerEvents="none" />}
+                      <path d={line} fill="none" stroke={color(si)} strokeWidth={2} pointerEvents="none" />
+                      {pts.map((p, xi) =>
+                        p ? (
+                          <circle
+                            key={xi}
+                            cx={p[0]}
+                            cy={p[1]}
+                            r={n > 80 ? 2 : 3}
+                            fill={color(si)}
+                            role="button"
+                            tabIndex={0}
+                            aria-label={itemLabel(xi, si)}
+                            className={styles.mark}
+                            onClick={(e) => select(e, xi, si)}
+                            onKeyDown={(e) => e.key === 'Enter' && select(e, xi, si)}
+                          >
+                            <title>{itemLabel(xi, si)}</title>
+                          </circle>
+                        ) : null
+                      )}
+                    </g>
+                  );
+                })}
+            </g>
 
             {brush && (
               <rect
                 x={Math.min(brush.x0, brush.x1)}
-                y={M.top}
+                y={m.top}
                 width={Math.abs(brush.x1 - brush.x0)}
                 height={plotH}
                 className={styles.brush}
@@ -402,61 +734,9 @@ export function XyChart({ chartType, subType, result, bucketMs, onSelect, onBrus
             )}
           </svg>
         )}
+        {inside && legendEl}
       </div>
-
-      <div className={styles.legend} role="list" aria-label="Legend">
-        {result.series.map((s, si) => (
-          <div key={s.name} role="listitem" className={styles.legendItem}>
-            <button
-              type="button"
-              className={cx(styles.legendBtn, !visible[si] && styles.legendHidden)}
-              aria-pressed={visible[si]}
-              title={visible[si] ? 'Click to hide' : 'Click to show'}
-              onClick={() =>
-                setHidden((h) => {
-                  const next = new Set(h);
-                  if (next.has(s.name)) {
-                    next.delete(s.name);
-                  } else {
-                    next.add(s.name);
-                  }
-                  return next;
-                })
-              }
-            >
-              <span className={styles.swatch} style={{ background: color(si) }} />
-              {s.name || '(empty)'}
-            </button>
-            {onLegendFilter && s.breakdown !== undefined && (
-              <IconButton
-                name="ellipsis-v"
-                size="sm"
-                tooltip={`Legend actions for ${s.name || '(empty)'}`}
-                onClick={() => setMenuFor(menuFor === s.name ? null : s.name)}
-              />
-            )}
-            {menuFor === s.name && onLegendFilter && (
-              <div className={styles.menu} role="menu" aria-label={`Actions for ${s.name}`}>
-                <div className={styles.menuTitle}>{s.breakdown || '(empty)'}</div>
-                {(['for', 'out'] as const).map((m) => (
-                  <button
-                    key={m}
-                    type="button"
-                    role="menuitem"
-                    className={styles.menuItem}
-                    onClick={() => {
-                      setMenuFor(null);
-                      onLegendFilter?.(si, m);
-                    }}
-                  >
-                    {m === 'for' ? 'Filter for' : 'Filter out'}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-        ))}
-      </div>
+      {!inside && (lg.alignment === 'bottom' || lg.alignment === 'right') && legendEl}
     </div>
   );
 }
@@ -468,9 +748,25 @@ const getStyles = (theme: GrafanaTheme2) => ({
     width: 100%;
     height: 100%;
   `,
+  wrapRow: css`
+    flex-direction: row;
+  `,
   plot: css`
+    position: relative;
     flex: 1;
+    min-width: 0;
     min-height: ${HEIGHT_MIN}px;
+  `,
+  axisTitle: css`
+    fill: ${theme.colors.text.primary};
+    font-size: 12px;
+  `,
+  barValue: css`
+    fill: ${theme.colors.text.maxContrast};
+    font-size: 11px;
+    paint-order: stroke;
+    stroke: ${theme.colors.background.primary};
+    stroke-width: 2px;
   `,
   grid: css`
     stroke: ${theme.colors.border.weak};
@@ -500,6 +796,30 @@ const getStyles = (theme: GrafanaTheme2) => ({
     flex-wrap: wrap;
     gap: ${theme.spacing(0.5, 1.5)};
     padding-top: ${theme.spacing(0.5)};
+  `,
+  legendSide: css`
+    flex-direction: column;
+    flex-wrap: nowrap;
+    max-width: 30%;
+    overflow-y: auto;
+    padding: ${theme.spacing(0, 1)};
+  `,
+  legendGrid: css`
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  `,
+  legendGridSide: css`
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  `,
+  legendInside: css`
+    position: absolute;
+    z-index: 2;
+    max-width: 50%;
+    padding: ${theme.spacing(0.5, 1)};
+    background: ${theme.colors.background.primary};
+    border: 1px solid ${theme.colors.border.weak};
+    border-radius: ${theme.shape.radius.default};
   `,
   legendItem: css`
     position: relative;
@@ -539,6 +859,10 @@ const getStyles = (theme: GrafanaTheme2) => ({
     box-shadow: ${theme.shadows.z3};
     display: flex;
     flex-direction: column;
+  `,
+  menuDown: css`
+    bottom: auto;
+    top: 100%;
   `,
   menuTitle: css`
     font-weight: ${theme.typography.fontWeightMedium};

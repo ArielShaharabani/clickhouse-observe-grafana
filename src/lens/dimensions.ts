@@ -166,8 +166,10 @@ export function metricForField(id: string, field: LensField): MetricDim | undefi
 
 /** Display-only parts (names) removed — what the chart query actually depends on. */
 export function queryShape(s: LensState): LensState {
+  // Style / Legend (LENS-STYLE-01) never changes the SQL.
+  const { style: _style, ...rest } = s;
   return {
-    ...s,
+    ...rest,
     buckets: s.buckets.map(({ name: _n, ...b }) => b as BucketDim),
     // Format, colour and axis side are display-only too.
     metrics: s.metrics.map(({ name: _n, format: _f, color: _c, axis: _a, ...m }) => m as MetricDim),
