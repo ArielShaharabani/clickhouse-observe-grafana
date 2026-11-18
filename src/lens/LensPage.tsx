@@ -56,6 +56,7 @@ import { addField, chartTitle, chooseChart, isLensField, isXy, LensContext, sugg
 import { shiftTimeRange, zoomOutTimeRange } from '../utils/timeRangeNav';
 import { QueryProgress } from '../components/QueryProgress/QueryProgress';
 import { lensApproxNote } from './approx';
+import { LensInspector } from './Inspector';
 
 function defaultRange(): TimeRange {
   return { from: dateTime(Date.now() - 3600 * 1000), to: dateTime(Date.now()), raw: { from: 'now-1h', to: 'now' } };
@@ -430,6 +431,7 @@ export function LensPage() {
   // (X value + breakdown value, or a time bucket + breakdown) → "Select filters to apply".
   const [chooser, setChooser] = useState<FilterChoice[] | null>(null);
   const [saveOpen, setSaveOpen] = useState(false);
+  const [inspectOpen, setInspectOpen] = useState(false);
   const buildPanel = (title: string, description: string) =>
     buildLensPanel(
       lens,
@@ -539,6 +541,15 @@ export function LensPage() {
         <LinkButton href={exploreUrl} target="_blank" variant="secondary" size="sm" icon="compass" fill="outline">
           Explore in Discover
         </LinkButton>
+        <Button
+          size="sm"
+          variant="secondary"
+          icon="info-circle"
+          onClick={() => setInspectOpen(true)}
+          disabled={isEmptyLens(lens)}
+        >
+          Inspect
+        </Button>
         <Button size="sm" icon="save" onClick={() => setSaveOpen(true)} disabled={isEmptyLens(lens) || fieldsLoading}>
           Save
         </Button>
@@ -707,6 +718,17 @@ export function LensPage() {
           )}
         </section>
 
+        {inspectOpen && (
+          <LensInspector
+            lens={lens}
+            data={current?.data}
+            title={chartTitle(lens)}
+            dataView={activeView}
+            tableName={`${config.database}.${config.logsTable}`}
+            addFilter={(pill) => addFilters([pill])}
+            onClose={() => setInspectOpen(false)}
+          />
+        )}
         <SaveLensModal
           isOpen={saveOpen}
           onDismiss={() => setSaveOpen(false)}
