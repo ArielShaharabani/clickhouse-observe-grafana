@@ -23,6 +23,10 @@ Versions track the plugin's release history. `Unreleased` collects commits not y
 - `useFieldDiscovery` also returns `fieldsFor` (the `discoveryKey` of the table `fields` belong to); Visualize waits until it matches the active view, so a switch never compiles the new table with the previous table's fields.
 - The Lens draft is saved only once the view's fields are in (sanitized chart), never mid-switch.
 
+
+### Fixed
+- **Discover link to a different data view lost its query and filters** (pre-existing): opening a link whose `ds` differed from the stored active view was treated as a user view switch, which resets query and filters to the pins. The reset now waits until the link's view is active.
+- **Visualize view switch never applied** after the page settled on its entry view (`ds`, filter disabling and chart re-validation were skipped).
 ---
 
 ## [0.31.1] — 2026-11-18
