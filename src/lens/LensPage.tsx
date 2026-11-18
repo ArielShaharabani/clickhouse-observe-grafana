@@ -767,6 +767,7 @@ export function LensPage() {
               metrics={lens.metrics}
               timeRange={{ from: timeRange.from.valueOf(), to: timeRange.to.valueOf() }}
               timeField={ctx.timeField?.sqlExpr}
+              chart={lens}
               onChange={(d) => setLens(replaceDim(lens, d))}
               onRemove={() => {
                 setEditingId(null);

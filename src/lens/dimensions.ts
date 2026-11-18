@@ -1,6 +1,7 @@
 /**
  * Dimension editing (spec LENS-DIM-01 / LENS-DIM-02): pure helpers behind the dimension editor.
  */
+import { metricOptionsOf } from './metricOptions';
 import {
   BucketDim,
   cleanDateHistogram,
@@ -55,7 +56,7 @@ const newId = newDimId;
  */
 export function withOp(m: MetricDim, op: MetricOp, fields: LensField[]): MetricDim | undefined {
   if (op === 'count') {
-    return { kind: 'metric', id: m.id, op, name: m.name };
+    return { kind: 'metric', id: m.id, op, name: m.name, ...metricOptionsOf(m) };
   }
   const ok = compatibleFields(op, fields);
   const keep = ok.find((f) => f.sqlExpr === m.field) ?? ok[0];
@@ -71,6 +72,7 @@ export function withOp(m: MetricDim, op: MetricOp, fields: LensField[]): MetricD
     numeric: keep.type === 'number',
     percentile: op === 'percentile' ? clampPercentile(m.percentile ?? DEFAULT_PERCENTILE) : undefined,
     name: m.name,
+    ...metricOptionsOf(m),
   };
 }
 
@@ -167,7 +169,8 @@ export function queryShape(s: LensState): LensState {
   return {
     ...s,
     buckets: s.buckets.map(({ name: _n, ...b }) => b as BucketDim),
-    metrics: s.metrics.map(({ name: _n, ...m }) => m as MetricDim),
+    // Format, colour and axis side are display-only too.
+    metrics: s.metrics.map(({ name: _n, format: _f, color: _c, axis: _a, ...m }) => m as MetricDim),
   };
 }
 

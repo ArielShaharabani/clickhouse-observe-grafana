@@ -39,6 +39,7 @@ import {
   clampPercentile,
   DateHistogramDim,
   LensField,
+  LensState,
   listError,
   MetricDim,
   opName,
@@ -48,6 +49,7 @@ import {
 import { uniqueMetricLabels } from './compile';
 import { BucketFunctions, FiltersEditor, RangeEditor } from './BucketEditors';
 import { FormulaEditor, formulaFieldsOf, formulaMetric } from './FormulaEditor';
+import { MetricAdvanced } from './MetricAdvanced';
 import { formulaErrors, quickToFormula } from './formula';
 import {
   describeInterval,
@@ -69,6 +71,8 @@ interface Props {
   timeRange?: { from: number; to: number };
   /** The data view's time field (Bind to global time picker only applies to other date fields). */
   timeField?: string;
+  /** The whole chart (metric Advanced / Appearance options depend on it). */
+  chart?: LensState;
   onChange: (d: BucketDim | MetricDim) => void;
   onRemove: () => void;
   onClose: () => void;
@@ -81,6 +85,7 @@ export function DimensionEditor({
   metrics = [],
   timeRange,
   timeField,
+  chart,
   onChange,
   onRemove,
   onClose,
@@ -183,6 +188,7 @@ export function DimensionEditor({
 
       {dim.kind === 'range' && <RangeEditor key={dim.id} dim={dim} fields={fields} onChange={onChange} />}
       {dim.kind === 'filters' && <FiltersEditor key={dim.id} dim={dim} onChange={onChange} />}
+      {dim.kind === 'metric' && <MetricAdvanced dim={dim} chart={chart} onChange={onChange} />}
 
       {dim.kind === 'terms' && (
         <>

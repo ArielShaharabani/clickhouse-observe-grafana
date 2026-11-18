@@ -11,6 +11,7 @@ import { SourceConfig } from '../types';
 import { bucketAlias, compileLens, metricAlias, uniqueMetricLabels } from './compile';
 import { dimLabelIn, LensState } from './state';
 import { chartTitle } from './suggest';
+import { withMetricAppearance } from './render/fieldConfig';
 
 export interface LensPanelOpts {
   id: number;
@@ -55,6 +56,20 @@ function rename(names: Record<string, string>): Transformation {
 }
 
 export function buildLensPanel(
+  state: LensState,
+  config: SourceConfig,
+  conditions: string[],
+  timeRange: TimeRange,
+  opts: LensPanelOpts
+): LensPanel {
+  const panel = baseLensPanel(state, config, conditions, timeRange, opts);
+  const xy = state.chartType === 'line' || state.chartType === 'area' || state.chartType === 'bar';
+  return panel.fieldConfig
+    ? { ...panel, fieldConfig: withMetricAppearance(panel.fieldConfig, state, xy) }
+    : panel;
+}
+
+function baseLensPanel(
   state: LensState,
   config: SourceConfig,
   conditions: string[],
