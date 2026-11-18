@@ -1,7 +1,7 @@
 # Context snapshot — read this to restart
 
 Saved after every feature (and every review-fix round). A new session can resume from this file plus `PROGRESS.md` alone.
-Last saved: 2026-11-18, URL-COLS merged (PR 24, v0.31.1).
+Last saved: 2026-11-18, #16b/16c LENS-DATAVIEW merged (PR 25, v0.32.0).
 
 ## Goal
 Bring Kibana Discover + Lens style exploration to Grafana on ClickHouse by extending the **ClickHouse Observe** app plugin.
@@ -39,6 +39,7 @@ Bring Kibana Discover + Lens style exploration to Grafana on ClickHouse by exten
 | 18 | DISC-CHART-02: Histogram breakdown label and legend actions | 22 | src/components/VolumeHistogram.tsx, src/components/HistogramControls/BreakdownPicker.tsx |
 | 20 | DISC-DOC-02: Surrounding documents | 23 | src/data/surrounding.ts, src/pages/ContextView.tsx |
 | sec | URL-COLS: Security: sanitize URL / saved-search columns and sort | 24 | src/data/columns.ts, src/sql/queryBuilder.ts, src/data/surrounding.ts |
+| 16b/16c | LENS-DATAVIEW: Visualize data view picker, Explore in Visualize, side-menu context restore (#16b/#16c) | 25 | src/lens/entry.ts, src/state/sharedSearch.ts, src/lens/LensPage.tsx, src/pages/LogsExplorer.tsx |
 
 ## Key decisions (details in DECISIONS.md)
 - Frontend-only; queries via grafana-clickhouse-datasource (`src/data/runQuery.ts`). Plain React + @grafana/ui, no Scenes.

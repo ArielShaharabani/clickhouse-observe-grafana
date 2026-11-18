@@ -3,7 +3,7 @@ import { css, cx } from '@emotion/css';
 import { AppEvents, dateTime, GrafanaTheme2, PageLayoutType, rangeUtil, TimeRange } from '@grafana/data';
 import { getAppEvents, locationService, PluginPage } from '@grafana/runtime';
 import { buildContextUrl, resolveContextAnchor } from '../data/surrounding';
-import { Button, Icon, Spinner, useStyles2, TimeRangePicker, RefreshPicker, useSplitter } from '@grafana/ui';
+import { Button, Icon, LinkButton, Spinner, useStyles2, TimeRangePicker, RefreshPicker, useSplitter } from '@grafana/ui';
 import { GridDisplay, GridDisplayOptions, loadGridDisplay, saveGridDisplay } from '../components/GridDisplayOptions';
 import { useSearchParams } from 'react-router-dom';
 import { SearchBar } from '../components/SearchBar';
@@ -45,6 +45,7 @@ import {
 import type { FieldModel } from '../sql/fieldModel';
 import { BreakdownUrl, decodeLogsState, encodeLogsState } from '../data/urlState';
 import { loadPinnedFilters, mergePinnedFilters, normalizePinnedFlags, tableKey } from '../state/sharedSearch';
+import { rememberSearchContext } from '../state/lastSearch';
 import { useAutocompleteSources } from '../autocomplete/service';
 import { compileColumnHighlighter, extractHighlightTerms } from '../sql/kql/highlight';
 import { errMsg } from '../errMsg';
@@ -271,7 +272,11 @@ export function LogsExplorer() {
   // reset effect right below (which fires when activeView.id changes) sees a no-op transition
   // instead of treating this URL-driven switch as a user action and wiping the query state that
   // was just hydrated from that same URL (see initialUrlState above).
+  // The reset effect runs in the same commit as this one, while activeView is still App's
+  // default: `pendingUrlViewRef` makes it wait until the URL's view is actually active, otherwise
+  // it sees default → URL view as a user switch and wipes the query/filters the link carried.
   const appliedUrlViewRef = useRef(false);
+  const pendingUrlViewRef = useRef<string | undefined>(undefined);
   useEffect(() => {
     if (appliedUrlViewRef.current) {
       return;
@@ -279,6 +284,9 @@ export function LogsExplorer() {
     appliedUrlViewRef.current = true;
     if (initialUrlState.viewId && initialUrlState.viewId !== activeView?.id) {
       prevViewId.current = initialUrlState.viewId;
+      if (views.some((v) => v.id === initialUrlState.viewId)) {
+        pendingUrlViewRef.current = initialUrlState.viewId;
+      }
       setActiveViewId(initialUrlState.viewId);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -286,6 +294,12 @@ export function LogsExplorer() {
 
   useEffect(() => {
     const viewId = activeView?.id;
+    if (pendingUrlViewRef.current !== undefined) {
+      if (viewId !== pendingUrlViewRef.current) {
+        return;
+      }
+      pendingUrlViewRef.current = undefined;
+    }
     if (prevViewId.current !== undefined && prevViewId.current !== viewId) {
       // Pinned filters survive a data view switch, like Kibana's global filters — disabled when the
       // new view reads a different table than the one they were pinned on.
@@ -1197,6 +1211,17 @@ export function LogsExplorer() {
     const lens = lensForHistogram(lensContext, split);
     return lens ? visualizeUrl(handoffContext, lens) : undefined;
   }, [breakdown, config.columns.severity, lensContext, handoffContext]);
+  // Toolbar "Explore in Visualize" (#16c): the histogram's chart when the view has a time field,
+  // otherwise an empty workspace — always with the same query, filters, time and data view.
+  const exploreInVisualizeUrl = useMemo(
+    () => editVisualizationUrl ?? visualizeUrl(handoffContext),
+    [editVisualizationUrl, handoffContext]
+  );
+  // The tab's last search context, for Visualize opened from Grafana's side menu (#16c).
+  const searchParamsKey = searchParams.toString();
+  useEffect(() => {
+    rememberSearchContext(new URLSearchParams(searchParamsKey));
+  }, [searchParamsKey]);
 
   // Lazy-fetch rows beyond the initial buffer when the user pages past it.
   const ensureRows = useCallback(
@@ -1384,6 +1409,9 @@ export function LogsExplorer() {
               loadMapKeys={logsLoadMapKeys}
             />
           </div>
+          <LinkButton href={exploreInVisualizeUrl} size="sm" variant="secondary" fill="outline" icon="chart-line">
+            Explore in Visualize
+          </LinkButton>
           {/* Grouped so they wrap together as one atomic unit when the row runs out of width —
               without this, flex-wrap can strand RefreshPicker alone on its own line while
               TimeRangePicker (which fit) stays on line 1, separating a control from the time

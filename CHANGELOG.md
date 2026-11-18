@@ -10,6 +10,25 @@ Versions track the plugin's release history. `Unreleased` collects commits not y
 
 ---
 
+## [0.32.0] — 2026-11-18
+
+### Added
+- **Data view picker on Visualize** (#16b, LENS-AUTO-01 gap; spec 20-lens.md "Search bar: Data view …"). The same picker as Discover sits in the Visualize toolbar. Switching keeps the query and time; the chart keeps only dimensions on fields the new view has (re-validated with `sanitizeLens` once that view's fields are discovered, and written back to the URL); filters follow D7 — pinned pills are enabled only on the table they were pinned on, other pills arrive disabled on a view of a different table (kept as-is on a view of the same table). The URL now always names the view (`ds`), so Explore in Discover and reloads land on it.
+- **Visualize applies the URL's data view** (`ds`), like Discover; it used to chart whatever view was last active.
+- **Pinned filters on Visualize** (D7): a Visualize URL without `filters` gets the stored pins, like Discover.
+- **"Explore in Visualize" button in the Discover toolbar** (#16c). Same link as the histogram's Edit visualization (Bar over time with the current breakdown), or an empty workspace for a view without a time field; carries query, filters, time (relative stays relative) and data view.
+- **Visualize opened without a search context** (Grafana's side-menu entry is a static link) restores the tab's last query, filters, time and data view (session storage `clickhouse-observe.lastSearch`, written by Discover and Visualize), then the view's draft chart.
+
+### Changed
+- `useFieldDiscovery` also returns `fieldsFor` (the `discoveryKey` of the table `fields` belong to); Visualize waits until it matches the active view, so a switch never compiles the new table with the previous table's fields.
+- The Lens draft is saved only once the view's fields are in (sanitized chart), never mid-switch.
+
+
+### Fixed
+- **Discover link to a different data view lost its query and filters** (pre-existing): opening a link whose `ds` differed from the stored active view was treated as a user view switch, which resets query and filters to the pins. The reset now waits until the link's view is active.
+- **Visualize view switch never applied** after the page settled on its entry view (`ds`, filter disabling and chart re-validation were skipped).
+---
+
 ## [0.31.1] — 2026-11-18
 
 ### Security

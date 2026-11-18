@@ -25,8 +25,8 @@ Status values: `todo` · `in-progress` · `done` (with PR link) · `skipped` (wi
 | 14 | LENS-INTERACT-01 | Click-to-filter + chooser | 4 | Build | done | PR 15 |
 | 15 | LENS-INTERACT-02 / DISC-CHART-03 | Discover ↔ Lens handoff | 4 | Build | done | PR 16 |
 | 16 | LENS-SAVE-01 | Save to dashboard | 4 | Build | done | PR 17 |
-| 16b | LENS-AUTO-01 (gap) | Data view picker on Visualize: switch view from the Lens search bar; re-sanitize the chart against the new view's fields; pins follow D7 | 4 | Build | todo | |
-| 16c | LENS-INTERACT-02 (gap) | Labeled "Explore in Visualize" button in the Discover toolbar (same hand-off as Edit visualization: query, filters, time, data view); Visualize opened from the Grafana side menu with no URL context restores the tab's last search context | 4 | Build | todo | |
+| 16b | LENS-AUTO-01 (gap) | Data view picker on Visualize: switch view from the Lens search bar; re-sanitize the chart against the new view's fields; pins follow D7 | 4 | Build | done | PR 25 |
+| 16c | LENS-INTERACT-02 (gap) | Labeled "Explore in Visualize" button in the Discover toolbar (same hand-off as Edit visualization: query, filters, time, data view); Visualize opened from the Grafana side menu with no URL context restores the tab's last search context | 4 | Build | done | PR 25 |
 | 16d | DATA-VIEW time field (gap, spec 00-preamble "Data view = index pattern + time field") | Shared data views on the Configuration page get the same column mapping as Create data view, including Timestamp field (today: none); time field editable after creation; numeric epoch / string time columns selectable via conversion (flagged as converted) | 4 | Build | todo | |
 | 17 | DISC-TIME-01/02 | Time picker, Update state | 3 | Verify | done | PR 18 |
 | 18 | DISC-CHART-02 | Breakdown + legend actions | 3 | Verify | done | PR 22 |

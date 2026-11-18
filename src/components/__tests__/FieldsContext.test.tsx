@@ -8,7 +8,7 @@
  * logsTable name rather than trying to clear them.
  */
 import { renderHook, waitFor } from '@testing-library/react';
-import { useFieldDiscovery } from '../FieldsContext';
+import { discoveryKey, useFieldDiscovery } from '../FieldsContext';
 import { runQueryRows } from '../../data/runQuery';
 import { DEFAULT_SOURCE_CONFIG, OTEL_COLUMN_MAPPING, SourceConfig } from '../../types';
 import { TimeRange, dateTime } from '@grafana/data';
@@ -67,9 +67,7 @@ describe('useFieldDiscovery — columns (Phase A)', () => {
       return [];
     });
 
-    const { result } = renderHook(() =>
-      useFieldDiscovery({ ...config, logsTable: 'failing_table' }, timeRange)
-    );
+    const { result } = renderHook(() => useFieldDiscovery({ ...config, logsTable: 'failing_table' }, timeRange));
 
     await waitFor(() => expect(result.current.loading).toBe(false));
 
@@ -85,9 +83,7 @@ describe('useFieldDiscovery — columns (Phase A)', () => {
       return [];
     });
 
-    const { result } = renderHook(() =>
-      useFieldDiscovery({ ...config, logsTable: 'plain_logs' }, timeRange)
-    );
+    const { result } = renderHook(() => useFieldDiscovery({ ...config, logsTable: 'plain_logs' }, timeRange));
 
     await waitFor(() => expect(result.current.loading).toBe(false));
 
@@ -209,9 +205,7 @@ describe('useFieldDiscovery — tuple elements still derived synchronously', () 
       return [];
     });
 
-    const { result } = renderHook(() =>
-      useFieldDiscovery({ ...config, logsTable: 'tuple_table' }, timeRange)
-    );
+    const { result } = renderHook(() => useFieldDiscovery({ ...config, logsTable: 'tuple_table' }, timeRange));
 
     await waitFor(() => expect(result.current.loading).toBe(false));
 
@@ -232,18 +226,31 @@ describe('useFieldDiscovery — detectedPartitionTimestamp', () => {
     mockRunQueryRows.mockImplementation(async ({ sql }) => {
       if (sql.includes('system.columns')) {
         return [
-          { name: 'Timestamp', type: 'DateTime64(9)', default_kind: '', default_expression: '', is_in_partition_key: 0, is_in_primary_key: 0, position: 1 },
-          { name: 'TimestampTime', type: 'DateTime', default_kind: 'DEFAULT', default_expression: 'toDate(Timestamp)', is_in_partition_key: 1, is_in_primary_key: 1, position: 2 },
+          {
+            name: 'Timestamp',
+            type: 'DateTime64(9)',
+            default_kind: '',
+            default_expression: '',
+            is_in_partition_key: 0,
+            is_in_primary_key: 0,
+            position: 1,
+          },
+          {
+            name: 'TimestampTime',
+            type: 'DateTime',
+            default_kind: 'DEFAULT',
+            default_expression: 'toDate(Timestamp)',
+            is_in_partition_key: 1,
+            is_in_primary_key: 1,
+            position: 2,
+          },
         ];
       }
       return [];
     });
 
     const { result } = renderHook(() =>
-      useFieldDiscovery(
-        { ...config, logsTable: 'prune_detect_table', columns: OTEL_COLUMN_MAPPING },
-        timeRange
-      )
+      useFieldDiscovery({ ...config, logsTable: 'prune_detect_table', columns: OTEL_COLUMN_MAPPING }, timeRange)
     );
 
     await waitFor(() => expect(result.current.loading).toBe(false));
@@ -255,21 +262,72 @@ describe('useFieldDiscovery — detectedPartitionTimestamp', () => {
     mockRunQueryRows.mockImplementation(async ({ sql }) => {
       if (sql.includes('system.columns')) {
         return [
-          { name: 'Timestamp', type: 'DateTime64(9)', default_kind: '', default_expression: '', is_in_partition_key: 0, is_in_primary_key: 1, position: 1 },
+          {
+            name: 'Timestamp',
+            type: 'DateTime64(9)',
+            default_kind: '',
+            default_expression: '',
+            is_in_partition_key: 0,
+            is_in_primary_key: 1,
+            position: 1,
+          },
         ];
       }
       return [];
     });
 
     const { result } = renderHook(() =>
-      useFieldDiscovery(
-        { ...config, logsTable: 'no_prune_table', columns: OTEL_COLUMN_MAPPING },
-        timeRange
-      )
+      useFieldDiscovery({ ...config, logsTable: 'no_prune_table', columns: OTEL_COLUMN_MAPPING }, timeRange)
     );
 
     await waitFor(() => expect(result.current.loading).toBe(false));
 
     expect(result.current.detectedPartitionTimestamp).toBe('');
+  });
+});
+
+describe('useFieldDiscovery — fieldsFor (#16b view switch)', () => {
+  beforeEach(() => {
+    mockRunQueryRows.mockReset();
+  });
+
+  it('names the table the published fields belong to, and keeps the old name until the new table publishes', async () => {
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>((r) => (release = r));
+    mockRunQueryRows.mockImplementation(async ({ sql }) => {
+      if (sql.includes("'switch_b'")) {
+        await gate;
+        return [{ name: 'other_col', type: 'String' }];
+      }
+      return [{ name: 'Body', type: 'String' }];
+    });
+    const a = { ...config, logsTable: 'switch_a' };
+    const b = { ...config, logsTable: 'switch_b' };
+    const { result, rerender } = renderHook(({ c }: { c: SourceConfig }) => useFieldDiscovery(c, timeRange), {
+      initialProps: { c: a },
+    });
+    expect(result.current.fieldsFor).toBe('');
+    await waitFor(() => expect(result.current.fieldsFor).toBe(discoveryKey(a)));
+
+    rerender({ c: b });
+    // Still table A's fields: a consumer comparing fieldsFor with discoveryKey(b) waits.
+    expect(result.current.fields.map((f) => f.name)).toEqual(['Body']);
+    expect(result.current.fieldsFor).toBe(discoveryKey(a));
+    expect(result.current.fieldsFor).not.toBe(discoveryKey(b));
+
+    release();
+    await waitFor(() => expect(result.current.fieldsFor).toBe(discoveryKey(b)));
+    expect(result.current.fields.map((f) => f.name)).toEqual(['other_col']);
+  });
+
+  it('discoveryKey separates datasource, database and table', () => {
+    const keys = new Set([
+      discoveryKey(config),
+      discoveryKey({ ...config, datasourceUid: 'other' }),
+      discoveryKey({ ...config, database: 'other' }),
+      discoveryKey({ ...config, logsTable: 'other' }),
+    ]);
+    expect(keys.size).toBe(4);
+    expect(discoveryKey(config, 'x')).toBe(discoveryKey({ ...config, logsTable: 'x' }));
   });
 });

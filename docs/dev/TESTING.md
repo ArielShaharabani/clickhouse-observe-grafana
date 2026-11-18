@@ -151,3 +151,26 @@ DISC-DOC-02 acceptance:
 | Hostile `cols` (expr/alias with `FROM system.users --`, subqueries, hostile core expr) dropped or rebuilt from the mapping; types checked; duplicates dropped; strict mode keeps only discovered fields / Map keys (jest `sanitizeColumns.test.ts`) | ✅ |
 | `buildLogsQuery` never emits an unsafe alias / expression; hostile sort column and direction fall back (jest `sanitizeColumns.test.ts`) | ✅ |
 | Crafted link renders without the injected column; hostile core column uses the mapping; hostile sort falls back; a legitimate Map key column from a link is kept (`tests/features/sec-url-cols.spec.ts`) | ✅ |
+
+### LENS-DATAVIEW (PR 25)
+| Case | Status |
+| --- | --- |
+| IT-G | Discover → Visualize via the toolbar "Explore in Visualize" keeps q, filters, ds and relative time (`tests/features/lens-dataview.spec.ts`) ✅ |
+| IT-K | Visualize from a static link restores the tab context (`lens-dataview.spec.ts` side-menu test); a link with its own context wins ✅ |
+| Pins (D7) on Visualize | stored pin merged when the URL has no filters; pinned pill disabled on another table and enabled again on its own; plain pill disabled on another table (`lens-dataview.spec.ts`; jest `dataview.test.ts`) ✅ |
+| View switch | dimensions on missing fields dropped, query/time kept, chart re-queried against the new table, URL ds applied on load and carried by Explore in Discover (`lens-dataview.spec.ts`) ✅ |
+| Discovery | `fieldsFor` keeps the old table's key until the new table publishes (jest `FieldsContext.test.tsx`) ✅ |
+
+LENS-DATAVIEW acceptance:
+
+| Criterion | Test / status |
+| --- | --- |
+| Data view picker in the Visualize search bar | e2e "#16b: Visualize has a data view picker …" |
+| Switch keeps query, time; drops fields the view lacks | same e2e; jest `visualizeEntry` / `filtersForViewSwitch` |
+| Chart re-queries the new view | e2e "the chart re-queries the new view" |
+| Pins follow D7 on a switch | e2e "#16b / D7 …"; jest `filtersForViewSwitch` |
+| URL data view applied on Visualize; carried to Discover | e2e "the URL data view applies on Visualize …" |
+| Labeled Explore in Visualize on Discover, same context incl. time | e2e "#16c / IT-G …"; jest "Explore in Visualize link" |
+| Side-menu Visualize restores the last context | e2e "#16c: Visualize from the side menu …"; jest last-context suite (untrusted input) |
+| Side-menu Visualize clicked while already on Visualize | re-enters via the same `visualizeEntry` (effect on an emptied URL); jest covers the function, no e2e (Grafana's nav menu docking varies) |
+| Per-layer data view (spec 20-lens.md:13) | gap left: LENS-LAYER-01 (#28) |
