@@ -25,15 +25,15 @@ Status values: `todo` · `in-progress` · `done` (with PR link) · `skipped` (wi
 | 14 | LENS-INTERACT-01 | Click-to-filter + chooser | 4 | Build | done | PR 15 |
 | 15 | LENS-INTERACT-02 / DISC-CHART-03 | Discover ↔ Lens handoff | 4 | Build | done | PR 16 |
 | 16 | LENS-SAVE-01 | Save to dashboard | 4 | Build | done | PR 17 |
-| 17 | DISC-TIME-01/02 | Time picker, Update state | 3 | Verify | in-progress | |
-| 18 | DISC-CHART-02 | Breakdown + legend actions | 3 | Verify | todo | |
+| 17 | DISC-TIME-01/02 | Time picker, Update state | 3 | Verify | done | PR 18 |
+| 18 | DISC-CHART-02 | Breakdown + legend actions | 3 | Verify | in-progress | |
 | 19 | DISC-FILTER-02 | Filter builder | 3 | Verify | in-progress | |
-| 20 | DISC-DOC-02 | Surrounding documents | 3 | Build | todo | |
-| 21 | DISC-PATTERNS-01 | Log patterns | 3 | Build | todo | |
+| 20 | DISC-DOC-02 | Surrounding documents | 3 | Build | in-progress | |
+| 21 | DISC-PATTERNS-01 | Log patterns | 3 | Build | skipped (user: not a focus, 2026-11-18) | |
 | 22 | DISC-FIELDSTATS-01 | Field statistics tab | 3 | Build | todo | |
-| 23 | LENS-DIM-03 | Formula editor | 3 | Build | todo | |
 | 24 | LENS-DIM-04 | Top values editor | 3 | Build | in-progress | |
 | 25 | SHARED-PERF-01 | Loading / sampling cues | 3 | Verify | todo | |
+| 23 | LENS-DIM-03 | Formula editor | 2 | Build | todo | |
 | 26 | LENS-CHART-01 | Table + Metric specifics | 2 | Build | todo | |
 | 27 | LENS-STYLE-01 | Style + Legend panels | 2 | Build | todo | |
 | 28 | LENS-LAYER-01 | Layers | 2 | Build | todo | |

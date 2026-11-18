@@ -47,6 +47,7 @@ import { loadPinnedFilters, mergePinnedFilters, normalizePinnedFlags, tableKey }
 import { useAutocompleteSources } from '../autocomplete/service';
 import { compileColumnHighlighter, extractHighlightTerms } from '../sql/kql/highlight';
 import { errMsg } from '../errMsg';
+import { TimeShorthandInput } from '../components/TimeShorthandInput';
 import { shiftTimeRange, zoomOutTimeRange } from '../utils/timeRangeNav';
 import { useAvailableHeight } from '../utils/useAvailableHeight';
 import { lensContextFor, lensFieldOf, lensForField, lensForHistogram, visualizeUrl } from '../lens/handoff';
@@ -1356,6 +1357,7 @@ export function LogsExplorer() {
               TimeRangePicker (which fit) stays on line 1, separating a control from the time
               range it refreshes. */}
           <div className={styles.headerTimeGroup}>
+            {caps.hasTime && <TimeShorthandInput range={timeRange} onApply={setTimeRange} />}
             {caps.hasTime && (
               <TimeRangePicker
                 value={timeRange}

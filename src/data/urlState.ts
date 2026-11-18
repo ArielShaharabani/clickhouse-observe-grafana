@@ -7,7 +7,7 @@
  * Deliberately plain JSON in the query string (not base64) — URLSearchParams already percent-
  * encodes/decodes values for us, so there's nothing base64 buys here beyond a longer URL.
  */
-import { dateTime, rangeUtil, TimeRange } from '@grafana/data';
+import { dateMath, dateTime, rangeUtil, TimeRange } from '@grafana/data';
 import { FilterPill, IntervalMode, SelectedColumn } from '../types';
 import { sanitizeFilterPills } from '../sql/filters';
 
@@ -106,6 +106,8 @@ function safeParseArray<T>(raw: string | null): T[] | undefined {
   }
 }
 
+const ISO_WITH_ZONE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:\d{2})$/;
+
 /** Best-effort — any field that fails to parse is simply omitted, never throws. */
 export function decodeLogsState(searchParams: URLSearchParams): DecodedLogsUrlState {
   const result: DecodedLogsUrlState = {};
@@ -140,7 +142,21 @@ export function decodeLogsState(searchParams: URLSearchParams): DecodedLogsUrlSt
     try {
       // Same convention as SavedSearchMenu.tsx's handleLoad: relative strings pass through for
       // dateMath to resolve, absolute epoch-ms strings become DateTime objects.
-      const toRaw = (v: string) => (v.startsWith('now') ? v : dateTime(Number(v)));
+      // Epoch ms (what we write, any finite number), ISO-8601 with an explicit zone (as Kibana's
+      // _g.time writes), or a valid relative expression. Anything else is dropped.
+      const toRaw = (v: string) => {
+        if (v.startsWith('now')) {
+          if (!dateMath.isValid(v)) {
+            throw new Error('bad time');
+          }
+          return v;
+        }
+        const ms = v.trim() !== '' && Number.isFinite(Number(v)) ? Number(v) : ISO_WITH_ZONE.test(v) ? Date.parse(v) : NaN;
+        if (Number.isNaN(ms)) {
+          throw new Error('bad time');
+        }
+        return dateTime(ms);
+      };
       result.timeRange = rangeUtil.convertRawToRange({ from: toRaw(from), to: toRaw(to) });
     } catch {
       // Malformed from/to — leave timeRange undefined, caller keeps its own default.
