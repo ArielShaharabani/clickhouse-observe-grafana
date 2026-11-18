@@ -151,3 +151,39 @@ DISC-DOC-02 acceptance:
 | Hostile `cols` (expr/alias with `FROM system.users --`, subqueries, hostile core expr) dropped or rebuilt from the mapping; types checked; duplicates dropped; strict mode keeps only discovered fields / Map keys (jest `sanitizeColumns.test.ts`) | ✅ |
 | `buildLogsQuery` never emits an unsafe alias / expression; hostile sort column and direction fall back (jest `sanitizeColumns.test.ts`) | ✅ |
 | Crafted link renders without the injected column; hostile core column uses the mapping; hostile sort falls back; a legitimate Map key column from a link is kept (`tests/features/sec-url-cols.spec.ts`) | ✅ |
+
+### DATAVIEW-TIME (PR 27)
+| Case | Status |
+| --- | --- |
+| Converted time fields (epoch s / ms / ns, ISO text) find every fixture row in the fixture range and filter by level (`tests/features/dataview-time.spec.ts`, fixture view `default.spec_logs_epoch` from `scripts/clickhouse-init/05_dataview_time_fixture.sql`) | ✅ |
+| Converted epoch ms over the incident window matches the native view's count | ✅ |
+| Edit data view: switch time column, epoch unit guessed from a sample, saved to the personal view | ✅ |
+| Configuration page: shared view lists the table's columns, time field picker offers number / text columns with conversion flagged | ✅ |
+| `timeExpr` per format, hostile stored config, column kinds, every query builder + Lens through `timeExpr` (jest `src/sql/__tests__/timeExpr.test.ts`) | ✅ |
+| Picker options / defaults / guess / note, `omitKeys`, schema-query escaping (jest `src/components/__tests__/TimeFieldSelect.test.tsx`) | ✅ |
+
+### DISC-FIELDSTATS-01 (PR 26)
+| Case | Status |
+| --- | --- |
+| IT-A | Stats tab as producer (expanded row Filter for → count + stats refresh) and consumer (URL filter → 1 category, 27.4% payments errors) (`tests/features/disc-fieldstats-01.spec.ts`) ✅ |
+| IT-G | Stats tab Visualize → Visualize page with the same query (`disc-fieldstats-01.spec.ts`) ✅ |
+| Table | documents %, distinct, keyword strip / numeric sparkline, eye toggle, name filter, back to Documents (`disc-fieldstats-01.spec.ts`; jest `FieldStatsTab.test.tsx`) ✅ |
+| SQL | one sample per batch, positional aliases, numeric-only summary, absent stand-ins dropped (jest `field_stats.test.ts`); checked against ClickHouse on the fixture (3,483 / 792 / 487 / 238) ✅ |
+
+### SHARED-PERF-01 (PR 28)
+| Case | Status |
+| --- | --- |
+| Loading bar on Discover appears while queries run, disappears after (`tests/features/shared-perf-01.spec.ts`, queries delayed with page.route) | written, e2e not run (coordinator) |
+| Slow Discover query: "Still running" chip after 2 s, Cancel stops loading, no error banner, cancelled notice dismissible (`shared-perf-01.spec.ts`) | written, e2e not run (coordinator) |
+| Visualize: bar while the chart runs; Unique count note shown, exact metrics have none (`shared-perf-01.spec.ts`) | written, e2e not run (coordinator) |
+| QueryProgress unit: idle renders nothing, bar immediate, chip after delay, Cancel → onCancel + notice, new run clears notice, finished run leaves none; `formatElapsed`; `lensApproxNote` (jest `QueryProgress.test.tsx`) | ✅ |
+| Map keys popover caption says "sample records" (jest `FieldKeysPopover.test.tsx`) | ✅ |
+
+### LENS-DIM-03 (PR 29)
+| Case | Status |
+| --- | --- |
+| Formula parse / compile / precedence / functions | jest `src/lens/__tests__/formula.test.ts` ✅ |
+| Injection attempts (SQL in formula, field names, KQL quotes, unknown functions, nesting/length limits, `$` in dashboard mode) | jest `formula.test.ts` ✅ |
+| URL codec + sanitizeLens for formulas (unknown keys dropped, foreign field expr dropped, invalid formula dropped) | jest `formula.test.ts` ✅ |
+| Editor: convert quick → formula, apply on blur, error badge, autocomplete + bracket auto-close, function reference, back to quick | jest `src/lens/__tests__/FormulaEditor.test.tsx` ✅ |
+| E2E: URL formula runs (errors per service 1,575 / 445); convert + edit + reload; autocomplete + error badge; foreign-field formula from a shared link dropped and no SQL from it sent | `tests/features/lens-dim-03.spec.ts` — not run yet (coordinator) |
