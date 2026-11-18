@@ -134,7 +134,17 @@ export function LensPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   // The page is on its view once the entry's view is active (App applies it a render later).
-  const viewSettled = entered && (!entry.view || activeView?.id === entry.view.id);
+  // Latched: after that, a switch from the picker must not un-settle the page, or the switch
+  // effect below would never run for it.
+  const entryViewActive = entered && (!entry.view || activeView?.id === entry.view.id);
+  const [settledOnce, setSettledOnce] = useState(false);
+  useEffect(() => {
+    if (entryViewActive && !settledOnce) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setSettledOnce(true);
+    }
+  }, [entryViewActive, settledOnce]);
+  const viewSettled = settledOnce || entryViewActive;
   useEffect(() => {
     if (!entered) {
       return;

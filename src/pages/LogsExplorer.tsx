@@ -272,7 +272,11 @@ export function LogsExplorer() {
   // reset effect right below (which fires when activeView.id changes) sees a no-op transition
   // instead of treating this URL-driven switch as a user action and wiping the query state that
   // was just hydrated from that same URL (see initialUrlState above).
+  // The reset effect runs in the same commit as this one, while activeView is still App's
+  // default: `pendingUrlViewRef` makes it wait until the URL's view is actually active, otherwise
+  // it sees default → URL view as a user switch and wipes the query/filters the link carried.
   const appliedUrlViewRef = useRef(false);
+  const pendingUrlViewRef = useRef<string | undefined>(undefined);
   useEffect(() => {
     if (appliedUrlViewRef.current) {
       return;
@@ -280,6 +284,9 @@ export function LogsExplorer() {
     appliedUrlViewRef.current = true;
     if (initialUrlState.viewId && initialUrlState.viewId !== activeView?.id) {
       prevViewId.current = initialUrlState.viewId;
+      if (views.some((v) => v.id === initialUrlState.viewId)) {
+        pendingUrlViewRef.current = initialUrlState.viewId;
+      }
       setActiveViewId(initialUrlState.viewId);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -287,6 +294,12 @@ export function LogsExplorer() {
 
   useEffect(() => {
     const viewId = activeView?.id;
+    if (pendingUrlViewRef.current !== undefined) {
+      if (viewId !== pendingUrlViewRef.current) {
+        return;
+      }
+      pendingUrlViewRef.current = undefined;
+    }
     if (prevViewId.current !== undefined && prevViewId.current !== viewId) {
       // Pinned filters survive a data view switch, like Kibana's global filters — disabled when the
       // new view reads a different table than the one they were pinned on.
