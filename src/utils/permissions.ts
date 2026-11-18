@@ -21,3 +21,16 @@ export function canCreateDashboards(): boolean {
   }
   return user.orgRole !== 'Viewer' && user.orgRole !== '';
 }
+
+/** True when the user may create alert rules (`alert.rules:create`, else Editor or above). */
+export function canCreateAlertRules(): boolean {
+  const user = config.bootData?.user;
+  if (!user) {
+    return false;
+  }
+  const perms = (user as unknown as { permissions?: Record<string, boolean> }).permissions;
+  if (perms && 'alert.rules:create' in perms) {
+    return Boolean(perms['alert.rules:create']);
+  }
+  return user.orgRole !== 'Viewer' && user.orgRole !== '';
+}

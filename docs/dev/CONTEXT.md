@@ -1,7 +1,7 @@
 # Context snapshot — read this to restart
 
 Saved after every feature (and every review-fix round). A new session can resume from this file plus `PROGRESS.md` alone.
-Last saved: 2026-11-18, #16g LENS-DIM-02-ADV merged (PR 33, v0.38.0).
+Last saved: 2026-11-18, #32 DISC-SESSION-01 merged (PR 38, v0.42.0).
 
 ## Goal
 Bring Kibana Discover + Lens style exploration to Grafana on ClickHouse by extending the **ClickHouse Observe** app plugin.
@@ -46,6 +46,10 @@ Bring Kibana Discover + Lens style exploration to Grafana on ClickHouse by exten
 | 23 | LENS-DIM-03: Formula editor | 30 | src/lens/formula.ts, src/lens/FormulaEditor.tsx |
 | 16e/16f | LENS-DIM-05: Date histogram custom interval and advanced options; Intervals and Filters bucket functions (#16e/#16f) | 33 | src/lens/interval.ts, src/lens/BucketEditors.tsx, src/lens/compile.ts |
 | 16g | LENS-DIM-02-ADV: Metric advanced options (Filter by, Time shift, Reduced time range, Normalize) and appearance | 33 | src/lens/metricOptions.ts, src/lens/MetricAdvanced.tsx, src/lens/render/fieldConfig.ts |
+| 30 | DISC-SEARCH-03: Query menu: apply to all, saved queries | 38 | src/data/savedQueries.ts, src/state/queryMenu.ts, src/components/QueryMenu/QueryMenu.tsx |
+| 29 | LENS-INSPECT-01: Visualize Inspector (Data / Requests) | 38 | src/lens/Inspector.tsx, src/lens/inspectorData.ts |
+| 31 | DISC-NAV-01: Discover session tabs | 38 | src/state/discoverTabs.ts, src/components/DiscoverTabs/DiscoverTabs.tsx, src/pages/DiscoverTabsHost.tsx |
+| 32 | DISC-SESSION-01: Share, CSV export, new session, alert rule | 38 | src/data/csvExport.ts, src/data/shareLink.ts, src/data/alertRule.ts, src/components/SessionActions/SessionActions.tsx |
 
 ## Key decisions (details in DECISIONS.md)
 - Frontend-only; queries via grafana-clickhouse-datasource (`src/data/runQuery.ts`). Plain React + @grafana/ui, no Scenes.
