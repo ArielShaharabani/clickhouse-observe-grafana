@@ -53,10 +53,11 @@ export function logRowKey(row: Record<string, unknown>, config?: SourceConfig): 
 }
 
 const BARE_IDENT = '[A-Za-z_][A-Za-z0-9_]*';
-/** A double-quoted SQL identifier using this file's own quoteIdentifier()/quoteDottedPath()
- *  escaping convention (embedded `"` doubled) — matches a single dotted-path segment quoteDottedPath
- *  produces for a segment that isn't bare-safe (e.g. a JSON path like `user-id`). */
-const QUOTED_IDENT = '"(?:[^"]|"")*"';
+/** A double-quoted SQL identifier exactly as ClickHouse's lexer reads one: inside the quotes a
+ *  backslash escapes the next character and `""` is an escaped quote. Mirroring the lexer (not just
+ *  "doubled quotes") matters: `"x\""` is ONE identifier to ClickHouse, so a regex that ignored the
+ *  backslash would end it early and let the rest pass as trusted SQL. */
+const QUOTED_IDENT = '"(?:[^"\\\\]|""|\\\\[\\s\\S])*"';
 const IDENT = `(?:${BARE_IDENT}|${QUOTED_IDENT})`;
 /** A single-quoted SQL string literal using this file's own quoteString() escaping convention
  *  (backslash escaped first, then embedded single quotes) — matches what quoteString() actually
@@ -101,11 +102,20 @@ export function looksLikeTrustedExpr(name: string): boolean {
   return MAP_ACCESSOR_RE.test(name) || DOTTED_PATH_RE.test(name);
 }
 
+/**
+ * Double-quotes one identifier part. ClickHouse treats `\` as an escape inside quoted identifiers,
+ * so backslashes are escaped first, then quotes doubled: a name ending in `\"` can't close the
+ * identifier early and smuggle SQL after it.
+ */
+export function quoteIdentPart(name: string): string {
+  return `"${name.replace(/\\/g, '\\\\').replace(/"/g, '""')}"`;
+}
+
 export function quoteIdentifier(name: string): string {
   if (looksLikeTrustedExpr(name)) {
     return name;
   }
-  return `"${name.replace(/"/g, '""')}"`;
+  return quoteIdentPart(name);
 }
 
 export function quoteString(value: string): string {
@@ -128,7 +138,7 @@ export function quoteString(value: string): string {
  */
 export function quoteDottedPath(root: string, path: string): string {
   const quoteSegment = (seg: string) =>
-    /^[A-Za-z_][A-Za-z0-9_]*$/.test(seg) ? seg : `"${seg.replace(/"/g, '""')}"`;
+    /^[A-Za-z_][A-Za-z0-9_]*$/.test(seg) ? seg : quoteIdentPart(seg);
   return [root, ...path.split('.')].map(quoteSegment).join('.');
 }
 
@@ -155,7 +165,7 @@ export function escapeLike(value: string): string {
 }
 
 export function tableRef(config: SourceConfig, table: string): string {
-  return `"${config.database}"."${table}"`;
+  return `${quoteIdentPart(config.database)}.${quoteIdentPart(table)}`;
 }
 
 /**
