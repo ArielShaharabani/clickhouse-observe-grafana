@@ -3,7 +3,9 @@
  */
 import {
   BucketDim,
+  cleanDateHistogram,
   cleanTerms,
+  DateHistogramDim,
   clampPercentile,
   DEFAULT_PERCENTILE,
   LensField,
@@ -33,6 +35,11 @@ export function compatibleFields(op: MetricOp, fields: LensField[]): LensField[]
 /** Fields a "Top values" bucket can split on (scalar, not time, not Records). */
 export function bucketFields(fields: LensField[]): LensField[] {
   return fields.filter((f) => f.type !== 'records' && f.type !== 'time' && isLensField(f));
+}
+
+/** Fields a date histogram can bucket (date / time fields). */
+export function dateFields(fields: LensField[]): LensField[] {
+  return fields.filter((f) => f.type === 'time');
 }
 
 const newId = newDimId;
@@ -68,9 +75,20 @@ export function withMetricField(m: MetricDim, field: LensField): MetricDim {
   return { ...m, field: field.sqlExpr, fieldLabel: field.label, numeric: field.type === 'number' };
 }
 
-/** Sets a top-values bucket's field. */
+/** Sets a bucket's field (top values: any bucket field; date histogram: a date field). */
 export function withBucketField(b: BucketDim, field: LensField): BucketDim {
+  if (b.kind === 'date_histogram') {
+    return field.type === 'time' ? cleanDateHistogram({ ...b, field: field.sqlExpr, label: field.label }) : b;
+  }
   return b.kind === 'terms' ? { ...b, field: field.sqlExpr, label: field.label } : b;
+}
+
+/** Applies date histogram options (LENS-DIM-05), normalised like URL input (invalid interval → auto). */
+export function withDateOptions(
+  b: BucketDim,
+  patch: Partial<Pick<DateHistogramDim, 'interval' | 'emptyRows' | 'dropPartial' | 'unbound'>>
+): BucketDim {
+  return b.kind === 'date_histogram' ? cleanDateHistogram({ ...b, ...patch }) : b;
 }
 
 /** A user-edited name; blank = back to the automatic label. */

@@ -9,8 +9,9 @@ import { EncodeLogsUrlStateInput, encodeLogsState } from '../data/urlState';
 import { defaultColumns, fieldToColumn } from '../data/columns';
 import { prefixRoute } from '../utils/utils.routing';
 import { FieldModel } from '../sql/fieldModel';
-import { SelectedColumn, SourceConfig } from '../types';
+import { IntervalMode, SelectedColumn, SourceConfig } from '../types';
 import { EMPTY_LENS, encodeLens, LensField, LensState, RECORDS_FIELD } from './state';
+import { intervalFromDiscover, intervalToDiscover } from './interval';
 import { addField, isLensField, LensContext, switchChart } from './suggest';
 
 /** Search context carried by a hand-off (Discover's columns, sort, interval stay behind). */
@@ -37,9 +38,14 @@ export function lensForField(
 
 /**
  * Histogram "Edit visualization" (DISC-CHART-03): Bar, time on the horizontal axis, Count of
- * records vertically, and the histogram's breakdown (if any) as the series split.
+ * records vertically, and the histogram's breakdown (if any) as the series split. The histogram's
+ * interval (when not Auto) becomes the date histogram's minimum interval (LENS-DIM-05).
  */
-export function lensForHistogram(ctx: LensContext, breakdown?: LensField): LensState | undefined {
+export function lensForHistogram(
+  ctx: LensContext,
+  breakdown?: LensField,
+  interval?: IntervalMode
+): LensState | undefined {
   if (!ctx.timeField) {
     return undefined;
   }
@@ -47,7 +53,17 @@ export function lensForHistogram(ctx: LensContext, breakdown?: LensField): LensS
   if (breakdown) {
     s = addField(s, breakdown, ctx);
   }
+  const iv = intervalFromDiscover(interval);
+  if (iv !== 'auto') {
+    s = { ...s, buckets: s.buckets.map((b) => (b.kind === 'date_histogram' ? { ...b, interval: iv } : b)) };
+  }
   return s;
+}
+
+/** Discover histogram interval for Explore in Discover: the chart's date interval when Discover has it. */
+export function discoverIntervalOf(lens: LensState): IntervalMode | undefined {
+  const x = lens.buckets.find((b) => b.kind === 'date_histogram');
+  return x?.kind === 'date_histogram' ? intervalToDiscover(x.interval) : undefined;
 }
 
 /** /visualize link for a Lens state in the given search context. */
@@ -79,6 +95,6 @@ export function discoverColumns(lens: LensState, fields: FieldModel[], config: S
 }
 
 /** /logs link carrying the search context and the given grid columns. */
-export function discoverUrl(c: HandoffContext, columns: SelectedColumn[]): string {
-  return `${prefixRoute('logs')}?${encodeLogsState({ ...c, columns }).toString()}`;
+export function discoverUrl(c: HandoffContext, columns: SelectedColumn[], interval?: IntervalMode): string {
+  return `${prefixRoute('logs')}?${encodeLogsState({ ...c, columns, interval }).toString()}`;
 }
