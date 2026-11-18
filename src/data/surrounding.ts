@@ -9,10 +9,16 @@
  */
 import { TimeRange } from '@grafana/data';
 import { prefixRoute } from '../utils/utils.routing';
-import { buildContextAnchorLookupQuery, CONTEXT_ALIAS, ContextAnchor, isContextAnchor } from '../sql/queryBuilder';
+import {
+  buildContextAnchorLookupQuery,
+  CONTEXT_ALIAS,
+  ContextAnchor,
+  isContextAnchor,
+  looksLikeMapAccessor,
+} from '../sql/queryBuilder';
 import { FilterPill, SelectedColumn, SourceConfig } from '../types';
 import { FieldModel } from '../sql/fieldModel';
-import { defaultColumns, fieldToColumn } from './columns';
+import { defaultColumns, fieldToColumn, makeColumnKey } from './columns';
 import { encodeLogsState } from './urlState';
 import { runQueryRows } from './runQuery';
 
@@ -87,9 +93,35 @@ export async function resolveContextAnchor(
 }
 
 /**
+ * A Map key column (`LogAttributes['http.status_code']`): Map keys are discovered on demand, so
+ * they are not in `fields`. Trusted only when the expression is a strictly well-formed accessor
+ * (looksLikeMapAccessor: escaped key literal, nothing else) on a discovered Map column; the key
+ * and type are rebuilt, never taken from the URL.
+ */
+function mapKeyColumn(col: SelectedColumn, fields: FieldModel[]): SelectedColumn | undefined {
+  const expr = col.sqlExpr;
+  if (typeof expr !== 'string' || !looksLikeMapAccessor(expr)) {
+    return undefined;
+  }
+  const root = expr.slice(0, expr.indexOf('['));
+  if (!fields.some((f) => f.type === 'map' && f.sqlExpr === root)) {
+    return undefined;
+  }
+  return {
+    id: col.id,
+    key: makeColumnKey(col.id),
+    sqlExpr: expr,
+    displayName: typeof col.displayName === 'string' && col.displayName ? col.displayName : expr,
+    type: 'exact',
+    isCore: false,
+  };
+}
+
+/**
  * Grid columns for the surrounding-documents page ("Columns are kept"). URL columns are untrusted —
  * a column's `sqlExpr` would otherwise reach SQL verbatim — so every column is rebuilt from a
- * trusted source: core columns from the view's mapping, others from discovered fields by id.
+ * trusted source: core columns from the view's mapping, others from discovered fields by id or
+ * as a validated Map key accessor (mapKeyColumn).
  * Unknown entries are dropped; nothing left means the view's default columns.
  */
 export function contextColumns(
@@ -110,7 +142,7 @@ export function contextColumns(
       ? defaults.find((d) => d.isCore && d.id === col.id)
       : (() => {
           const field = fields.find((f) => f.id === col.id);
-          return field ? fieldToColumn(field) : undefined;
+          return field ? fieldToColumn(field) : mapKeyColumn(col, fields);
         })();
     if (trusted && !out.some((c) => c.id === trusted.id)) {
       out.push(trusted);

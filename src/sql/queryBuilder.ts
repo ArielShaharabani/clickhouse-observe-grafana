@@ -883,7 +883,8 @@ export interface SurroundingDocsOpts {
   size: number;
   /** Grid columns to select (trusted: rebuilt from discovered fields by the caller). */
   columns: SelectedColumn[];
-  /** Filters; disabled ones are skipped. The search query never applies here (spec). */
+  /** Filters for the neighbours; disabled ones are skipped, the anchor ignores them. The search
+   *  query never applies here (spec). */
   filters: FilterPill[];
 }
 
@@ -928,9 +929,12 @@ export function buildSurroundingDocsQuery(
     order = `ORDER BY ${ts} ${dir}, ${idExpr} ${dir}`;
     limit = Math.min(MAX_CONTEXT_SIZE, Math.max(1, Math.floor(opts.size) || 1));
   }
-  for (const f of opts.filters) {
-    if (!f.disabled) {
-      conditions.push(buildFilterClause(f, config, index));
+  // Like Kibana, the anchor is fetched by its id alone: filters only narrow the neighbours.
+  if (opts.direction !== 'anchor') {
+    for (const f of opts.filters) {
+      if (!f.disabled) {
+        conditions.push(buildFilterClause(f, config, index));
+      }
     }
   }
   const extraSelect = opts.columns.filter((col) => !col.isCore).map((col) => `${col.sqlExpr} AS ${col.key}`);

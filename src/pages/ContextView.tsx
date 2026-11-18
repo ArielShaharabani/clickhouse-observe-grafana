@@ -49,6 +49,8 @@ interface QueryResult {
 }
 
 const NO_ROWS: LogRow[] = [];
+/** The anchor search ignores filters (see buildSurroundingDocsQuery). */
+const NO_FILTERS: FilterPill[] = [];
 
 /** Runs one of the three surrounding-documents searches; re-runs only when its own inputs change. */
 function useContextSearch(
@@ -204,7 +206,7 @@ function SurroundingGrid({
   const [newerStep, setNewerStep] = useState(DEFAULT_CONTEXT_STEP);
   const [olderStep, setOlderStep] = useState(DEFAULT_CONTEXT_STEP);
 
-  const anchorQ = useContextSearch(enabled, config, anchor, 'anchor', 1, columns, filters, fieldIndex, timeRange);
+  const anchorQ = useContextSearch(enabled, config, anchor, 'anchor', 1, columns, NO_FILTERS, fieldIndex, timeRange);
   const newerQ = useContextSearch(enabled, config, anchor, 'newer', newerSize, columns, filters, fieldIndex, timeRange);
   const olderQ = useContextSearch(enabled, config, anchor, 'older', olderSize, columns, filters, fieldIndex, timeRange);
 
@@ -267,7 +269,7 @@ function SurroundingGrid({
   if (enabled && !anchorQ.loading && !anchorRow) {
     return (
       <Alert title="Failed to load the anchor document">
-        The document was not found, or the enabled filters exclude it.
+        The document was not found. It may have been deleted, or the link may be from another data view.
       </Alert>
     );
   }
