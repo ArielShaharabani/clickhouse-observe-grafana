@@ -26,6 +26,9 @@ async function typeValue(page: Page, name: string, text: string, opts: { multi?:
   const box = page.getByRole('combobox', { name, exact: true });
   await box.click();
   await box.fill(text);
+  // The value list loads asynchronously; Enter while it is still loading selects nothing and leaves
+  // the menu open over the form. Wait for an option to be offered first.
+  await expect(page.getByRole('option').first()).toBeVisible();
   await box.press('Enter');
   if (opts.multi) {
     await box.press('Tab');
