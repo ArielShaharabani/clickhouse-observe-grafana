@@ -138,7 +138,11 @@ describe('cleanMetricOptions (untrusted URL input)', () => {
     expect(m.extra).toBeUndefined();
     // Round trip keeps valid options.
     const s = lens([{ ...avg, filter: 'a : b', shift: '1w', format: { id: 'percent' } }]);
-    expect(decodeLens(encodeLens(s))!.metrics[0]).toMatchObject({ filter: 'a : b', shift: '1w', format: { id: 'percent' } });
+    expect(decodeLens(encodeLens(s))!.metrics[0]).toMatchObject({
+      filter: 'a : b',
+      shift: '1w',
+      format: { id: 'percent' },
+    });
   });
 
   it('options survive a function change', () => {
@@ -162,7 +166,7 @@ describe('compileLens with metric options', () => {
   });
 
   it('Filter by values are escaped (no injection through KQL)', () => {
-    const { sql } = compileLens(lens([{ ...count, filter: "SeverityText : \"x') OR 1=1 --\"" }]), config, conds, range);
+    const { sql } = compileLens(lens([{ ...count, filter: 'SeverityText : "x\') OR 1=1 --"' }]), config, conds, range);
     expect(sql).toContain("\\'");
     expect(sql).not.toMatch(/'x'\) OR 1=1/);
   });
@@ -209,9 +213,7 @@ describe('compileLens with metric options', () => {
     );
     expect(sql).toContain('countIf(Timestamp > $__toTime - INTERVAL 15 MINUTE) AS m0');
     // Ignored with a date histogram.
-    expect(compileLens(lens([{ ...count, reducedRange: '15m' }]), config, conds, range).sql).toContain(
-      'count() AS m0'
-    );
+    expect(compileLens(lens([{ ...count, reducedRange: '15m' }]), config, conds, range).sql).toContain('count() AS m0');
   });
 
   it('Normalize by unit scales by the bucket width', () => {
@@ -228,7 +230,13 @@ describe('compileLens with metric options', () => {
   });
 
   it('dashboard mode escapes $ in a Filter by value', () => {
-    const { sql } = compileLens(lens([{ ...count, filter: 'Body : "$__fromTime"' }]), config, conds, range, 'dashboard');
+    const { sql } = compileLens(
+      lens([{ ...count, filter: 'Body : "$__fromTime"' }]),
+      config,
+      conds,
+      range,
+      'dashboard'
+    );
     // The only $__fromTime left is the WHERE clause's own macro.
     expect(sql.split('$__fromTime').length - 1).toBe(1);
     expect(sql).toContain('\\x24');

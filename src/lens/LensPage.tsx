@@ -740,6 +740,7 @@ export function LensPage() {
               group={editingGroup.name}
               fields={lensFields}
               metrics={lens.metrics}
+              chart={lens}
               onChange={(d) => setLens(replaceDim(lens, d))}
               onRemove={() => {
                 setEditingId(null);

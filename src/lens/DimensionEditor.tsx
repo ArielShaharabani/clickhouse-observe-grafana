@@ -34,6 +34,7 @@ import {
   BucketDim,
   clampPercentile,
   LensField,
+  LensState,
   listError,
   MetricDim,
   opName,
@@ -42,6 +43,7 @@ import {
 } from './state';
 import { uniqueMetricLabels } from './compile';
 import { FormulaEditor, formulaFieldsOf, formulaMetric } from './FormulaEditor';
+import { MetricAdvanced } from './MetricAdvanced';
 import { formulaErrors, quickToFormula } from './formula';
 
 interface Props {
@@ -50,12 +52,14 @@ interface Props {
   fields: LensField[];
   /** The chart's metrics (candidates for Custom metric ranking). */
   metrics?: MetricDim[];
+  /** The whole chart (metric Advanced / Appearance options depend on it). */
+  chart?: LensState;
   onChange: (d: BucketDim | MetricDim) => void;
   onRemove: () => void;
   onClose: () => void;
 }
 
-export function DimensionEditor({ dim, group, fields, metrics = [], onChange, onRemove, onClose }: Props) {
+export function DimensionEditor({ dim, group, fields, metrics = [], chart, onChange, onRemove, onClose }: Props) {
   const styles = useStyles2(getStyles);
   const fieldId = useId();
   const fnLabelId = useId();
@@ -149,6 +153,8 @@ export function DimensionEditor({ dim, group, fields, metrics = [], onChange, on
           )}
         </>
       )}
+
+      {dim.kind === 'metric' && <MetricAdvanced dim={dim} chart={chart} onChange={onChange} />}
 
       {dim.kind === 'terms' && (
         <>

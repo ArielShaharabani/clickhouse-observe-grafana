@@ -4,12 +4,13 @@
  * drawn here). One click on a bar segment or point reports {x, series}; dragging across a time axis
  * reports a time range; legend items toggle visibility and offer Filter for / Filter out.
  */
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { css, cx } from '@emotion/css';
 import { dateTime, GrafanaTheme2 } from '@grafana/data';
 import { IconButton, useStyles2, useTheme2 } from '@grafana/ui';
 import { LensResult } from '../compile';
-import { ChartType, XySubType } from '../state';
+import { ChartType, MetricDim, XySubType } from '../state';
+import { formatValue } from '../metricOptions';
 
 export interface XySelection {
   xIndex: number;
@@ -28,6 +29,8 @@ interface Props {
   onBrush?: (from: number, to: number) => void;
   /** Legend ⋮ actions; omitted → no menu (also omitted when the breakdown can't be filtered). */
   onLegendFilter?: (seriesIndex: number, mode: 'for' | 'out') => void;
+  /** The chart's metrics: per-metric value format, series colour and axis side (LENS-DIM-02). */
+  metrics?: MetricDim[];
 }
 
 /** A series' value at x: missing → 0 for counts, null (gap) otherwise. */
@@ -115,7 +118,7 @@ export function stackValues(
   return { spans, max: mode === 'percentage' ? 100 : max, min: mode === 'percentage' ? Math.max(-100, min) : min };
 }
 
-export function XyChart({ chartType, subType, result, bucketMs, onSelect, onBrush, onLegendFilter }: Props) {
+export function XyChart({ chartType, subType, result, bucketMs, onSelect, onBrush, onLegendFilter, metrics }: Props) {
   const styles = useStyles2(getStyles);
   const theme = useTheme2();
   const boxRef = useRef<HTMLDivElement>(null);
@@ -141,27 +144,52 @@ export function XyChart({ chartType, subType, result, bucketMs, onSelect, onBrus
   }, []);
 
   const palette = theme.visualization.palette;
-  const color = (i: number) => theme.visualization.getColorByName(palette[i % palette.length]);
+  const metricOf = (si: number): MetricDim | undefined => metrics?.[result.series[si]?.metricIndex];
+  // A metric's own colour applies when the series is the metric itself (no breakdown value).
+  const color = (i: number) => {
+    const own = metricOf(i)?.color;
+    return own && result.series[i]?.breakdown === undefined
+      ? own
+      : theme.visualization.getColorByName(palette[i % palette.length]);
+  };
+  const fmtOf = (si: number, v: number) => formatValue(v, metricOf(si)?.format, fmt);
   const visible = result.series.map((s) => !hidden.has(s.name));
   const mode: 'stacked' | 'percentage' | 'none' =
     subType === 'percentage' ? 'percentage' : chartType === 'line' || subType === 'unstacked' ? 'none' : 'stacked';
-  const { spans, max, min } = useMemo(
-    () =>
-      stackValues(
-        result,
-        result.series.map((s) => !hidden.has(s.name)),
-        mode
-      ),
-    [result, hidden, mode]
-  );
+  // Axis side: a right axis for metrics set to Right (unstacked charts; stacks share one axis).
+  const side = (si: number): 'left' | 'right' => (mode === 'none' && metricOf(si)?.axis === 'right' ? 'right' : 'left');
+  const sides = result.series.map((_s, si) => side(si));
+  const hasRight = sides.some((sd, si) => sd === 'right' && visible[si]);
+  const hasLeft = sides.some((sd, si) => sd === 'left' && visible[si]);
+  const stacked = {
+    left: stackValues(
+      result,
+      visible.map((v, i) => v && sides[i] !== 'right'),
+      mode
+    ),
+    right: stackValues(
+      result,
+      visible.map((v, i) => v && sides[i] === 'right'),
+      mode
+    ),
+  };
+  const spans = result.series.map((_s, si) => stacked[sides[si]].spans[si]);
+  const { max, min } = stacked.left;
+  const firstOn = (sd: 'left' | 'right') => sides.findIndex((x, i) => x === sd && visible[i]);
 
   const W = Math.max(size.w, 0);
   const H = Math.max(size.h, HEIGHT_MIN);
-  const plotW = Math.max(1, W - M.left - M.right);
+  const marginRight = hasRight ? M.left : M.right;
+  const plotW = Math.max(1, W - M.left - marginRight);
   const plotH = Math.max(1, H - M.top - M.bottom);
   const yMax = niceMax(max);
   const yMin = min < 0 ? -niceMax(-min) : 0;
   const y = (v: number) => M.top + plotH - ((v - yMin) / (yMax - yMin)) * plotH;
+  const yMaxR = niceMax(stacked.right.max);
+  const yMinR = stacked.right.min < 0 ? -niceMax(-stacked.right.min) : 0;
+  const yR = (v: number) => M.top + plotH - ((v - yMinR) / (yMaxR - yMinR)) * plotH;
+  const ys = (si: number) => (sides[si] === 'right' ? yR : y);
+  const leftFmt = (v: number) => (firstOn('left') >= 0 ? fmtOf(firstOn('left'), v) : fmt(v));
   const n = Math.max(1, result.xs.length);
   const band = plotW / n;
   const cx0 = (xi: number) => M.left + band * xi + band / 2;
@@ -180,7 +208,7 @@ export function XyChart({ chartType, subType, result, bucketMs, onSelect, onBrus
     });
   };
   const itemLabel = (xi: number, si: number) =>
-    `${xText(result, xi, spanMs)} · ${result.series[si].name}: ${fmt(pointValue(result.series[si], result.xs[xi]) ?? 0)}`;
+    `${xText(result, xi, spanMs)} · ${result.series[si].name}: ${fmtOf(si, pointValue(result.series[si], result.xs[xi]) ?? 0)}`;
 
   // Brush (time X only): drag across the plot to pick a range.
   const pxToTime = (px: number) => {
@@ -234,8 +262,23 @@ export function XyChart({ chartType, subType, result, bucketMs, onSelect, onBrus
                   className={styles.grid}
                 />
                 <text x={M.left - 6} y={y(yMin + (yMax - yMin) * f) + 4} textAnchor="end" className={styles.tick}>
-                  {mode === 'percentage' ? `${Math.round(yMin + (yMax - yMin) * f)}%` : fmt(yMin + (yMax - yMin) * f)}
+                  {mode === 'percentage'
+                    ? `${Math.round(yMin + (yMax - yMin) * f)}%`
+                    : hasLeft || !hasRight
+                      ? leftFmt(yMin + (yMax - yMin) * f)
+                      : ''}
                 </text>
+                {hasRight && (
+                  <text
+                    x={M.left + plotW + 6}
+                    y={yR(yMinR + (yMaxR - yMinR) * f) + 4}
+                    textAnchor="start"
+                    className={styles.tick}
+                    data-testid="lens-right-tick"
+                  >
+                    {fmtOf(firstOn('right'), yMinR + (yMaxR - yMinR) * f)}
+                  </text>
+                )}
               </g>
             ))}
             {result.xs.map((x, xi) =>
@@ -272,8 +315,8 @@ export function XyChart({ chartType, subType, result, bucketMs, onSelect, onBrus
                           key={`${si}-${xi}`}
                           x={left}
                           width={Math.max(1, w - 1)}
-                          y={Math.min(y(sp[0]), y(sp[1]))}
-                          height={Math.max(1, Math.abs(y(sp[0]) - y(sp[1])))}
+                          y={Math.min(ys(si)(sp[0]), ys(si)(sp[1]))}
+                          height={Math.max(1, Math.abs(ys(si)(sp[0]) - ys(si)(sp[1])))}
                           fill={color(si)}
                           role="button"
                           tabIndex={0}
@@ -297,7 +340,7 @@ export function XyChart({ chartType, subType, result, bucketMs, onSelect, onBrus
                 // Gaps (no data) break the line; each unbroken run is its own path segment.
                 const pts = result.xs.map((_x, xi) => {
                   const sp = spans[si][xi];
-                  return sp ? ([cx0(xi), y(sp[1]), y(sp[0])] as const) : null;
+                  return sp ? ([cx0(xi), ys(si)(sp[1]), ys(si)(sp[0])] as const) : null;
                 });
                 const runs: Array<Array<readonly [number, number, number]>> = [];
                 pts.forEach((p, i) => {
