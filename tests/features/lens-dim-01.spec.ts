@@ -10,13 +10,15 @@ const editor = (page: Page, group: string) => page.getByRole('dialog', { name: `
 
 async function pickField(page: Page, group: string, name: string) {
   const box = editor(page, group).getByRole('combobox', { name: 'Field' });
-  // A function switch may auto-pick a field asynchronously; let it land, then type over it
-  // (a bare fill() can race the re-render and append to the picked name).
-  await expect(box).not.toHaveValue('');
-  await box.click();
-  await box.press('ControlOrMeta+a');
-  await box.pressSequentially(name);
-  await expect(box).toHaveValue(name);
+  // A function switch auto-picks a field asynchronously, and the combobox writes the selected
+  // label into the input shortly after focus, so a bare fill() can append to it
+  // ("TraceFlagsSeverityNumber"). Retry until the input holds exactly what was typed.
+  await expect(async () => {
+    await box.click();
+    await box.fill('');
+    await box.pressSequentially(name);
+    await expect(box).toHaveValue(name, { timeout: 1000 });
+  }).toPass({ timeout: 15000 });
   await page.getByRole('option', { name, exact: true }).click();
 }
 
