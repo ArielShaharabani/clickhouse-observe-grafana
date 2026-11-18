@@ -140,12 +140,12 @@ export function switchChart(state: LensState, target: ChartType, ctx: LensContex
       break;
     case 'metric':
       // Primary + secondary metric; one "Break down by" (a category, not time).
-      buckets = buckets.filter((b) => b.kind === 'terms').slice(0, 1);
+      buckets = buckets.filter((b) => b.kind !== 'date_histogram').slice(0, 1);
       metrics = metrics.slice(0, 2);
       break;
     case 'pie':
       // One "Slice by" (nested slices need a sunburst Grafana doesn't ship).
-      buckets = buckets.filter((b) => b.kind === 'terms').slice(0, 1);
+      buckets = buckets.filter((b) => b.kind !== 'date_histogram').slice(0, 1);
       metrics = metrics.slice(0, 1);
       break;
     case 'table':

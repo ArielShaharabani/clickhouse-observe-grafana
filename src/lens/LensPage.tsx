@@ -22,7 +22,7 @@ import { buildWhereConditions } from '../sql/queryBuilder';
 import { filtersForViewSwitch, loadPinnedFilters, tableKey } from '../state/sharedSearch';
 import { hasSearchContext, rememberSearchContext, restoreSearchContext } from '../state/lastSearch';
 import { draftScopeOf, visualizeEntry } from './entry';
-import { discoverColumns, discoverUrl, lensContextFor } from './handoff';
+import { discoverColumns, discoverIntervalOf, discoverUrl, lensContextFor } from './handoff';
 import { buildLensPanel, defaultPanelTitle } from './panelExport';
 import { SaveLensModal } from './SaveLensModal';
 import { canCreateDashboards } from '../utils/permissions';
@@ -37,6 +37,7 @@ import { compileLens, LensResult, realKey, shapeLensRows } from './compile';
 import { LensChart } from './render/LensChart';
 import { CHART_ICONS, ChartTypeSwitcher } from './ChartTypeSwitcher';
 import { DimensionEditor } from './DimensionEditor';
+import { LensInterval, stepBucket } from './interval';
 import { addBucket, addMetric, metricForField, nextBucketField, queryShape, replaceDim } from './dimensions';
 import {
   BucketDim,
@@ -338,9 +339,13 @@ export function LensPage() {
   }, [lensFields, nameFilter]);
 
   // Run the chart query.
-  const [result, setResult] = useState<{ key: string; data?: LensResult; error?: string; bucketMs?: number } | null>(
-    null
-  );
+  const [result, setResult] = useState<{
+    key: string;
+    data?: LensResult;
+    error?: string;
+    bucketMs?: number;
+    interval?: LensInterval;
+  } | null>(null);
   // Names are display-only: renaming a dimension must not re-run the query.
   const queryKey = JSON.stringify([
     encodeLens(queryShape(lens)),
@@ -363,10 +368,24 @@ export function LensPage() {
       { ...DEFAULT_LOGS_QUERY_STATE, search, filters },
       fieldIndexRef.current
     );
-    const { sql, intervalMs } = compileLens(lens, config, conditions, timeRange, 'app', fieldIndexRef.current);
+    const { sql, intervalMs, interval } = compileLens(
+      lens,
+      config,
+      conditions,
+      timeRange,
+      'app',
+      fieldIndexRef.current
+    );
+    const range = { from: timeRange.from.valueOf(), to: timeRange.to.valueOf() };
     runQueryRows({ datasourceUid: config.datasourceUid, sql, timeRange, op: 'lens', signal: abort.signal }).then(
       (rows) =>
-        !cancelled && setResult({ key: queryKey, data: shapeLensRows(lens, rows, intervalMs), bucketMs: intervalMs }),
+        !cancelled &&
+        setResult({
+          key: queryKey,
+          data: shapeLensRows(lens, rows, intervalMs, { interval, range }),
+          bucketMs: intervalMs,
+          interval,
+        }),
       (e) => !cancelled && setResult({ key: queryKey, error: e instanceof Error ? e.message : String(e) })
     );
     return () => {
@@ -441,7 +460,7 @@ export function LensPage() {
   // Same pill the action registry's Filter for / Filter out builds everywhere else.
   const pillFor = (field: string, value: string, mode: 'for' | 'out'): FilterPill =>
     makeFilter(field, value, mode === 'for' ? '=' : '!=');
-  const choicesFor = (sel: XySelection, data: LensResult, bucketMs?: number): FilterChoice[] => {
+  const choicesFor = (sel: XySelection, data: LensResult, bucketMs?: number, iv?: LensInterval): FilterChoice[] => {
     const out: FilterChoice[] = [];
     const [x, breakdown] = lens.buckets;
     const xv = data.xs[sel.xIndex];
@@ -453,9 +472,11 @@ export function LensPage() {
       });
     } else if (x?.kind === 'date_histogram' && bucketMs) {
       const from = Number(xv);
+      // Exact bucket end (calendar months / years are not a fixed number of ms).
+      const end = iv ? stepBucket(from, iv, 1) : from + bucketMs;
       out.push({
-        label: `${x.label}: ${dateTime(from).format('YYYY-MM-DD HH:mm')} – ${dateTime(from + bucketMs).format('YYYY-MM-DD HH:mm')}`,
-        time: [from, from + bucketMs],
+        label: `${x.label}: ${dateTime(from).format('YYYY-MM-DD HH:mm')} – ${dateTime(end).format('YYYY-MM-DD HH:mm')}`,
+        time: [from, end],
       });
     }
     if (breakdown?.kind === 'terms' && series?.breakdown !== undefined && !series.synthetic) {
@@ -498,7 +519,7 @@ export function LensPage() {
     if (!current?.data) {
       return;
     }
-    const choices = choicesFor(sel, current.data, current.bucketMs);
+    const choices = choicesFor(sel, current.data, current.bucketMs, current.interval);
     if (choices.length === 1) {
       applyChoices(choices);
     } else if (choices.length > 1) {
@@ -520,7 +541,11 @@ export function LensPage() {
   const exploreUrl = useMemo(
     () =>
       locationUtil.assureBaseUrl(
-        discoverUrl({ search, filters, timeRange, viewId: activeView?.id }, discoverColumns(lens, fields, config))
+        discoverUrl(
+          { search, filters, timeRange, viewId: activeView?.id },
+          discoverColumns(lens, fields, config),
+          discoverIntervalOf(lens)
+        )
       ),
     [search, filters, timeRange, activeView?.id, lens, fields, config]
   );
@@ -740,6 +765,9 @@ export function LensPage() {
               group={editingGroup.name}
               fields={lensFields}
               metrics={lens.metrics}
+              timeRange={{ from: timeRange.from.valueOf(), to: timeRange.to.valueOf() }}
+              timeField={ctx.timeField?.sqlExpr}
+              chart={lens}
               onChange={(d) => setLens(replaceDim(lens, d))}
               onRemove={() => {
                 setEditingId(null);

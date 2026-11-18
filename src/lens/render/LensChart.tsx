@@ -8,6 +8,7 @@ import { css } from '@emotion/css';
 import {
   createDataFrame,
   DataFrame,
+  FieldConfigSource,
   FieldType,
   getDefaultTimeRange,
   LoadingState,
@@ -18,12 +19,13 @@ import { PanelRenderer } from '@grafana/runtime';
 import { LensResult } from '../compile';
 import { LensState } from '../state';
 import { XyChart, XySelection } from './XyChart';
+import { withMetricAppearance } from './fieldConfig';
 
 interface PanelSpec {
   pluginId: string;
   frames: DataFrame[];
   options: Record<string, unknown>;
-  fieldConfig: { defaults: Record<string, unknown>; overrides: [] };
+  fieldConfig: { defaults: Record<string, unknown>; overrides: unknown[] };
 }
 
 const legend = { showLegend: true, displayMode: 'list', placement: 'bottom', calcs: [] };
@@ -36,8 +38,14 @@ function numberFields(result: LensResult) {
   }));
 }
 
-/** Chart type + shaped rows → the Grafana panel that draws them. Exported for tests. */
+/** Chart type + shaped rows → the Grafana panel that draws them, with the metrics' appearance. */
 export function panelSpec(state: LensState, result: LensResult): PanelSpec {
+  const spec = basePanelSpec(state, result);
+  const xy = state.chartType === 'line' || state.chartType === 'area' || state.chartType === 'bar';
+  return { ...spec, fieldConfig: withMetricAppearance(spec.fieldConfig, state, xy) as PanelSpec['fieldConfig'] };
+}
+
+function basePanelSpec(state: LensState, result: LensResult): PanelSpec {
   const stacking =
     state.subType === 'percentage'
       ? 'percent'
@@ -153,6 +161,7 @@ export function LensChart({ state, result, timeRange, onChangeTimeRange, bucketM
           onSelect={onSelect}
           onBrush={onChangeTimeRange}
           onLegendFilter={onLegendFilter}
+          metrics={state.metrics}
         />
       </div>
     );
@@ -197,7 +206,7 @@ function PanelChart({ state, result, timeRange }: { state: LensState; result: Le
           height={size.height}
           data={data}
           options={spec.options}
-          fieldConfig={spec.fieldConfig}
+          fieldConfig={spec.fieldConfig as FieldConfigSource}
           timeZone="browser"
         />
       )}

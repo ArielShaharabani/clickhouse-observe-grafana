@@ -11,6 +11,7 @@ import { SourceConfig } from '../types';
 import { bucketAlias, compileLens, metricAlias, uniqueMetricLabels } from './compile';
 import { dimLabelIn, LensState } from './state';
 import { chartTitle } from './suggest';
+import { withMetricAppearance } from './render/fieldConfig';
 
 export interface LensPanelOpts {
   id: number;
@@ -61,6 +62,20 @@ export function buildLensPanel(
   timeRange: TimeRange,
   opts: LensPanelOpts
 ): LensPanel {
+  const panel = baseLensPanel(state, config, conditions, timeRange, opts);
+  const xy = state.chartType === 'line' || state.chartType === 'area' || state.chartType === 'bar';
+  return panel.fieldConfig
+    ? { ...panel, fieldConfig: withMetricAppearance(panel.fieldConfig, state, xy) }
+    : panel;
+}
+
+function baseLensPanel(
+  state: LensState,
+  config: SourceConfig,
+  conditions: string[],
+  timeRange: TimeRange,
+  opts: LensPanelOpts
+): LensPanel {
   const datasource = chDatasourceRef(config.datasourceUid);
   const { sql } = compileLens(state, config, conditions, timeRange, 'dashboard');
   const names = columnNames(state);
@@ -88,7 +103,7 @@ export function buildLensPanel(
       if (x?.kind === 'date_histogram') {
         // Long rows (time, split value, metrics) → one series per split value.
         const transformations: Transformation[] =
-          split?.kind === 'terms'
+          split && split.kind !== 'date_histogram'
             ? [
                 rename(withoutSplit),
                 { id: 'partitionByValues', options: { fields: [bucketAlias(1)], keepFields: false } },
@@ -115,7 +130,7 @@ export function buildLensPanel(
       }
       // Category X: a breakdown becomes one column per split value.
       const transformations: Transformation[] =
-        split?.kind !== 'terms'
+        !split || split.kind === 'date_histogram'
           ? [rename(names)]
           : state.metrics.length === 1
             ? [
