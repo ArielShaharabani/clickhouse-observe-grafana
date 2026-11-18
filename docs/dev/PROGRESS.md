@@ -2,7 +2,7 @@
 
 **Current item:** #16 LENS-SAVE-01 save Lens chart to dashboard (in progress on `feat/lens-save-01`; PR 16 merged)
 **Last completed step:** #16 core built on `feat/lens-save-01`: `compileLens(..., "dashboard")` ($__timeInterval buckets), `src/lens/panelExport.ts` (buildLensPanel per chart type, transformations, defaultPanelTitle), `src/lens/SaveLensModal.tsx` (saveLens: library first, then new/existing dashboard), `createLibraryPanel` in `src/data/dashboards.ts`, `src/lens/draft.ts` session draft, Save button on Visualize
-**Next step:** unit tests (panelExport JSON per chart, saveLens with mocked dashboards API, draft), e2e `tests/features/lens-save-01.spec.ts` (save to new dashboard → dashboard shows panel with data; existing; library; refresh restores draft), /security-review (compile change), gates, docs, CHANGELOG, bump 0.26.0, PR 17.
+**Next step:** docs (DECISIONS D21, TESTING, PLAN), CHANGELOG, bump 0.26.0 (restart Grafana), full gates + e2e, /code-review medium, PR 17. Security review done: no findings; hardening applied (expression time fields skip the $__timeInterval macro).
 **Open issues:** none. Deferred Lens items: per-group drag-and-drop (LENS-DIM-01 DnD; workspace drop works), formula (#23), advanced metric options (filter by, time shift), value format/colour/axis side (LENS-STYLE-01), date interval picker, "Other" bucket. Deferred elsewhere: DISC-DOC-02 links (#20); histogram now-line; field list Empty/Meta; grid Summary column etc. (#16); popover Visualize (#15).
 
 ## Environment notes

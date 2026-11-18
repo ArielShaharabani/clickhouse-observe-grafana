@@ -81,7 +81,14 @@ export function compileLens(
   const selects: string[] = [];
   state.buckets.forEach((b: BucketDim, i) => {
     if (b.kind === 'date_histogram' && mode === 'dashboard') {
-      selects.push(`$__timeInterval(${quoteIdentifier(b.field)}) AS ${bucketAlias(i)}`);
+      const col = quoteIdentifier(b.field);
+      // The datasource's macro parser counts parentheses and commas without regard to quotes, so
+      // an expression field (e.g. a Map key with ')' in it) gets the explicit form instead.
+      selects.push(
+        /[(),]/.test(col)
+          ? `toStartOfInterval(toDateTime(${col}), INTERVAL $__interval_s second) AS ${bucketAlias(i)}`
+          : `$__timeInterval(${col}) AS ${bucketAlias(i)}`
+      );
     } else if (b.kind === 'date_histogram') {
       const iv = resolveInterval('auto', timeRange);
       intervalMs = iv.intervalMs;
