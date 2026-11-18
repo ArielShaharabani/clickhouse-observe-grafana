@@ -24,7 +24,7 @@ Status values: `todo` · `in-progress` · `done` (with PR link) · `skipped` (wi
 | 13 | LENS-DIM-01/02 | Dimensions + metric editor | 4 | Build | done | PR 14 |
 | 14 | LENS-INTERACT-01 | Click-to-filter + chooser | 4 | Build | done | PR 15 |
 | 15 | LENS-INTERACT-02 / DISC-CHART-03 | Discover ↔ Lens handoff | 4 | Build | done | PR 16 |
-| 16 | LENS-SAVE-01 | Save to dashboard | 4 | Build | in-progress | |
+| 16 | LENS-SAVE-01 | Save to dashboard | 4 | Build | done | PR 17 |
 | 17 | DISC-TIME-01/02 | Time picker, Update state | 3 | Verify | todo | |
 | 18 | DISC-CHART-02 | Breakdown + legend actions | 3 | Verify | todo | |
 | 19 | DISC-FILTER-02 | Filter builder | 3 | Verify | todo | |

@@ -37,7 +37,6 @@ import { DimensionEditor } from './DimensionEditor';
 import { addBucket, addMetric, metricForField, nextBucketField, queryShape, replaceDim } from './dimensions';
 import {
   BucketDim,
-  ChartType,
   decodeLens,
   dimLabel,
   EMPTY_LENS,

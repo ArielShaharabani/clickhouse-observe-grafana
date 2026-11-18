@@ -37,6 +37,6 @@ Enable a case as soon as both sides exist. Status: `—` not yet possible · `to
 | IT-H | Lens → Discover (filters, time, bucket columns, consistent counts) | ✅ lens-interact-02 |
 | IT-I | Drawer → surrounding documents (filters disabled, query dropped, columns kept) | — |
 | IT-J | Data view switch (columns pruned, filter warnings, fields reload) | — |
-| IT-K | URL reload restores state; Lens unsaved state survives refresh | Logs page ✅ (`tests/features/shared-state.spec.ts`); Lens part pending #11 |
+| IT-K | URL reload restores state; Lens unsaved state survives refresh | Logs page ✅ (`tests/features/shared-state.spec.ts`); Lens draft ✅ (`tests/features/lens-save-01.spec.ts`) |
 | IT-M | Same actions everywhere via the action registry | ✅ names/tooltips asserted on grid, drawer, popover, field list; grid Expand popover uses the same Filter for/out/Copy (`tests/features/disc-table-01.spec.ts`) |
 | IT-N | Autocomplete scoped by filters/time (KQL bar today; filter builder, Lens pickers later) | KQL bar ✅ (`tests/features/shared-autocomplete.spec.ts`) |

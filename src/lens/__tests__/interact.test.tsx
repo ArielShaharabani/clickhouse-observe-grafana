@@ -17,6 +17,7 @@ const result: LensResult = {
       ]),
       breakdown: 'error',
       metricIndex: 0,
+      zeroFill: false,
     },
     {
       name: 'info',
@@ -26,6 +27,7 @@ const result: LensResult = {
       ]),
       breakdown: 'info',
       metricIndex: 0,
+      zeroFill: false,
     },
   ],
   table: { columns: [], rows: [] },
