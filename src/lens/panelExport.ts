@@ -12,6 +12,7 @@ import { bucketAlias, compileLens, metricAlias, uniqueMetricLabels } from './com
 import { dimLabelIn, LensState } from './state';
 import { chartTitle } from './suggest';
 import { withMetricAppearance } from './render/fieldConfig';
+import { tableOverrides } from './tableChart';
 
 export interface LensPanelOpts {
   id: number;
@@ -64,9 +65,7 @@ export function buildLensPanel(
 ): LensPanel {
   const panel = baseLensPanel(state, config, conditions, timeRange, opts);
   const xy = state.chartType === 'line' || state.chartType === 'area' || state.chartType === 'bar';
-  return panel.fieldConfig
-    ? { ...panel, fieldConfig: withMetricAppearance(panel.fieldConfig, state, xy) }
-    : panel;
+  return panel.fieldConfig ? { ...panel, fieldConfig: withMetricAppearance(panel.fieldConfig, state, xy) } : panel;
 }
 
 function baseLensPanel(
@@ -185,12 +184,25 @@ function baseLensPanel(
       };
     }
     case 'table':
+      // Summary row and colour by value carry over (LENS-CHART-01); a "Split metrics by" pivot is
+      // not exported (one row per combination, as before).
       return {
         ...base,
         type: 'table',
         transformations: [rename(names)],
         options: { showHeader: true },
-        fieldConfig: { defaults: {}, overrides: [] },
+        fieldConfig: {
+          defaults: {},
+          overrides: tableOverrides(
+            state.metrics.map((_, i) => ({
+              name: names[metricAlias(i)],
+              kind: 'number' as const,
+              values: [],
+              metricIndex: i,
+            })),
+            state.metrics
+          ),
+        },
       };
   }
 }

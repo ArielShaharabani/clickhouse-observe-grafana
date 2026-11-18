@@ -1,0 +1,169 @@
+/**
+ * Metric chart (LENS-CHART-01, docs/spec/20-lens.md): a grid of tiles — one per "Break down by"
+ * value, or a single tile — with the label top-left and the big value bottom-right, an optional
+ * Secondary metric line, and a progress bar when a Maximum value metric is set. A tile without a
+ * value shows a dash.
+ */
+import React from 'react';
+import { css } from '@emotion/css';
+import { formattedValueToString, getValueFormat, GrafanaTheme2 } from '@grafana/data';
+import { useStyles2 } from '@grafana/ui';
+import { LensResult, uniqueMetricLabels } from '../compile';
+import { grafanaUnit } from '../metricOptions';
+import { LensState, MetricDim } from '../state';
+
+export const EMPTY_TILE = '–';
+
+export interface MetricTile {
+  /** Breakdown value, or the primary metric's name without a breakdown. */
+  title: string;
+  value: string;
+  secondary?: { label: string; value: string };
+  /** 0–100 when a Maximum value is set and the tile has both values. */
+  percent?: number;
+}
+
+/** Formats a metric value with its Value format (LENS-DIM-02), else as a plain number. */
+export function formatMetricValue(m: MetricDim | undefined, v: number | undefined): string {
+  if (v === undefined || v === null || !Number.isFinite(v)) {
+    return EMPTY_TILE;
+  }
+  const { unit, decimals } = grafanaUnit(m?.format);
+  if (!unit) {
+    return v.toLocaleString(undefined, { maximumFractionDigits: decimals ?? 2 });
+  }
+  return formattedValueToString(getValueFormat(unit)(v, decimals));
+}
+
+/** The tiles of a Metric chart, from the shaped result. Pure (tested without rendering). */
+export function metricTiles(state: LensState, result: LensResult): MetricTile[] {
+  const labels = uniqueMetricLabels(state.metrics);
+  const values = state.metrics.map((m, i) => ({ m, i })).filter(({ m }) => m.role !== 'max');
+  const primary = values[0];
+  const secondary = values[1];
+  const maxIdx = state.metrics.findIndex((m) => m.role === 'max');
+  const valueOf = (metricIndex: number, x: string | number): number | undefined => {
+    const s = result.series.find((se) => se.metricIndex === metricIndex);
+    return s?.points.get(x);
+  };
+  const broken = state.buckets.length > 0;
+  const xs = broken ? result.xs : result.xs.length > 0 ? [result.xs[0]] : [''];
+  return xs.map((x, k) => {
+    const pv = primary ? valueOf(primary.i, x) : undefined;
+    const tile: MetricTile = {
+      title: broken ? (result.xLabels[k] ?? String(x)) : primary ? labels[primary.i] : '',
+      value: formatMetricValue(primary?.m, pv),
+    };
+    if (secondary) {
+      tile.secondary = {
+        label: labels[secondary.i],
+        value: formatMetricValue(secondary.m, valueOf(secondary.i, x)),
+      };
+    }
+    if (maxIdx >= 0 && pv !== undefined) {
+      const max = valueOf(maxIdx, x);
+      if (max !== undefined && Number.isFinite(max) && max > 0) {
+        tile.percent = Math.max(0, Math.min(100, (pv / max) * 100));
+      }
+    }
+    return tile;
+  });
+}
+
+export function MetricTiles({ state, result }: { state: LensState; result: LensResult }) {
+  const styles = useStyles2(getStyles);
+  const tiles = metricTiles(state, result);
+  const primary = state.metrics.find((m) => m.role !== 'max');
+  return (
+    <div className={styles.grid} role="list" aria-label="Metric tiles">
+      {tiles.map((t, i) => (
+        <div
+          key={i}
+          role="listitem"
+          aria-label={`${t.title}: ${t.value}`}
+          className={styles.tile}
+          style={primary?.color ? { borderColor: primary.color } : undefined}
+        >
+          <div className={styles.title} title={t.title}>
+            {t.title}
+          </div>
+          {t.secondary && (
+            <div className={styles.secondary}>
+              {t.secondary.label} <strong>{t.secondary.value}</strong>
+            </div>
+          )}
+          <div className={styles.value} style={primary?.color ? { color: primary.color } : undefined}>
+            {t.value}
+          </div>
+          {t.percent !== undefined && (
+            <div
+              className={styles.track}
+              role="progressbar"
+              aria-valuenow={Math.round(t.percent)}
+              aria-valuemin={0}
+              aria-valuemax={100}
+            >
+              <div
+                className={styles.bar}
+                style={{ width: `${t.percent}%`, ...(primary?.color ? { background: primary.color } : {}) }}
+              />
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+const getStyles = (theme: GrafanaTheme2) => ({
+  grid: css`
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    grid-auto-rows: minmax(120px, 1fr);
+    gap: ${theme.spacing(1)};
+    width: 100%;
+    height: 100%;
+    overflow: auto;
+  `,
+  tile: css`
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    padding: ${theme.spacing(1.5)};
+    background: ${theme.colors.background.secondary};
+    border: 1px solid ${theme.colors.border.weak};
+    border-radius: ${theme.shape.radius.default};
+    min-width: 0;
+  `,
+  title: css`
+    font-weight: ${theme.typography.fontWeightMedium};
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  `,
+  secondary: css`
+    color: ${theme.colors.text.secondary};
+    font-size: ${theme.typography.bodySmall.fontSize};
+  `,
+  value: css`
+    margin-top: auto;
+    text-align: right;
+    font-size: 2rem;
+    font-weight: ${theme.typography.fontWeightMedium};
+    line-height: 1.2;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  `,
+  track: css`
+    height: 6px;
+    margin-top: ${theme.spacing(1)};
+    background: ${theme.colors.background.canvas};
+    border-radius: 3px;
+    overflow: hidden;
+  `,
+  bar: css`
+    height: 100%;
+    background: ${theme.colors.primary.main};
+  `,
+});
