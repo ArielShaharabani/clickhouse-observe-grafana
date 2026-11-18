@@ -28,12 +28,32 @@ export function samePill(
   if (a.field !== b.field || a.op !== b.op) {
     return false;
   }
+  if (a.op === 'between' || a.op === 'not_between') {
+    // A range is an ordered pair: [1, 5] and [5, 1] are different filters.
+    const av = a.values ?? [];
+    const bv = b.values ?? [];
+    return av.length === bv.length && av.every((v, i) => v === bv[i]);
+  }
   if (a.values || b.values) {
     const av = [...(a.values ?? [])].sort();
     const bv = [...(b.values ?? [])].sort();
     return av.length === bv.length && av.every((v, i) => v === bv[i]);
   }
   return a.value === b.value;
+}
+
+const NUMBER_RE = /^[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?$/;
+const DATE_RE = /^\d{4}-\d{2}-\d{2}([ T]\d{2}:\d{2}(:\d{2}(\.\d{1,9})?)?)?Z?$/;
+
+/** A finite decimal number literal ("5", "-1.5", "1e3"). */
+export function isNumericBound(v: string): boolean {
+  return NUMBER_RE.test(v.trim());
+}
+
+/** An ISO-like date or date-time ("2026-01-05", "2026-01-05 09:00:00", "2026-01-05T09:00:00.5Z"). */
+export function isDateBound(v: string): boolean {
+  const t = v.trim();
+  return DATE_RE.test(t) && !Number.isNaN(Date.parse(t.replace(' ', 'T')));
 }
 
 export function addFilter(

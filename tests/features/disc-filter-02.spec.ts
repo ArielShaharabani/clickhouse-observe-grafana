@@ -8,8 +8,6 @@ import { FIXTURE } from '../fixture';
 // builder re-query. Counts come from the deterministic fixture (docs/dev/TESTING.md).
 // SeverityNumber: debug 5 (3,984), info 9 (28,265), warn 13 (6,080), error 17 (3,191).
 
-test.describe.configure({ timeout: 60_000 }); // builder tests do several async lookups; avoid load-related flakes
-
 const { total } = FIXTURE.counts;
 const { info, warn, debug, error } = FIXTURE.counts.byLevel;
 
@@ -22,16 +20,14 @@ async function pick(page: Page, name: string, option: string) {
   await page.getByRole('option', { name: new RegExp(`^${option}( |$)`) }).first().click();
 }
 
-/** Type into a creatable Select and commit with Enter (custom value). */
-async function typeValue(page: Page, name: string, text: string) {
+/** Type into a creatable Select / Combobox and commit with Enter (custom value). A multi select
+ *  keeps its menu open after a pick and it would cover the form, so those blur with Tab. */
+async function typeValue(page: Page, name: string, text: string, opts: { multi?: boolean } = {}) {
   const box = page.getByRole('combobox', { name, exact: true });
   await box.click();
   await box.fill(text);
   await box.press('Enter');
-  // Single selects close their own menu on select; multi selects keep it open and it would cover
-  // the rest of the form, so blur (Tab) only when it is still open after a moment.
-  await page.waitForTimeout(300);
-  if ((await box.getAttribute('aria-expanded')) === 'true') {
+  if (opts.multi) {
     await box.press('Tab');
   }
 }
@@ -113,14 +109,16 @@ test('is not', async ({ page }) => {
 test('is one of / is not one of', async ({ page }) => {
   const logs = new LogsPage(page);
   await logs.open();
-  await build(page, 'ServiceName', 'is one of', 'auth');
-  await typeValue(page, 'Value', 'payments');
+  await build(page, 'ServiceName', 'is one of');
+  await typeValue(page, 'Value', 'auth', { multi: true });
+  await typeValue(page, 'Value', 'payments', { multi: true });
   await submit(page);
   await logs.expectRowCount(FIXTURE.counts.byService.auth + FIXTURE.counts.payments);
 
   await logs.open();
-  await build(page, 'SeverityText', 'is not one of', 'info');
-  await typeValue(page, 'Value', 'debug');
+  await build(page, 'SeverityText', 'is not one of');
+  await typeValue(page, 'Value', 'info', { multi: true });
+  await typeValue(page, 'Value', 'debug', { multi: true });
   await submit(page);
   await logs.expectRowCount(warn + error);
 });
@@ -242,4 +240,58 @@ test('Cancel closes the builder without adding a pill', async ({ page }) => {
   await page.getByRole('button', { name: 'Cancel' }).click();
   await expect(logs.filterBar).toHaveCount(0);
   await logs.expectRowCount(total);
+});
+
+test('a whole Map column gets no range operators', async ({ page }) => {
+  const logs = new LogsPage(page);
+  await logs.open();
+  await openBuilder(page);
+  await pick(page, 'Field', 'LogAttributes');
+  await page.getByRole('combobox', { name: 'Operator' }).click();
+  await expect(page.getByRole('option', { name: 'is', exact: true })).toBeVisible();
+  for (const op of ['greater or equal', 'less than', 'is between', 'is not between']) {
+    await expect(page.getByRole('option', { name: op, exact: true })).toHaveCount(0);
+  }
+});
+
+test('invalid bounds are rejected in the form: not a number, From greater than To', async ({ page }) => {
+  const logs = new LogsPage(page);
+  await logs.open();
+  await openBuilder(page);
+  await pick(page, 'Field', 'SeverityNumber');
+  await pick(page, 'Operator', 'greater or equal');
+  await typeValue(page, 'Value', '1s');
+  await expect(page.getByTestId('filter-error')).toContainText('"1s" is not a number');
+  await expect(page.getByRole('button', { name: 'Add filter', exact: true }).last()).toBeDisabled();
+
+  await pick(page, 'Operator', 'is between');
+  await typeValue(page, 'From', '13');
+  await typeValue(page, 'To', '9');
+  await expect(page.getByTestId('filter-error')).toHaveText('From must not be greater than To');
+  await expect(page.getByRole('button', { name: 'Add filter', exact: true }).last()).toBeDisabled();
+});
+
+// Map keys are not listed in the builder's field picker (they are discovered on demand), so these
+// pills come from a link; the pill menu (negate, ...) still works on them.
+const durationKey = "LogAttributes['duration_ms']";
+// duration_ms: 5..2004 for regular rows, 3000..7999 for the 1,200 incident rows.
+const slow = 1200;
+
+test('Map-key range pill from a link compares numerically; Exclude is the exact complement', async ({ page }) => {
+  const logs = new LogsPage(page);
+  const pill = { id: 'e2e-dur', field: durationKey, op: 'gte', value: '3000' };
+  await logs.open({ filters: JSON.stringify([pill]) });
+  await logs.expectRowCount(slow);
+  await logs.pillAction('LogAttributes', 'Exclude results');
+  await logs.expectRowCount(total - slow);
+});
+
+test('pills with a missing or non-numeric range bound match nothing and raise no error', async ({ page }) => {
+  const logs = new LogsPage(page);
+  for (const value of ['', '1s']) {
+    const pill = { id: 'e2e-bad', field: 'SeverityNumber', op: 'gte', value };
+    await logs.open({ filters: JSON.stringify([pill]) });
+    await logs.expectRowCount(0);
+    await expect(page.getByText(/Code: \d+|SYNTAX_ERROR|Cannot parse/)).toHaveCount(0);
+  }
 });

@@ -1,9 +1,20 @@
 import React from 'react';
 import { fireEvent, render, screen } from '@testing-library/react';
-import { FilterEditForm, isFilterComplete, operatorsFor, OPERATORS } from '../AddFilter/FilterEditForm';
+import { FilterEditForm, isFilterComplete, operatorsFor, validateRange, OPERATORS } from '../AddFilter/FilterEditForm';
 import { FieldsContext } from '../FieldsContext';
 import { FilterPill } from '../../types';
 import { FieldModel } from '../../sql/fieldModel';
+import * as filtersModule from '../../sql/filters';
+
+jest.mock('../../sql/filters', () => {
+  const actual = jest.requireActual('../../sql/filters');
+  return { ...actual, nextId: jest.fn(actual.nextId) };
+});
+
+// Grafana's Combobox measures text on a canvas, which jsdom does not implement.
+beforeAll(() => {
+  HTMLCanvasElement.prototype.getContext = (() => ({ measureText: () => ({ width: 10 }), font: '' })) as any;
+});
 
 const field = (name: string, type: FieldModel['type']): FieldModel => ({
   id: `col:${name}`,
@@ -28,16 +39,28 @@ function renderForm(initial?: FilterPill) {
 }
 
 describe('DISC-FILTER-02 operator lists', () => {
-  const values = (t: Parameters<typeof operatorsFor>[0]) => operatorsFor(t).map((o) => o.value);
+  const values = (type: FieldModel['type'], source: FieldModel['source'] = 'column') =>
+    operatorsFor({ type, source }).map((o) => o.value);
+  const RANGES = ['gte', 'lt', 'between', 'not_between'];
   it('numbers and times get ranges but no substring match', () => {
     for (const t of ['number', 'time'] as const) {
-      expect(values(t)).toEqual(expect.arrayContaining(['gte', 'lt', 'between', 'not_between']));
+      expect(values(t)).toEqual(expect.arrayContaining(RANGES));
       expect(values(t)).not.toContain('contains');
     }
   });
   it('strings get substring match but no ranges', () => {
     expect(values('string')).toEqual(expect.arrayContaining(['contains', 'not_contains', 'exists']));
     expect(values('string')).not.toContain('between');
+  });
+  it('a whole Map / JSON / Tuple / Array column gets no range operators', () => {
+    for (const t of ['map', 'json', 'tuple', 'array'] as const) {
+      for (const r of RANGES) {
+        expect(values(t)).not.toContain(r);
+      }
+    }
+  });
+  it('a Map key (string-valued) gets ranges', () => {
+    expect(values('string', 'map')).toEqual(expect.arrayContaining(RANGES));
   });
   it('covers the spec operator set', () => {
     expect(OPERATORS.map((o) => o.label)).toEqual(
@@ -75,6 +98,37 @@ describe('isFilterComplete', () => {
   });
 });
 
+describe('validateRange', () => {
+  const num = { type: 'number' as const, source: 'column' as const };
+  const time = { type: 'time' as const, source: 'column' as const };
+  const key = { type: 'string' as const, source: 'map' as const };
+  const none: [string, string] = ['', ''];
+  it('numeric fields and Map keys need numbers', () => {
+    expect(validateRange(num, 'gte', '1s', none)).toMatch(/not a number/);
+    expect(validateRange(num, 'between', '', ['1', '5s'])).toMatch(/not a number/);
+    expect(validateRange(key, 'lt', '2026-01-01', none)).toMatch(/not a number/);
+    expect(validateRange(num, 'gte', '13', none)).toBeNull();
+    expect(validateRange(num, 'gte', '-1.5e3', none)).toBeNull();
+  });
+  it('time fields need dates', () => {
+    expect(validateRange(time, 'gte', '13', none)).toMatch(/not a date/);
+    expect(validateRange(time, 'gte', '2026-01-05', none)).toBeNull();
+    expect(validateRange(time, 'between', '', ['2026-01-05 09:00:00', '2026-01-05 11:00:00'])).toBeNull();
+    expect(validateRange(time, 'gte', '2026-13-45', none)).toMatch(/not a date/);
+  });
+  it('between rejects From greater than To; equal bounds are fine', () => {
+    expect(validateRange(num, 'between', '', ['10', '2'])).toBe('From must not be greater than To');
+    expect(validateRange(num, 'not_between', '', ['10', '2'])).toBe('From must not be greater than To');
+    expect(validateRange(num, 'between', '', ['9', '10'])).toBeNull(); // numeric, not lexical
+    expect(validateRange(num, 'between', '', ['5', '5'])).toBeNull();
+    expect(validateRange(time, 'between', '', ['2026-01-06', '2026-01-05'])).toBe('From must not be greater than To');
+  });
+  it('is silent for non-range operators and unfilled bounds', () => {
+    expect(validateRange(num, '=', 'abc', none)).toBeNull();
+    expect(validateRange(num, 'between', '', ['1', ''])).toBeNull();
+  });
+});
+
 describe('FilterEditForm', () => {
   it('blank form: value disabled until an operator is picked, Add disabled', () => {
     renderForm();
@@ -105,6 +159,21 @@ describe('FilterEditForm', () => {
     const { onSubmit } = renderForm({ id: 'p2', field: 'ServiceName', op: '=', value: "') OR 1=1 --" });
     fireEvent.click(screen.getByRole('button', { name: 'Update filter' }));
     expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ value: "') OR 1=1 --" }));
+  });
+
+  it('an invalid range disables Update and explains why', () => {
+    renderForm({ id: 'p3', field: 'SeverityNumber', op: 'between', value: '', values: ['10', '2'] });
+    expect(screen.getByTestId('filter-error').textContent).toBe('From must not be greater than To');
+    expect(screen.getByRole('button', { name: 'Update filter' })).toBeDisabled();
+    expect(screen.queryByTestId('filter-preview')).toBeNull();
+  });
+
+  it('building the preview does not consume pill ids', () => {
+    const ids = filtersModule.nextId as jest.Mock;
+    ids.mockClear();
+    renderForm({ id: 'p4', field: 'ServiceName', op: '=', value: 'x' });
+    expect(screen.getByTestId('filter-preview')).toBeInTheDocument();
+    expect(ids).not.toHaveBeenCalled();
   });
 
   it('Cancel calls onCancel', () => {

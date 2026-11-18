@@ -7,13 +7,13 @@
  * through buildFilterClause (sql/queryBuilder.ts), which quotes it.
  */
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useId, useState } from 'react';
 import { css, cx } from '@emotion/css';
 import { GrafanaTheme2, SelectableValue } from '@grafana/data';
-import { Button, Select, Input, useStyles2 } from '@grafana/ui';
+import { Button, Combobox, Select, Input, useStyles2 } from '@grafana/ui';
 import { FilterPill, FilterOp } from '../../types';
-import { FieldType } from '../../sql/fieldModel';
-import { filterLabel, makeFilter } from '../../sql/filters';
+import { FieldModel } from '../../sql/fieldModel';
+import { filterLabel, isDateBound, isNumericBound, nextId } from '../../sql/filters';
 import { FieldValue } from '../../sql/kql/_values';
 import { useFields } from '../FieldsContext';
 
@@ -46,13 +46,61 @@ export const OPERATORS: OpDef[] = [
 const RANGE_OPS: ReadonlySet<FilterOp> = new Set(['gte', 'lt', 'between', 'not_between']);
 const TEXT_OPS: ReadonlySet<FilterOp> = new Set(['contains', 'not_contains']);
 
-/** Operators offered for a field type: ranges only where ordering is meaningful (numbers, times,
- *  Map values and fields of unknown type); substring match not on numbers/times (ILIKE needs a
- *  string). */
-export function operatorsFor(type: FieldType | undefined): OpDef[] {
-  const ordered = type === undefined || type === 'number' || type === 'time' || type === 'unknown' || type === 'map';
+/** Operators offered for a field: ranges only where ordering is meaningful — numbers, times,
+ *  unknown scalars and Map *keys* (never a whole Map / JSON / Tuple / Array column, which no
+ *  comparison can apply to); substring match not on numbers/times (ILIKE needs a string). */
+export function operatorsFor(field: Pick<FieldModel, 'type' | 'source'> | undefined): OpDef[] {
+  const type = field?.type;
+  const ordered =
+    !field || field.source === 'map' || type === 'number' || type === 'time' || type === 'unknown';
   const textual = type !== 'number' && type !== 'time';
   return OPERATORS.filter((o) => (RANGE_OPS.has(o.value) ? ordered : TEXT_OPS.has(o.value) ? textual : true));
+}
+
+/**
+ * Validates range bounds against the field: number fields and Map keys need numbers (the SQL
+ * compares Map values numerically), time fields need dates, other scalars either. Returns a
+ * message, or null when fine / not yet filled in. `low <= high` is required for between.
+ */
+export function validateRange(
+  field: Pick<FieldModel, 'type' | 'source'> | undefined,
+  op: FilterOp | null,
+  single: string,
+  pair: [string, string]
+): string | null {
+  if (!op || !RANGE_OPS.has(op)) {
+    return null;
+  }
+  const isPair = opDef(op).isPair;
+  const bounds = (isPair ? pair : [single]).map((v) => v.trim());
+  const numericOnly = field?.source === 'map' || field?.type === 'number';
+  const dateOnly = field?.type === 'time' && field.source !== 'map';
+  for (const b of bounds) {
+    if (b === '') {
+      continue;
+    }
+    if (numericOnly && !isNumericBound(b)) {
+      return `"${b}" is not a number`;
+    }
+    if (dateOnly && !isDateBound(b)) {
+      return `"${b}" is not a date (use YYYY-MM-DD or YYYY-MM-DD hh:mm:ss)`;
+    }
+    if (!numericOnly && !dateOnly && !isNumericBound(b) && !isDateBound(b)) {
+      return `"${b}" is not a number or a date`;
+    }
+  }
+  if (isPair && bounds[0] !== '' && bounds[1] !== '') {
+    const num = isNumericBound(bounds[0]) && isNumericBound(bounds[1]);
+    const lo = num ? Number(bounds[0]) : Date.parse(bounds[0].replace(' ', 'T'));
+    const hi = num ? Number(bounds[1]) : Date.parse(bounds[1].replace(' ', 'T'));
+    if (isNumericBound(bounds[0]) !== isNumericBound(bounds[1])) {
+      return 'From and To must both be numbers or both be dates';
+    }
+    if (lo > hi) {
+      return 'From must not be greater than To';
+    }
+  }
+  return null;
 }
 
 export function opDef(op: FilterOp): OpDef {
@@ -110,6 +158,7 @@ export function FilterEditForm({ initial, loadValues, onSubmit, onCancel }: Filt
   ]);
   const [customLabel, setCustomLabel] = useState(initial?.label ?? '');
 
+  const rangeId = useId();
   const [valueOptions, setValueOptions] = useState<Array<SelectableValue<string>>>([]);
   const [loadingValues, setLoadingValues] = useState(false);
 
@@ -119,7 +168,7 @@ export function FilterEditForm({ initial, loadValues, onSubmit, onCancel }: Filt
     description: f.sqlExpr !== f.displayName ? `${f.type} · ${f.sqlExpr}` : f.type,
   }));
   const selectedField = fields.find((f) => f.sqlExpr === selectedFieldExpr);
-  const availableOps = operatorsFor(selectedField?.type);
+  const availableOps = operatorsFor(selectedField);
   // An edited pill's own operator stays selectable even if its field type wouldn't normally offer it.
   const opOptions: Array<SelectableValue<FilterOp>> = (
     initial && !availableOps.some((o) => o.value === initial.op) ? [...availableOps, opDef(initial.op)] : availableOps
@@ -148,42 +197,43 @@ export function FilterEditForm({ initial, loadValues, onSubmit, onCancel }: Filt
     };
   }, [selectedFieldExpr, selectedOp, loadValues]);
 
-  const isValid = isFilterComplete(selectedFieldExpr, selectedOp, singleValue, multiValues, pairValues);
+  const rangeError = validateRange(selectedField, selectedOp, singleValue, pairValues);
+  const isValid = isFilterComplete(selectedFieldExpr, selectedOp, singleValue, multiValues, pairValues) && !rangeError;
   const currentOp = selectedOp ? opDef(selectedOp) : null;
 
-  const buildPill = (): FilterPill | null => {
+  /** The pill as drafted, without an id (building the preview must not consume ids). */
+  const buildDraft = (): Omit<FilterPill, 'id'> | null => {
     if (!selectedFieldExpr || !selectedOp || !currentOp) {
       return null;
     }
     const label = customLabel.trim() || undefined;
-
-    let pill: FilterPill;
+    const base = { field: selectedFieldExpr, op: selectedOp, ...(label ? { label } : {}) };
     if (!currentOp.hasValue) {
-      pill = makeFilter(selectedFieldExpr, '', selectedOp, { label });
-    } else if (currentOp.isPair) {
-      pill = makeFilter(selectedFieldExpr, '', selectedOp, {
-        values: [pairValues[0].trim(), pairValues[1].trim()],
-        label,
-      });
-    } else if (currentOp.isMulti) {
-      pill = makeFilter(selectedFieldExpr, '', selectedOp, { values: multiValues, label });
-    } else {
-      pill = makeFilter(selectedFieldExpr, singleValue, selectedOp, { label });
+      return { ...base, value: '' };
     }
-    if (initial) {
-      pill = { ...pill, id: initial.id, disabled: initial.disabled, pinned: initial.pinned };
+    if (currentOp.isPair) {
+      return { ...base, value: '', values: [pairValues[0].trim(), pairValues[1].trim()] };
     }
-    return pill;
+    if (currentOp.isMulti) {
+      return { ...base, value: '', values: multiValues };
+    }
+    return { ...base, value: singleValue };
   };
 
   const handleSubmit = () => {
-    const pill = isValid ? buildPill() : null;
-    if (pill) {
-      onSubmit(pill);
+    const draft = isValid ? buildDraft() : null;
+    if (!draft) {
+      return;
     }
+    onSubmit(
+      initial
+        ? { ...draft, id: initial.id, disabled: initial.disabled, pinned: initial.pinned }
+        : { ...draft, id: nextId() }
+    );
   };
 
-  const preview = isValid ? buildPill() : null;
+  const previewDraft = isValid ? buildDraft() : null;
+  const preview = previewDraft ? { ...previewDraft, id: 'preview', label: undefined } : null;
 
   const resetValues = () => {
     setSingleValue('');
@@ -205,8 +255,8 @@ export function FilterEditForm({ initial, loadValues, onSubmit, onCancel }: Filt
             onChange={(opt) => {
               setSelectedFieldExpr(opt.value ?? null);
               resetValues();
-              const nextType = fields.find((f) => f.sqlExpr === opt.value)?.type;
-              if (selectedOp && !operatorsFor(nextType).some((o) => o.value === selectedOp)) {
+              const nextField = fields.find((f) => f.sqlExpr === opt.value);
+              if (selectedOp && !operatorsFor(nextField).some((o) => o.value === selectedOp)) {
                 setSelectedOp(null);
               }
             }}
@@ -246,21 +296,25 @@ export function FilterEditForm({ initial, loadValues, onSubmit, onCancel }: Filt
             {currentOp.isPair ? (
               <div className={styles.pair}>
                 {([0, 1] as const).map((i) => (
-                  <Select
-                    key={i}
-                    aria-label={i === 0 ? 'From' : 'To'}
-                    allowCustomValue
-                    options={valueOptions}
-                    isLoading={loadingValues}
-                    value={pairValues[i] ? { label: pairValues[i], value: pairValues[i] } : null}
-                    onChange={(opt) => {
-                      const v = (opt as SelectableValue<string>).value ?? '';
-                      setPairValues((p) => (i === 0 ? [v, p[1]] : [p[0], v]));
-                    }}
-                    placeholder={i === 0 ? 'From…' : 'To…'}
-                    disabled={!selectedFieldExpr}
-                    menuShouldPortal
-                  />
+                  <div key={i} className={styles.pairItem}>
+                    <label htmlFor={`${rangeId}-${i}`} className={styles.label}>
+                      {i === 0 ? 'From' : 'To'}
+                    </label>
+                    <Combobox
+                      id={`${rangeId}-${i}`}
+                      createCustomValue
+                      options={valueOptions.map((o) => ({ label: o.label, value: o.value ?? '' }))}
+                      loading={loadingValues}
+                      value={pairValues[i] || null}
+                      onChange={(opt) => {
+                        const v = opt?.value ?? '';
+                        setPairValues((p) => (i === 0 ? [v, p[1]] : [p[0], v]));
+                      }}
+                      placeholder={i === 0 ? 'From…' : 'To…'}
+                      disabled={!selectedFieldExpr}
+                      invalid={!!rangeError}
+                    />
+                  </div>
                 ))}
               </div>
             ) : currentOp.isMulti ? (
@@ -308,9 +362,15 @@ export function FilterEditForm({ initial, loadValues, onSubmit, onCancel }: Filt
         />
       </div>
 
+      {rangeError && (
+        <div className={styles.error} role="alert" data-testid="filter-error">
+          {rangeError}
+        </div>
+      )}
+
       {preview && (
         <div className={styles.preview} data-testid="filter-preview">
-          <span className={styles.optional}>Preview</span> {filterLabel({ ...preview, label: undefined })}
+          <span className={styles.optional}>Preview</span> {filterLabel(preview)}
         </div>
       )}
 
@@ -356,6 +416,16 @@ const getStyles = (theme: GrafanaTheme2) => ({
       flex: 1;
       min-width: 0;
     }
+  `,
+  pairItem: css`
+    display: flex;
+    flex-direction: column;
+    gap: ${theme.spacing(0.5)};
+  `,
+  error: css`
+    margin-bottom: ${theme.spacing(1)};
+    font-size: ${theme.typography.bodySmall.fontSize};
+    color: ${theme.colors.error.text};
   `,
   preview: css`
     margin-bottom: ${theme.spacing(1.5)};

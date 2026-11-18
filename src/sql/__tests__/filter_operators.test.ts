@@ -5,7 +5,7 @@
 import { buildWhereConditions } from '../queryBuilder';
 import { buildFieldIndex } from '../fields';
 import { FieldModel } from '../fieldModel';
-import { filterLabel, negateFilter } from '../filters';
+import { filterLabel, negateFilter, samePill } from '../filters';
 import { FilterPill, FilterOp, OTEL_COLUMN_MAPPING, DEFAULT_LOGS_QUERY_STATE, SourceConfig } from '../../types';
 
 const config: SourceConfig = {
@@ -43,20 +43,8 @@ describe('every operator produces its WHERE', () => {
 });
 
 describe('range operators', () => {
-  it('trims bounds', () => {
-    expect(clause({ field: 'SeverityNumber', op: 'between', value: '', values: [' 9 ', '13 '] })).toContain(
-      `BETWEEN '9' AND '13'`
-    );
-  });
-
-  it('incomplete between is 1=0, incomplete not_between is 1=1', () => {
-    expect(clause({ field: 'SeverityNumber', op: 'between', value: '', values: ['9'] })).toBe('1=0');
-    expect(clause({ field: 'SeverityNumber', op: 'between', value: '', values: ['9', ' '] })).toBe('1=0');
-    expect(clause({ field: 'SeverityNumber', op: 'not_between', value: '' })).toBe('1=1');
-  });
-
-  it('Map values compare numerically (toFloat64OrNull on both sides)', () => {
-    const fields: FieldModel[] = [
+  const mapIndex = () =>
+    buildFieldIndex([
       {
         id: 'map:LogAttributes:duration_ms',
         name: 'duration_ms',
@@ -65,37 +53,101 @@ describe('range operators', () => {
         type: 'string',
         source: 'map',
         mapColumn: 'LogAttributes',
-      },
-    ];
-    const index = buildFieldIndex(fields);
-    const f = "LogAttributes['duration_ms']";
-    expect(clause({ field: f, op: 'gte', value: '1000' }, index)).toBe(
-      `toFloat64OrNull(${f}) >= toFloat64OrNull('1000')`
+      } as FieldModel,
+    ]);
+  const F = "LogAttributes['duration_ms']";
+  const N = `toFloat64OrNull(toString(${F}))`;
+
+  it('trims bounds', () => {
+    expect(clause({ field: 'SeverityNumber', op: 'between', value: '', values: [' 9 ', '13 '] })).toContain(
+      `BETWEEN '9' AND '13'`
     );
-    expect(clause({ field: f, op: 'between', value: '', values: ['5', '10'] }, index)).toBe(
-      `toFloat64OrNull(${f}) BETWEEN toFloat64OrNull('5') AND toFloat64OrNull('10')`
+  });
+
+  it('accepts date bounds on plain columns', () => {
+    expect(clause({ field: 'Timestamp', op: 'gte', value: '2026-01-05 09:00:00' })).toBe(
+      `"Timestamp" >= '2026-01-05 09:00:00'`
     );
+    expect(clause({ field: 'Timestamp', op: 'between', value: '', values: ['2026-01-05', '2026-01-06'] })).toBe(
+      `"Timestamp" BETWEEN '2026-01-05' AND '2026-01-06'`
+    );
+  });
+
+  it('incomplete or invalid ranges are skipped: 1=0 (not_between: 1=1)', () => {
+    expect(clause({ field: 'SeverityNumber', op: 'between', value: '', values: ['9'] })).toBe('1=0');
+    expect(clause({ field: 'SeverityNumber', op: 'between', value: '', values: ['9', ' '] })).toBe('1=0');
+    expect(clause({ field: 'SeverityNumber', op: 'not_between', value: '' })).toBe('1=1');
+    expect(clause({ field: 'SeverityNumber', op: 'gte', value: '' })).toBe('1=0');
+    expect(clause({ field: 'SeverityNumber', op: 'lt', value: '   ' })).toBe('1=0');
+  });
+
+  it('duration-style or free-text bounds never reach SQL', () => {
+    expect(clause({ field: 'Duration', op: 'between', value: '', values: ['1s', '5s'] })).toBe('1=0');
+    expect(clause({ field: 'Duration', op: 'gte', value: '1s' })).toBe('1=0');
+    expect(clause({ field: 'Duration', op: 'not_between', value: '', values: ['1s', '5s'] })).toBe('1=1');
+    expect(clause({ field: 'Timestamp', op: 'gte', value: '2026-13-45' })).toBe('1=0');
+  });
+
+  it('Map values compare numerically via toFloat64OrNull(toString(..)) (also Map(String, Float64))', () => {
+    expect(clause({ field: F, op: 'gte', value: '1000' }, mapIndex())).toBe(`${N} >= toFloat64OrNull('1000')`);
+    expect(clause({ field: F, op: 'between', value: '', values: ['5', '10'] }, mapIndex())).toBe(
+      `${N} BETWEEN toFloat64OrNull('5') AND toFloat64OrNull('10')`
+    );
+  });
+
+  it('Map keys accept only numeric bounds', () => {
+    expect(clause({ field: F, op: 'gte', value: '2026-01-01' }, mapIndex())).toBe('1=0');
+  });
+
+  it('Map negations are the exact complement (NULL / missing keys land in the negative side)', () => {
+    const pos = clause({ field: F, op: 'gte', value: '5' }, mapIndex());
+    const neg = clause({ field: F, op: 'lt', value: '5' }, mapIndex());
+    expect(neg).toBe(`NOT ifNull(${pos}, 0)`);
+    expect(clause({ field: F, op: 'not_between', value: '', values: ['5', '10'] }, mapIndex())).toBe(
+      `NOT ifNull(${N} BETWEEN toFloat64OrNull('5') AND toFloat64OrNull('10'), 0)`
+    );
+    // negateFilter flips to the complement op
+    expect(negateFilter({ id: 'a', field: F, op: 'gte', value: '5' }).op).toBe('lt');
   });
 });
 
 describe('hostile values never leave their string literal', () => {
-  const ops: FilterOp[] = ['=', '!=', 'contains', 'not_contains', 'gte', 'lt'];
+  const ops: FilterOp[] = ['=', '!=', 'contains', 'not_contains'];
   const combos = HOSTILE.flatMap((v) => ops.map((op) => [op, v] as [FilterOp, string]));
   it.each(combos)('%s %j', (op, v) => {
     const got = clause({ field: 'ServiceName', op, value: v });
     // Strip every correctly escaped string literal; only the column and operator may remain.
-    expect(got.replace(STRING_LITERAL, '?')).toMatch(/^"ServiceName" (=|!=|ILIKE|NOT ILIKE|>=|<) \?$/);
+    expect(got.replace(STRING_LITERAL, '?')).toMatch(/^"ServiceName" (=|!=|ILIKE|NOT ILIKE) \?$/);
   });
 
-  it.each(HOSTILE)('one_of / between with %j', (v) => {
+  it.each(HOSTILE)('one_of with %j', (v) => {
     const oneOf = clause({ field: 'ServiceName', op: 'one_of', value: '', values: [v, 'x'] });
     expect(oneOf.replace(STRING_LITERAL, '?')).toBe('"ServiceName" IN (?, ?)');
-    const between = clause({ field: 'SeverityNumber', op: 'between', value: '', values: [v, v] });
-    expect(between.replace(STRING_LITERAL, '?')).toBe('"SeverityNumber" BETWEEN ? AND ?');
+  });
+
+  it.each(HOSTILE)('range bounds %j are rejected before SQL, not escaped', (v) => {
+    expect(clause({ field: 'SeverityNumber', op: 'gte', value: v })).toBe('1=0');
+    expect(clause({ field: 'SeverityNumber', op: 'lt', value: v })).toBe('1=0');
+    expect(clause({ field: 'SeverityNumber', op: 'between', value: '', values: [v, v] })).toBe('1=0');
+    expect(clause({ field: 'SeverityNumber', op: 'between', value: '', values: ['1', v] })).toBe('1=0');
+    expect(clause({ field: 'SeverityNumber', op: 'not_between', value: '', values: [v, '2'] })).toBe('1=1');
   });
 
   it('a hostile field is one quoted identifier for range ops', () => {
     expect(clause({ field: 'x) OR 1=1 -- (', op: 'gte', value: '1' })).toBe(`"x) OR 1=1 -- (" >= '1'`);
+  });
+});
+
+describe('samePill with ranges', () => {
+  it('compares between bounds as an ordered pair', () => {
+    const a = { field: 'n', op: 'between' as const, value: '', values: ['1', '5'] };
+    expect(samePill(a, { ...a, values: ['1', '5'] })).toBe(true);
+    expect(samePill(a, { ...a, values: ['5', '1'] })).toBe(false);
+    expect(samePill({ ...a, op: 'not_between' }, { ...a, op: 'not_between', values: ['5', '1'] })).toBe(false);
+  });
+  it('one_of is still compared as a set', () => {
+    const a = { field: 'n', op: 'one_of' as const, value: '', values: ['a', 'b'] };
+    expect(samePill(a, { ...a, values: ['b', 'a'] })).toBe(true);
   });
 });
 
