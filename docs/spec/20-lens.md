@@ -109,6 +109,19 @@ Rules to implement:
 - **Advanced:** Include documents without the selected field (missing bucket), Group remaining values as "Other", Enable accuracy mode (larger shard\_size), Include values / Exclude values with `Use regular expression`.
 - **Request (exact):** `terms(field:service.name, order:{_count:desc}, size:9, shard_size:25) → terms(field:log.level, size:9, shard_size:25)`, `size:0`, filters and time range in `bool.filter`.
 
+### LENS-DIM-05 Date histogram, Intervals and Filters editors (horizontal axis / breakdown)
+
+Added 2026-11-18 at the user's request (importance 4): the bucket flyout's other functions and their advanced options.
+
+- **Date histogram** (date fields; the default for the data view's time field):
+  - `Field` (date / converted time fields only).
+  - `Customize time interval` switch — off = Auto (the Discover auto interval, ~60 buckets). On → `Minimum interval` combobox: presets Millisecond, Second, Minute, Hour, Day, Week, Month, Year, plus typed values `<n><unit>` (`ms s m h d w M y`, e.g. `5m`, `3h`, `2w`), invalid input shows an inline error. The interval is a *minimum*: when it would produce more than the bucket cap the effective interval is scaled up and the editor says so (`Interval scaled to 1h to stay under N buckets`). Calendar units (w, M, y) bucket on calendar boundaries (`toStartOfWeek/Month/Year`), fixed units on `toStartOfInterval`.
+  - **Advanced:** `Include empty rows` (on by default — gap-fill empty buckets with 0 across the time range), `Drop partial intervals` (drop the first/last bucket when the time range only partly covers it), `Bind to global time picker` (on by default; off = the histogram covers only the data's own min/max instead of the picker range — only offered for a field other than the view's time field).
+  - The chosen interval is in the URL / saved chart, survives reload, and the histogram brush / Explore in Discover keep it.
+- **Intervals** (number fields): `Granularity` slider (auto bucket count, coarse ↔ fine) or `Create custom ranges` (rows of `from ≤ x < to` with optional label, `+ Add range`, open-ended first/last); Advanced: `Include empty rows`.
+- **Filters** (any field): rows of KQL query + optional label (`+ Add a filter`, default `*` labelled `All records`), each a bucket; queries go through the KQL compiler (same escaping as the search bar).
+- **Acceptance:** switching function keeps the field when compatible (yellow dot otherwise); each option changes the ClickHouse query (not just the rendering); invalid intervals or KQL never reach SQL.
+
 ### LENS-STYLE-01 Style and Legend panels
 
 - **Placement:** toolbar buttons above the layer panel; each swaps the right panel to a settings view with `← Back`.
