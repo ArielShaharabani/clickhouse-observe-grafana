@@ -1,8 +1,8 @@
 # Progress — read this first when resuming
 
-**Current item:** coordinator merging fan-out PRs (see CONTEXT "Parallel work", last bullets). Agents running: fix-url-cols (3016), lens-dataview (3012), dataview-time (3011), disc-fieldstats-01 (#22, 3017).
-**Last completed step:** #16b/16c LENS-DATAVIEW (Visualize data view picker, Explore in Visualize, side-menu context restore (#16b/#16c)) in PR 25 (v0.32.0; 1,142 jest, 119 feature + 11 integration e2e).
-**Next step:** merge PR 30 (batch: #16d, #22, #25, #23 — supersedes PRs 27, 26, 28, 29; renumber its folds to 0.33.0–0.36.0 and D29–D32 after PR 25), close the four source PRs, then next PLAN todo #26 LENS-CHART-01. Per PR: `git merge origin/master`, `python scripts/dev/fold-pending.py <SPEC> <row or -> <PR> <version> "<title>" "<files>"`, gates (jest --maxWorkers 1), e2e `--workers=3` under `.e2e-lock` (relevant subset via `scripts/dev/e2e-affected.sh`; full suite for batches), push, squash-merge, stop its container.
+**Current item:** none in flight.
+**Last completed step:** batch PR 30 (supersedes PRs 27, 26, 28, 29): #16d data view time field (0.33.0), #22 field statistics (0.34.0), #25 loading cues (0.35.0), #23 formula editor (0.36.0); 1,275 jest, 150 e2e (9.0 min, 3 workers).
+**Next step:** next PLAN todos: #26 LENS-CHART-01, #27 LENS-STYLE-01, #28 LENS-LAYER-01, #29 LENS-INSPECT-01, then importance-2 Verify items (#30, #32, #33) and #31. Fan out agents (no containers; coordinator runs e2e), merge in batches: one batch branch, one full e2e `--workers=3`, one PR. Per merge: `git merge origin/master`, fold with `scripts/dev/fold-pending.py`, gates (jest --maxWorkers 1), e2e under `.e2e-lock`, squash-merge.
 **Open issues:** none. Deferred Lens items: per-group drag-and-drop (LENS-DIM-01 DnD; workspace drop works), formula (#23), advanced metric options (filter by, time shift), value format/colour/axis side (LENS-STYLE-01), date interval picker, "Other" bucket. Deferred elsewhere: DISC-DOC-02 links (#20); histogram now-line; field list Empty/Meta; grid Summary column etc. (#16); popover Visualize (#15).
 
 ## Environment notes

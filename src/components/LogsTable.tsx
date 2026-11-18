@@ -31,6 +31,9 @@ interface LogsTableProps {
   /** Enables the per-cell hover toolbar (filter for/out, copy), floating just above whichever
    *  cell is under the cursor. Omit to hide it (e.g. read-only contexts). */
   onAddFilter?: (f: FilterPill) => void;
+  /** False for a converted time field (PLAN #16d): the Time cell shows the converted time, which
+   *  can't be compared with the raw epoch / text column, so it gets no filter actions. */
+  timeFilterable?: boolean;
   /** Fired with a field id when a FieldSidebar row is dropped onto the table — adds it as a
    *  column. `targetId` is the column the drop landed on/near (header or body cell), so the new
    *  column can be inserted at that position instead of always appending at the end — omitted
@@ -138,6 +141,7 @@ export function LogsTable({
   compareSelection,
   onToggleCompare,
   onAddFilter,
+  timeFilterable = true,
   onDropField,
   highlighterFor,
   display = DEFAULT_GRID_DISPLAY,
@@ -538,7 +542,9 @@ export function LogsTable({
                       (col.type === 'map' || col.type === 'json') &&
                       !col.sqlExpr.includes('[') &&
                       !col.sqlExpr.includes('.');
-                    const filterable = onAddFilter && rawValue !== null && rawValue !== undefined && !isRawContainer;
+                    const filterable =
+                      onAddFilter && rawValue !== null && rawValue !== undefined && !isRawContainer &&
+                      (timeFilterable || col.type !== 'time');
                     return (
                       <td
                         key={col.id}

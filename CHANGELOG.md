@@ -10,6 +10,55 @@ Versions track the plugin's release history. `Unreleased` collects commits not y
 
 ---
 
+## [0.36.0] — 2026-11-18
+
+### Added
+- **Formula metrics on Visualize** (#23, LENS-DIM-03; spec 20-lens.md "Formula editor"). A metric's editor has a `Quick function | Formula` switch; switching converts the quick function (`median(SeverityNumber)`, `percentile(x, percentile=95)`, `count()`). Formulas combine aggregations with `+ - * /`, parentheses and numbers, e.g. the error rate `count(kql='SeverityText : error') / count()`.
+- Functions: `count([field], kql=)`, `average`, `sum`, `min`, `max`, `median`, `percentile(field, percentile=95)`, `unique_count` (all with an optional `kql='…'` filter), and math `abs`, `round(x, decimals)`, `floor`, `ceil`, `sqrt`, `exp`, `log(x, base)`, `pow`, `mod`, `clamp`, `pick_max`, `pick_min`, `defaults`. Field names that are not plain identifiers are written in backticks.
+- Editor: autocomplete for functions (full signature + description) and fields, auto-closed brackets and quotes, an error list with a `⚠ N errors` badge, function reference (📖), word-wrap and expand toggles. Applied on blur or Ctrl+Enter, only when valid. Division by zero gives an empty value, not ∞.
+
+### Security
+- Formulas never reach SQL as text: they are parsed into an AST with a whitelist of functions, operators and named arguments; field references resolve through the metric's field map whose SQL expressions `sanitizeLens` checks against the discovered fields (same rule as a quick function's field), and are emitted with `quoteIdentifier`; numbers are lexer-restricted; `kql=` filters go through the existing KQL compiler (and in saved dashboard panels `$` in them is written as `\x24`, so no macro / variable expansion). Length (1,000 chars), node (200) and depth (32) limits.
+
+---
+
+## [0.35.0] — 2026-11-18
+
+### Added
+- **Loading bar** (SHARED-PERF-01): a thin indeterminate bar under the toolbar on Discover (list + histogram queries) and Visualize (field discovery + chart query). Zero-height, so it never shifts the layout; respects reduced motion.
+- **Slow query chip with Cancel** on Discover: after 2 s a "Still running · Ns" chip appears; Cancel stops waiting for the list and histogram queries (previous results stay, no error banner) and leaves a dismissible "Query cancelled" notice until the next run.
+- **Approximation label on Visualize**: a chart with a Unique count metric says "Unique counts are approximate (ClickHouse uniq)."
+
+### Changed
+- The map keys popover caption reads "Discovered from N sample records." (was "N records"), matching the field statistics popover.
+
+---
+
+## [0.34.0] — 2026-11-18
+
+### Added
+- **Field statistics tab on Discover** (#22, DISC-FIELDSTATS-01; spec 10-discover.md). A `Documents | Field statistics` switch in the results toolbar. The tab lists every field of the data view, sorted by name: type icon · name · `Documents (%)` (sampled documents with a value) · `Distinct values` · `Distributions` (keyword: bar strip of the top values + `N categories` / `top 10 of N categories`; number: 10-bucket density sparkline with min and max labels; an eye switch hides the column) · Visualize action (same Lens hand-off as the field popover). Rows expand to Documents stats (count, %, distinct), Summary (min / median / max for numbers), Top values (count and %, Filter for / Filter out) and, for numbers, a distribution chart. Name filter; 25 fields per page.
+- Stats follow the page's query, filters and time (same 5,000 most-recent-rows sample as the field popover), so the tab and the popover agree.
+- New diagnostics op `fieldStats` ("Field statistics").
+
+---
+
+## [0.33.0] — 2026-11-18
+
+### Added
+- **Time field on the Configuration page's shared data views** (#16d). Shared views get the same column mapping as Create data view: the table's columns are listed (debounced lookup of the typed datasource / database / table, falls back to typed names when the table can't be listed), a dedicated Timestamp field picker, and every other mapping chosen from the table's columns. The time field stays editable after creation (shared views here, personal views through Edit data view).
+- **Converted time fields** (#16d). Besides Date / DateTime columns, the Timestamp field picker lists numeric columns (read as epoch seconds / ms / µs / ns, with an Epoch unit picker; the unit is guessed from one sample value) and text columns (parsed with `parseDateTime64BestEffortOrNull`, no-zone text read as UTC). A converted choice is flagged in the picker (ClickHouse converts every row; no time-index use). Stored as `timestampFormat` on the view (unset = native).
+- Every query reads the time field through one function, `timeExpr` (`src/sql/timeExpr.ts`): time filter, histogram, grid sort, detail lookup, surrounding documents, field samples / top values / numeric stats, Map-key sampling and the Lens date histogram. A native column produces byte-identical SQL to before.
+
+### Changed
+- On a converted view the raw epoch / text column is an ordinary field: the detail drawer shows it as a number / text, and the grid's Time cell (the converted time) has no filter actions (it can't be compared with the raw column).
+- Create data view: the Advanced column mapping no longer repeats the Timestamp field (one picker, with conversion).
+
+### Security
+- `buildColumnsQuery` / `buildTablesQuery` now quote the database and table as string literals (`quoteString`); the Configuration page runs them on admin-typed names. The time sample query quotes column and table through `quoteIdentifier` / `tableRef`. `timestampFormat` from stored config is checked against the enum (unknown = native) and never inserted into SQL.
+
+---
+
 ## [0.32.0] — 2026-11-18
 
 ### Added

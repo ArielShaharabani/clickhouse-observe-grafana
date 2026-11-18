@@ -41,6 +41,8 @@ import {
   TermsRankBy,
 } from './state';
 import { uniqueMetricLabels } from './compile';
+import { FormulaEditor, formulaFieldsOf, formulaMetric } from './FormulaEditor';
+import { formulaErrors, quickToFormula } from './formula';
 
 interface Props {
   dim: BucketDim | MetricDim;
@@ -69,6 +71,33 @@ export function DimensionEditor({ dim, group, fields, metrics = [], onChange, on
       </div>
 
       {dim.kind === 'metric' && (
+        <RadioButtonGroup<'quick' | 'formula'>
+          aria-label="Metric mode"
+          size="sm"
+          fullWidth
+          options={[
+            { label: 'Quick function', value: 'quick' },
+            { label: 'Formula', value: 'formula' },
+          ]}
+          value={dim.op === 'formula' ? 'formula' : 'quick'}
+          onChange={(v) => {
+            if (v === 'formula' && dim.op !== 'formula') {
+              onChange(toFormula(dim, fields));
+            } else if (v === 'quick' && dim.op === 'formula') {
+              const next = withOp(dim, 'count', fields);
+              if (next) {
+                onChange(next);
+              }
+            }
+          }}
+        />
+      )}
+
+      {dim.kind === 'metric' && dim.op === 'formula' && (
+        <FormulaEditor key={dim.id} dim={dim} fields={fields} onChange={onChange} />
+      )}
+
+      {dim.kind === 'metric' && dim.op !== 'formula' && (
         <>
           <div className={styles.label} id={fnLabelId}>
             Quick function
@@ -301,6 +330,18 @@ function LinesInput({
       )}
     </>
   );
+}
+
+/**
+ * Switching to Formula converts the quick function (spec LENS-DIM-03: `median(event.duration)`);
+ * a function whose field the data view no longer offers starts from `count()`.
+ */
+function toFormula(dim: MetricDim, fields: LensField[]): MetricDim {
+  const all = formulaFieldsOf(fields);
+  const label = fields.find((f) => f.sqlExpr === dim.field)?.label ?? dim.fieldLabel;
+  const text = quickToFormula(dim.op, label, dim.percentile);
+  const ok = formulaErrors(text, all).length === 0 ? text : 'count()';
+  return formulaMetric(dim, ok, all);
 }
 
 /** Keeps a field set elsewhere (e.g. a shared link) selectable even if the function's list excludes it. */

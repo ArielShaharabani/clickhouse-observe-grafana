@@ -19,7 +19,10 @@ import { TimeRange } from '@grafana/data';
 import { SourceConfig } from '../types';
 import { quoteIdentifier, quoteString, tableRef } from '../sql/queryBuilder';
 import { configSettingsFragments, withSettings } from '../sql/settings';
+import { isConvertedTimestamp, timeExpr } from '../sql/timeExpr';
 import { resolveInterval } from '../components/_histogramInterval';
+import { FieldIndex } from '../sql/fields';
+import { formulaToSql, FormulaSqlContext } from './formula';
 import {
   BucketDim,
   clampPercentile,
@@ -51,7 +54,11 @@ export const kindAlias = (i: number) => `k${i}`;
 
 const MAP_ACCESSOR = /^("(?:[^"]|"")*"|[A-Za-z_][A-Za-z0-9_]*)\[(.+)\]$/;
 
-function metricSql(m: MetricDim): string {
+function metricSql(m: MetricDim, fctx: FormulaSqlContext): string {
+  if (m.op === 'formula') {
+    // Parsed, validated and compiled from the AST (formula.ts); an invalid formula yields no value.
+    return formulaToSql(m.formula ?? '', m.formulaFields ?? {}, fctx) ?? 'NULL';
+  }
   if (m.op === 'count' || !m.field) {
     return 'count()';
   }
@@ -129,18 +136,27 @@ export function compileLens(
    * datasource's `$__timeInterval` macro and come back as DateTime, so the panel follows the
    * dashboard's time range and resolution instead of the range it was built on.
    */
-  mode: 'app' | 'dashboard' = 'app'
+  mode: 'app' | 'dashboard' = 'app',
+  /** Discovered fields, for the `kql=` filters of formulas (same resolution as the search bar). */
+  index?: FieldIndex
 ): CompiledLens {
+  const fctx: FormulaSqlContext = { config, index, dashboard: mode === 'dashboard' };
   const tbl = tableRef(config, config.logsTable);
   const where = conditions.length > 0 ? conditions.join(' AND ') : '';
   let intervalMs: number | undefined;
+
+  // A date histogram on the view's time field reads it the way every other query does: a
+  // converted time field (epoch / text, PLAN #16d) is not a real DateTime column. Any other field
+  // is quoted as before.
+  const dateSql = (field: string) =>
+    field === config.columns.timestamp && isConvertedTimestamp(config) ? timeExpr(config) : quoteIdentifier(field);
 
   const ctes: string[] = [];
   const restrictions: string[] = [];
   const selects: string[] = [];
   state.buckets.forEach((b: BucketDim, i) => {
     if (b.kind === 'date_histogram' && mode === 'dashboard') {
-      const col = quoteIdentifier(b.field);
+      const col = dateSql(b.field);
       // The datasource's macro parser counts parentheses and commas without regard to quotes, so
       // an expression field (e.g. a Map key with ')' in it) gets the explicit form instead.
       selects.push(
@@ -152,7 +168,7 @@ export function compileLens(
       const iv = resolveInterval('auto', timeRange);
       intervalMs = iv.intervalMs;
       selects.push(
-        `toUnixTimestamp(toStartOfInterval(${quoteIdentifier(b.field)}, INTERVAL ${iv.value} ${iv.unit})) * 1000 AS ${bucketAlias(i)}`
+        `toUnixTimestamp(toStartOfInterval(${dateSql(b.field)}, INTERVAL ${iv.value} ${iv.unit})) * 1000 AS ${bucketAlias(i)}`
       );
     } else {
       const field = quoteIdentifier(b.field);
@@ -164,7 +180,7 @@ export function compileLens(
         b.rankBy === 'alpha'
           ? `v ${dir}`
           : rankMetric
-            ? `${metricSql(rankMetric)} ${dir}, v`
+            ? `${metricSql(rankMetric, fctx)} ${dir}, v`
             : b.rankDir === 'asc'
               ? 'count() ASC, v'
               : 'count() DESC';
@@ -203,7 +219,7 @@ export function compileLens(
       );
     }
   });
-  state.metrics.forEach((m, i) => selects.push(`${metricSql(m)} AS ${metricAlias(i)}`));
+  state.metrics.forEach((m, i) => selects.push(`${metricSql(m, fctx)} AS ${metricAlias(i)}`));
 
   const allWhere = [where, ...restrictions].filter(Boolean).join(' AND ');
   const groupBy = state.buckets.flatMap((b, i) =>

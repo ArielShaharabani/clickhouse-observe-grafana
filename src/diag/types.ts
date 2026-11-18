@@ -22,11 +22,15 @@ export type QueryOp =
   | 'mapKeys'
   | 'jsonPaths'
   | 'fieldValues'
+  /** Field statistics tab batch profile (src/sql/fieldStats.ts). */
+  | 'fieldStats'
   | 'traceLink'
   | 'wizardDatabases'
   | 'wizardTables'
   | 'wizardColumns'
   | 'wizardJsonPaths'
+  /** One sample value of a numeric time column, to guess its epoch unit (PLAN #16d). */
+  | 'wizardTimeSample'
   /** The Visualize (Lens) page's chart query (src/lens/compile.ts). */
   | 'lens'
   /** Surrounding documents (DISC-DOC-02): anchor lookup and the newer / older searches. */

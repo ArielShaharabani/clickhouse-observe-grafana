@@ -54,6 +54,8 @@ import {
 } from './state';
 import { addField, chartTitle, chooseChart, isLensField, isXy, LensContext, suggestions, switchChart } from './suggest';
 import { shiftTimeRange, zoomOutTimeRange } from '../utils/timeRangeNav';
+import { QueryProgress } from '../components/QueryProgress/QueryProgress';
+import { lensApproxNote } from './approx';
 
 function defaultRange(): TimeRange {
   return { from: dateTime(Date.now() - 3600 * 1000), to: dateTime(Date.now()), raw: { from: 'now-1h', to: 'now' } };
@@ -361,7 +363,7 @@ export function LensPage() {
       { ...DEFAULT_LOGS_QUERY_STATE, search, filters },
       fieldIndexRef.current
     );
-    const { sql, intervalMs } = compileLens(lens, config, conditions, timeRange);
+    const { sql, intervalMs } = compileLens(lens, config, conditions, timeRange, 'app', fieldIndexRef.current);
     runQueryRows({ datasourceUid: config.datasourceUid, sql, timeRange, op: 'lens', signal: abort.signal }).then(
       (rows) =>
         !cancelled && setResult({ key: queryKey, data: shapeLensRows(lens, rows, intervalMs), bucketMs: intervalMs }),
@@ -375,6 +377,10 @@ export function LensPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [queryKey, fieldsLoading]);
   const current = result?.key === queryKey ? result : null;
+  // SHARED-PERF-01: same running cue as Discover (no Cancel here: leaving the chart without a
+  // result would need its own empty state).
+  const chartLoading = fieldsLoading || (!isEmptyLens(lens) && !!config.datasourceUid && !current);
+  const approxNote = current?.data ? lensApproxNote(lens) : null;
 
   const onAdd = (f: LensField) => setLens(addField(lens, f, ctx));
   const removeDim = (id: string) => {
@@ -547,6 +553,8 @@ export function LensPage() {
         />
       </div>
 
+      <QueryProgress active={chartLoading} />
+
       <FilterPills
         filters={filters}
         onChange={setFilters}
@@ -659,6 +667,12 @@ export function LensPage() {
               </div>
             )}
           </div>
+
+          {approxNote && (
+            <div className={styles.approxNote} data-testid="lens-approx-note">
+              <Icon name="info-circle" size="sm" /> {approxNote}
+            </div>
+          )}
 
           {cards.length > 0 && (
             <div className={styles.suggestions}>
@@ -799,6 +813,13 @@ const getStyles = (theme: GrafanaTheme2) => ({
     gap: ${theme.spacing(1)};
     height: calc(100vh - 120px);
     min-height: 480px;
+  `,
+  approxNote: css`
+    display: flex;
+    align-items: center;
+    gap: ${theme.spacing(0.5)};
+    font-size: ${theme.typography.bodySmall.fontSize};
+    color: ${theme.colors.text.secondary};
   `,
   toolbar: css`
     display: flex;
