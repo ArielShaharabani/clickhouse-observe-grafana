@@ -35,6 +35,8 @@ interface FieldSidebarProps {
   onCollapse: () => void;
   /** Break the histogram down by a field (field stats popover action). */
   onSetBreakdown?: (field: FieldModel) => void;
+  /** Open a field on the Visualize page (popover Visualize button). */
+  onVisualize?: (field: FieldModel) => void;
 }
 
 type Group = 'selected' | 'popular' | 'available';
@@ -46,6 +48,7 @@ export function FieldSidebar({
   onAddFilter,
   onCollapse,
   onSetBreakdown,
+  onVisualize,
 }: FieldSidebarProps) {
   const styles = useStyles2(getStyles);
   const { fields, loading, refresh } = useFields();
@@ -163,6 +166,7 @@ export function FieldSidebar({
     onToggleColumn: onToggleFromList,
     onAddFilter: onFilterFromList,
     onSetBreakdown,
+    onVisualize,
   };
 
   // The unselected list is the one that scales with schema width — a table with hundreds of

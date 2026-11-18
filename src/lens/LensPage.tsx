@@ -18,7 +18,9 @@ import { decodeLogsState, encodeLogsState } from '../data/urlState';
 import { runQueryRows } from '../data/runQuery';
 import { buildFieldIndex } from '../sql/fields';
 import { buildWhereConditions } from '../sql/queryBuilder';
-import { buildAppPageUrl, tableKey } from '../state/sharedSearch';
+import { tableKey } from '../state/sharedSearch';
+import { fieldToColumn } from '../components/FieldSidebar/FieldSidebar';
+import { discoverColumnFields, discoverUrl } from './handoff';
 import { FilterPills } from '../components/FilterPills';
 import { useAutocompleteSources } from '../autocomplete/service';
 import { addFilterPill, makeFilter } from '../sql/filters';
@@ -367,7 +369,11 @@ export function LensPage() {
   };
   const [dragOver, setDragOver] = useState(false);
 
-  const discoverUrl = buildAppPageUrl('logs', { search, filters, columns: [], timeRange });
+  // LENS-INTERACT-02: Discover in a new tab, same context, the chart's top-values fields as columns.
+  const exploreUrl = discoverUrl(
+    { search, filters, timeRange, viewId: urlState.viewId },
+    discoverColumnFields(lens, fields).map(fieldToColumn)
+  );
 
   return (
     <div className={styles.page}>
@@ -379,8 +385,8 @@ export function LensPage() {
           {filters.length > 0 && ` · ${filters.length} filter${filters.length > 1 ? 's' : ''}`}
         </span>
         <div className={styles.spacer} />
-        <LinkButton href={discoverUrl} variant="secondary" size="sm" icon="compass" fill="outline">
-          Edit query in Discover
+        <LinkButton href={exploreUrl} target="_blank" variant="secondary" size="sm" icon="compass" fill="outline">
+          Explore in Discover
         </LinkButton>
         <TimeRangePicker
           value={timeRange}

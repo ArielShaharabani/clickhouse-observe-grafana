@@ -1,7 +1,7 @@
 import React, { useCallback, useContext, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { css, cx } from '@emotion/css';
 import { dateTime, GrafanaTheme2, PageLayoutType, rangeUtil, TimeRange } from '@grafana/data';
-import { PluginPage } from '@grafana/runtime';
+import { locationService, PluginPage } from '@grafana/runtime';
 import { Button, Icon, Spinner, useStyles2, TimeRangePicker, RefreshPicker, useSplitter } from '@grafana/ui';
 import { GridDisplay, GridDisplayOptions, loadGridDisplay, saveGridDisplay } from '../components/GridDisplayOptions';
 import { useSearchParams } from 'react-router-dom';
@@ -50,6 +50,7 @@ import { compileColumnHighlighter, extractHighlightTerms } from '../sql/kql/high
 import { errMsg } from '../errMsg';
 import { shiftTimeRange, zoomOutTimeRange } from '../utils/timeRangeNav';
 import { useAvailableHeight } from '../utils/useAvailableHeight';
+import { lensForField, lensForHistogram, visualizeUrl } from '../lens/handoff';
 import { logsQueryReducer } from './_logsQueryReducer';
 
 const INITIAL_FETCH = 200;
@@ -1161,6 +1162,27 @@ export function LogsExplorer() {
     [breakdown, config.columns.severity]
   );
 
+  // Discover → Lens hand-off (LENS-INTERACT-02 / DISC-CHART-03): same query, filters, time and
+  // data view; the Lens state is what Visualize would build from the field / the histogram.
+  const handoffContext = useMemo(
+    () => ({ search: queryState.search, filters: queryState.filters, timeRange, viewId: activeView?.id }),
+    [queryState.search, queryState.filters, timeRange, activeView?.id]
+  );
+  const lensContext = useMemo(
+    () => (config.columns.timestamp ? { timeField: { sqlExpr: config.columns.timestamp, label: config.columns.timestamp } } : {}),
+    [config.columns.timestamp]
+  );
+  const onVisualizeField = useCallback(
+    (field: FieldModel) => locationService.push(visualizeUrl(handoffContext, lensForField(field, lensContext))),
+    [handoffContext, lensContext]
+  );
+  const editVisualizationUrl = useMemo(() => {
+    const target = histogramBreakdownTarget;
+    const label = breakdown.kind === 'field' ? breakdown.field.displayName : target?.field;
+    const lens = lensForHistogram(lensContext, target && label ? { field: target.field, label } : undefined);
+    return lens ? visualizeUrl(handoffContext, lens) : undefined;
+  }, [histogramBreakdownTarget, breakdown, lensContext, handoffContext]);
+
   // Lazy-fetch rows beyond the initial buffer when the user pages past it.
   const ensureRows = useCallback(
     async (page: number, currentPageSize: number, currentRows: LogRow[], currentHasMore: boolean) => {
@@ -1441,6 +1463,7 @@ export function LogsExplorer() {
                   onAddFilter={onAddFilter}
                   onCollapse={() => setSidebarCollapsed(true)}
                   onSetBreakdown={onSetFieldBreakdown}
+                  onVisualize={onVisualizeField}
                 />
               </div>
               <div {...splitterProps} className={cx(splitterProps.className, styles.splitterHandle)} />
@@ -1491,6 +1514,7 @@ export function LogsExplorer() {
                   resolvedInterval={resolvedInterval}
                   onSelectRange={onHistogramSelectRange}
                   breakdownTarget={histogramBreakdownTarget}
+                  editVisualizationUrl={editVisualizationUrl}
                   onAddFilter={onAddFilter}
                   collapsed={histogramCollapsed}
                   onToggleCollapsed={() => setHistogramCollapsed((v) => !v)}
