@@ -45,7 +45,8 @@ test('typed minimum interval: one bar per day, then per 12 hours; the URL keeps 
   await page.reload();
   await expect(bars(viz)).toHaveCount(7);
   await viz.dimensions.getByRole('button', { name: 'Edit Timestamp' }).click();
-  await expect(editor(page).getByRole('combobox', { name: /Minimum interval/ })).toHaveValue(/1d/);
+  // A typed value equal to a preset is shown by the preset's name (Kibana: "Day").
+  await expect(editor(page).getByRole('combobox', { name: /Minimum interval/ })).toHaveValue(/^(1d|Day)$/);
 });
 
 test('an invalid interval is rejected and never applied', async ({ page }) => {
@@ -96,7 +97,8 @@ test('Drop partial intervals and Include empty rows', async ({ page }) => {
 
 test('Discover histogram interval → Edit visualization keeps it', async ({ page }) => {
   const logs = new LogsPage(page);
-  await logs.open({ interval: 'day' });
+  // No breakdown: with the default severity split each day is several stacked bar segments.
+  await logs.open({ interval: 'day', bd: 'none' });
   const href = await page.getByRole('link', { name: 'Explore in Visualize' }).getAttribute('href');
   const lens = new URLSearchParams(href!.split('?')[1]).get('lens') ?? '';
   expect(lens).toContain('"interval":"1d"');

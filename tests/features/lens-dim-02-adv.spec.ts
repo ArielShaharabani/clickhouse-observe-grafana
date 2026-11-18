@@ -61,6 +61,9 @@ test('invalid Filter by KQL stays in the box with a message and is not applied',
 test('Time shift: preset adds a shifted copy of the data, labelled "1d ago"', async ({ page }) => {
   const viz = new VisualizePage(page);
   await viz.open({ lens: byService({ kind: 'metric', id: 'm0', op: 'count' }) });
+  // Let the initial (unshifted) query land first: it is sent after field discovery and would
+  // otherwise be the "next" request captured below.
+  await expect(viz.chart.getByText(String(FIXTURE.counts.payments), { exact: true })).toBeVisible();
   await viz.dimensions.getByRole('button', { name: 'Edit Count of records' }).click();
   await editor(page)
     .getByRole('button', { name: /Advanced/ })
