@@ -5,6 +5,45 @@
 
 import { FilterPill, FilterOp } from '../types';
 
+/** Every operator a pill may carry; anything else in a link is dropped (see sanitizeFilterPills). */
+export const FILTER_OPS: readonly FilterOp[] = [
+  '=', '!=', 'contains', 'not_contains', 'one_of', 'not_one_of', 'exists', 'not_exists',
+  'gte', 'lt', 'between', 'not_between',
+];
+
+/**
+ * Keeps only well-formed pills from untrusted input (a URL): `op` must be a known FilterOp, `field`
+ * a string, `value` a string (a missing one becomes ''), `values` an array of strings when present,
+ * `label` a string when present. A missing id is generated. Anything else is dropped.
+ */
+export function sanitizeFilterPills(raw: unknown[]): FilterPill[] {
+  const out: FilterPill[] = [];
+  for (const p of raw) {
+    if (typeof p !== 'object' || p === null) {
+      continue;
+    }
+    const r = p as Record<string, unknown>;
+    if (typeof r.op !== 'string' || !(FILTER_OPS as readonly string[]).includes(r.op) || typeof r.field !== 'string') {
+      continue;
+    }
+    if (r.value !== undefined && typeof r.value !== 'string') {
+      continue;
+    }
+    if (r.values !== undefined && !(Array.isArray(r.values) && r.values.every((v) => typeof v === 'string'))) {
+      continue;
+    }
+    if (r.label !== undefined && typeof r.label !== 'string') {
+      continue;
+    }
+    out.push({
+      ...(r as unknown as FilterPill),
+      id: typeof r.id === 'string' && r.id ? r.id : nextId(),
+      value: (r.value as string | undefined) ?? '',
+    });
+  }
+  return out;
+}
+
 let _idCounter = 0;
 /** Fresh unique pill id. */
 export function nextId(): string {

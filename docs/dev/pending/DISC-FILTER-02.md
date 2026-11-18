@@ -43,3 +43,7 @@ DISC-FILTER-02 (filter builder). Range filters are four new pill ops rather than
 | Rows with OR / AND nested groups (`+ OR`, `+ AND`) | gap left: needs a nested pill model; separate feature |
 | Edit as Query DSL (JSON editor) | gap left: Elasticsearch concept, no ClickHouse equivalent |
 | ~1200 px wide popover | gap left: kept at 760 px (all three inputs fit; no change in behaviour) |
+
+## Security note (URL pills)
+
+`decodeLogsState` (`src/data/urlState.ts`) now passes URL `filters` through `sanitizeFilterPills` (`src/sql/filters.ts`): a pill is dropped unless `op` is a known FilterOp and `field` / `value` / `values` (and `label`) are strings (a missing `value` becomes `''`, a missing `id` is generated). Tests: `src/data/__tests__/urlState.test.ts`.

@@ -130,3 +130,34 @@ describe('encodeLogsState / decodeLogsState round-trip', () => {
     expect(encoded.has('dsUid')).toBe(false);
   });
 });
+
+describe('decodeLogsState drops untrusted filter pills', () => {
+  const decode = (pills: unknown) => decodeLogsState(new URLSearchParams({ filters: JSON.stringify(pills) })).filters;
+  const ok = { id: 'a', field: 'ServiceName', op: '=', value: 'x' };
+
+  it('drops a pill with an unknown op', () => {
+    expect(decode([ok, { ...ok, id: 'b', op: 'LIKE' }, { ...ok, id: 'c', op: "= '' OR 1=1 --" }])).toEqual([ok]);
+    expect(decode([{ ...ok, op: undefined }])).toEqual([]);
+  });
+
+  it('drops a pill whose field is not a string', () => {
+    expect(decode([ok, { ...ok, id: 'b', field: { a: 1 } }, { ...ok, id: 'c', field: 5 }])).toEqual([ok]);
+  });
+
+  it('drops a pill whose value is not a string; a missing value becomes empty', () => {
+    expect(decode([ok, { ...ok, id: 'b', value: 5 }, { ...ok, id: 'c', value: ['x'] }])).toEqual([ok]);
+    expect(decode([{ id: 'e', field: 'ServiceName', op: 'exists' }])).toEqual([
+      { id: 'e', field: 'ServiceName', op: 'exists', value: '' },
+    ]);
+  });
+
+  it('drops a pill whose values are not an array of strings', () => {
+    const oneOf = { id: 'o', field: 'ServiceName', op: 'one_of', value: '', values: ['a', 'b'] };
+    expect(decode([oneOf, { ...oneOf, id: 'p', values: 'a' }, { ...oneOf, id: 'q', values: ['a', 1] }])).toEqual([oneOf]);
+  });
+
+  it('drops non-object entries and keeps the range operators', () => {
+    const between = { id: 'r', field: 'n', op: 'between', value: '', values: ['1', '2'] };
+    expect(decode([null, 'x', 3, between])).toEqual([between]);
+  });
+});
