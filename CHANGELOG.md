@@ -10,6 +10,19 @@ Versions track the plugin's release history. `Unreleased` collects commits not y
 
 ---
 
+## [0.29.0] — 2026-11-18
+
+### Added
+- **Top values: Rank by and Rank direction.** Rank by Count of records (default), Alphabetical, or a Custom metric (any metric of the chart); ascending or descending. Needed to answer "least common" and "first alphabetically" questions.
+- **Top values: "Group remaining values as Other".** Values outside the top N collapse into one `Other` value so totals stay complete.
+- **Top values: "Include documents without this field".** Rows without the field appear as `(missing)` instead of being dropped.
+- **Top values: Include values / Exclude values with "Use regular expression".** One value or pattern per line; regex patterns are full-match (`match(expr, '^(?:p)$')`).
+
+### Changed
+- **Lens URL/state validation covers the new options.** `decodeLens` rebuilds each top-values bucket from known, well-typed fields only (`cleanTerms`); lists are capped at 50 entries of 200 characters; `sanitizeLens` resets a rank metric that no longer exists.
+
+---
+
 ## [0.28.0] — 2026-11-18
 
 ### Added

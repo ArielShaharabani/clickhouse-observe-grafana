@@ -1,7 +1,7 @@
 # Context snapshot — read this to restart
 
 Saved after every feature (and every review-fix round). A new session can resume from this file plus `PROGRESS.md` alone.
-Last saved: 2026-11-18, #19 DISC-FILTER-02 merged (PR 19, v0.28.0).
+Last saved: 2026-11-18, #24 LENS-DIM-04 merged (PR 20, v0.29.0).
 
 ## Goal
 Bring Kibana Discover + Lens style exploration to Grafana on ClickHouse by extending the **ClickHouse Observe** app plugin.
@@ -35,6 +35,7 @@ Bring Kibana Discover + Lens style exploration to Grafana on ClickHouse by exten
 | 15 | LENS-INTERACT-02 / DISC-CHART-03: Discover ↔ Lens hand-off (popover Visualize, histogram Edit visualization, Explore in Discover with columns) | 16 | `src/lens/handoff.ts`, `LogsExplorer.tsx`, `LogsHistogramPanel.tsx`, `LensPage.tsx` |
 | 14 | LENS-INTERACT-01: click-to-filter on custom XY chart, chooser, legend actions, brush, filter pills on Visualize | 15 | `src/lens/render/XyChart.tsx`, `src/lens/FilterChooser.tsx`, `src/lens/LensPage.tsx` |
 | 19 | DISC-FILTER-02: Filter builder: range operators, per-type operators, preview | 19 | `src/components/AddFilter/FilterEditForm.tsx`, `src/sql/filters.ts` (`sanitizeFilterPills`, range validation), `buildFilterClause` |
+| 24 | LENS-DIM-04: Top values editor: rank by / direction, Other, missing, include / exclude with regex | 20 | `src/lens/compile.ts` (top-values SQL, `regexError`), `src/lens/state.ts` (`TermsDim` options, `cleanTerms`), `src/lens/DimensionEditor.tsx` |
 
 ## Key decisions (details in DECISIONS.md)
 - Frontend-only; queries via grafana-clickhouse-datasource (`src/data/runQuery.ts`). Plain React + @grafana/ui, no Scenes.
