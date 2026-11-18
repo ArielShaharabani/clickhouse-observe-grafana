@@ -5,10 +5,11 @@
  * page's own state — `lens` for Visualize, `cols` for Discover. Pure functions so both directions
  * are unit-tested without rendering either page.
  */
-import { EncodeLogsUrlStateInput } from '../data/urlState';
-import { buildAppPageUrl } from '../state/sharedSearch';
+import { EncodeLogsUrlStateInput, encodeLogsState } from '../data/urlState';
+import { defaultColumns, fieldToColumn } from '../data/columns';
+import { prefixRoute } from '../utils/utils.routing';
 import { FieldModel } from '../sql/fieldModel';
-import { SelectedColumn } from '../types';
+import { SelectedColumn, SourceConfig } from '../types';
 import { EMPTY_LENS, encodeLens, LensField, LensState, RECORDS_FIELD } from './state';
 import { addField, isLensField, LensContext, switchChart } from './suggest';
 
@@ -17,6 +18,12 @@ export type HandoffContext = Pick<EncodeLogsUrlStateInput, 'search' | 'filters' 
 
 export function lensFieldOf(field: Pick<FieldModel, 'id' | 'sqlExpr' | 'displayName' | 'type'>): LensField {
   return { id: field.id, sqlExpr: field.sqlExpr, label: field.displayName, type: field.type };
+}
+
+/** The Lens context for a view: its time field (Discover and Lens must build the same charts). */
+export function lensContextFor(config: Pick<SourceConfig, 'columns'>): LensContext {
+  const ts = config.columns.timestamp;
+  return ts ? { timeField: { sqlExpr: ts, label: ts } } : {};
 }
 
 /** Field popover "Visualize": the chart Lens builds when this field is the first one added. */
@@ -29,40 +36,46 @@ export function lensForField(field: Pick<FieldModel, 'id' | 'sqlExpr' | 'display
  * Histogram "Edit visualization" (DISC-CHART-03): Bar, time on the horizontal axis, Count of
  * records vertically, and the histogram's breakdown (if any) as the series split.
  */
-export function lensForHistogram(ctx: LensContext, breakdown?: { field: string; label: string }): LensState | undefined {
+export function lensForHistogram(ctx: LensContext, breakdown?: LensField): LensState | undefined {
   if (!ctx.timeField) {
     return undefined;
   }
   let s = switchChart(addField(EMPTY_LENS, RECORDS_FIELD, ctx), 'bar', ctx, 'stacked');
   if (breakdown) {
-    s = addField(s, { id: breakdown.field, sqlExpr: breakdown.field, label: breakdown.label, type: 'string' }, ctx);
+    s = addField(s, breakdown, ctx);
   }
   return s;
 }
 
 /** /visualize link for a Lens state in the given search context. */
 export function visualizeUrl(c: HandoffContext, lens?: LensState): string {
-  const url = buildAppPageUrl('visualize', { ...c, columns: [] });
-  return lens ? `${url}&lens=${encodeURIComponent(encodeLens(lens))}` : url;
+  const sp = encodeLogsState({ ...c, columns: [] });
+  if (lens) {
+    sp.set('lens', encodeLens(lens));
+  }
+  return `${prefixRoute('visualize')}?${sp.toString()}`;
 }
 
 /**
- * Lens "Explore in Discover" columns: the chart's top-values fields, in bucket order (the caller
- * turns them into grid columns). Fields not found in the data view are skipped.
+ * Lens "Explore in Discover" columns: the view's default columns (time, level, message, …) plus
+ * the chart's top-values fields in bucket order. Bucket fields already shown by a default column
+ * and fields the data view does not have are skipped.
  */
-export function discoverColumnFields(lens: LensState, fields: FieldModel[]): FieldModel[] {
+export function discoverColumns(lens: LensState, fields: FieldModel[], config: SourceConfig): SelectedColumn[] {
+  const cols = defaultColumns(config);
+  const shown = new Set(cols.map((c) => c.sqlExpr));
   const bySql = new Map(fields.map((f) => [f.sqlExpr, f]));
-  const out: FieldModel[] = [];
   for (const b of lens.buckets) {
     const f = b.kind === 'terms' ? bySql.get(b.field) : undefined;
-    if (f && !out.includes(f)) {
-      out.push(f);
+    if (f && !shown.has(f.sqlExpr)) {
+      shown.add(f.sqlExpr);
+      cols.push(fieldToColumn(f));
     }
   }
-  return out;
+  return cols;
 }
 
-/** /logs link carrying the search context and the chart's bucket fields as columns. */
+/** /logs link carrying the search context and the given grid columns. */
 export function discoverUrl(c: HandoffContext, columns: SelectedColumn[]): string {
-  return buildAppPageUrl('logs', { ...c, columns });
+  return `${prefixRoute('logs')}?${encodeLogsState({ ...c, columns }).toString()}`;
 }

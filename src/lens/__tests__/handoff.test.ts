@@ -2,11 +2,14 @@ import { dateTime } from '@grafana/data';
 import { decodeLogsState } from '../../data/urlState';
 import { FieldModel } from '../../sql/fieldModel';
 import { makeFilter } from '../../sql/filters';
-import { fieldToColumn } from '../../components/FieldSidebar/FieldSidebar';
-import { discoverColumnFields, discoverUrl, lensForField, lensForHistogram, visualizeUrl } from '../handoff';
+import { discoverColumns, discoverUrl, lensContextFor, lensForField, lensForHistogram, visualizeUrl } from '../handoff';
 import { decodeLens, dimLabel, LensState } from '../state';
+import { SourceConfig } from '../../types';
 
-const ctx = { timeField: { sqlExpr: 'Timestamp', label: 'Timestamp' } };
+const config = {
+  columns: { timestamp: 'Timestamp', severity: 'SeverityText', serviceName: 'ServiceName', body: 'Body' },
+} as unknown as SourceConfig;
+const ctx = lensContextFor(config);
 const field = (name: string, type: FieldModel['type']): FieldModel => ({
   id: `col:${name}`,
   name,
@@ -83,7 +86,7 @@ describe('Discover → Lens: histogram Edit visualization (DISC-CHART-03)', () =
   });
 
   it('carries the breakdown as the series split', () => {
-    expect(shape(lensForHistogram(ctx, { field: 'SeverityText', label: 'SeverityText' })!)).toEqual({
+    expect(shape(lensForHistogram(ctx, { id: 'col:SeverityText', sqlExpr: 'SeverityText', label: 'SeverityText', type: 'string' })!)).toEqual({
       chart: 'bar',
       sub: 'stacked',
       x: 'Timestamp',
@@ -98,33 +101,39 @@ describe('Discover → Lens: histogram Edit visualization (DISC-CHART-03)', () =
 });
 
 describe('Lens → Discover: Explore in Discover (LENS-INTERACT-02)', () => {
-  const lens = lensForHistogram(ctx, { field: 'SeverityText', label: 'SeverityText' })!;
-  const twoTerms: LensState = {
+  const METHOD: FieldModel = { ...field('LogAttributes.http.method', 'string'), sqlExpr: "LogAttributes['http.method']" };
+  const lens: LensState = {
     chartType: 'bar',
     subType: 'stacked',
     buckets: [
-      { kind: 'terms', id: 'b1', field: 'ServiceName', label: 'ServiceName', size: 9 },
-      { kind: 'terms', id: 'b2', field: 'SeverityText', label: 'SeverityText', size: 3 },
+      { kind: 'terms', id: 'b1', field: "LogAttributes['http.method']", label: 'LogAttributes.http.method', size: 9 },
+      { kind: 'terms', id: 'b2', field: 'ServiceName', label: 'ServiceName', size: 9 },
+      { kind: 'terms', id: 'b3', field: 'Gone', label: 'Gone', size: 3 },
     ],
     metrics: [{ kind: 'metric', id: 'm', op: 'count', field: '', fieldLabel: 'Records', numeric: false }],
   };
+  const sqls = (lensState: LensState) => discoverColumns(lensState, [SERVICE, LEVEL, METHOD], config).map((c) => c.sqlExpr);
 
-  it('columns are the top-values fields in bucket order; time buckets are skipped', () => {
-    expect(discoverColumnFields(lens, [SERVICE, LEVEL])).toEqual([LEVEL]);
-    expect(discoverColumnFields(twoTerms, [LEVEL, SERVICE])).toEqual([SERVICE, LEVEL]);
-  });
-
-  it('skips bucket fields the data view does not have', () => {
-    expect(discoverColumnFields(twoTerms, [LEVEL])).toEqual([LEVEL]);
+  it('default columns first, then new top-values fields; shown, time and unknown fields skipped', () => {
+    expect(sqls(lens)).toEqual(['Timestamp', 'SeverityText', 'ServiceName', 'Body', "LogAttributes['http.method']"]);
+    expect(sqls(lensForHistogram(ctx)!)).toEqual(['Timestamp', 'SeverityText', 'ServiceName', 'Body']);
   });
 
   it('URL keeps the search context and sets cols', () => {
-    const url = discoverUrl(hctx, discoverColumnFields(twoTerms, [SERVICE, LEVEL]).map(fieldToColumn));
+    const url = discoverUrl(hctx, discoverColumns(lens, [SERVICE, LEVEL, METHOD], config));
     expect(url).toMatch(/\/logs\?/);
     const st = decodeLogsState(params(url));
     expect(st.search).toBe('ServiceName:payments');
-    expect(st.filters).toHaveLength(1);
+    expect(st.filters).toEqual(hctx.filters);
     expect(st.viewId).toBe('otel');
-    expect(st.columns?.map((c) => c.sqlExpr)).toEqual(['ServiceName', 'SeverityText']);
+    expect(st.columns?.map((c) => c.sqlExpr).slice(-1)).toEqual(["LogAttributes['http.method']"]);
+  });
+});
+
+describe('visualizeUrl without context', () => {
+  it('builds a clean query string', () => {
+    const url = visualizeUrl({ search: '', filters: [], timeRange: range }, lensForHistogram(ctx));
+    expect(url).not.toContain('?&');
+    expect(decodeLens(params(url).get('lens'))).toEqual(expect.objectContaining({ chartType: 'bar' }));
   });
 });

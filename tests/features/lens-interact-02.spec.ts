@@ -53,9 +53,8 @@ test('IT-H: Explore in Discover opens a new tab with the bucket fields as column
 }) => {
   const viz = new VisualizePage(page);
   await viz.open({ q: 'SeverityText:error' });
-  await viz.addField('ServiceName');
-  await viz.addField('SeverityText');
-  await expect(viz.chart.getByRole('button', { name: /^payments · error: 1\.6K$/ })).toBeVisible();
+  await viz.addField('LogAttributes.http.method');
+  await expect(viz.chart.getByRole('button', { name: /^GET · Count of records: / })).toBeVisible();
 
   const [tab] = await Promise.all([
     context.waitForEvent('page'),
@@ -71,13 +70,14 @@ test('IT-H: Explore in Discover opens a new tab with the bucket fields as column
   if (await whatsNew.isVisible()) {
     await whatsNew.getByRole('button', { name: 'Close' }).click();
   }
-  await expect(logs.grid.getByRole('columnheader', { name: /ServiceName/ })).toBeVisible();
-  await expect(logs.grid.getByRole('columnheader', { name: /SeverityText/ })).toBeVisible();
+  // The view's default columns stay; the chart's bucket field is added.
+  for (const name of [/^Time/, /^Message/, /LogAttributes\.http\.method/]) {
+    await expect(logs.grid.getByRole('columnheader', { name })).toBeVisible();
+  }
   const sp = new URL(tab.url()).searchParams;
   expect(sp.get('q')).toBe('SeverityText:error');
   expect(sp.get('ds')).toBe(FIXTURE.dataViewId);
-  expect(JSON.parse(sp.get('cols') ?? '[]').map((c: { sqlExpr: string }) => c.sqlExpr)).toEqual([
-    'ServiceName',
-    'SeverityText',
-  ]);
+  const cols: Array<{ displayName: string }> = JSON.parse(sp.get('cols') ?? '[]');
+  expect(cols[0].displayName).toBe('Time');
+  expect(cols[cols.length - 1].displayName).toBe('LogAttributes.http.method');
 });
