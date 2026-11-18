@@ -91,8 +91,18 @@ export const FORMULA_FUNCTIONS: FormulaFn[] = [
     args: [X, { name: 'min', type: 'expr' }, { name: 'max', type: 'expr' }],
     description: 'Limits the value to the range min–max.',
   },
-  { name: 'pick_max', kind: 'math', args: [X, { name: 'other', type: 'expr' }], description: 'The larger of two values.' },
-  { name: 'pick_min', kind: 'math', args: [X, { name: 'other', type: 'expr' }], description: 'The smaller of two values.' },
+  {
+    name: 'pick_max',
+    kind: 'math',
+    args: [X, { name: 'other', type: 'expr' }],
+    description: 'The larger of two values.',
+  },
+  {
+    name: 'pick_min',
+    kind: 'math',
+    args: [X, { name: 'other', type: 'expr' }],
+    description: 'The smaller of two values.',
+  },
   {
     name: 'defaults',
     kind: 'math',
@@ -407,7 +417,10 @@ export function validateFormula(node: FormulaNode, fields: FormulaFields): Formu
           const spec = namedArgs.get(k);
           if (!spec) {
             errors.push(
-              new FormulaError(k === 'shift' ? 'Time shift is not supported yet' : `${n.fn} has no argument ${k}`, n.pos)
+              new FormulaError(
+                k === 'shift' ? 'Time shift is not supported yet' : `${n.fn} has no argument ${k}`,
+                n.pos
+              )
             );
           } else if (spec.type !== (v.kind === 'str' ? 'string' : 'number')) {
             errors.push(new FormulaError(`${k} must be a ${spec.type}`, n.pos));

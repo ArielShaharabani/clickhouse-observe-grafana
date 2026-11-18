@@ -51,7 +51,9 @@ describe('formula: parse + compile', () => {
 
   it('KQL filter on other aggregations uses the -If combinator', () => {
     expect(sql("sum(SeverityNumber, kql='SeverityNumber > 10')")).toMatch(/^sumIf\("SeverityNumber", \(.+\)\)$/);
-    expect(sql("median(SeverityNumber, kql='SeverityText : x')")).toMatch(/^quantileIf\(0\.5\)\("SeverityNumber", \(.+\)\)$/);
+    expect(sql("median(SeverityNumber, kql='SeverityText : x')")).toMatch(
+      /^quantileIf\(0\.5\)\("SeverityNumber", \(.+\)\)$/
+    );
   });
 
   it('precedence, unary minus and math functions', () => {
@@ -105,10 +107,10 @@ describe('formula: parse + compile', () => {
 describe('formula: injection attempts never reach SQL', () => {
   const attempts = [
     'count()); DROP TABLE spec_logs; --',
-    "count() FROM system.users --",
+    'count() FROM system.users --',
     'count() UNION ALL SELECT 1',
     'sleep(3)',
-    'file(\'/etc/passwd\')',
+    "file('/etc/passwd')",
     'count() /* x */',
     'count() -- x',
     'sum(SeverityNumber); SELECT 1',
@@ -154,7 +156,7 @@ describe('formula: injection attempts never reach SQL', () => {
   });
 
   it('dashboard mode writes $ in a KQL value as \\x24 (no macro expansion)', () => {
-    const out = formulaToSql("count(kql='SeverityText : \"$__timeFilter\"')", fields, { config, dashboard: true })!;
+    const out = formulaToSql('count(kql=\'SeverityText : "$__timeFilter"\')', fields, { config, dashboard: true })!;
     expect(out).not.toContain('$');
     expect(out).toContain('\\x24__timeFilter');
   });
@@ -178,7 +180,14 @@ describe('formula in Lens state', () => {
     raw.metrics[0].evil = 'x';
     raw.metrics[0].field = 'DROP';
     const back = decodeLens(JSON.stringify(raw))!;
-    expect(back.metrics[0]).toEqual({ kind: 'metric', id: 'm0', op: 'formula', formula: 'count()', formulaFields: fields, name: undefined });
+    expect(back.metrics[0]).toEqual({
+      kind: 'metric',
+      id: 'm0',
+      op: 'formula',
+      formula: 'count()',
+      formulaFields: fields,
+      name: undefined,
+    });
   });
 
   it('sanitizeLens drops a formula that refers to a field outside the data view', () => {

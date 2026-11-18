@@ -402,7 +402,14 @@ export function decodeLens(raw: string | null | undefined): LensState | undefine
       )
       .map((m): MetricDim =>
         m.op === 'formula'
-          ? { kind: 'metric', id: m.id, op: 'formula', formula: m.formula, formulaFields: cleanFormulaFields(m.formulaFields) ?? {}, name: m.name }
+          ? {
+              kind: 'metric',
+              id: m.id,
+              op: 'formula',
+              formula: m.formula,
+              formulaFields: cleanFormulaFields(m.formulaFields) ?? {},
+              name: m.name,
+            }
           : m
       );
     const subType = ['stacked', 'percentage', 'unstacked'].includes(v.subType) ? (v.subType as XySubType) : undefined;
@@ -420,7 +427,9 @@ export function decodeLens(raw: string | null | undefined): LensState | undefine
 export function sanitizeLens(s: LensState, allowed: ReadonlySet<string>): LensState {
   const kept = s.buckets.filter((b) => allowed.has(b.field));
   const metrics = s.metrics.filter((m) =>
-    m.op === 'formula' ? formulaAllowed(m, allowed) : m.op === 'count' || (m.field !== undefined && allowed.has(m.field))
+    m.op === 'formula'
+      ? formulaAllowed(m, allowed)
+      : m.op === 'count' || (m.field !== undefined && allowed.has(m.field))
   );
   // A rank metric that no longer exists falls back to ranking by count.
   const ids = new Set(metrics.map((m) => m.id));
