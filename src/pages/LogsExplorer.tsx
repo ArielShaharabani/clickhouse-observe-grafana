@@ -1494,6 +1494,7 @@ export function LogsExplorer() {
           onRunRawSql={runRawSql}
           builderSql={builderSql}
           onOpenDiagnostics={() => setShowDiagnostics(true)}
+          session={{ config, queryState: { ...queryState, columns: effectiveColumns }, timeRange, index: fieldIndex, viewId: activeView?.id, viewName: activeView?.name }}
         />
         {showDiagnostics && <DiagnosticsDrawer onClose={() => setShowDiagnostics(false)} />}
 

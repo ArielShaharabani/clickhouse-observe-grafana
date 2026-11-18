@@ -35,6 +35,7 @@ const QUERY_OP_LABELS: Partial<Record<SpanKind, string>> = {
   wizardTimeSample: 'Data view setup: time sample',
   lens: 'Visualize chart',
   context: 'Surrounding documents',
+  export: 'CSV export',
 };
 
 /** What each query op is for — shown as a tooltip on the plain-language label above. */
@@ -57,6 +58,7 @@ const QUERY_OP_HINTS: Partial<Record<SpanKind, string>> = {
   wizardTimeSample: 'Reads one value of a numeric time column to guess its epoch unit.',
   lens: 'Aggregates the data for the Visualize page chart.',
   context: 'Fetches a document and its newer / older neighbours for the surrounding documents view.',
+  export: 'Fetches the current search (up to the export limit) for a CSV download.',
 };
 
 export type PhaseKind = 'clickhouse' | 'transport' | 'decode' | 'render' | 'build';

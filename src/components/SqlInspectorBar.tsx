@@ -11,6 +11,7 @@ import { GrafanaTheme2, TimeRange } from '@grafana/data';
 import { Button, ClipboardButton, Icon, useStyles2 } from '@grafana/ui';
 import { LogsQueryState, SavedSearch } from '../types';
 import { SavedSearchMenu } from './SavedSearches/SavedSearchMenu';
+import { SessionActions, SessionActionsProps } from './SessionActions/SessionActions';
 import { useDiagnostics } from '../diag/DiagContext';
 import { formatDurationMs } from '../diag/formatDuration';
 import { computeWarnings } from '../diag/warnings';
@@ -38,6 +39,9 @@ interface SqlInspectorBarProps {
   /** Opens the diagnostics drawer (see components/Diagnostics/DiagnosticsDrawer.tsx) — additive to
    *  "Inspect SQL" above, not a replacement: that toggle stays exactly as it is. */
   onOpenDiagnostics: () => void;
+
+  /** Share / ⋮ overflow (DISC-SESSION-01); omitted = not rendered. */
+  session?: Omit<SessionActionsProps, 'onOpenDiagnostics'>;
 }
 
 export function SqlInspectorBar({
@@ -55,6 +59,7 @@ export function SqlInspectorBar({
   onRunRawSql,
   builderSql,
   onOpenDiagnostics,
+  session,
 }: SqlInspectorBarProps) {
   const styles = useStyles2(getStyles);
   const { roots } = useDiagnostics();
@@ -125,6 +130,7 @@ export function SqlInspectorBar({
           >
             Add to dashboard
           </Button>
+          {session && <SessionActions {...session} onOpenDiagnostics={onOpenDiagnostics} />}
         </div>
       </div>
       {queryState.useRawSql && (
