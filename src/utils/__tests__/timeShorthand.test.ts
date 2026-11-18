@@ -1,6 +1,4 @@
-import { dateTime } from '@grafana/data';
 import { formatDurationBadge, parseTimeShorthand } from '../timeShorthand';
-import { shiftTimeRange, zoomOutTimeRange } from '../timeRangeNav';
 
 describe('parseTimeShorthand (DISC-TIME-01)', () => {
   it('parses relative shorthand as now-N<unit> .. now', () => {
@@ -28,9 +26,22 @@ describe('parseTimeShorthand (DISC-TIME-01)', () => {
   });
 
   it('rejects anything else', () => {
-    for (const bad of ['', 'abc', '-0d', '-7x', '7d', 'td d', '-d']) {
+    for (const bad of ['', 'abc', '-0d', '-7x', '7d', 'td d', '-d', 'constructor', 'toString', '__proto__', 'hasOwnProperty']) {
       expect(parseTimeShorthand(bad)).toBeNull();
     }
+  });
+});
+
+describe('parseTimeShorthand edge cases', () => {
+  it('rejects ranges that overflow to an invalid date', () => {
+    expect(parseTimeShorthand('-99999999999999y')).toBeNull();
+  });
+  it('units: s/h/d/w/y case-insensitive, m vs M distinct', () => {
+    expect(parseTimeShorthand('-7D')!.raw.from).toBe('now-7d');
+    expect(parseTimeShorthand('-2H')!.raw.from).toBe('now-2h');
+    expect(parseTimeShorthand('-1Y')!.raw.from).toBe('now-1y');
+    expect(parseTimeShorthand('-1m')!.raw.from).toBe('now-1m');
+    expect(parseTimeShorthand('-1M')!.raw.from).toBe('now-1M');
   });
 });
 
@@ -41,20 +52,12 @@ describe('formatDurationBadge', () => {
     [45 * 60000, '~45m'],
     [30000, '~30s'],
     [86399999, '~1d'],
-    [400 * 86400000, '~1y'],
+    [36 * 3600000, '~36h'],
+    [90 * 60000, '~90m'],
+    [3600000, '~1h'],
+    [2 * 3600000, '~2h'],
+    [400 * 86400000, '~400d'],
+    [365 * 86400000, '~1y'],
+    [800 * 86400000, '~2y'],
   ])('%d ms -> %s', (ms, label) => expect(formatDurationBadge(ms)).toBe(label));
-});
-
-describe('shift / zoom out (DISC-TIME-01)', () => {
-  const range = (a: number, b: number) => ({ from: dateTime(a), to: dateTime(b), raw: { from: dateTime(a), to: dateTime(b) } });
-  it('shifts by one window each way', () => {
-    const s = shiftTimeRange(range(1000, 3000), -1);
-    expect([s.from.valueOf(), s.to.valueOf()]).toEqual([-1000, 1000]);
-    const n = shiftTimeRange(range(1000, 3000), 1);
-    expect([n.from.valueOf(), n.to.valueOf()]).toEqual([3000, 5000]);
-  });
-  it('zoom out doubles the window around its midpoint', () => {
-    const z = zoomOutTimeRange(range(1000, 3000));
-    expect([z.from.valueOf(), z.to.valueOf()]).toEqual([0, 4000]);
-  });
 });

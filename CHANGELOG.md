@@ -17,8 +17,8 @@ Versions track the plugin's release history. `Unreleased` collects commits not y
 - **Duration badge** (`~7d`, `~17h`) beside the picker showing the window length.
 - **Pending-time cue**: typed-but-unapplied shorthand shows a green Update button (DISC-TIME-02 dirty state for time).
 ### Changed
-- **URL `from`/`to` also accept ISO-8601** (as Kibana writes `_g.time`); the plugin still writes epoch ms.
-- Bad `from`/`to` no longer risk `NaN` dates; the time param is dropped instead.
+- **URL `from`/`to` also accept ISO-8601 with an explicit zone** (`Z` or `+hh:mm`, as Kibana writes `_g.time`); the plugin still writes epoch ms. Zone-less/date-only/non-ISO strings and invalid `now…` expressions are dropped instead of guessed.
+- Shorthand units s/h/d/w/y are case-insensitive (`m` minutes vs `M` months are not); overflowing counts are rejected. The badge uses the larger unit from 2 of it (`~36h`, `~90m`).
 
 ## [0.26.0] — 2026-11-18
 

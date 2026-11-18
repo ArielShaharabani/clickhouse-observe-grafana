@@ -21,6 +21,16 @@ export function TimeShorthandInput({ range, onApply }: Props) {
   const [invalid, setInvalid] = useState(false);
   const dirty = text.trim() !== '';
 
+  // The applied range changed from elsewhere (picker, shift, brush, saved search): drop stale text.
+  // (Reset-on-prop-change during render, not an effect.)
+  const rangeKey = `${range.from.valueOf()}-${range.to.valueOf()}`;
+  const [seenKey, setSeenKey] = useState(rangeKey);
+  if (seenKey !== rangeKey) {
+    setSeenKey(rangeKey);
+    setText('');
+    setInvalid(false);
+  }
+
   const apply = () => {
     const parsed = parseTimeShorthand(text);
     if (!parsed) {
@@ -38,7 +48,7 @@ export function TimeShorthandInput({ range, onApply }: Props) {
         aria-label="Time range shorthand"
         aria-invalid={invalid}
         invalid={invalid}
-        title={invalid ? 'Use -7d, -30m, td, yd, tw, tm or ty' : undefined}
+        title={invalid ? 'Use -7d, -30m, td, yd, tw, tm or ty (m = minutes, M = months)' : undefined}
         placeholder="-7d, td, yd"
         width={14}
         value={text}

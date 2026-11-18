@@ -44,4 +44,19 @@ describe('TimeShorthandInput (DISC-TIME-01/02)', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Update time range' }));
     expect(onApply).toHaveBeenCalledTimes(1);
   });
+
+  it('drops pending text when the applied range changes from elsewhere', () => {
+    const { rerender } = render(<TimeShorthandInput range={range} onApply={jest.fn()} />);
+    const input = screen.getByLabelText('Time range shorthand');
+    fireEvent.change(input, { target: { value: '-3h' } });
+    expect(input).toHaveValue('-3h');
+    const other = {
+      from: dateTime(Date.UTC(2026, 0, 2)),
+      to: dateTime(Date.UTC(2026, 0, 3)),
+      raw: { from: dateTime(Date.UTC(2026, 0, 2)), to: dateTime(Date.UTC(2026, 0, 3)) },
+    };
+    rerender(<TimeShorthandInput range={other} onApply={jest.fn()} />);
+    expect(input).toHaveValue('');
+    expect(screen.queryByRole('button', { name: 'Update time range' })).toBeNull();
+  });
 });
