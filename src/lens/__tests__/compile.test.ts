@@ -45,7 +45,9 @@ describe('compileLens', () => {
     expect(intervalMs).toBe(6 * 3600 * 1000); // 7 days / ~60 buckets → 6 hours
     expect(sql).toContain('toUnixTimestamp(toStartOfInterval("Timestamp", INTERVAL 21600 SECOND)) * 1000 AS b0');
     expect(sql).toContain('WITH top1 AS (SELECT toString("SeverityText") AS v FROM "default"."spec_logs" WHERE');
-    expect(sql).toContain("ServiceName = 'payments' GROUP BY v ORDER BY count() DESC LIMIT 9)");
+    expect(sql).toContain(
+      'ServiceName = \'payments\' AND toString("SeverityText") IS NOT NULL GROUP BY v ORDER BY count() DESC LIMIT 9)'
+    );
     expect(sql).toContain('toString("SeverityText") GLOBAL IN (SELECT v FROM top1)');
     expect(sql).toContain('GROUP BY b0, b1');
     expect(sql).toContain('ORDER BY b0, b1');
@@ -151,5 +153,21 @@ describe('duplicate metric labels', () => {
       'Median of SeverityNumber (2)',
       'Count of records',
     ]);
+  });
+});
+
+describe('time gaps are filled so the axis is linear in time', () => {
+  it('adds the missing buckets between the first and last', () => {
+    const h = 3_600_000;
+    const r = shapeLensRows(
+      { chartType: 'line', buckets: [date], metrics: [count] },
+      [
+        { b0: 0, m0: 1 },
+        { b0: 3 * h, m0: 2 },
+      ],
+      h
+    );
+    expect(r.xs).toEqual([0, h, 2 * h, 3 * h]);
+    expect(r.series[0].zeroFill).toBe(true);
   });
 });

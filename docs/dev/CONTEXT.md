@@ -1,7 +1,7 @@
 # Context snapshot — read this to restart
 
 Saved after every feature (and every review-fix round). A new session can resume from this file plus `PROGRESS.md` alone.
-Last saved: 2026-11-17, 2026-11-18, after #13 LENS-DIM-01/02 (PR 14) review + security fixes.
+Last saved: 2026-11-17, 2026-11-18, after #14 LENS-INTERACT-01 (PR 15) review fixes.
 
 ## Goal
 Bring Kibana Discover + Lens style exploration to Grafana on ClickHouse by extending the **ClickHouse Observe** app plugin.
@@ -32,16 +32,18 @@ Bring Kibana Discover + Lens style exploration to Grafana on ClickHouse by exten
 | 11 | LENS-AUTO-01 / LENS-SUGG-01: Visualize page, auto chart from added fields, suggestions strip, dimension groups | 12 | `src/lens/state.ts`, `suggest.ts`, `compile.ts`, `LensPage.tsx`, `render/LensChart.tsx` |
 | 12 | LENS-TYPE-01: one-menu chart type switcher with search, keyboard, sub-type | 13 | `src/lens/ChartTypeSwitcher.tsx` |
 | 13 | LENS-DIM-01/02: dimension editor (functions, field, percentile, name, top-N size), + Add slots | 14 | `src/lens/DimensionEditor.tsx`, `src/lens/dimensions.ts` |
+| 14 | LENS-INTERACT-01: click-to-filter on custom XY chart, chooser, legend actions, brush, filter pills on Visualize | 15 | `src/lens/render/XyChart.tsx`, `src/lens/FilterChooser.tsx`, `src/lens/LensPage.tsx` |
 
 ## Key decisions (details in DECISIONS.md)
 - Frontend-only; queries via grafana-clickhouse-datasource (`src/data/runQuery.ts`). Plain React + @grafana/ui, no Scenes.
 - URL is the shared search context across pages; pinned filters also in per-tab sessionStorage, changed only by explicit pin transitions, tagged with their table.
 - One autocomplete service and one action registry for every surface; field names in actions derived from the SQL expression (`fieldLabelFor`).
 - Numeric stats: one-pass sample query (D11); `isBreakdownField` is the single breakdown rule; `chooseBreakdown` in LogsExplorer is the single breakdown setter.
+- Two `setSearchParams` calls in one handler: the second starts from render-time params and drops the first's change — build one update.
 - Popovers inside scrolling columns render in a Grafana `Portal` (position fixed, measured when opened); `autoFocus` doesn't fire inside a Portal — focus the input explicitly (rAF) after opening.
 - @grafana/ui `Select` is deprecated (lint warning) — use `Combobox` (label via `Field htmlFor` + `id`; no aria-label prop).
 - Field list groups are ARIA regions ("Selected fields", "Popular fields", "Available fields"); row actions appear on hover (hover before clicking in e2e).
-- Lens: state = ordered `buckets` + `metrics`; each chart type reads roles from them in order, so a type switch is a re-cap (`switchChart`). SQL in `compile.ts` (top values via `GLOBAL IN` ranked CTE, median = `quantile(0.5)`); rendering only through `src/lens/render/LensChart.tsx` (PanelRenderer). Lens state in URL param `lens` — untrusted: always `sanitizeLens` against discovered fields before compiling; `compileLens` quotes identifiers. Page is a lazy chunk. Custom-drawn click-to-filter comes in #14.
+- Lens: state = ordered `buckets` + `metrics`; each chart type reads roles from them in order, so a type switch is a re-cap (`switchChart`). SQL in `compile.ts` (top values via `GLOBAL IN` ranked CTE, median = `quantile(0.5)`); rendering only through `src/lens/render/LensChart.tsx` (PanelRenderer). Lens state in URL param `lens` — untrusted: always `sanitizeLens` against discovered fields before compiling; `compileLens` quotes identifiers. Page is a lazy chunk. Bar/line/area are custom-drawn (`XyChart`, marks are role=button with aria-label `x · series: value`, values formatted 9.3K); metric/table/pie use PanelRenderer. Visualize has editable FilterPills on the shared URL `filters`.
 
 ## Environment / gotchas
 - Clone: `C:\Users\Ariel\clickhouse-observe-grafana-dev`; git identity set locally; `core.autocrlf false` + `core.eol lf` required (else Grafana container fails on CRLF `entrypoint.sh`).
@@ -54,4 +56,4 @@ Bring Kibana Discover + Lens style exploration to Grafana on ClickHouse by exten
 41,520 rows, 2026-01-01..08 UTC; `SeverityNumber` uses OTel numbers (debug 5, info 9, warn 13, error 17); levels info 28,265 · warn 6,080 · debug 3,984 · error 3,191; services 8,064 each except payments 9,264; errors by service auth 384, checkout 445, frontend 373, inventory 414, payments 1,575; incident 2026-01-05 09:00–11:00 (1,200 payments rows, `http.status_code` 503). Latest-5,000 sample: info 3,483 · warn 792 · debug 487 · error 238 (payments-filtered: info 2,667 · error 1,370 · warn 569 · debug 394).
 
 ## Now / next
-Next: #14 LENS-INTERACT-01 (click-to-filter + chooser) — exact notes in `PROGRESS.md`.
+Next: #15 LENS-INTERACT-02 / DISC-CHART-03 (Discover ↔ Lens hand-off) — exact notes in `PROGRESS.md`.

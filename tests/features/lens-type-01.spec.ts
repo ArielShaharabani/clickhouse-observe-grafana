@@ -38,6 +38,7 @@ test('keyboard: type to filter and press Enter; sub-type switches stacking', asy
   await viz.open();
   await viz.addField('ServiceName');
   await page.getByRole('button', { name: 'Chart type: Bar' }).click();
+  await expect(page.getByRole('combobox', { name: 'Search visualizations' })).toBeFocused();
   await page.keyboard.type('Table');
   await page.keyboard.press('Enter');
   await expect(viz.chart).toHaveAttribute('data-panel', 'table');
