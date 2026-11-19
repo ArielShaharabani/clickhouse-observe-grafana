@@ -391,7 +391,12 @@ export function LogsTable({
   const widthOf = (col: SelectedColumn) => (liveWidth?.id === col.id ? liveWidth.width : columnWidth(col));
   const widthStyle = (col: SelectedColumn): React.CSSProperties | undefined => {
     const w = widthOf(col);
-    return w === undefined ? undefined : { width: w, minWidth: w, maxWidth: w };
+    if (w === undefined) {
+      return undefined;
+    }
+    // Built-in widths (time / level) stay a hint; a user width is exact.
+    const exact = col.width !== undefined || liveWidth?.id === col.id;
+    return exact ? { width: w, minWidth: w, maxWidth: w } : { width: w };
   };
   // Cell content of a resized column is capped too (table cells treat width only as a hint).
   const contentWidthStyle = (col: SelectedColumn): React.CSSProperties | undefined => {
