@@ -148,7 +148,8 @@ export function ChartTypeSwitcher({ value, subType, onChange, onSubTypeChange }:
 
   const listId = `${uid}-list`;
   const optionId = (t: ChartType) => `${uid}-${t}`;
-  const showSubType = isXy(value);
+  // Line has no stacking (Kibana): no sub-type control; the stored sub-type is kept for Bar / Area.
+  const showSubType = isXy(value) && value !== 'line';
 
   return (
     <div className={styles.wrap} ref={wrapRef}>

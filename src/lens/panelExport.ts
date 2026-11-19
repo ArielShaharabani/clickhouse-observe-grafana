@@ -35,10 +35,14 @@ type Transformation = NonNullable<ExportedPanel['transformations']>[number];
 const LEGEND = { showLegend: true, displayMode: 'list', placement: 'bottom', calcs: [] };
 
 function stackingOf(state: LensState): 'normal' | 'percent' | 'none' {
+  // Line has no stacking (Kibana); a sub-type kept from Bar / Area doesn't apply to it.
+  if (state.chartType === 'line') {
+    return 'none';
+  }
   if (state.subType === 'percentage') {
     return 'percent';
   }
-  return state.subType === 'stacked' && state.chartType !== 'line' ? 'normal' : 'none';
+  return state.subType === 'stacked' ? 'normal' : 'none';
 }
 
 /** Readable column names for the SQL aliases (b0 → "Top 9 values of ServiceName", m0 → "Count of records"). */

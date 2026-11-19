@@ -293,7 +293,7 @@ export function suggestions(state: LensState, ctx: LensContext): Suggestion[] {
 
 /** Human title of a state's chart, e.g. "Bar stacked", "Line", "Metric". */
 export function chartTitle(s: LensState): string {
-  return s.subType && isXy(s.chartType) && !(s.chartType === 'line' && s.subType === 'stacked')
+  return s.subType && isXy(s.chartType) && s.chartType !== 'line'
     ? `${CHART_LABELS[s.chartType]} ${s.subType}`
     : CHART_LABELS[s.chartType];
 }
