@@ -1,9 +1,9 @@
 # Progress — read this first when resuming
 
-**Current item:** none in flight.
-**Last completed step:** #- COMPARE-FIXES (Kibana comparison fixes: Edit in Visualize, parked dimensions, default time range) in PR 43 (v0.47.0).
-**Next step:** remaining PLAN todos: #28 LENS-LAYER-01, then #33 SHARED-A11Y-01 last. Fan out (no containers), merge as one batch: one full e2e `--workers=3` under `.e2e-lock`. Follow-up: Discover "Add to dashboard" export does not escape `$` in search values (flagged by #32).
-**Open issues:** none. Deferred Lens items: per-group drag-and-drop (LENS-DIM-01 DnD; workspace drop works), formula (#23), advanced metric options (filter by, time shift), value format/colour/axis side (LENS-STYLE-01), date interval picker, "Other" bucket. Deferred elsewhere: DISC-DOC-02 links (#20); histogram now-line; field list Empty/Meta; grid Summary column etc. (#16); popover Visualize (#15).
+**Current item:** Kibana-parity round (2026-11-19), from the side-by-side comparison doc https://claude.ai/artifact/Fttf2EfgSpSPZhwCqNLpvM (45 ranked items; user: bugs and quick wins first, #5 server-side saved searches demoted to minor; implement everything, batched PRs, fan out agents).
+**Last completed step:** PR 43 merged (v0.47.0). Wave 1 agents running (no containers, jest --maxWorkers 1), worktrees `co-wt/parity-histogram`, `parity-grid`, `parity-xychart`, `parity-dashboards` (branches `feat/parity-*`, pushed by the agents, no PRs).
+**Next step:** when wave 1 reports: merge the 4 branches into `feat/batch-6`, fold each pending note (row `-`), gates, one full e2e `--workers=3` under `.e2e-lock` (container co-batch-4 / port 3021 mounts `co-wt/batch-4`: check the batch out there), one PR, merge, then rebuild + `docker restart poortuna-clickhouse-observe-app` (port 3000 must always run master). Then wave 2: fields/filters/empty states (#8 map keys as fields, #10 empty/invalid states, #39 filter builder, #40 field stats, #44 unknown field), Visualize pie/metric/table/editor (#9, #18, #24 table/pie, #28, #29, #30), then minors (#5 server-side saved searches, #31 inspector request, #38 breakdown carry-over, leftovers).
+**Open issues:** the Kibana comparison stack (`C:/Users/Ariel/kibana-compare`, `docker compose up -d`) is stopped to free memory during the round; restart it at the end. Comparison test dashboards remain on :3000 ("Logs Explorer export" x2, `cmp-o-*`) and in Kibana (`cmp-k-*`); delete only if the user asks.
 
 ## Environment notes
 - Local clone: `C:\Users\Ariel\clickhouse-observe-grafana-dev` (fork `ArielShaharabani/clickhouse-observe-grafana`, `upstream` = PoorTuna).
