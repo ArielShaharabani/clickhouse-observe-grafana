@@ -61,6 +61,9 @@ import { lensApproxNote } from './approx';
 import { LensInspector } from './Inspector';
 import { DND_INSTRUCTIONS, DropTarget, useKeyboardDrag } from './keyboardDnd';
 import { LiveRegion, srOnly } from '../components/a11y/dialog';
+import { LayerItemEditor, LayerItemRef, LayersSection } from './LayerPanel';
+import { ExtraLayer } from './layers';
+import { useLayerData } from './useLayerData';
 
 function defaultRange(): TimeRange {
   return { from: dateTime(Date.now() - 3600 * 1000), to: dateTime(Date.now()), raw: { from: 'now-1h', to: 'now' } };
@@ -411,6 +414,48 @@ export function LensPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [queryKey, fieldsLoading]);
   const current = result?.key === queryKey ? result : null;
+
+  // Reference line / annotation layers (LENS-LAYER-01): their own small queries.
+  const xyChart = isXy(lens.chartType);
+  const horizontalBars = lens.chartType === 'bar' && lens.style?.orientation === 'horizontal';
+  const timeAxis = xyChart && lens.buckets[0]?.kind === 'date_histogram' && !horizontalBars;
+  const chartConditions = useMemo(
+    () => buildWhereConditions(config, { ...DEFAULT_LOGS_QUERY_STATE, search, filters }, fieldIndex),
+    [config, search, filters, fieldIndex]
+  );
+  const timeConditions = useMemo(
+    () => buildWhereConditions(config, { ...DEFAULT_LOGS_QUERY_STATE, search: '', filters: [] }, fieldIndex),
+    [config, fieldIndex]
+  );
+  const layerData = useLayerData({
+    lens,
+    config,
+    conditions: chartConditions,
+    timeConditions,
+    timeRange,
+    index: fieldIndex,
+    timeAxis,
+    enabled: xyChart && !fieldsLoading && !!lens.layers,
+  });
+  const setLayers = (layers: ExtraLayer[]) => setLens({ ...lens, layers: layers.length > 0 ? layers : undefined });
+  const [layerItemRef, setLayerItem] = useState<LayerItemRef | null>(null);
+  // An item removed elsewhere (Clear layer, a shared link) closes its editor.
+  const layerItem =
+    layerItemRef &&
+    (lens.layers ?? []).some(
+      (l) =>
+        l.id === layerItemRef.layerId &&
+        (l.kind === 'referenceLine' ? l.lines : l.annotations).some((x) => x.id === layerItemRef.itemId)
+    )
+      ? layerItemRef
+      : null;
+  // A new static reference line starts at the data's highest value (Kibana starts near the data too).
+  const suggestedValue = useMemo(() => {
+    let max = -Infinity;
+    current?.data?.series.forEach((sr) => sr.points.forEach((v) => (max = Math.max(max, v))));
+    return Number.isFinite(max) ? Number(max.toPrecision(3)) : 0;
+  }, [current]);
+  const suggestedTime = Math.round((timeRange.from.valueOf() + timeRange.to.valueOf()) / 2);
   // SHARED-PERF-01: same running cue as Discover (no Cancel here: leaving the chart without a
   // result would need its own empty state).
   const chartLoading = fieldsLoading || (!isEmptyLens(lens) && !!config.datasourceUid && !current);
@@ -751,6 +796,7 @@ export function LensPage() {
                 bucketMs={current.bucketMs}
                 onSelect={onSelect}
                 onLegendFilter={lens.buckets[1]?.kind === 'terms' ? onLegendFilter : undefined}
+                layerData={layerData}
               />
             ) : (
               <div className={styles.empty}>
@@ -836,10 +882,21 @@ export function LensPage() {
               onSubTypeChange={(sub) => setLens(switchChart(lens, lens.chartType, ctx, sub))}
             />
           )}
-          {!isEmptyLens(lens) && !editingDim && !styleView && isXy(lens.chartType) && (
+          {!isEmptyLens(lens) && !editingDim && !styleView && !layerItem && isXy(lens.chartType) && (
             <StyleToolbar onOpen={setStyleView} />
           )}
-          {styleView && !editingDim && isXy(lens.chartType) ? (
+          {layerItem && !editingDim && !styleView && xyChart ? (
+            <LayerItemEditor
+              key={`${layerItem.layerId}:${layerItem.itemId}`}
+              layers={lens.layers ?? []}
+              target={layerItem}
+              fields={lensFields}
+              canUseRightAxis={!horizontalBars && lens.metrics.some((m) => m.axis === 'right')}
+              suggestedTime={suggestedTime}
+              onChange={setLayers}
+              onBack={() => setLayerItem(null)}
+            />
+          ) : styleView && !editingDim && isXy(lens.chartType) ? (
             <StylePanel
               view={styleView}
               chartType={lens.chartType}
@@ -918,6 +975,16 @@ export function LensPage() {
                 )}
               </div>
             ))
+          )}
+          {!isEmptyLens(lens) && !editingDim && !styleView && !layerItem && xyChart && (
+            <LayersSection
+              layers={lens.layers ?? []}
+              timeAxis={timeAxis}
+              suggestedValue={suggestedValue}
+              suggestedTime={suggestedTime}
+              onChange={setLayers}
+              onEdit={setLayerItem}
+            />
           )}
         </section>
       </div>

@@ -14,6 +14,7 @@ import { chartTitle } from './suggest';
 import { withMetricAppearance } from './render/fieldConfig';
 import { tableOverrides } from './tableChart';
 import { autoAxisTitles, withLensStyle } from './render/styleConfig';
+import { withReferenceThresholds } from './render/layerConfig';
 
 export interface LensPanelOpts {
   id: number;
@@ -79,7 +80,8 @@ export function buildLensPanel(
     panel.type,
     autoAxisTitles(state)
   );
-  return { ...panel, ...styled };
+  // Static reference lines → thresholds drawn as lines (LENS-LAYER-01); annotations aren't exported.
+  return { ...panel, ...withReferenceThresholds(styled, state) };
 }
 
 function baseLensPanel(

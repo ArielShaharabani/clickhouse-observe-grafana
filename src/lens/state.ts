@@ -10,6 +10,7 @@
 import { FieldType } from '../sql/fieldModel';
 import { formulaErrors, FormulaFields, MAX_FORMULA_LEN } from './formula';
 import { cleanStyle, LensStyle } from './style';
+import { cleanLayers, ExtraLayer, sanitizeLayers } from './layers';
 import { isIntervalValue } from './interval';
 import { cleanMetricOptions, MetricOptions, optionsLabelSuffix } from './metricOptions';
 
@@ -428,6 +429,8 @@ export interface LensState {
   subType?: XySubType;
   /** XY Style / Legend settings (LENS-STYLE-01); display-only. */
   style?: LensStyle;
+  /** XY reference line / annotation layers (LENS-LAYER-01); not part of the chart query. */
+  layers?: ExtraLayer[];
   buckets: BucketDim[];
   metrics: MetricDim[];
 }
@@ -660,7 +663,15 @@ export function decodeLens(raw: string | null | undefined): LensState | undefine
       });
     const subType = ['stacked', 'percentage', 'unstacked'].includes(v.subType) ? (v.subType as XySubType) : undefined;
     const style = cleanStyle(v.style);
-    return { chartType: v.chartType, subType, buckets, metrics, ...(style ? { style } : {}) };
+    const layers = cleanLayers(v.layers);
+    return {
+      chartType: v.chartType,
+      subType,
+      buckets,
+      metrics,
+      ...(style ? { style } : {}),
+      ...(layers ? { layers } : {}),
+    };
   } catch {
     return undefined;
   }
@@ -681,6 +692,8 @@ export function sanitizeLens(s: LensState, allowed: ReadonlySet<string>): LensSt
   );
   // A rank metric that no longer exists falls back to ranking by count.
   const ids = new Set(metrics.map((m) => m.id));
+  // Computed reference lines (LENS-LAYER-01) follow the same field rule.
+  const layers = sanitizeLayers(s.layers, allowed);
   const buckets = kept.map((b) =>
     b.kind === 'terms' && b.rankBy === 'metric' && !(b.rankMetric && ids.has(b.rankMetric))
       ? { ...b, rankBy: undefined, rankMetric: undefined }
@@ -689,7 +702,8 @@ export function sanitizeLens(s: LensState, allowed: ReadonlySet<string>): LensSt
   if (
     kept.length === s.buckets.length &&
     metrics.length === s.metrics.length &&
-    buckets.every((b, i) => b === kept[i])
+    buckets.every((b, i) => b === kept[i]) &&
+    layers === s.layers
   ) {
     return s;
   }
@@ -700,7 +714,7 @@ export function sanitizeLens(s: LensState, allowed: ReadonlySet<string>): LensSt
   if (buckets.length === 0 && s.chartType !== 'metric' && s.chartType !== 'table') {
     return { chartType: 'metric', buckets, metrics };
   }
-  return { ...s, buckets, metrics };
+  return { ...s, buckets, metrics, ...(layers ? { layers } : {}) };
 }
 
 /**

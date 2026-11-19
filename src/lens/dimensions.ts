@@ -175,8 +175,8 @@ export function metricForField(id: string, field: LensField): MetricDim | undefi
 
 /** Display-only parts (names) removed — what the chart query actually depends on. */
 export function queryShape(s: LensState): LensState {
-  // Style / Legend (LENS-STYLE-01) never changes the SQL.
-  const { style: _style, ...rest } = s;
+  // Style / Legend (LENS-STYLE-01) never changes the SQL; layers (LENS-LAYER-01) run their own queries.
+  const { style: _style, layers: _layers, ...rest } = s;
   return {
     ...rest,
     // Table pivot (Split metrics by) only reshapes the same rows.
