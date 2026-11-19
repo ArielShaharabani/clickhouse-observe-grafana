@@ -97,6 +97,7 @@ Discover is a three-region page: field sidebar (left, \~295 px, resizable and co
 - **Edge cases:** arrays count each element (tags 20.4%, 20.2%… sum >100%); high-cardinality numbers show 10 values + `Other 87.6%`; missing fields show “No field data for the current search”.
 - **Acceptance:** stats reflect current filters; percentages are of sampled docs with a value; every value row has filter-for/out.
 - **Grafana:** missing. Highest-value feature to build first.
+- **Observe (PARITY-GRID):** every top-value row shows ⊕/⊖ filter buttons (always visible, not on hover) and a bar gauge under the value; the caption says `Calculated from N sample records.` only when the 5,000-row sample is full, else `Calculated from N records.` (same for the Map key list's `Discovered from …`). Map columns: the key list has a ⊕ `Add <column>.<key> as column` button per key (open the popover, one click); drilling into a key shows its stats with the back link inside the panel; long names wrap instead of truncating.
 
 ### DISC-CHART-01 Hits histogram
 
@@ -134,6 +135,7 @@ Discover is a three-region page: field sidebar (left, \~295 px, resizable and co
 - **Display options:** Sample size (rows fetched, default 500), Density Compact / Normal / Expanded, Max header cell lines Auto / Custom, Body cell lines Auto / Custom (default 3).
 - **Keyboard:** arrows move cells; Home/End row edges; Ctrl+Home/End page edges; PgUp/PgDn change page; Enter opens cell details; Esc closes.
 - **Grafana:** Logs panel and Table panel cover parts; missing: summary column with match-first ordering, sample-size control, per-cell actions.
+- **Observe (PARITY-GRID):** a non-time sort is tie-broken by the time field, newest first (`ORDER BY <col> <dir>, <time> DESC`). The field list keeps a 200 px minimum and the grid scrolls sideways inside its own area when columns don't fit; the message column keeps a readable minimum (~18em). Columns resize by dragging the header's right edge (or ←/→ on the focused handle, double-click resets); widths live in the column state (URL `cols[].width`, saved searches), clamped to 60–1200 px and never reach SQL or re-run a query. A cell's action bar on the first row opens below the cell so it never covers the header.
 
 ### DISC-TABLE-02 Cell actions
 
@@ -146,6 +148,7 @@ Discover is a three-region page: field sidebar (left, \~295 px, resizable and co
 
 - **Trigger:** hover header → ⋮; header also shows drag handle and type icon. Columns resize by dragging the border.
 - **Menu:** Remove column, Sort A-Z, Sort Z-A, Move left, Move right, Copy name, Copy column (all values), Edit data view field.
+- **Observe (PARITY-GRID):** the header name is a button that opens the menu (it no longer sorts on click): `Sort ascending`, `Sort descending`, `Move left`, `Move right`, `Reset width` (resized columns), `Copy name`, `Remove column` (not on core columns). Drag handle on the header body reorders; the right edge resizes. Not built: Copy column, Edit data view field. A field a core column already shows (Body under `Message`) can't be added again; its field-list entry says `shown as the Message column`.
 
 ### DISC-DOC-01 Document detail flyout
 
@@ -154,6 +157,7 @@ Discover is a three-region page: field sidebar (left, \~295 px, resizable and co
 - **Tabs:** `Table` and `JSON`.
 - **Table tab:** search `Search field names or values` + type filter; toggles `Selected only` and `Hide null fields`; rows = type icon · field · value; 25 rows per page. Hover a row → 📌 Pin field (pinned rows stick to the top across documents). Value cell actions: filter for, filter out, copy, expand. Field-name cell actions: `Filter for field present`, `Toggle column in table`, plus the field description popover.
 - **Grafana:** Logs panel row details has a subset (filter for/out, show stats). Missing: pinning, selected-only, next/prev navigation, push layout.
+- **Observe (PARITY-GRID):** navigation covers every loaded row (`51 of 200`), fetching the next chunk when stepping past the last loaded one, and the grid follows to the document's page; ←/→ step documents, Escape closes; focus moves into the panel on open and back to the row's button on close. Default width 55 % of the results area (min 400 px), resizable with the splitter; field names wrap at the dots; the toolbar wraps so the search box is never cut. JSON shows the time as ISO 8601. `View single document` opens `doc/<dataViewId>/<ns>_<id>` (the surrounding-documents anchor: epoch-ns timestamp + row-id hash), a permalink page with the same panel; a filter there returns to Discover with it.
 
 ### DISC-DOC-02 Surrounding documents
 
@@ -161,6 +165,7 @@ Discover is a three-region page: field sidebar (left, \~295 px, resizable and co
 - **Behaviour:** title `Documents surrounding #<id>`; anchor row highlighted in pale yellow; `Load [5] newer documents` above and `Load [5] older documents` below (number editable). Query is dropped and existing filters are carried over but automatically **disabled** (struck-through pills) so neighbours from all sources show. Columns are kept.
 - **Data:** two searches sorted by `@timestamp` asc/desc with `search_after` from the anchor's sort values, size N.
 - **Grafana:** Loki “Show context” exists for logs; missing for Elasticsearch and as a generic pattern.
+- **Observe (PARITY-GRID):** the anchor row keeps its own colour on any zebra stripe (plus an accent bar); rows are compact one-liners and the page scrolls (no inner scroll box); after `Load newer` the anchor is scrolled back into view; an `Add filter` button sits next to the pills; the detail panel is sticky and resizable.
 
 ### DISC-PATTERNS-01 Log pattern analysis
 

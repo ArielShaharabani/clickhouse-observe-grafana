@@ -281,15 +281,24 @@ describe('results grid', () => {
         onRemoveColumn={jest.fn()}
       />
     );
-    fireEvent.click(screen.getByRole('button', { name: /^SeverityText/ }));
-    expect(onSort).toHaveBeenCalledWith('SeverityText');
     expect(screen.getAllByRole('columnheader').find((h) => h.textContent?.includes('ServiceName'))).toHaveAttribute(
       'aria-sort',
       'descending'
     );
-    expect(screen.getByRole('button', { name: 'Move ServiceName right' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Move SeverityText left' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Remove column SeverityText' })).toBeInTheDocument();
+    // PARITY-GRID: the header name opens a menu named after the column.
+    const header = screen.getByRole('button', { name: /^SeverityText/ });
+    expect(header).toHaveAttribute('aria-haspopup', 'menu');
+    fireEvent.click(header);
+    const menu = screen.getByRole('menu', { name: 'Column actions: SeverityText' });
+    expect(within(menu).getAllByRole('menuitem').map((m) => m.textContent)).toEqual([
+      'Sort ascending',
+      'Sort descending',
+      'Move left',
+      'Copy name',
+      'Remove column',
+    ]);
+    fireEvent.click(within(menu).getByRole('menuitem', { name: 'Sort descending' }));
+    expect(onSort).toHaveBeenCalledWith('SeverityText', 'desc');
   });
 });
 

@@ -6,6 +6,7 @@
  */
 import { FilterPill, LogsQueryState, SelectedColumn } from '../types';
 import { addFilterPill } from '../sql/filters';
+import { clampColumnWidth } from '../data/columns';
 
 export type LogsQueryAction =
   | { type: 'SET_SEARCH'; value: string }
@@ -25,7 +26,10 @@ export type LogsQueryAction =
   | { type: 'REMOVE_COLUMN'; id: string; columns: SelectedColumn[] }
   | { type: 'REORDER_COLUMN'; id: string; direction: 'left' | 'right'; columns: SelectedColumn[] }
   | { type: 'MOVE_COLUMN_TO'; id: string; targetId: string; columns: SelectedColumn[] }
-  | { type: 'SET_SORT'; col: string }
+  /** No `dir`: a header click — toggles desc → asc. With `dir`: the header menu's explicit choice. */
+  | { type: 'SET_SORT'; col: string; dir?: 'asc' | 'desc' }
+  /** Header resize (PARITY-GRID); `width` undefined resets the column to automatic. */
+  | { type: 'SET_COLUMN_WIDTH'; id: string; width?: number; columns: SelectedColumn[] }
   | { type: 'LOAD_SAVED'; state: Partial<LogsQueryState> };
 
 export function logsQueryReducer(state: LogsQueryState, action: LogsQueryAction): LogsQueryState {
@@ -41,7 +45,10 @@ export function logsQueryReducer(state: LogsQueryState, action: LogsQueryAction)
     case 'SET_RAW_SQL':
       return { ...state, rawSql: action.sql };
     case 'ADD_COLUMN': {
-      if (action.columns.some((c) => c.id === action.col.id)) {
+      // Same id, or the same expression already shown under another column (e.g. the Body field
+      // while the core Message column shows Body) — never a duplicate column. The core time
+      // column is exempt: a converted time field (#16d) shows a converted value, not the raw one.
+      if (action.columns.some((c) => c.id === action.col.id || (c.sqlExpr === action.col.sqlExpr && c.type !== 'time'))) {
         return state;
       }
       const targetIdx = action.targetId ? action.columns.findIndex((c) => c.id === action.targetId) : -1;
@@ -93,8 +100,19 @@ export function logsQueryReducer(state: LogsQueryState, action: LogsQueryAction)
     case 'SET_SORT': {
       const current = state.sort;
       const dir: 'asc' | 'desc' =
-        current?.col === action.col && current.dir === 'desc' ? 'asc' : 'desc';
+        action.dir ?? (current?.col === action.col && current.dir === 'desc' ? 'asc' : 'desc');
       return { ...state, sort: { col: action.col, dir } };
+    }
+    case 'SET_COLUMN_WIDTH': {
+      const idx = action.columns.findIndex((c) => c.id === action.id);
+      if (idx === -1) {
+        return state;
+      }
+      const width = clampColumnWidth(action.width);
+      const next = [...action.columns];
+      const { width: _old, ...rest } = next[idx];
+      next[idx] = width === undefined ? rest : { ...rest, width };
+      return { ...state, columns: next };
     }
     case 'LOAD_SAVED':
       return { ...state, ...action.state };

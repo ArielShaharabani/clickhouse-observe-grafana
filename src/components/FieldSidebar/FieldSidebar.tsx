@@ -148,7 +148,13 @@ export function FieldSidebar({
       </span>
     </button>
   );
+  // A field a core column already shows (Body under "Message"): no second column for it.
+  const coreShownAs = useMemo(
+    () => new Map(queryState.columns.filter((c) => c.isCore && c.type !== 'time').map((c) => [c.sqlExpr, c.displayName] as const)),
+    [queryState.columns]
+  );
   const itemProps = {
+    coreShownAs,
     queryState,
     timeRange,
     onToggleColumn: onToggleFromList,
