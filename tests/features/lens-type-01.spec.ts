@@ -62,3 +62,4 @@ test('removing the only axis of a bar chart sticks (falls back to Metric)', asyn
   await expect(viz.chart).toHaveAttribute('data-chart-type', 'metric');
   await expect(viz.group('Primary metric')).toContainText('Count of records');
 });
+

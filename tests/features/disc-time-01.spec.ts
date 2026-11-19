@@ -22,9 +22,7 @@ test('the duration badge shows the length of the window (fixture: ~7d)', async (
   await expect(page.getByTestId('time-duration-badge')).toHaveText('~7d');
 });
 
-test('typing -3h applies a relative range: URL keeps now-3h, badge ~3h, fixture rows fall outside', async ({
-  page,
-}) => {
+test('typing -3h applies a relative range: URL keeps now-3h, badge ~3h, fixture rows fall outside', async ({ page }) => {
   const logs = new LogsPage(page);
   await logs.open();
   await logs.expectRowCount(FIXTURE.counts.total);
@@ -83,12 +81,10 @@ test('previous / next shift the window by its own length; zoom out doubles it', 
   await expect.poll(() => urlTime(page)).toEqual({ from: String(FIXTURE.from), to: String(FIXTURE.to) });
   await logs.expectRowCount(FIXTURE.counts.total);
   await page.getByRole('button', { name: 'Zoom out' }).click();
-  await expect
-    .poll(() => urlTime(page))
-    .toEqual({
-      from: String(FIXTURE.from - week / 2),
-      to: String(FIXTURE.to + week / 2),
-    });
+  await expect.poll(() => urlTime(page)).toEqual({
+    from: String(FIXTURE.from - week / 2),
+    to: String(FIXTURE.to + week / 2),
+  });
   await expect(page.getByTestId('time-duration-badge')).toHaveText('~14d');
   await logs.expectRowCount(FIXTURE.counts.total);
 });

@@ -16,10 +16,7 @@ test('right-click a bucket: filter the selected series (severity breakdown → o
   const logs = new LogsPage(page);
   await logs.open({ bd: 'severity' });
   await logs.expectRowCount(FIXTURE.counts.total);
-  const svg = page
-    .locator('svg')
-    .filter({ has: page.locator('rect') })
-    .first();
+  const svg = page.locator('svg').filter({ has: page.locator('rect') }).first();
   const box = (await svg.boundingBox())!;
   await svg.hover({ position: { x: box.width / 2, y: box.height - 4 } });
   await expect(page.getByText('Right-click to show actions')).toBeVisible();
@@ -37,10 +34,7 @@ test('right-click a bucket: Filter by time zooms to that bucket', async ({ page 
   const logs = new LogsPage(page);
   await logs.open({ interval: 'day' });
   await logs.expectRowCount(FIXTURE.counts.total);
-  const svg = page
-    .locator('svg')
-    .filter({ has: page.locator('rect') })
-    .first();
+  const svg = page.locator('svg').filter({ has: page.locator('rect') }).first();
   const box = (await svg.boundingBox())!;
   await svg.click({ button: 'right', position: { x: 2, y: box.height - 4 } });
   await page.getByRole('dialog', { name: 'Bucket actions' }).getByRole('button', { name: 'Filter by time' }).click();

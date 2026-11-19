@@ -60,9 +60,7 @@ test('save to an existing dashboard appends the panel', async ({ page }) => {
 
   await expect(page).toHaveURL(new RegExp(`/d/${uid}`));
   const saved = await (await page.request.get(`/api/dashboards/uid/${uid}`)).json();
-  expect(saved.dashboard.panels.map((p: { title: string; type: string }) => [p.title, p.type])).toEqual([
-    [title, 'barchart'],
-  ]);
+  expect(saved.dashboard.panels.map((p: { title: string; type: string }) => [p.title, p.type])).toEqual([[title, 'barchart']]);
 });
 
 test('save to the library only: a library panel is created, no navigation', async ({ page }) => {

@@ -103,12 +103,9 @@ test('Configuration page: shared views map columns from the table, time field wi
   appConfigPage,
   page,
 }) => {
-  const card = page
-    .locator('div')
-    .filter({ has: page.getByText('Spec fixture logs', { exact: true }) })
-    .filter({
-      has: page.getByRole('button', { name: 'Edit' }),
-    });
+  const card = page.locator('div').filter({ has: page.getByText('Spec fixture logs', { exact: true }) }).filter({
+    has: page.getByRole('button', { name: 'Edit' }),
+  });
   await card.last().getByRole('button', { name: 'Edit' }).click();
   const status = page.getByTestId('shared-view-columns-status');
   await expect(status).toContainText('columns in default.spec_logs.');

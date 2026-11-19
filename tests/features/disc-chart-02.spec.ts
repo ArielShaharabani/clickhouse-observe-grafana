@@ -78,9 +78,7 @@ test('legend ⋮ → Filter for adds a pill (SHARED-ACTION-01); Filter out exclu
   await logs.expectRowCount(FIXTURE.counts.total - FIXTURE.counts.payments);
 });
 
-test('IT: breakdown chosen from the field popover (DISC-SIDEBAR-02) drives label and legend actions', async ({
-  page,
-}) => {
+test('IT: breakdown chosen from the field popover (DISC-SIDEBAR-02) drives label and legend actions', async ({ page }) => {
   const logs = new LogsPage(page);
   await logs.open({ bd: 'none' });
   await logs.expectRowCount(FIXTURE.counts.total);

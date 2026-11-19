@@ -44,9 +44,7 @@ test('a panel not added from Visualize has no Edit in Visualize item', async ({ 
       dashboard: {
         title: unique('Plain'),
         schemaVersion: 39,
-        panels: [
-          { id: 1, type: 'text', title: 'Plain text', gridPos: { x: 0, y: 0, w: 12, h: 6 }, targets: [{ refId: 'A' }] },
-        ],
+        panels: [{ id: 1, type: 'text', title: 'Plain text', gridPos: { x: 0, y: 0, w: 12, h: 6 }, targets: [{ refId: 'A' }] }],
       },
       overwrite: false,
     },
