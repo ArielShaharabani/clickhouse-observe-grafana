@@ -24,6 +24,7 @@ import {
   scalePos,
   seriesColorOf,
   tickRotation,
+  TICK_COUNT,
   valueDomain,
   valueTicks,
 } from '../style';
@@ -303,7 +304,7 @@ export function XyChart({
       (s, si) => sides[si] !== sd || [...s.points.values()].every((v) => Number.isInteger(v))
     );
   const tickOpts = (sd: 'left' | 'right') => ({
-    count: Math.max(2, Math.min(10, Math.round(valueLen / (horizontal ? 100 : 60)))),
+    count: Math.max(2, Math.min(TICK_COUNT, Math.floor(valueLen / (horizontal ? 90 : 50)))),
     integer: !percent && allInts(sd),
   });
   const [lo, hi] = valueDomain(

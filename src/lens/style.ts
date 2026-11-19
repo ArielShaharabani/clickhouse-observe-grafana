@@ -251,7 +251,7 @@ export function niceCeil(v: number): number {
 }
 
 /** Default number of value-axis ticks aimed for (the step is rounded to 1 / 2 / 5 × 10^n). */
-export const TICK_COUNT = 6;
+export const TICK_COUNT = 5;
 
 /**
  * Tick step for a value range (d3's tickIncrement): span / count rounded to 1, 2, 5 or 10 × 10^n,
@@ -276,7 +276,7 @@ const atStep = (v: number, step: number) => {
 };
 
 export interface TickOptions {
-  /** Ticks aimed for (default 6; derive from the plot height). */
+  /** Ticks aimed for (default 5; fewer on a short plot). */
   count?: number;
   /** All values are whole numbers (counts): no fractional ticks. */
   integer?: boolean;
