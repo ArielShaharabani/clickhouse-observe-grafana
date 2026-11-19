@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { useStyles2, Icon } from '@grafana/ui';
 import { TimeRange } from '@grafana/data';
 import { IntervalMode } from '../../types';
-import { estimateBucketCount } from '../VolumeHistogram';
+import { resolveInterval } from '../VolumeHistogram';
 import { getToolbarButtonStyles } from './_toolbarButton';
 
 interface Props {
@@ -26,8 +26,6 @@ const OPTIONS: Option[] = [
   { mode: 'month',  label: 'Month' },
   { mode: 'year',   label: 'Year' },
 ];
-
-const MAX_BARS = 1000;
 
 function triggerLabel(mode: IntervalMode): string {
   const opt = OPTIONS.find((o) => o.mode === mode);
@@ -67,16 +65,16 @@ export function IntervalPicker({ value, onChange, timeRange }: Props) {
         <div className={styles.dropdown}>
           <div className={styles.menuHeader}>Select time interval</div>
           {OPTIONS.map((opt) => {
-            const buckets = opt.mode !== 'auto' ? estimateBucketCount(opt.mode, timeRange) : 0;
-            const disabled = opt.mode !== 'auto' && buckets > MAX_BARS;
+            // Never disabled (Kibana): an interval too fine for the range is scaled up to the
+            // finest one within the bucket cap, and the histogram caption says so.
+            const scaledTo = opt.mode !== 'auto' ? resolveInterval(opt.mode, timeRange).scaledTo : undefined;
             const active = opt.mode === value;
             return (
               <button
                 key={opt.mode}
-                className={`${styles.item} ${active ? styles.itemActive : ''} ${disabled ? styles.itemDisabled : ''}`}
-                disabled={disabled}
-                onClick={() => !disabled && select(opt.mode)}
-                title={disabled ? `Too many buckets (${buckets.toLocaleString()}) for this time range` : undefined}
+                className={`${styles.item} ${active ? styles.itemActive : ''}`}
+                onClick={() => select(opt.mode)}
+                title={scaledTo ? `Scaled to ${scaledTo} on this time range` : undefined}
               >
                 <span className={styles.itemCheck}>
                   {active && <Icon name="check" size="sm" />}

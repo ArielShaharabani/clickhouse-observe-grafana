@@ -5,7 +5,9 @@ import { css, cx } from '@emotion/css';
 import { dateTime, formattedValueToString, getValueFormat, GrafanaTheme2, TimeRange } from '@grafana/data';
 import { Button, Icon, IconButton, Portal, Spinner, useStyles2 } from '@grafana/ui';
 import { FilterPill, VolumeDataPoint } from '../types';
-import { BucketActionsPopover } from './BucketActionsPopover';
+import { BucketActionsPopover, bucketEnd } from './BucketActionsPopover';
+import { brushRange, isPartialBucket } from './_histogramInterval';
+import { AxisTick, timeTicks } from './_histogramTicks';
 import {
   SEVERITY_COLORS,
   SEVERITY_ORDER,
@@ -23,6 +25,10 @@ export {
   calcBucketInterval,
   estimateBucketCount,
   fillEmptyBuckets,
+  isCalendarUnit,
+  isPartialBucket,
+  brushRange,
+  MAX_BUCKETS,
 } from './_histogramInterval';
 
 // ─── Component ───────────────────────────────────────────────────────────────
@@ -33,6 +39,10 @@ const MIN_SEGMENT_PX = 2;
 /** Height (px) reserved below the plot for x-axis tick labels (4px gap + ~20px label band).
  *  `height` prop is the *total* block height; the plotted SVG gets `height - X_AXIS_BAND`. */
 const X_AXIS_BAND = 24;
+
+/** Height of the axis row when some tick has a second line (date / month): two 13px lines plus
+ *  the 4px gap, so the second line never runs into the caption under the chart. */
+const X_AXIS_BAND_TWO_LINES = 32;
 
 /** Clear space (px) above the topmost gridline, so the tallest bar never touches the block's top
  *  edge. */
@@ -68,6 +78,9 @@ interface VolumeHistogramProps {
   /** Field the breakdown splits on (filter target for segment/legend actions); omit to disable. */
   breakdownTarget?: { field: string };
   onAddFilter?: (pill: FilterPill) => void;
+  /** Week / month / year buckets (calendar widths): bars aren't linear in time, so the axis
+   *  labels bars by index and partial-bucket shading is skipped. */
+  calendarBuckets?: boolean;
 }
 
 interface HoveredBucket {
@@ -129,6 +142,7 @@ export function VolumeHistogram({
   onSelectRange,
   breakdownTarget,
   onAddFilter,
+  calendarBuckets = false,
 }: VolumeHistogramProps) {
   const styles = useStyles2(getStyles);
   const svgRef = useRef<SVGSVGElement>(null);
@@ -211,7 +225,8 @@ export function VolumeHistogram({
     return () => ro.disconnect();
   }, []);
 
-  const svgHeight = Math.max(0, height - X_AXIS_BAND);
+  // Plot height leaves room for a two-line axis; a one-line axis just leaves a little more air.
+  const svgHeight = Math.max(0, height - X_AXIS_BAND_TWO_LINES);
   const plotHeight = Math.max(0, svgHeight - TOP_HEADROOM);
 
   const { bars, maxTotal, allLevels, colorMap } = useMemo(() => {
@@ -364,51 +379,33 @@ export function VolumeHistogram({
     });
   };
 
-  // Width-aware x-axis ticks — one label roughly every X_TICK_TARGET_PX, first/last always
-  // included. Computed before the early return below so hook order stays stable across renders.
-  const xTicks = useMemo(() => {
+  // X-axis ticks. Fixed-width buckets make the axis linear in time, so ticks fall on round
+  // times (15 min, 1 h, midnight, …) spaced so labels never collide (timeTicks). Calendar-width
+  // buckets (week/month/year) fall back to labelling every k-th bar by its date.
+  // Computed before the early return below so hook order stays stable across renders.
+  const xTicks = useMemo<AxisTick[]>(() => {
     if (bars.length === 0) {
       return [];
     }
     const n = bars.length;
+    if (!calendarBuckets) {
+      return timeTicks(bars[0].time, bars[n - 1].time + bucketMs, containerWidth);
+    }
     const approxCount = containerWidth > 0 ? Math.max(2, Math.floor(containerWidth / X_TICK_TARGET_PX)) : 5;
-    const count = Math.min(n, approxCount);
-    // A constant index step (rather than rounding i/(count-1) * (n-1) per-tick) keeps both the
-    // time delta *and* the pixel gap between labels uniform — proportional rounding jitters
-    // between adjacent step sizes whenever (n-1) doesn't divide evenly by (count-1), which reads
-    // as "Jul 16, Aug 15, Oct 14, …" (30 then 60 then 30 days) instead of one consistent cadence.
-    const step = Math.max(1, Math.round(n / count));
-    const idxs: number[] = [];
+    const step = Math.max(1, Math.round(n / Math.min(n, approxCount)));
+    const ticks: AxisTick[] = [];
     for (let i = 0; i < n; i += step) {
-      idxs.push(i);
+      ticks.push({
+        time: bars[i].time,
+        pct: (i / n) * 100,
+        label: dateTime(bars[i].time).format('MMM D'),
+        subLabel: i === 0 ? dateTime(bars[i].time).format('YYYY') : null,
+        anchor: i === 0 ? 'start' : 'center',
+      });
     }
-    // Always label the last bucket (so the chart's right edge is dated), but only as an *added*
-    // tick when it falls a full step away from the previous one — otherwise replace that last
-    // regular tick instead, so the final two labels don't crowd/overlap each other.
-    const lastRegular = idxs[idxs.length - 1];
-    if (lastRegular !== n - 1) {
-      if (n - 1 - lastRegular < step / 2 && idxs.length > 1) {
-        idxs[idxs.length - 1] = n - 1;
-      } else {
-        idxs.push(n - 1);
-      }
-    }
-    // Day-or-coarser buckets (day/week/month/year interval modes) all land on the same
-    // wall-clock time of day, so "HH:mm" is either constant or meaningless across ticks — show
-    // the date instead. Sub-day buckets show "HH:mm", with the date as a secondary line only on
-    // the first tick, since the individual times already disambiguate.
-    const showDate = bucketMs >= 24 * 3_600_000;
-    return idxs.map((i, tickIdx) => ({
-      time: bars[i].time,
-      idx: i,
-      label: showDate ? dateTime(bars[i].time).format('MMM D') : dateTime(bars[i].time).format('HH:mm'),
-      dateLabel: !showDate && tickIdx === 0 ? dateTime(bars[i].time).format('MMM D, YYYY') : null,
-      // First tick left-anchored, last right-anchored, everything else centered — keeps every
-      // label's text inside the axis's own width instead of the end ticks overflowing into the
-      // y-axis gutter (first) or the legend (last).
-      anchor: tickIdx === 0 ? 'start' : i === n - 1 ? 'end' : 'center',
-    })) as Array<{ time: number; idx: number; label: string; dateLabel: string | null; anchor: 'start' | 'center' | 'end' }>;
-  }, [bars, containerWidth, bucketMs]);
+    return ticks;
+  }, [bars, containerWidth, bucketMs, calendarBuckets]);
+  const axisBand = xTicks.some((t) => t.subLabel) ? X_AXIS_BAND_TWO_LINES : X_AXIS_BAND;
 
   // A hovered bucket index is only meaningful against the `bars` array it was computed from.
   // Auto-refresh (or any new data prop) can reflow buckets under an unmoved cursor — the sliding
@@ -435,13 +432,12 @@ export function VolumeHistogram({
     return null;
   }
 
-  function xPctToTime(pct: number): number {
-    if (!bars.length) {
-      return timeRange.from.valueOf();
+  /** Whether bucket `i` is only partly inside the selected range (shaded, like Kibana). */
+  function isPartialBar(i: number): boolean {
+    if (calendarBuckets) {
+      return false;
     }
-    const idx = Math.floor((pct / 100) * bars.length);
-    const clamped = Math.max(0, Math.min(bars.length - 1, idx));
-    return bars[clamped].time;
+    return isPartialBucket(bars[i].time, bucketMs, timeRange);
   }
 
   /** Percent across the chart's x-axis for a raw clientX — not tied to a React SVG event, so it
@@ -564,9 +560,8 @@ export function VolumeHistogram({
       selectionRef.current.setAttribute('display', 'none');
     }
     if (x2 - x1 < 0.5) {
-      const t = xPctToTime(end);
+      const idx = barIndexAtPct(end);
       if ((colorMode === 'breakdown' || colorMode === 'severity') && canFilterBreakdown) {
-        const idx = barIndexAtPct(end);
         const level = bars[idx] ? pickLevelAtY(bars[idx], clientY) : null;
         if (level && isFilterableLevel(level)) {
           setHovered(null);
@@ -574,11 +569,17 @@ export function VolumeHistogram({
           return;
         }
       }
-      // Single click off any segment (or non-breakdown mode) — zoom into one bucket instead.
-      const halfBucketMs = bucketMs / 2;
-      onSelectRange(t - halfBucketMs, t + halfBucketMs);
+      // Single click off any segment (or non-breakdown mode): zoom to that bucket, start to end
+      // (the same range as the right-click "Filter by time").
+      const t = bars[idx].time;
+      onSelectRange(t, bucketEnd(t, bucketMs));
     } else {
-      onSelectRange(xPctToTime(x1), xPctToTime(x2));
+      // A drag: the exact dragged times (whole seconds, at least one second wide), not snapped
+      // to buckets; the new range is then re-bucketed like any other (Kibana's brush).
+      const range = brushRange(x1, x2, bars, bucketMs, svgRef.current?.getBoundingClientRect().width ?? 0);
+      if (range) {
+        onSelectRange(range.from, range.to);
+      }
     }
   }
 
@@ -650,9 +651,9 @@ export function VolumeHistogram({
           {/* Light vertical gridlines under each x-axis tick. */}
           {xTicks.map((tick) => (
             <line
-              key={`v-${tick.idx}`}
-              x1={`${(tick.idx / bars.length) * 100}%`}
-              x2={`${(tick.idx / bars.length) * 100}%`}
+              key={`v-${tick.time}`}
+              x1={`${tick.pct}%`}
+              x2={`${tick.pct}%`}
               y1={TOP_HEADROOM}
               y2={baselineY}
               className={styles.gridline}
@@ -674,13 +675,31 @@ export function VolumeHistogram({
             />
           )}
 
+          {/* Partial buckets (only partly inside the time range) get a grey band and faded bars,
+              like Kibana, so a short edge bar isn't read as a real dip in volume. */}
+          {bars.map((d, i) =>
+            isPartialBar(i) ? (
+              <rect
+                key={`p-${d.time}`}
+                data-testid="histogram-partial-bucket"
+                x={`${(i / bars.length) * 100}%`}
+                y={TOP_HEADROOM}
+                width={`${(1 / bars.length) * 100}%`}
+                height={plotHeight}
+                className={styles.partialBand}
+                style={{ pointerEvents: 'none' }}
+              />
+            ) : null
+          )}
+
           {bars.map((d, i) => {
             const x = usePxBars ? i * barPitch : (i / bars.length) * 100;
             const w = usePxBars ? Math.max(1, barPitch - 1) : (1 / bars.length) * 100 - 0.15;
             let yOffset = baselineY;
+            const partial = isPartialBar(i);
 
             return (
-              <g key={d.time}>
+              <g key={d.time} opacity={partial ? 0.45 : undefined}>
                 {visibleLevels.map((level) => {
                   const count = d.levels[level] ?? 0;
                   if (!count) {
@@ -732,18 +751,19 @@ export function VolumeHistogram({
           the same gutter width as the y-axis so they stay aligned under the bars. */}
       <div className={styles.axisRow}>
         <div className={styles.yAxisSpacer} />
-        <div className={styles.axis}>
+        <div className={styles.axis} style={{ height: axisBand }} data-testid="histogram-x-axis">
           {xTicks.map((tick) => (
             <span
               key={tick.time}
               className={styles.axisTick}
               style={{
-                left: `${(tick.idx / bars.length) * 100}%`,
+                left: `${tick.pct}%`,
                 transform: `translateX(${tick.anchor === 'start' ? '0' : tick.anchor === 'end' ? '-100%' : '-50%'})`,
+                alignItems: tick.anchor === 'start' ? 'flex-start' : tick.anchor === 'end' ? 'flex-end' : 'center',
               }}
             >
-              {tick.dateLabel && <span className={styles.axisTickDate}>{tick.dateLabel}</span>}
-              {tick.label}
+              <span data-testid="histogram-x-tick">{tick.label}</span>
+              {tick.subLabel && <span className={styles.axisTickDate}>{tick.subLabel}</span>}
             </span>
           ))}
         </div>
@@ -841,6 +861,9 @@ export function VolumeHistogram({
           <div className={styles.tooltipTime}>
             {dateTime(hoveredBar.time).format('MMM D, YYYY HH:mm:ss')}
           </div>
+          {hovered && isPartialBar(hovered.index) && (
+            <div className={styles.tooltipHint}>Partial bucket: only part of it is in the time range</div>
+          )}
           <div className={styles.tooltipTotal}>
             Total: {formatCompact(Object.values(hoveredBar.levels).reduce((a, b) => a + b, 0))}
           </div>
@@ -1063,6 +1086,7 @@ const getStyles = (theme: GrafanaTheme2) => ({
     min-width: 0;
     height: ${X_AXIS_BAND}px;
     font-size: 11px;
+    line-height: 13px;
     color: ${theme.colors.text.disabled};
     font-variant-numeric: tabular-nums;
   `,
@@ -1075,6 +1099,10 @@ const getStyles = (theme: GrafanaTheme2) => ({
   `,
   axisTickDate: css`
     font-size: 11px;
+  `,
+  partialBand: css`
+    fill: ${theme.colors.text.disabled};
+    opacity: 0.12;
   `,
   legendRow: css`
     display: flex;
