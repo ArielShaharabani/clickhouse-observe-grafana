@@ -18,10 +18,18 @@ export function isRelativeRange(timeRange: TimeRange): boolean {
   return (typeof from === 'string' && from.startsWith('now')) || (typeof to === 'string' && to.startsWith('now'));
 }
 
-export function buildShareUrl(currentHref: string, timeRange: TimeRange, absolute: boolean): string {
+/** Parameters a shared Visualize link carries: the chart and the shared search context. */
+export const VISUALIZE_SHAREABLE_PARAMS = ['lens', 'q', 'filters', 'from', 'to', 'ds'] as const;
+
+export function buildShareUrl(
+  currentHref: string,
+  timeRange: TimeRange,
+  absolute: boolean,
+  params: readonly string[] = SHAREABLE_PARAMS
+): string {
   const url = new URL(currentHref);
   const sp = new URLSearchParams();
-  for (const k of SHAREABLE_PARAMS) {
+  for (const k of params) {
     const v = url.searchParams.get(k);
     if (v !== null) {
       sp.set(k, v);

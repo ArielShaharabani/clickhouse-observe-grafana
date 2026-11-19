@@ -154,6 +154,25 @@ export function dashboardBucketSql(col: string, iv: LensInterval): string {
   return `toStartOfInterval(toDateTime(${col}), INTERVAL greatest(${sec}, $__interval_s) second)`;
 }
 
+/**
+ * Gap filling for a saved panel's date buckets (Include empty rows, PARITY-DASHBOARDS): the
+ * `WITH FILL` clause matching `dashboardBucketSql` (or the `$__interval_s` auto bucket when `iv` is
+ * null) — from the bucket holding the dashboard's start to its end, one bucket per step.
+ * `bound: false` (the chart's "bind to time range" off) fills only between buckets with data.
+ */
+export function dashboardFillSql(iv: LensInterval | null, bound = true): string {
+  const interval =
+    iv && (isCalendarUnit(iv.unit) || iv.unit === 'w')
+      ? `INTERVAL ${iv.n} ${UNIT_SQL[iv.unit]}`
+      : iv
+        ? `INTERVAL greatest(${Math.max(1, Math.ceil(intervalMs(iv) / 1000))}, $__interval_s) second`
+        : 'INTERVAL $__interval_s second';
+  const step = iv && (isCalendarUnit(iv.unit) || iv.unit === 'w') ? interval : interval.replace(/^INTERVAL (.*) second$/, '$1');
+  return bound
+    ? `WITH FILL FROM toStartOfInterval($__fromTime, ${interval}) TO $__toTime STEP ${step}`
+    : `WITH FILL STEP ${step}`;
+}
+
 /** `t` moved by `k` buckets (calendar-exact for months / years, in UTC like the query's epoch ms). */
 export function stepBucket(t: number, iv: LensInterval, k: number): number {
   if (!isCalendarUnit(iv.unit)) {

@@ -34,8 +34,16 @@ function properties(m: MetricDim, state: LensState, xy: boolean): Array<{ id: st
   return props;
 }
 
-/** Field config with the metrics' appearance options merged in. */
-export function withMetricAppearance(base: LensFieldConfig, state: LensState, xy: boolean): LensFieldConfig {
+/**
+ * Field config with the metrics' appearance options merged in. `matcherFor` picks the override
+ * matcher of metric `i` when there are several (default: its label, as displayed in Visualize).
+ */
+export function withMetricAppearance(
+  base: LensFieldConfig,
+  state: LensState,
+  xy: boolean,
+  matcherFor?: (i: number) => { id: string; options: string }
+): LensFieldConfig {
   const perMetric = state.metrics.map((m) => properties(m, state, xy));
   if (perMetric.every((p) => p.length === 0)) {
     return base;
@@ -55,7 +63,12 @@ export function withMetricAppearance(base: LensFieldConfig, state: LensState, xy
   const overrides = perMetric.flatMap((props, i) =>
     props.length === 0
       ? []
-      : [{ matcher: { id: 'byRegexp', options: `^(.* · )?${escapeRegex(labels[i])}$` }, properties: props }]
+      : [
+          {
+            matcher: matcherFor?.(i) ?? { id: 'byRegexp', options: `^(.* · )?${escapeRegex(labels[i])}$` },
+            properties: props,
+          },
+        ]
   );
   return { defaults: base.defaults, overrides: [...base.overrides, ...overrides] };
 }

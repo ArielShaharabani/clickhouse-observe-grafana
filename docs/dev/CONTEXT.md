@@ -1,7 +1,7 @@
 # Context snapshot — read this to restart
 
 Saved after every feature (and every review-fix round). A new session can resume from this file plus `PROGRESS.md` alone.
-Last saved: 2026-11-19, #- COMPARE-FIXES merged (PR 43, v0.47.0).
+Last saved: 2026-11-19, #- PARITY-XYCHART merged (PR 49, v0.51.0).
 
 ## Goal
 Bring Kibana Discover + Lens style exploration to Grafana on ClickHouse by extending the **ClickHouse Observe** app plugin.
@@ -55,6 +55,10 @@ Bring Kibana Discover + Lens style exploration to Grafana on ClickHouse by exten
 | 28 | LENS-LAYER-01: Visualize reference line and annotation layers | 42 | src/lens/layers.ts, src/lens/LayerPanel.tsx, src/lens/useLayerData.ts, src/lens/render/layerConfig.ts, src/lens/compile.ts, src/lens/render/XyChart.tsx |
 | 33 | SHARED-A11Y-01: Keyboard and accessibility | 42 | src/components/a11y/dialog.tsx, src/lens/keyboardDnd.ts, src/lens/LensPage.tsx, src/lens/DimensionEditor.tsx, src/components/* |
 | - | COMPARE-FIXES: Kibana comparison fixes: Edit in Visualize, parked dimensions, default time range | 43 | src/lens/panelSource.ts, src/module.tsx, src/lens/suggest.ts, src/lens/state.ts, src/utils/defaultTimeRange.ts, src/components/AppConfig/AppConfig.tsx |
+| - | PARITY-HISTOGRAM: Kibana parity: histogram brush, inclusive counts, intervals and axis, refresh off, no default breakdown | 49 | src/components/_histogramInterval.ts, src/components/_histogramTicks.ts, src/components/VolumeHistogram.tsx, src/data/urlState.ts |
+| - | PARITY-GRID: Kibana parity: document paging, column resize and menu, sidebar, sort tie-break, context view, single-document link | 49 | src/components/LogsTable.tsx, src/components/LogDetailDrawer.tsx, src/components/ColumnHeaderMenu.tsx, src/pages/ContextView.tsx, src/pages/SingleDocView.tsx, src/sql/queryBuilder.ts |
+| - | PARITY-DASHBOARDS: Kibana parity: Save and return, Discover dashboard export, Share in Visualize, short links | 49 | src/lens/SaveActions.tsx, src/lens/panelSource.ts, src/data/panelExport.ts, src/data/shortUrl.ts, src/components/SessionActions/ShareLinkModal.tsx |
+| - | PARITY-XYCHART: Kibana parity: Visualize tooltip, Line unstacked, brush across bars, stable colours, axes, number format, legend colours | 49 | src/lens/render/XyChart.tsx, src/lens/render/seriesColors.ts, src/lens/render/timeTicks.ts, src/lens/style.ts, src/lens/compile.ts |
 
 ## Key decisions (details in DECISIONS.md)
 - Frontend-only; queries via grafana-clickhouse-datasource (`src/data/runQuery.ts`). Plain React + @grafana/ui, no Scenes.

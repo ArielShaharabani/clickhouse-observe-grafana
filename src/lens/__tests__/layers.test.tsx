@@ -386,7 +386,7 @@ describe('XyChart layers', () => {
       />
     );
     const ticks = screen.getAllByTestId('lens-value-tick').map((t) => t.textContent);
-    expect(ticks[ticks.length - 1]).toBe('1K');
+    expect(ticks[ticks.length - 1]).toBe('1,000');
     const y = Number(screen.getByTestId('lens-reference-line').querySelector('line')?.getAttribute('y1'));
     expect(y).toBeGreaterThan(0);
   });

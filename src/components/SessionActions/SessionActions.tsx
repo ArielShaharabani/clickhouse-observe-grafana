@@ -2,15 +2,15 @@
  * DISC-SESSION-01: Discover's Share button and ⋮ overflow menu (spec 10-discover.md "Save, share,
  * export, overflow"). Saving lives in the Saved searches menu next to it.
  *
- * - Share → modal "Share this Discover session": `Use absolute time range` toggle, an unsaved-changes
- *   warning, and Copy link (shareLink.ts — codec parameters only).
+ * - Share → modal "Share this Discover session" (ShareLinkModal): `Use absolute time range` toggle,
+ *   an unsaved-changes warning, and Copy link (shareLink.ts — codec parameters only), shortened
+ *   through Grafana's short URL API.
  * - ⋮ → New session, Export tab results (CSV), Inspect (the diagnostics drawer), Create alert rule.
  */
 import React, { useMemo, useState } from 'react';
-import { css } from '@emotion/css';
-import { AppEvents, GrafanaTheme2, TimeRange } from '@grafana/data';
+import { AppEvents, TimeRange } from '@grafana/data';
 import { getAppEvents } from '@grafana/runtime';
-import { Alert, Button, ClipboardButton, Dropdown, Field, Input, Menu, Modal, Switch, useStyles2 } from '@grafana/ui';
+import { Alert, Button, Dropdown, Menu } from '@grafana/ui';
 import { LogsQueryState, SourceConfig } from '../../types';
 import { FieldIndex } from '../../sql/fields';
 import { buildLogsQuery } from '../../sql/queryBuilder';
@@ -20,6 +20,7 @@ import { buildShareUrl, hasUnsavedChanges, isRelativeRange } from '../../data/sh
 import { CSV_EXPORT_LIMIT, csvFileName, downloadCsv, rowsToCsv } from '../../data/csvExport';
 import { buildAlertRuleUrl } from '../../data/alertRule';
 import { canCreateAlertRules } from '../../utils/permissions';
+import { ShareLinkModal } from './ShareLinkModal';
 
 export interface SessionActionsProps {
   config: SourceConfig;
@@ -52,15 +53,12 @@ export function SessionActions({
   viewName,
   onOpenDiagnostics,
 }: SessionActionsProps) {
-  const styles = useStyles2(getStyles);
   const [shareOpen, setShareOpen] = useState(false);
-  const [absolute, setAbsolute] = useState(false);
   const [exporting, setExporting] = useState(false);
   const canAlert = useMemo(() => canCreateAlertRules(), []);
 
   const hasTime = Boolean(config.columns.timestamp);
   const relative = isRelativeRange(timeRange);
-  const shareUrl = shareOpen ? buildShareUrl(window.location.href, timeRange, absolute) : '';
   const unsaved = shareOpen
     ? hasUnsavedChanges({ ...queryState, columns: rawColumns ?? queryState.columns }, loadSavedSearches(), viewId)
     : false;
@@ -161,56 +159,21 @@ export function SessionActions({
         />
       </Dropdown>
 
-      <Modal title="Share this Discover session" isOpen={shareOpen} onDismiss={() => setShareOpen(false)}>
-        <div className={styles.body}>
-          <Field
-            label="Use absolute time range"
-            description={
-              relative
-                ? 'Off: the link keeps the relative range (e.g. "Last 15 minutes"), so it shows the latest data whenever it is opened. On: the link pins the exact range shown now.'
-                : 'The current range is already absolute.'
-            }
-          >
-            <Switch
-              id="share-absolute-time"
-              value={absolute || !relative}
-              disabled={!relative}
-              onChange={(e) => setAbsolute(e.currentTarget.checked)}
-            />
-          </Field>
-          {unsaved && (
+      <ShareLinkModal
+        title="Share this Discover session"
+        isOpen={shareOpen}
+        onDismiss={() => setShareOpen(false)}
+        relative={relative}
+        buildUrl={(absolute) => buildShareUrl(window.location.href, timeRange, absolute)}
+        notice={
+          unsaved ? (
             <Alert severity="warning" title="You have unsaved changes">
               The link shares the current search, filters, columns and time range. Save the search to keep it in Saved
               searches.
             </Alert>
-          )}
-          <Field label="Link">
-            <Input
-              readOnly
-              value={shareUrl}
-              aria-label="Share link"
-              addonAfter={
-                <ClipboardButton
-                  variant="primary"
-                  icon="copy"
-                  getText={() => shareUrl}
-                  onClipboardCopy={() => notify('success', 'Link copied')}
-                >
-                  Copy link
-                </ClipboardButton>
-              }
-            />
-          </Field>
-        </div>
-      </Modal>
+          ) : undefined
+        }
+      />
     </>
   );
 }
-
-const getStyles = (theme: GrafanaTheme2) => ({
-  body: css`
-    display: flex;
-    flex-direction: column;
-    gap: ${theme.spacing(1)};
-  `,
-});

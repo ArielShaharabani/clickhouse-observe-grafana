@@ -79,8 +79,9 @@ describe('LENS-TYPE-01 chart type switcher', () => {
     outside.remove();
   });
 
-  it('line charts get the sub-type control too', () => {
+  it('line charts have no sub-type control (Kibana: Line has no stacking)', () => {
     setup('line');
-    expect(screen.getByRole('radio', { name: 'Percentage' })).toBeTruthy();
+    expect(screen.queryByRole('radio', { name: 'Percentage' })).toBeNull();
+    expect(screen.queryByRole('radio', { name: 'Stacked' })).toBeNull();
   });
 });

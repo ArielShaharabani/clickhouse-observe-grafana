@@ -110,10 +110,10 @@ test('Discover histogram interval → Edit visualization keeps it', async ({ pag
   expect(new URLSearchParams(back!.split('?')[1]).get('interval')).toBe('day');
 });
 
-// PLAN 16f: Intervals and Filters bucket functions. Tables show plain numbers (bars abbreviate: 3.2K).
+// PLAN 16f: Intervals and Filters bucket functions. Tables and bars show plain numbers with separators.
 const tableLens = (bucket: Record<string, unknown>) =>
   JSON.stringify({ chartType: 'table', buckets: [bucket], metrics: [{ kind: 'metric', id: 'm0', op: 'count' }] });
-const compact = (v: number) => (v >= 1e3 ? `${+(v / 1e3).toFixed(1)}K` : String(v));
+const compact = (v: number) => v.toLocaleString('en-US');
 
 test('Filters: one bucket per KQL query, counted on ClickHouse', async ({ page }) => {
   const viz = new VisualizePage(page);
@@ -168,8 +168,6 @@ test('Functions grid: Date histogram → Intervals with custom ranges; Filters w
   await ed.getByRole('textbox', { name: 'Filter 1 query' }).fill('SeverityText : error');
   await ed.getByRole('textbox', { name: 'Filter 1 query' }).press('Enter');
   await expect(
-    viz.chart
-      .getByRole('button', { name: new RegExp(`: ${compact(FIXTURE.counts.byLevel.error).replace('.', '\.')}$`) })
-      .first()
+    viz.chart.getByRole('button', { name: new RegExp(`: ${compact(FIXTURE.counts.byLevel.error)}$`) }).first()
   ).toBeVisible();
 });

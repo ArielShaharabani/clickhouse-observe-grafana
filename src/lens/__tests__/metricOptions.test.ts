@@ -218,8 +218,8 @@ describe('compileLens with metric options', () => {
 
   it('Normalize by unit scales by the bucket width', () => {
     const { sql, intervalMs } = compileLens(lens([{ ...count, normalize: 'h' }]), config, conds, range);
-    expect(intervalMs).toBe(6 * 3600 * 1000);
-    expect(sql).toContain('(count()) * 0.166666666667 AS m0');
+    expect(intervalMs).toBe(3 * 3600 * 1000); // 7 days auto → 3 hours
+    expect(sql).toContain('(count()) * 0.333333333333 AS m0');
     const dash = compileLens(lens([{ ...count, normalize: 'm' }]), config, conds, range, 'dashboard').sql;
     expect(dash).toContain('(count()) * (60 / $__interval_s) AS m0');
     // No date histogram: no normalization.
@@ -237,8 +237,9 @@ describe('compileLens with metric options', () => {
       range,
       'dashboard'
     );
-    // The only $__fromTime left is the WHERE clause's own macro.
-    expect(sql.split('$__fromTime').length - 1).toBe(1);
+    // The only $__fromTime left are the WHERE clause's own macro and the empty-bucket fill's start.
+    expect(sql.split('$__fromTime').length - 1).toBe(2);
+    expect(sql).toContain('WITH FILL FROM toStartOfInterval($__fromTime');
     expect(sql).toContain('\\x24');
   });
 });

@@ -497,13 +497,17 @@ export function buildLogsQuery(
     sortCol = coreAliasToRawColumn(sortCol, config) ?? sortCol;
   }
   const sortDir = state.sort?.dir === 'asc' ? 'ASC' : 'DESC';
+  // Kibana breaks ties of any non-time sort by time, newest first: without it, rows sharing a
+  // sort value come back in arbitrary (and page-to-page unstable) order.
+  const timeTie = c.timestamp ? (isGrid ? CORE_ALIAS.timestamp : timeExpr(config)) : null;
+  const tieBreak = sortCol && timeTie && sortCol !== timeTie && sortCol !== CORE_ALIAS.timestamp ? `, ${timeTie} DESC` : '';
 
   return withSettings(
     [
       `SELECT ${selectParts.join(', ')}`,
       `FROM ${tbl}`,
       conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : null,
-      sortCol ? `ORDER BY ${sortCol} ${sortDir}` : null,
+      sortCol ? `ORDER BY ${sortCol} ${sortDir}${tieBreak}` : null,
       pagination
         ? `LIMIT ${pagination.limit} OFFSET ${pagination.offset}`
         : `LIMIT ${state.limit}`,
@@ -952,6 +956,37 @@ export function buildContextAnchorLookupQuery(config: SourceConfig, row: Record<
   return withSettings(
     [
       `SELECT ${contextNsExpr(tsCol)} AS ${CONTEXT_ALIAS.ns}, toString(${contextIdExpr(config)}) AS ${CONTEXT_ALIAS.id}`,
+      `FROM ${tableRef(config, config.logsTable)}`,
+      `WHERE ${conditions.join(' AND ')}`,
+      `LIMIT 1`,
+    ],
+    [...queryTimeoutFragments(config), ...configSettingsFragments(config)]
+  );
+}
+
+/**
+ * The full row of one document named by its ContextAnchor ("View single document" permalink,
+ * PARITY-GRID): `SELECT *` (plus the converted time under CORE_ALIAS.timestamp, like a hydrated
+ * Discover row) matched on the anchor's timestamp and row id. Both anchor parts are validated
+ * decimal strings (isContextAnchor), so nothing but digits reaches the SQL. '' when no timestamp is
+ * mapped or the anchor is malformed.
+ */
+export function buildDocumentByAnchorQuery(config: SourceConfig, anchor: ContextAnchor): string {
+  const c = config.columns;
+  if (!c.timestamp || !isContextAnchor(anchor)) {
+    return '';
+  }
+  const ts = timeExpr(config);
+  const at = `fromUnixTimestamp64Nano(${anchor.ns})`;
+  const conditions = [`${ts} = ${at}`, `${contextIdExpr(config)} = ${anchor.id}`];
+  const prune = c.partitionTimestamp && c.partitionTimestamp !== '-' ? c.partitionTimestamp : '';
+  if (prune) {
+    conditions.push(`${prune} >= ${at} - INTERVAL 1 SECOND AND ${prune} <= ${at} + INTERVAL 1 SECOND`);
+  }
+  const convertedTime = isConvertedTimestamp(config) ? [`${ts} AS ${CORE_ALIAS.timestamp}`] : [];
+  return withSettings(
+    [
+      `SELECT ${['*', ...convertedTime].join(', ')}`,
       `FROM ${tableRef(config, config.logsTable)}`,
       `WHERE ${conditions.join(' AND ')}`,
       `LIMIT 1`,

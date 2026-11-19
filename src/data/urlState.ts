@@ -10,6 +10,7 @@
 import { dateMath, dateTime, rangeUtil, TimeRange } from '@grafana/data';
 import { FilterPill, IntervalMode, SelectedColumn } from '../types';
 import { sanitizeFilterPills } from '../sql/filters';
+import type { FieldModel } from '../sql/fieldModel';
 
 /** Breakdown as stored in the URL: a field is referenced by its stable FieldModel id and
  *  resolved against discovered fields once they load (SHARED-STATE-02). */
@@ -26,6 +27,8 @@ export interface DecodedLogsUrlState {
   viewId?: string;
   interval?: IntervalMode;
   breakdown?: BreakdownUrl;
+  /** Auto-refresh interval ('30s', '1m', …); absent = paused (the default, as in Kibana). */
+  refresh?: string;
   // traceId/dsUid: inbound-only fields carried by a trace->logs deep link from Grafana Explore's
   // ClickHouse trace view (see data/traceToLogsLink.ts) — a `traceId`/`dsUid` filter pill isn't
   // something a colleague reproduces by copying a Logs Explorer URL, so unlike every other field
@@ -46,6 +49,21 @@ export interface EncodeLogsUrlStateInput {
   interval?: IntervalMode;
   /** Only set when the user explicitly chose a breakdown; undefined = view default. */
   breakdown?: BreakdownUrl;
+  /** Auto-refresh interval; omitted when paused (the default). */
+  refresh?: string;
+}
+
+/** A Grafana-style refresh interval ('5s', '1m', '2h', '1d'), at least 5 seconds. URL input is
+ *  untrusted, so anything else (paused, junk, sub-5s) reads as paused. */
+export function cleanRefreshInterval(raw: string | null | undefined): string | undefined {
+  if (!raw || !/^[1-9]\d{0,3}[smhd]$/.test(raw)) {
+    return undefined;
+  }
+  try {
+    return rangeUtil.intervalToMs(raw) >= 5000 ? raw : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 export function encodeLogsState(state: EncodeLogsUrlStateInput): URLSearchParams {
@@ -81,7 +99,17 @@ export function encodeLogsState(state: EncodeLogsUrlStateInput): URLSearchParams
   if (state.breakdown) {
     sp.set('bd', state.breakdown.kind === 'field' ? `field:${state.breakdown.fieldId}` : state.breakdown.kind);
   }
+  const refresh = cleanRefreshInterval(state.refresh);
+  if (refresh) {
+    sp.set('refresh', refresh);
+  }
   return sp;
+}
+
+/** The discovered field a URL breakdown id names: the exact id, else (a hand-written link) the
+ *  column field of that name (`ServiceName` → `col:ServiceName`). */
+export function resolveBreakdownField(id: string, fields: FieldModel[]): FieldModel | undefined {
+  return fields.find((f) => f.id === id) ?? fields.find((f) => f.id === `col:${id}`);
 }
 
 function decodeBreakdown(raw: string | null): BreakdownUrl | undefined {
@@ -176,6 +204,11 @@ export function decodeLogsState(searchParams: URLSearchParams): DecodedLogsUrlSt
   const breakdown = decodeBreakdown(searchParams.get('bd'));
   if (breakdown) {
     result.breakdown = breakdown;
+  }
+
+  const refresh = cleanRefreshInterval(searchParams.get('refresh'));
+  if (refresh) {
+    result.refresh = refresh;
   }
 
   const traceId = searchParams.get('traceId');

@@ -42,8 +42,8 @@ describe('compileLens', () => {
       conds,
       range
     );
-    expect(intervalMs).toBe(6 * 3600 * 1000); // 7 days / ~60 buckets → 6 hours
-    expect(sql).toContain('toUnixTimestamp(toStartOfInterval("Timestamp", INTERVAL 21600 SECOND)) * 1000 AS b0');
+    expect(intervalMs).toBe(3 * 3600 * 1000); // 7 days / ~60 buckets → 3 hours (Kibana; PARITY-HISTOGRAM)
+    expect(sql).toContain('toUnixTimestamp(toStartOfInterval("Timestamp", INTERVAL 10800 SECOND)) * 1000 AS b0');
     expect(sql).toContain('WITH top1 AS (SELECT toString("SeverityText") AS v FROM "default"."spec_logs" WHERE');
     expect(sql).toContain(
       'ServiceName = \'payments\' AND toString("SeverityText") IS NOT NULL GROUP BY v ORDER BY count() DESC LIMIT 9)'
@@ -97,8 +97,9 @@ describe('shapeLensRows', () => {
     ]);
     expect(r.xIsTime).toBe(true);
     expect(r.xs).toEqual([Date.UTC(2026, 0, 1), Date.UTC(2026, 0, 1, 6)]);
-    expect(r.series.map((s) => s.name)).toEqual(['error', 'info']);
-    expect(r.series[0].points.get(Date.UTC(2026, 0, 1))).toBe(1);
+    // Legend / stack order: by total count, descending (info 5 > error 3), as in Kibana.
+    expect(r.series.map((s) => s.name)).toEqual(['info', 'error']);
+    expect(r.series[1].points.get(Date.UTC(2026, 0, 1))).toBe(1);
     expect(r.table.columns).toEqual(['Timestamp', 'Top 9 values of SeverityText', 'Count of records']);
   });
 

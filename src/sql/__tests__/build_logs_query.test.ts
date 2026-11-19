@@ -257,3 +257,33 @@ describe('logRowKey', () => {
     expect(logRowKey(a)).toBe(logRowKey(b));
   });
 });
+
+describe('buildLogsQuery — time tie-break for non-time sorts (PARITY-GRID)', () => {
+  const extra = { id: 'extra', key: 'fld_extra', sqlExpr: 'my_col', displayName: 'My col', type: 'string' as const, isCore: false };
+
+  it('adds Timestamp DESC after any non-time sort (grid projection uses the alias)', () => {
+    const state = { ...DEFAULT_LOGS_QUERY_STATE, columns: [extra], sort: { col: 'fld_extra', dir: 'asc' as const } };
+    const sql = buildLogsQuery(otelConfig, state, undefined, { projection: 'grid' });
+    expect(sql).toContain(`ORDER BY fld_extra ASC, ${CORE_ALIAS.timestamp} DESC`);
+  });
+
+  it('uses the real time column in the full projection', () => {
+    const state = { ...DEFAULT_LOGS_QUERY_STATE, sort: { col: CORE_ALIAS.severity, dir: 'desc' as const } };
+    const sql = buildLogsQuery(otelConfig, state);
+    expect(sql).toContain(`ORDER BY ${otelConfig.columns.severity} DESC, ${otelConfig.columns.timestamp} DESC`);
+  });
+
+  it('adds nothing when sorting by time itself', () => {
+    const state = { ...DEFAULT_LOGS_QUERY_STATE, sort: { col: CORE_ALIAS.timestamp, dir: 'asc' as const } };
+    expect(buildLogsQuery(otelConfig, state, undefined, { projection: 'grid' })).toMatch(/ORDER BY __timestamp ASC\s/);
+    const full = buildLogsQuery(otelConfig, state);
+    expect(full).toContain(`ORDER BY ${otelConfig.columns.timestamp} ASC`);
+    expect(full).not.toContain(`ASC, ${otelConfig.columns.timestamp}`);
+  });
+
+  it('adds nothing when the view has no time column', () => {
+    const noTime: SourceConfig = { ...arbitraryConfig, columns: { ...arbitraryConfig.columns, timestamp: '' } };
+    const state = { ...DEFAULT_LOGS_QUERY_STATE, sort: { col: CORE_ALIAS.body, dir: 'asc' as const } };
+    expect(buildLogsQuery(noTime, state, undefined, { projection: 'grid' })).not.toContain(', __timestamp');
+  });
+});

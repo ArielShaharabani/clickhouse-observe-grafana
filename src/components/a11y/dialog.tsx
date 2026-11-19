@@ -130,7 +130,9 @@ export function usePopoverDialog(ref: RefObject<HTMLElement>, opts: PopoverDialo
  * End jump. Returns true when it handled the key.
  */
 export function moveMenuFocus(menu: HTMLElement, key: string): boolean {
-  const items = Array.from(menu.querySelectorAll<HTMLElement>('[role="menuitem"]:not([disabled])'));
+  const items = Array.from(
+    menu.querySelectorAll<HTMLElement>('[role="menuitem"]:not([disabled]), [role="menuitemradio"]:not([disabled])')
+  );
   if (items.length === 0) {
     return false;
   }

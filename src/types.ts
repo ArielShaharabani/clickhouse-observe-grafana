@@ -138,6 +138,9 @@ export interface SelectedColumn {
   displayName: string;
   type: ColumnType;
   isCore: boolean;      // core cols are always selected; user cols add extra SELECT clauses
+  /** Display width in px set by resizing the header (PARITY-GRID); absent = automatic. Display
+   *  only: never reaches SQL, clamped by sanitizeColumns when restored from a URL / saved search. */
+  width?: number;
 }
 
 export interface LogsQueryState {

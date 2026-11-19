@@ -70,6 +70,7 @@ Discover is a three-region page: field sidebar (left, \~295 px, resizable and co
 
 - **Placement:** row 2 far right; split button with a secondary `Send to background` action (runs the search as a stored background search).
 - **States:** `Refresh` (blue) when clean; `Update` (green) when query/time changed but not run.
+- **Auto-refresh:** paused by default (Kibana `refreshInterval:(pause:!t)`). A chosen interval is kept in the URL (`refresh=1m`, see SHARED-STATE-02).
 - **Grafana:** run-query button exists; dirty-state styling and background searches are missing.
 
 ### DISC-SIDEBAR-01 Field list
@@ -96,6 +97,7 @@ Discover is a three-region page: field sidebar (left, \~295 px, resizable and co
 - **Edge cases:** arrays count each element (tags 20.4%, 20.2%… sum >100%); high-cardinality numbers show 10 values + `Other 87.6%`; missing fields show “No field data for the current search”.
 - **Acceptance:** stats reflect current filters; percentages are of sampled docs with a value; every value row has filter-for/out.
 - **Grafana:** missing. Highest-value feature to build first.
+- **Observe (PARITY-GRID):** every top-value row shows ⊕/⊖ filter buttons (always visible, not on hover) and a bar gauge under the value; the caption says `Calculated from N sample records.` only when the 5,000-row sample is full, else `Calculated from N records.` (same for the Map key list's `Discovered from …`). Map columns: the key list has a ⊕ `Add <column>.<key> as column` button per key (open the popover, one click); drilling into a key shows its stats with the back link inside the panel; long names wrap instead of truncating.
 
 ### DISC-CHART-01 Hits histogram
 
@@ -105,10 +107,16 @@ Discover is a three-region page: field sidebar (left, \~295 px, resizable and co
 - **Hover tooltip:** header with bucket start (`2026-11-15 09:00`), one row per series with colour swatch, name and count, hovered series highlighted; footer `Right-click to show actions`.
 - **Right-click (pinned tooltip):** tooltip freezes with a checkbox per series and actions `Filter by time` (set time range to that bucket) and `Filter N selected series` (adds filter pills for the ticked series).
 - **Brush:** click-drag across the chart sets an absolute time range; the picker shows `Nov 15, 01:22 → 18:43 ~17h`; interval recomputes; URL `_g.time` becomes ISO strings.
+  - The range is the exact dragged times (a 4.8 h → 14.4 h drag over a day is 04:48 → 14:24), not snapped to bucket edges, then re-bucketed. It is rounded outwards to whole seconds (the datasource time macros are second precision, so the range shown is the range queried) and is at least one second, or one pixel's worth of time, wide: a drag inside one bucket never gives an empty `from == to` range. A click (no drag) zooms to the clicked bucket, start to end, like `Filter by time`.
+- **Time bounds:** every query includes both ends (`>= from AND <= to`, as Kibana), and the histogram keeps a bucket that starts exactly at `to`, so the `N rows` caption, the grid, field statistics and Visualize agree (08:00–12:00 on the fixture: 2,161).
+- **Partial buckets:** a bucket only partly inside the range (starts before `from` or ends after `to`) is drawn faded on a grey band, and its tooltip says so. Not for week / month / year buckets (calendar widths).
+- **Too-fine intervals:** nothing in the interval menu is disabled. A fixed Second / Minute / Hour / Day interval that would exceed 1,000 buckets is scaled up to the finest round multiple that fits (Minute over 7 days → 15 minutes), and the caption says `(interval: Minute, scaled to 15 minutes)` with a warning `⚠ Scaled to 15 minutes` (Kibana: "scaled to 10 minutes").
+- **Axis:** ticks fall on round times (every 30 minutes, every hour, midnight, …), at least ~80 px apart so labels never collide. Sub-day ticks read `HH:mm` with the date as a second line on the first tick and at each new day; day ticks read `1st … 7th` with `January 2026` under the first tick and at each new month; multi-month ticks read `Jan 2026`. The axis row grows to two lines when a tick has a second line, so it never overlaps the caption.
 - **Grafana:** brush-to-zoom exists in time series panels; series-selection actions and a logs-volume-style default chart exist only in Explore.
 
 ### DISC-CHART-02 Breakdown
 
+- **Default:** `No breakdown` (a single series), as in Kibana; an explicit `bd` URL parameter wins.
 - **Interaction:** `No breakdown ⌄` opens a searchable list of aggregatable fields (incl. `_index`, `_ignored`). Choosing one turns the label into `Breakdown by host.name` and stacks bars by its top values. A legend appears on the right.
 - **Legend:** click an item isolates it (others shown with an eye-slash icon, y-axis rescales); Ctrl+click hides it. Hover shows ⋮ → popover titled with the value: `Filter for`, `Filter out`.
 - **Also reachable from:** field popover 📊 icon (DISC-SIDEBAR-02).
@@ -127,6 +135,7 @@ Discover is a three-region page: field sidebar (left, \~295 px, resizable and co
 - **Display options:** Sample size (rows fetched, default 500), Density Compact / Normal / Expanded, Max header cell lines Auto / Custom, Body cell lines Auto / Custom (default 3).
 - **Keyboard:** arrows move cells; Home/End row edges; Ctrl+Home/End page edges; PgUp/PgDn change page; Enter opens cell details; Esc closes.
 - **Grafana:** Logs panel and Table panel cover parts; missing: summary column with match-first ordering, sample-size control, per-cell actions.
+- **Observe (PARITY-GRID):** a non-time sort is tie-broken by the time field, newest first (`ORDER BY <col> <dir>, <time> DESC`). The field list keeps a 200 px minimum and the grid scrolls sideways inside its own area when columns don't fit; the message column keeps a readable minimum (~18em). Columns resize by dragging the header's right edge (or ←/→ on the focused handle, double-click resets); widths live in the column state (URL `cols[].width`, saved searches), clamped to 60–1200 px and never reach SQL or re-run a query. A cell's action bar on the first row opens below the cell so it never covers the header.
 
 ### DISC-TABLE-02 Cell actions
 
@@ -139,6 +148,7 @@ Discover is a three-region page: field sidebar (left, \~295 px, resizable and co
 
 - **Trigger:** hover header → ⋮; header also shows drag handle and type icon. Columns resize by dragging the border.
 - **Menu:** Remove column, Sort A-Z, Sort Z-A, Move left, Move right, Copy name, Copy column (all values), Edit data view field.
+- **Observe (PARITY-GRID):** the header name is a button that opens the menu (it no longer sorts on click): `Sort ascending`, `Sort descending`, `Move left`, `Move right`, `Reset width` (resized columns), `Copy name`, `Remove column` (not on core columns). Drag handle on the header body reorders; the right edge resizes. Not built: Copy column, Edit data view field. A field a core column already shows (Body under `Message`) can't be added again; its field-list entry says `shown as the Message column`.
 
 ### DISC-DOC-01 Document detail flyout
 
@@ -147,6 +157,7 @@ Discover is a three-region page: field sidebar (left, \~295 px, resizable and co
 - **Tabs:** `Table` and `JSON`.
 - **Table tab:** search `Search field names or values` + type filter; toggles `Selected only` and `Hide null fields`; rows = type icon · field · value; 25 rows per page. Hover a row → 📌 Pin field (pinned rows stick to the top across documents). Value cell actions: filter for, filter out, copy, expand. Field-name cell actions: `Filter for field present`, `Toggle column in table`, plus the field description popover.
 - **Grafana:** Logs panel row details has a subset (filter for/out, show stats). Missing: pinning, selected-only, next/prev navigation, push layout.
+- **Observe (PARITY-GRID):** navigation covers every loaded row (`51 of 200`), fetching the next chunk when stepping past the last loaded one, and the grid follows to the document's page; ←/→ step documents, Escape closes; focus moves into the panel on open and back to the row's button on close. Default width 55 % of the results area (min 400 px), resizable with the splitter; field names wrap at the dots; the toolbar wraps so the search box is never cut. JSON shows the time as ISO 8601. `View single document` opens `doc/<dataViewId>/<ns>_<id>` (the surrounding-documents anchor: epoch-ns timestamp + row-id hash), a permalink page with the same panel; a filter there returns to Discover with it.
 
 ### DISC-DOC-02 Surrounding documents
 
@@ -154,6 +165,7 @@ Discover is a three-region page: field sidebar (left, \~295 px, resizable and co
 - **Behaviour:** title `Documents surrounding #<id>`; anchor row highlighted in pale yellow; `Load [5] newer documents` above and `Load [5] older documents` below (number editable). Query is dropped and existing filters are carried over but automatically **disabled** (struck-through pills) so neighbours from all sources show. Columns are kept.
 - **Data:** two searches sorted by `@timestamp` asc/desc with `search_after` from the anchor's sort values, size N.
 - **Grafana:** Loki “Show context” exists for logs; missing for Elasticsearch and as a generic pattern.
+- **Observe (PARITY-GRID):** the anchor row keeps its own colour on any zebra stripe (plus an accent bar); rows are compact one-liners and the page scrolls (no inner scroll box); after `Load newer` the anchor is scrolled back into view; an `Add filter` button sits next to the pills; the detail panel is sticky and resizable.
 
 ### DISC-PATTERNS-01 Log pattern analysis
 
@@ -184,5 +196,7 @@ Discover is a three-region page: field sidebar (left, \~295 px, resizable and co
 
 - **Save:** split button; secondary menu `Save as`, `Reset changes`.
 - **Share:** modal `Share this Discover session`, toggle `Use absolute time range` (explains relative semantics), warning `You have unsaved changes` and `Copy link`.
+- **Built (PARITY-DASHBOARDS):** `Copy link` copies a Grafana short link (`POST /api/short-urls` with the path relative to Grafana's root → `/goto/<uid>`), toggle `Short link` (on by default); while it loads, or if Grafana refuses it, the full link is used. Only a same-origin `/goto/` URL from the response is shown. The saved-search menu button is `Saved searches` (secondary, folder icon, caret, `aria-expanded`) with no tooltip, so nothing covers `+ Save current`.
+- **Add to dashboard (PARITY-DASHBOARDS):** panel titles are editable (`Logs table panel title`, `Volume histogram panel title`; defaults `Logs`, `Log volume`), checkbox labels sit next to their boxes, a new dashboard opens on Discover's time range (relative strings kept, else ISO; an existing dashboard keeps its own range, as Kibana stores time only when asked), a title used by another dashboard is flagged while typing and Grafana's name conflict is explained. The logs table runs the grid projection and keeps Discover's columns in Discover's order with Discover's names (`Time`, `Level`, `Service`, `Message`, user columns), narrow core columns get fixed widths, the message wraps, and the footer counts the rows shown. It stays a table, not Grafana's `logs` panel, which shows one text line per row and hides the other fields behind a details toggle. The panel keeps Discover's search on its target (`observeDiscover`: `q`, `filters`, `cols`, `sort`, `ds`, `interval`, `bd`) and the panel menu gets `Extensions → Open in Discover` (opens Discover with that search and the dashboard's time; the stored value is untrusted, filtered to those parameters, capped at 16,000 characters, decoded like any shared link). The volume legend shows the level (`error`), not `count error`. `$` inside string literals in both panels' SQL is written `$`, so Grafana never interpolates a searched value as a variable.
 - **Overflow ⋮:** Open session, New session, Background searches, Export tab results (CSV), Inspect tab (requests, responses, timing), Create alert rule (from current query).
 - **Grafana:** share and query inspector exist; missing: alert rule from an exploratory query in one click, CSV of all hits.

@@ -10,6 +10,94 @@ Versions track the plugin's release history. `Unreleased` collects commits not y
 
 ---
 
+## [0.51.0] — 2026-11-19
+
+### Added
+
+- **Visualize XY tooltip (Kibana parity).** Hovering a Bar / Line / Area chart shows a crosshair and a tooltip with every series at that X (time header `Jan 5, 2026 @ 09:00`, colour, name, value with thousands separators), the series under the pointer highlighted; focusing a bar or point with the keyboard shows it too.
+- **Legend colour picker.** The legend ⋮ menu has a colour palette and `Reset color`; the choice is kept in the chart state (URL, draft, saved chart) and does not re-run the query.
+
+### Changed
+
+- **Stable series colours.** A breakdown value keeps its colour across chart types and click-filters (colour by value, not by position).
+- **Legend and stack order** follow the Top values rank (count descending by default), with Other / (missing) last.
+- **Value axis** ends on a nice tick (a 140 peak → 0–140 by 20 instead of 0–200) and count axes never show fractional ticks.
+- **Time axis** ticks fall on round times with the date under the first tick; no automatic "Timestamp" axis title; partial first / last buckets are shaded.
+- **Lines** are drawn without a dot on every point (dots on hover, focus or isolated points).
+- **Numbers** in the XY chart use thousands separators (`9,264` instead of `9.3K`); axes abbreviate only from a million.
+- **Line has no sub-type** (Kibana Line never stacks): the Stacked / Percentage / Unstacked control is hidden for Line, which always draws unstacked; old links with line + stacked still load.
+- **Chart type switch** keeps the previous chart on screen until the new one is ready (no blank frame).
+
+### Fixed
+
+- Brushing a time range now also works when the drag starts on a bar; a click without movement still opens the filter chooser.
+- Line charts with a Percentage sub-type kept from Bar / Area no longer draw percentages (chart, `panelSpec` and dashboard export).
+
+---
+
+## [0.50.0] — 2026-11-19
+
+### Added
+- **Save and return (Visualize).** Edit in Visualize from a dashboard panel now opens Visualize with `Cancel` (back to the dashboard unchanged), `Save as new` and `Save and return`. Save and return keeps the panel's title and description in the dialog, replaces that panel in place (same id, position and size) and returns to the dashboard on the time range it had. If someone saved the dashboard in between, the save is refused with a clear message instead of overwriting their change.
+- **Open in Discover.** Logs panels added from Discover have `Extensions → Open in Discover` in the panel menu: Discover reopens with the panel's query, filters, columns, data view and the dashboard's time range.
+- **Share in Visualize.** A `Share` button in the Visualize toolbar opens the same dialog as Discover's (absolute / relative time, Copy link).
+- **Short links.** Copy link in Discover and Visualize copies a Grafana short link (`/goto/…`), with a `Short link` switch; the full link is used if shortening fails.
+- **Add to dashboard: panel titles.** The Discover dialog lets you title the logs table and the volume histogram.
+
+### Changed
+- **Discover → Add to dashboard opens on Discover's time range** (it used to open on "Last 1 hour", so both panels showed No data). An existing dashboard keeps its own range.
+- **The exported logs table shows Discover's columns** in Discover's order and names (Time, Level, Service, Message, …), with the message wrapping and a row count in the footer, instead of every raw column.
+- **Duplicate dashboard titles** are flagged in the Add to dashboard dialog while typing, and Grafana's name conflict (and other save errors) are explained in the dialogs instead of a raw error.
+- **Legends of saved charts** show the breakdown value (`payments`) instead of `m0 payments`, and the volume panel shows `error` instead of `count error`.
+- **Saved time-series count charts no longer draw lines across empty buckets**: empty buckets are 0, as in Visualize with Include empty rows.
+- **The `Saved` button is now `Saved searches`** (secondary, folder icon, caret) and has no tooltip covering the menu's `Save current`.
+
+### Fixed
+- Add to dashboard checkbox labels were centred away from their boxes.
+- `$` in a search value inside Discover's exported panels could be interpolated by Grafana as a dashboard variable.
+
+---
+
+## [0.49.0] — 2026-11-19
+
+### Added
+- **Column resize (PARITY-GRID).** Drag a column header's right edge (or focus the handle and use ←/→; double-click resets). Widths are kept with the columns in the URL and saved searches and never re-run the query. Dragging the header body still reorders.
+- **Column header menu.** Clicking a header name opens a menu like Kibana's: Sort ascending, Sort descending, Move left, Move right, Reset width, Copy name, Remove column (the small ‹ › × icons are gone).
+- **View single document.** The document panel links to `doc/<dataViewId>/<docId>`, a permalink page showing that one document (same identity as surrounding documents); filtering from it returns to Discover with the filter.
+- **Add filter on Surrounding documents.**
+
+### Changed
+- **Document panel navigation covers every loaded row** (`51 of 200`, not `1 of 50`), fetching more when stepping past the last loaded row; the grid follows to the document's page. ←/→ step between documents, Escape closes the panel, focus moves into the panel and back to the row. "First / Last log on this page" are now "First log" / "Last log".
+- **Wider document panel** (55 % by default, at least 400 px, still resizable); field names wrap at the dots; the panel toolbar wraps so the search box is never cut; JSON shows the time as ISO 8601.
+- **Field popover:** filter for / out buttons are always visible on every value, with a bar gauge; "sample records" only when the 5,000-row sample is full; Map keys can be added as a column in one click from the key list; the drilled key's back link sits inside the popover and long names wrap.
+- **Surrounding documents:** the anchor row stays highlighted on any zebra stripe; dense rows with page scroll; the anchor stays in view after Load newer; the detail panel is sticky and resizable.
+
+### Fixed
+- Adding columns no longer collapses the field list to one-letter names or clips the grid and pager on the right; the grid scrolls sideways inside its own area and the message column keeps a readable width.
+- Sorting by a column keeps time order (newest first) among equal values.
+- The Body field can no longer be added as a second column while the Message column shows Body (its field-list entry says so).
+- The cell action bar on the first row no longer covers the column header.
+
+---
+
+## [0.48.0] — 2026-11-19
+
+### Changed
+- **Discover auto-refresh is off by default** (Kibana: paused). It used to start at 30 s, re-running the search every 30 seconds even on an absolute past window. A chosen interval is kept in the URL (`refresh=1m`) and restored from links.
+- **Histogram starts with "No breakdown"** (Kibana's default; it used to break down by severity). `bd=severity` or a field breakdown in the URL still applies.
+- **Finer auto histogram intervals:** 7 days now buckets at 3 hours (56 bars, as Kibana) instead of 6 hours; 15-minute and 12-hour steps added. Visualize's automatic date histogram uses the same steps, so it changes the same way.
+- **Too-fine intervals are scaled, not disabled:** Second / Minute / Hour / Day are always selectable. When an interval would make more than 1,000 bars it is scaled to the finest round interval that fits, and the caption shows `(interval: Minute, scaled to 15 minutes)` with a `⚠ Scaled to 15 minutes` notice (Kibana: "scaled to 10 minutes").
+- **Histogram axis:** ticks on round times (every 30 minutes, every hour, midnight …) spaced so labels never collide; 7-day ranges read `1st … 7th` with `January 2026` (Kibana), sub-day ranges `HH:mm` with the date under the first tick and each new day, multi-month ranges `Jan 2026`.
+- **Partial buckets** (only partly inside the time range) are drawn faded on a grey band, with a tooltip note.
+
+### Fixed
+- **Histogram brush snapped inward to whole buckets** (a 4.8 h → 14.4 h drag became 06:00 → 12:00) and a drag inside one bucket gave `from == to` and an empty result. The brush now uses the exact dragged times (whole seconds, at least one second or one pixel wide) and the new range is re-bucketed. A click zooms to the clicked bucket (start → end) instead of a half-bucket window around its start.
+- **Row count one short of every other count** (2,160 vs Kibana's and the field popover's 2,161 for 08:00–12:00): the histogram dropped the bucket starting exactly at the range end, which holds rows at `to` (the range includes its end).
+- **The histogram's two-line first axis label overlapped the `N rows (count)` caption** (document panel open, or 0 rows): the axis row grows to two lines when needed.
+- **A malformed `bd` URL parameter was ignored silently while the URL kept it:** `bd=field:ServiceName` (no `col:` prefix) now resolves to the column and the URL is rewritten to `field:col:ServiceName`; an unknown field or junk value is dropped from the URL.
+
+---
+
 ## [0.47.0] — 2026-11-19
 
 ### Added

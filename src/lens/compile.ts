@@ -29,6 +29,7 @@ import { isConvertedTimestamp, timeExpr } from '../sql/timeExpr';
 import {
   bucketStartSql,
   dashboardBucketSql,
+  dashboardFillSql,
   intervalMs as ivMs,
   LensInterval,
   parseInterval,
@@ -445,9 +446,7 @@ export function compileLens(
     const coarse = coarsePrunePredicate(config);
     const windows = [
       `(${timeCond})`,
-      ...shifts.map(
-        (sp) => `(${ts} >= $__fromTime - ${chInterval(sp)} AND ${ts} <= $__toTime - ${chInterval(sp)})`
-      ),
+      ...shifts.map((sp) => `(${ts} >= $__fromTime - ${chInterval(sp)} AND ${ts} <= $__toTime - ${chInterval(sp)})`),
     ];
     outer = [
       ...conditions.filter((c) => c !== timeCond && c !== coarse),
@@ -461,7 +460,14 @@ export function compileLens(
   );
   const first = state.buckets[0];
   let orderBy: string | null = null;
-  if (first?.kind === 'date_histogram' || first?.kind === 'range' || first?.kind === 'filters') {
+  if (first?.kind === 'date_histogram' && mode === 'dashboard' && fillsEmptyBuckets(state)) {
+    // Saved panels, Include empty rows: ClickHouse returns no row for an empty bucket, so Grafana
+    // would draw a line straight across the gap. Fill the buckets with zero counts (as Visualize
+    // does), per breakdown value: the other group columns lead, so WITH FILL fills within each.
+    const rest = groupBy.filter((g) => g !== bucketAlias(0));
+    const fill = dashboardFillSql(parseInterval(first.interval), !first.unbound);
+    orderBy = `ORDER BY ${[...rest, `${bucketAlias(0)} ${fill}`].join(', ')}`;
+  } else if (first?.kind === 'date_histogram' || first?.kind === 'range' || first?.kind === 'filters') {
     orderBy = `ORDER BY ${groupBy.join(', ')}`;
   } else if (first) {
     // Ordered by the chosen rank; the synthetic Other / (missing) rows always come last.
@@ -497,6 +503,21 @@ export function compileLens(
     configSettingsFragments(config)
   );
   return { sql, intervalMs, interval };
+}
+
+/**
+ * Whether a saved panel gap-fills its date buckets: Include empty rows on (the default) and only
+ * count metrics, the series Visualize itself draws as zero for an empty bucket (other metrics have
+ * no value there, and a filled 0 would be wrong).
+ */
+export function fillsEmptyBuckets(state: LensState): boolean {
+  const x = state.buckets[0];
+  return (
+    x?.kind === 'date_histogram' &&
+    x.emptyRows !== false &&
+    state.metrics.length > 0 &&
+    state.metrics.every((m) => m.op === 'count')
+  );
 }
 
 /**
@@ -833,5 +854,70 @@ export function shapeLensRows(
   ]);
   const xLabels = xs.map((v) => (xIsTime ? String(v) : (xInfo.get(v)?.label ?? String(v))));
   const xSynthetic = xs.map((v) => xInfo.get(v)?.synthetic ?? false);
-  return { xs, xLabels, xSynthetic, xIsTime, series: [...seriesMap.values()], table: { columns, rows: tableRows } };
+  return {
+    xs,
+    xLabels,
+    xSynthetic,
+    xIsTime,
+    series: orderSeries(state, [...seriesMap.values()]),
+    table: { columns, rows: tableRows },
+  };
+}
+
+/**
+ * Legend / stack order of a Top values breakdown, as in Kibana: by the rank (count total
+ * descending by default; the rank metric's total for "Custom metric"; alphabetical for
+ * "Alphabetical"; ascending when the rank direction is), with the synthetic "Other" / "(missing)"
+ * series last. Several metrics per breakdown value stay together, in metric order. Other
+ * breakdowns keep the query's order.
+ */
+export function orderSeries(state: LensState, series: LensSeries[]): LensSeries[] {
+  const b = state.buckets[1];
+  if (b?.kind !== 'terms' || series.length < 2) {
+    return series;
+  }
+  const dir = rankDirOf(b) === 'asc' ? 1 : -1;
+  const rankIdx =
+    b.rankBy === 'metric'
+      ? Math.max(
+          0,
+          state.metrics.findIndex((m) => m.id === b.rankMetric)
+        )
+      : 0;
+  // One group per breakdown value (its display label, the part every series of the value shares).
+  const groupOf = (s: LensSeries) => `${s.synthetic ? '1' : '0'}${s.breakdown ?? ''}`;
+  const totals = new Map<string, number>();
+  const firstSeen = new Map<string, number>();
+  series.forEach((s, i) => {
+    const g = groupOf(s);
+    if (!firstSeen.has(g)) {
+      firstSeen.set(g, i);
+    }
+    if (s.metricIndex === rankIdx) {
+      let t = 0;
+      s.points.forEach((v) => (t += v));
+      totals.set(g, t);
+    }
+  });
+  return series
+    .map((s, i) => ({ s, i, g: groupOf(s) }))
+    .sort((p, q) => {
+      if (!!p.s.synthetic !== !!q.s.synthetic) {
+        return p.s.synthetic ? 1 : -1;
+      }
+      if (p.g !== q.g && !p.s.synthetic) {
+        const byRank =
+          b.rankBy === 'alpha'
+            ? dir * (p.s.breakdown ?? '').localeCompare(q.s.breakdown ?? '')
+            : dir * ((totals.get(p.g) ?? 0) - (totals.get(q.g) ?? 0));
+        if (byRank !== 0) {
+          return byRank;
+        }
+      }
+      if (p.g !== q.g) {
+        return (firstSeen.get(p.g) ?? 0) - (firstSeen.get(q.g) ?? 0);
+      }
+      return p.s.metricIndex - q.s.metricIndex || p.i - q.i;
+    })
+    .map((x) => x.s);
 }

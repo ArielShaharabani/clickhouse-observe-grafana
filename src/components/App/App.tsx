@@ -32,6 +32,7 @@ const LensPage = React.lazy(() => import('../../lens/LensPage').then((m) => ({ d
 
 // Surrounding documents (DISC-DOC-02), reached from the detail panel.
 const ContextView = React.lazy(() => import('../../pages/ContextView').then((m) => ({ default: m.ContextView })));
+const SingleDocView = React.lazy(() => import('../../pages/SingleDocView').then((m) => ({ default: m.SingleDocView })));
 
 // Discover with its session tabs (DISC-NAV-01) wrapping LogsExplorer.
 const LogsExplorer = React.lazy(() =>
@@ -264,6 +265,7 @@ function AppRoutes() {
     <Routes>
       <Route path="logs" element={<LogsExplorer />} />
       <Route path="context/:viewId/:anchor" element={<ContextView />} />
+      <Route path="doc/:viewId/:anchor" element={<SingleDocView />} />
       <Route
         path="visualize"
         element={

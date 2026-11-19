@@ -45,6 +45,29 @@ export function defaultColumns(config: SourceConfig): SelectedColumn[] {
   return [...core, ...pinned];
 }
 
+/** Column width bounds (px) for header resizing. */
+export const MIN_COLUMN_WIDTH = 60;
+export const MAX_COLUMN_WIDTH = 1200;
+
+/** A valid width from untrusted input (URL, saved search, drag), or undefined (automatic). */
+export function clampColumnWidth(raw: unknown): number | undefined {
+  if (typeof raw !== 'number' || !Number.isFinite(raw)) {
+    return undefined;
+  }
+  return Math.round(Math.min(MAX_COLUMN_WIDTH, Math.max(MIN_COLUMN_WIDTH, raw)));
+}
+
+/** Columns without their display widths — what queries depend on. */
+export function stripColumnWidths(cols: SelectedColumn[]): SelectedColumn[] {
+  return cols.map((c) => {
+    if (c.width === undefined) {
+      return c;
+    }
+    const { width: _width, ...rest } = c;
+    return rest;
+  });
+}
+
 const COLUMN_TYPES: readonly ColumnType[] = [
   'time',
   'level',
@@ -68,8 +91,8 @@ const COLUMN_TYPES: readonly ColumnType[] = [
  * - otherwise its expression must be a plain column reference (isSafeColumnExpr: identifier, Map
  *   accessor or dotted path), and with `fields` given it must also name something discovered
  *   (a field's expression, or a key of a discovered Map column — Map keys are found on demand).
- * The SELECT alias is always regenerated from the id (makeColumnKey), the type checked, and the
- * display name kept only as text. Anything that does not resolve is dropped, as are duplicates.
+ * The SELECT alias is always regenerated from the id (makeColumnKey), the type checked, the
+ * display name kept only as text and a display width only as a clamped number. Anything that does not resolve is dropped, as are duplicates.
  * Returns [] when nothing survives (callers then use the view's default columns).
  */
 export function sanitizeColumns(raw: unknown, config: SourceConfig, fields?: FieldModel[]): SelectedColumn[] {
@@ -96,7 +119,9 @@ export function sanitizeColumns(raw: unknown, config: SourceConfig, fields?: Fie
         : ((config.pinnedColumns ?? []).find((p) => p.id === col.id) ?? exprColumn(col, fields));
     }
     if (trusted && !out.some((c) => c.id === trusted!.id || c.key === trusted!.key)) {
-      out.push(trusted);
+      // The width is display-only and the one field kept from the untrusted entry (clamped).
+      const width = clampColumnWidth(col.width);
+      out.push(width === undefined ? trusted : { ...trusted, width });
     }
   }
   return out;

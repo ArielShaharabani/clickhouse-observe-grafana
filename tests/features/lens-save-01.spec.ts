@@ -88,7 +88,7 @@ test('unsaved chart survives opening Visualize without it (session draft)', asyn
   const viz = new VisualizePage(page);
   await viz.open();
   await viz.addField('ServiceName');
-  await expect(viz.chart.getByRole('button', { name: /^payments · Count of records: 9\.3K$/ })).toBeVisible();
+  await expect(viz.chart.getByRole('button', { name: /^payments · Count of records: 9,264$/ })).toBeVisible();
 
   await viz.open(); // no `lens` in the URL
   await expect(viz.group('Horizontal axis')).toContainText('Top 9 values of ServiceName');

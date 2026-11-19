@@ -90,7 +90,8 @@ test('IT-D: Filter by time (bucket menu) narrows to the bucket and keeps an expl
   await expect.poll(() => urlParams(page).get('to')).toBe(String(FIXTURE.from + 86_400_000));
   expect(urlParams(page).get('from')).toBe(String(FIXTURE.from));
   expect(urlParams(page).get('interval')).toBe('day');
-  await logs.expectRowCount(5760);
+  // Inclusive end (as in Kibana): the day's 5,760 rows plus the row at exactly the next midnight.
+  await logs.expectRowCount(5761);
   await expect(page.getByTestId('time-duration-badge')).toHaveText('~1d');
 });
 

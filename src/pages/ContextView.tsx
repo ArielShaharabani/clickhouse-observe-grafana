@@ -19,11 +19,14 @@ import { FieldsContext, useFieldDiscovery } from '../components/FieldsContext';
 import { FilterPills } from '../components/FilterPills';
 import { LogsTable } from '../components/LogsTable';
 import { LogDetailDrawer } from '../components/LogDetailDrawer';
+import { AddFilterPopover } from '../components/AddFilter/AddFilterPopover';
+import { GridDisplay } from '../components/GridDisplayOptions';
 import { useAutocompleteSources } from '../autocomplete/service';
 import { decodeLogsState, encodeLogsState } from '../data/urlState';
 import { runQueryRows } from '../data/runQuery';
 import {
   buildContextUrl,
+  buildSingleDocUrl,
   contextColumns,
   discoverReturnUrl,
   parseAnchorParam,
@@ -36,6 +39,9 @@ import { buildLogDetailQuery, buildSurroundingDocsQuery, ContextAnchor, MAX_CONT
 import { tableKey } from '../state/sharedSearch';
 import { errMsg } from '../errMsg';
 import { DEFAULT_LOGS_QUERY_STATE, FilterPill, LogRow, SelectedColumn, SourceConfig } from '../types';
+
+/** Dense one-line rows (Kibana's context view): many neighbours fit on screen. */
+const CONTEXT_DISPLAY: GridDisplay = { density: 'compact', bodyLines: 1 };
 
 /** Kibana's default number of surrounding documents per side, and of each "Load" step. */
 export const DEFAULT_CONTEXT_STEP = 5;
@@ -179,6 +185,7 @@ interface SurroundingGridProps {
   timeRange: TimeRange;
   onAddFilter: (pill: FilterPill) => void;
   onReanchor: (row: LogRow) => void;
+  onViewSingleDocument: (row: LogRow) => void;
 }
 
 /**
@@ -198,8 +205,10 @@ function SurroundingGrid({
   timeRange,
   onAddFilter,
   onReanchor,
+  onViewSingleDocument,
 }: SurroundingGridProps) {
   const styles = useStyles2(getStyles);
+  const gridRef = useRef<HTMLDivElement>(null);
   // Requested neighbours per side and the editable "Load [N]" steps.
   const [newerSize, setNewerSize] = useState(DEFAULT_CONTEXT_STEP);
   const [olderSize, setOlderSize] = useState(DEFAULT_CONTEXT_STEP);
@@ -261,6 +270,17 @@ function SurroundingGrid({
         : { row: selectedRow };
 
   const selectedIndex = selectedRow ? rows.indexOf(selectedRow) : -1;
+  // Keep the anchor in view: when it first appears and whenever newer rows are added above it
+  // (the page scrolls; without this "Load newer" pushes the anchor off screen).
+  const newerCount = newerQ.rows.length;
+  const hasAnchor = Boolean(anchorRow);
+  useEffect(() => {
+    if (!hasAnchor) {
+      return;
+    }
+    const el = gridRef.current?.querySelector<HTMLElement>('[data-anchor="true"]');
+    el?.scrollIntoView?.({ block: 'center' });
+  }, [hasAnchor, newerCount]);
   const error = anchorQ.error ?? newerQ.error ?? olderQ.error;
 
   if (error) {
@@ -285,11 +305,12 @@ function SurroundingGrid({
           requested={newerSize}
           loading={newerQ.loading}
         />
-        <div className={styles.grid}>
+        <div className={styles.grid} ref={gridRef}>
           <LogsTable
             rows={rows}
             loading={anchorQ.loading && rows.length === 0}
             columns={columns}
+            display={CONTEXT_DISPLAY}
             anchorRow={anchorRow}
             selectedRow={selectedRow}
             onRowClick={(row) => setSelectedRow((cur) => (cur === row ? null : row))}
@@ -327,6 +348,7 @@ function SurroundingGrid({
             }
             navLabel={selectedIndex >= 0 ? `${selectedIndex + 1} of ${rows.length}` : undefined}
             onViewSurrounding={selectedRow === anchorRow ? undefined : () => onReanchor(selectedRow)}
+            onViewSingleDocument={() => onViewSingleDocument(selectedRow)}
           />
         </div>
       )}
@@ -408,6 +430,21 @@ export function ContextView() {
     [config, timeRange, viewId, filters, urlState.columns, ret]
   );
 
+  const viewSingleDocument = useCallback(
+    async (row: LogRow) => {
+      try {
+        const doc = await resolveContextAnchor(config, row, timeRange);
+        if (!doc) {
+          throw new Error('This document could not be found again.');
+        }
+        locationService.push(buildSingleDocUrl({ viewId, anchor: doc, timeRange, ret: ret ?? '' }));
+      } catch (e) {
+        getAppEvents().publish({ type: AppEvents.alertError.name, payload: [`Could not open the document: ${errMsg(e)}`] });
+      }
+    },
+    [config, timeRange, viewId, ret]
+  );
+
   let body: React.ReactNode;
   if (!anchor) {
     body = <Alert title="Invalid document link">The link does not name a document.</Alert>;
@@ -433,6 +470,7 @@ export function ContextView() {
         timeRange={timeRange}
         onAddFilter={addFilter}
         onReanchor={reanchor}
+        onViewSingleDocument={viewSingleDocument}
       />
     );
   }
@@ -450,12 +488,15 @@ export function ContextView() {
           </nav>
           <h2 className={styles.title}>{anchor ? `Documents surrounding #${anchor.id}` : 'Surrounding documents'}</h2>
           {anchor && viewExists && (
-            <FilterPills
-              filters={filters}
-              onChange={setFilters}
-              loadValues={loadValues}
-              pinTable={tableKey(config.database, config.logsTable)}
-            />
+            <div className={styles.filterRow}>
+              <AddFilterPopover loadValues={loadValues} onAddFilter={addFilter} />
+              <FilterPills
+                filters={filters}
+                onChange={setFilters}
+                loadValues={loadValues}
+                pinTable={tableKey(config.database, config.logsTable)}
+              />
+            </div>
           )}
           {body}
         </div>
@@ -465,12 +506,18 @@ export function ContextView() {
 }
 
 const getStyles = (theme: GrafanaTheme2) => ({
+  /** The page scrolls (not a short inner box), so many neighbours are visible at once. */
   page: css`
     display: flex;
     flex-direction: column;
     gap: ${theme.spacing(1)};
-    height: calc(100vh - 120px);
     min-height: 480px;
+  `,
+  filterRow: css`
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: ${theme.spacing(1)};
   `,
   breadcrumb: css`
     display: flex;
@@ -485,9 +532,8 @@ const getStyles = (theme: GrafanaTheme2) => ({
   `,
   split: css`
     display: flex;
+    align-items: flex-start;
     gap: ${theme.spacing(1)};
-    flex: 1;
-    min-height: 0;
   `,
   gridColumn: css`
     display: flex;
@@ -495,19 +541,25 @@ const getStyles = (theme: GrafanaTheme2) => ({
     gap: ${theme.spacing(1)};
     flex: 1;
     min-width: 0;
-    min-height: 0;
   `,
   grid: css`
-    flex: 1;
-    min-height: 0;
-    overflow: auto;
+    min-width: 0;
   `,
+  /** Stays in view while the page scrolls; resizable by its left edge. */
   drawer: css`
-    width: 540px;
-    max-width: 50%;
+    position: sticky;
+    top: ${theme.spacing(1)};
+    width: 640px;
+    min-width: 400px;
+    max-width: 60%;
+    height: calc(100vh - 140px);
     flex-shrink: 0;
     overflow: auto;
-    border-left: 1px solid ${theme.colors.border.weak};
+    resize: horizontal;
+    direction: rtl;
+    & > * {
+      direction: ltr;
+    }
   `,
   loadMore: css`
     display: flex;

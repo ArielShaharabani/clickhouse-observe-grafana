@@ -36,17 +36,17 @@ test('fields used from the list appear under Popular fields, remembered across r
   await expect(page.getByRole('region', { name: 'Popular fields' })).toHaveCount(0);
 
   // Row actions show on hover.
-  await page.getByRole('region', { name: 'Available fields' }).getByTitle('ServiceName', { exact: true }).hover();
-  await page.getByRole('button', { name: 'Add ServiceName as column' }).click();
+  await page.getByRole('region', { name: 'Available fields' }).getByTitle('TraceId', { exact: true }).hover();
+  await page.getByRole('button', { name: 'Add TraceId as column' }).click();
   const selected = page.getByRole('region', { name: 'Selected fields' });
-  await expect(selected.getByTitle('ServiceName', { exact: true })).toBeVisible();
-  await selected.getByTitle('ServiceName', { exact: true }).hover();
-  await page.getByRole('button', { name: 'Remove ServiceName column' }).click();
+  await expect(selected.getByTitle('TraceId', { exact: true })).toBeVisible();
+  await selected.getByTitle('TraceId', { exact: true }).hover();
+  await page.getByRole('button', { name: 'Remove TraceId column' }).click();
 
   const popular = page.getByRole('region', { name: 'Popular fields' });
-  await expect(popular.getByTitle('ServiceName', { exact: true })).toBeVisible();
+  await expect(popular.getByTitle('TraceId', { exact: true })).toBeVisible();
   await page.reload();
-  await expect(page.getByRole('region', { name: 'Popular fields' }).getByTitle('ServiceName', { exact: true })).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Popular fields' }).getByTitle('TraceId', { exact: true })).toBeVisible();
 });
 
 test('groups collapse and expand', async ({ page }) => {

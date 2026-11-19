@@ -45,11 +45,11 @@ const mapField: FieldModel = {
   source: 'column',
 };
 
-function renderPopover(field: FieldModel, onSelectKey: (f: FieldModel) => void) {
+function renderPopover(field: FieldModel, onSelectKey: (f: FieldModel) => void, onAddColumn?: (f: FieldModel) => void) {
   return render(
     <SourceConfigContext.Provider value={config}>
       <FieldsContext.Provider value={{ fields: [], loading: false, error: null, refresh: () => {} }}>
-        <FieldKeysPopover field={field} queryState={queryState} timeRange={timeRange} onSelectKey={onSelectKey} />
+        <FieldKeysPopover field={field} queryState={queryState} timeRange={timeRange} onSelectKey={onSelectKey} onAddColumn={onAddColumn} />
       </FieldsContext.Provider>
     </SourceConfigContext.Provider>
   );
@@ -87,7 +87,8 @@ describe('FieldKeysPopover', () => {
     renderPopover(mapField, jest.fn());
     await waitFor(() => expect(screen.getByText('http.method')).toBeInTheDocument());
     expect(screen.getByText('http.status_code')).toBeInTheDocument();
-    expect(screen.getByText(/discovered from 42 sample records/i)).toBeInTheDocument();
+    // PARITY-GRID: fewer rows than the sample size means every row was read — no "sample" wording.
+    expect(screen.getByText('Discovered from 42 records.')).toBeInTheDocument();
   });
 
   it('clicking a Map key calls onSelectKey with the discovery id/sqlExpr scheme', async () => {
@@ -106,4 +107,16 @@ describe('FieldKeysPopover', () => {
     );
   });
 
+
+  it('adds a key as a column in one click (PARITY-GRID)', async () => {
+    mockRunQueryRows.mockResolvedValue([{ k: 'http.method', total: 500 }]);
+    const onAddColumn = jest.fn();
+    const onSelectKey = jest.fn();
+    renderPopover(mapField, onSelectKey, onAddColumn);
+    const add = await screen.findByRole('button', { name: 'Add LogAttributes.http.method as column' });
+    add.click();
+    expect(onAddColumn).toHaveBeenCalledWith(expect.objectContaining({ sqlExpr: "LogAttributes['http.method']" }));
+    expect(onSelectKey).not.toHaveBeenCalled();
+    expect(screen.getByText('Discovered from 500 sample records.')).toBeInTheDocument();
+  });
 });

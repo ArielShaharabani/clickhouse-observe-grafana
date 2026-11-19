@@ -61,12 +61,15 @@ export function panelSpec(state: LensState, result: LensResult): PanelSpec {
 }
 
 function basePanelSpec(state: LensState, result: LensResult): PanelSpec {
+  // Line has no stacking (Kibana); a sub-type kept from Bar / Area doesn't apply to it.
   const stacking =
-    state.subType === 'percentage'
-      ? 'percent'
-      : state.subType === 'stacked' && state.chartType !== 'line'
-        ? 'normal'
-        : 'none';
+    state.chartType === 'line'
+      ? 'none'
+      : state.subType === 'percentage'
+        ? 'percent'
+        : state.subType === 'stacked'
+          ? 'normal'
+          : 'none';
   switch (state.chartType) {
     case 'line':
     case 'area':
@@ -160,6 +163,8 @@ interface Props {
   onLegendFilter?: (seriesIndex: number, mode: 'for' | 'out') => void;
   /** Computed reference values and query annotation events (LENS-LAYER-01). */
   layerData?: LayerData;
+  /** Legend ⋮ → colour (XY charts); undefined resets the series to its automatic colour. */
+  onSeriesColor?: (seriesName: string, color: string | undefined) => void;
 }
 
 export function LensChart({
@@ -171,6 +176,7 @@ export function LensChart({
   onSelect,
   onLegendFilter,
   layerData,
+  onSeriesColor,
 }: Props) {
   if (state.chartType === 'bar' || state.chartType === 'line' || state.chartType === 'area') {
     // Custom-drawn so one click can filter (PanelRenderer has no point-click callback).
@@ -188,6 +194,8 @@ export function LensChart({
           style={state.style}
           axisTitles={autoAxisTitles(state)}
           layers={state.layers ? resolveLayers(state.layers, layerData) : undefined}
+          timeRange={timeRange ? { from: timeRange.from.valueOf(), to: timeRange.to.valueOf() } : undefined}
+          onSeriesColor={onSeriesColor}
         />
       </div>
     );

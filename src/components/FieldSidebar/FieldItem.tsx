@@ -21,6 +21,8 @@ interface FieldItemProps {
   onAddFilter: (f: FilterPill) => void;
   onSetBreakdown?: (field: FieldModel) => void;
   onVisualize?: (field: FieldModel) => void;
+  /** sqlExpr → display name of the core grid column already showing that expression. */
+  coreShownAs?: Map<string, string>;
 }
 
 export function FieldItem({
@@ -32,7 +34,10 @@ export function FieldItem({
   onAddFilter,
   onSetBreakdown,
   onVisualize,
+  coreShownAs,
 }: FieldItemProps) {
+  // e.g. the Body field while the core "Message" column shows Body: adding it would duplicate it.
+  const shownAs = isSelected ? undefined : coreShownAs?.get(field.sqlExpr);
   const styles = useStyles2(getStyles);
   const theme = useTheme2();
   const [popoverOpen, setPopoverOpen] = useState(false);
@@ -55,7 +60,7 @@ export function FieldItem({
   const openPopover = () => {
     if (rowRef.current) {
       const rect = rowRef.current.getBoundingClientRect();
-      const POPOVER_W = 308;
+      const POPOVER_W = 348;
       const POPOVER_H = 400; // conservative estimate
 
       // Prefer right of field row; flip left if it would overflow viewport
@@ -135,14 +140,25 @@ export function FieldItem({
               <Icon name={a.icon} size="xs" />
             </button>
           ))}
-          <button
-            className={`${styles.actionBtn} ${isSelected ? styles.actionBtnActive : ''}`}
-            title={isSelected ? 'Remove from table' : 'Add field as column'}
-            aria-label={isSelected ? `Remove ${field.displayName} column` : `Add ${field.displayName} as column`}
-            onClick={(e) => { e.stopPropagation(); onToggleColumn(field); }}
-          >
-            <Icon name={isSelected ? 'minus' : 'plus'} size="xs" />
-          </button>
+          {shownAs ? (
+            <span
+              className={`${styles.actionBtn} ${styles.actionBtnActive}`}
+              title={`Already shown as the ${shownAs} column`}
+              aria-label={`${field.displayName} is shown as the ${shownAs} column`}
+              role="img"
+            >
+              <Icon name="check" size="xs" />
+            </span>
+          ) : (
+            <button
+              className={`${styles.actionBtn} ${isSelected ? styles.actionBtnActive : ''}`}
+              title={isSelected ? 'Remove from table' : 'Add field as column'}
+              aria-label={isSelected ? `Remove ${field.displayName} column` : `Add ${field.displayName} as column`}
+              onClick={(e) => { e.stopPropagation(); onToggleColumn(field); }}
+            >
+              <Icon name={isSelected ? 'minus' : 'plus'} size="xs" />
+            </button>
+          )}
         </div>
       </div>
 
@@ -168,14 +184,18 @@ export function FieldItem({
                   queryState={queryState}
                   timeRange={timeRange}
                   onSelectKey={setDrillField}
+                  onAddColumn={(leaf) => {
+                    onToggleColumn(leaf);
+                    setPopoverOpen(false);
+                  }}
                 />
               )}
               {isKeyBrowsable && drillField && (
                 <>
-                  <button className={styles.backBtn} onClick={() => setDrillField(null)}>
-                    <Icon name="angle-left" size="xs" /> {field.displayName}
-                  </button>
+                  {/* The back link lives inside the panel (it used to float above it, drawn over
+                      the grid as a stray label). */}
                   <FieldStatsPopover
+                    back={{ label: field.displayName, onBack: () => setDrillField(null) }}
                     field={drillField}
                     queryState={queryState}
                     timeRange={timeRange}
@@ -257,24 +277,6 @@ const getStyles = (theme: GrafanaTheme2) => ({
     min-width: 0;
     text-align: left;
     cursor: pointer;
-  `,
-  backBtn: css`
-    display: flex;
-    align-items: center;
-    gap: 2px;
-    margin-bottom: ${theme.spacing(0.5)};
-    padding: 2px 4px;
-    background: transparent;
-    border: none;
-    border-radius: ${theme.shape.radius.default};
-    cursor: pointer;
-    color: ${theme.colors.text.secondary};
-    font-size: 13px;
-    font-family: ${theme.typography.fontFamilyMonospace};
-    &:hover {
-      color: ${theme.colors.text.primary};
-      background: ${theme.colors.action.hover};
-    }
   `,
   row: css`
     position: relative;

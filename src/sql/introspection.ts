@@ -76,12 +76,15 @@ export interface KeyDiscoveryOpts {
  * still take a while to fill the sample), even though the LIMIT-bounded subquery is now the main
  * cost control.
  */
+/** Rows the sidebar's Map key browse samples (the most recent matching rows). */
+export const MAP_KEYS_SAMPLE_SIZE = 500;
+
 export function buildMapKeysQuery(
   config: SourceConfig,
   mapColumn: string,
   opts: KeyDiscoveryOpts
 ): string {
-  const { table, conditions, sampleSize = 500 } = opts;
+  const { table, conditions, sampleSize = MAP_KEYS_SAMPLE_SIZE } = opts;
   const tbl = `"${config.database}"."${table}"`;
   const tsCol = timeExpr(config);
   const condClause = conditions.length > 0 ? `  WHERE ${conditions.join(' AND ')}` : null;

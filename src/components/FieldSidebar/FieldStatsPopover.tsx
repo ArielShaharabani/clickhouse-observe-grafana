@@ -23,6 +23,7 @@ import { FilterPill, LogsQueryState, SourceConfig } from '../../types';
 import { errMsg } from '../../errMsg';
 import { SourceConfigContext } from '../App/App';
 import { useFields } from '../FieldsContext';
+import { breakAtDots } from '../../utils/breakAtDots';
 
 interface TopValue {
   value: string;
@@ -48,6 +49,12 @@ function toValuesOpts(config: SourceConfig, queryState: LogsQueryState, timeRang
 /** Rows the popover's statistics are computed from (spec DISC-SIDEBAR-02: 5,000 sample records). */
 export const STATS_SAMPLE_SIZE = 5000;
 
+/** "Calculated from N sample records." only when the sample cap was reached; fewer rows means
+ *  every matching row was used, so the caption says so ("N records"). */
+export function sampleCaption(verb: string, n: number, sampleSize: number): string {
+  return `${verb} from ${n.toLocaleString()} ${n >= sampleSize ? 'sample records' : n === 1 ? 'record' : 'records'}.`;
+}
+
 type StatsView = 'top' | 'distribution';
 
 const formatNum = (n: number) =>
@@ -64,6 +71,8 @@ interface FieldStatsPopoverProps {
   onSetBreakdown?: (field: FieldModel) => void;
   /** Open this field on the Visualize page (LENS hand-off); absent = no Visualize button. */
   onVisualize?: (field: FieldModel) => void;
+  /** A drilled Map key: back to the key list of `label` (rendered inside the panel). */
+  back?: { label: string; onBack: () => void };
 }
 
 export function FieldStatsPopover({
@@ -75,6 +84,7 @@ export function FieldStatsPopover({
   isSelected,
   onSetBreakdown,
   onVisualize,
+  back,
 }: FieldStatsPopoverProps) {
   const styles = useStyles2(getStyles);
   const theme = useTheme2();
@@ -193,7 +203,13 @@ export function FieldStatsPopover({
 
   return (
     <div className={styles.panel}>
-      {/* Header: type icon + field name */}
+      {back && (
+        <button type="button" className={styles.backBtn} onClick={back.onBack} aria-label={`Back to ${back.label} keys`}>
+          <Icon name="angle-left" size="xs" />
+          <span className={styles.backLabel}>{back.label}</span>
+        </button>
+      )}
+      {/* Header: type icon + field name (wraps at dots instead of truncating) */}
       <div className={styles.header}>
         <div className={styles.headerLeft}>
           <Icon
@@ -202,7 +218,9 @@ export function FieldStatsPopover({
             className={styles.headerIcon}
             style={{ color: fieldTypeColor(theme, field.type) }}
           />
-          <span className={styles.fieldName}>{field.displayName}</span>
+          <span className={styles.fieldName} title={field.displayName}>
+            {breakAtDots(field.displayName)}
+          </span>
         </div>
         {headerActions.map((a) => (
           <ActionIconButton key={a.id} action={a} />
@@ -250,34 +268,33 @@ export function FieldStatsPopover({
         !loading &&
         !error &&
         values.map((v) => (
-          <div key={v.value} className={styles.row} title={`${v.count.toLocaleString()} records`}>
-            {/* % bar background */}
-            <div className={styles.barBg} style={{ width: `${Math.max(2, v.pct)}%` }} />
-
-            {/* Value text */}
-            <span className={styles.value}>{v.value || '(empty)'}</span>
-
-            {/* Percentage */}
-            <span className={styles.pct}>{v.pct.toFixed(1)}%</span>
-
-            {/* Filter buttons — revealed on row hover via CSS */}
-            <div className={`${styles.filterBtns} field-filter-btns`}>
-              {valueActions(
-                { field: field.sqlExpr, value: v.value },
-                { addFilter: onAddFilter, copyText: copyToClipboard },
-                ['filterFor', 'filterOut']
-              ).map((a) => (
-                <button key={a.id} className={styles.filterBtn} title={a.ariaLabel} aria-label={a.ariaLabel} onClick={a.run}>
-                  <Icon name={a.icon} size="xs" />
-                </button>
-              ))}
+          // Kibana layout: value, percentage and always-visible (+)/(−) filter buttons, with a bar
+          // gauge of the share underneath.
+          <div key={v.value} className={styles.valueRow} title={`${v.count.toLocaleString()} records`} data-testid="top-value-row">
+            <div className={styles.row}>
+              <span className={styles.value}>{v.value || '(empty)'}</span>
+              <span className={styles.pct}>{v.pct.toFixed(1)}%</span>
+              <div className={styles.filterBtns}>
+                {valueActions(
+                  { field: field.sqlExpr, value: v.value },
+                  { addFilter: onAddFilter, copyText: copyToClipboard },
+                  ['filterFor', 'filterOut']
+                ).map((a) => (
+                  <button key={a.id} className={styles.filterBtn} title={a.ariaLabel} aria-label={a.ariaLabel} onClick={a.run}>
+                    <Icon name={a.id === 'filterFor' ? 'plus-circle' : 'minus-circle'} size="sm" />
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className={styles.gauge} aria-hidden="true">
+              <div className={styles.gaugeFill} style={{ width: `${Math.max(1, v.pct)}%` }} />
             </div>
           </div>
         ))}
 
       {/* "Calculated from N records" caption */}
       {view === 'top' && !loading && !error && total > 0 && (
-        <div className={styles.caption}>Calculated from {total.toLocaleString()} sample records.</div>
+        <div className={styles.caption}>{sampleCaption('Calculated', total, STATS_SAMPLE_SIZE)}</div>
       )}
     </div>
   );
@@ -322,7 +339,7 @@ function NumericDistribution({
           <span className={styles.pct}>{b.count.toLocaleString()}</span>
         </div>
       ))}
-      <div className={styles.caption}>Calculated from {stats.count.toLocaleString()} sample records.</div>
+      <div className={styles.caption}>{sampleCaption('Calculated', stats.count, STATS_SAMPLE_SIZE)}</div>
     </div>
   );
 }
@@ -340,7 +357,7 @@ const getStyles = (theme: GrafanaTheme2) => ({
     margin: ${theme.spacing(0.5, 0)};
   `,
   panel: css`
-    width: 300px;
+    width: 340px;
     padding: ${theme.spacing(1.5)};
     background: ${theme.colors.background.primary};
     border: 1px solid ${theme.colors.border.medium};
@@ -350,16 +367,41 @@ const getStyles = (theme: GrafanaTheme2) => ({
   `,
   header: css`
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     justify-content: space-between;
     gap: ${theme.spacing(1)};
     margin-bottom: 2px;
   `,
   headerLeft: css`
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     gap: ${theme.spacing(0.5)};
+    min-width: 0;
+    flex: 1;
+  `,
+  backBtn: css`
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    max-width: 100%;
+    margin-bottom: ${theme.spacing(0.5)};
+    padding: 2px 4px;
+    background: transparent;
+    border: none;
+    border-radius: ${theme.shape.radius.default};
+    cursor: pointer;
+    color: ${theme.colors.text.secondary};
+    font-size: 13px;
+    font-family: ${theme.typography.fontFamilyMonospace};
+    &:hover {
+      color: ${theme.colors.text.primary};
+      background: ${theme.colors.action.hover};
+    }
+  `,
+  backLabel: css`
     overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   `,
   headerIcon: css`
     flex-shrink: 0;
@@ -367,9 +409,8 @@ const getStyles = (theme: GrafanaTheme2) => ({
   fieldName: css`
     font-weight: ${theme.typography.fontWeightMedium};
     color: ${theme.colors.text.primary};
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    min-width: 0;
+    overflow-wrap: break-word;
     font-family: ${theme.typography.fontFamilyMonospace};
   `,
   colBtn: css`
@@ -429,10 +470,19 @@ const getStyles = (theme: GrafanaTheme2) => ({
     padding: 3px 0;
     overflow: hidden;
     border-radius: 2px;
-
-    &:hover .field-filter-btns {
-      opacity: 1;
-    }
+  `,
+  valueRow: css`
+    padding-bottom: ${theme.spacing(0.5)};
+  `,
+  gauge: css`
+    height: 4px;
+    border-radius: 2px;
+    background: ${theme.colors.background.secondary};
+    overflow: hidden;
+  `,
+  gaugeFill: css`
+    height: 100%;
+    background: ${theme.colors.primary.main};
   `,
   barBg: css`
     position: absolute;
@@ -468,21 +518,22 @@ const getStyles = (theme: GrafanaTheme2) => ({
     position: relative;
     z-index: 1;
     display: flex;
-    gap: 1px;
-    opacity: 0;
-    transition: opacity 0.1s;
+    gap: 2px;
     flex-shrink: 0;
   `,
   filterBtn: css`
     background: transparent;
     border: none;
+    border-radius: ${theme.shape.radius.default};
     cursor: pointer;
-    padding: 0 2px;
+    padding: 2px;
     color: ${theme.colors.text.secondary};
     display: flex;
     align-items: center;
-    &:hover {
+    &:hover,
+    &:focus-visible {
       color: ${theme.colors.text.primary};
+      background: ${theme.colors.action.hover};
     }
   `,
   caption: css`

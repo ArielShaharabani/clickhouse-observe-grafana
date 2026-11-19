@@ -82,5 +82,7 @@ export function autoAxisTitles(state: LensState): { left: string; bottom: string
   const on = (sd: 'left' | 'right') =>
     labels.filter((_l, i) => (state.metrics[i].axis === 'right' ? 'right' : 'left') === sd).join(', ');
   const x = state.buckets[0];
-  return { left: on('left'), right: on('right'), bottom: x ? dimLabelIn(x, state.metrics) : '' };
+  // A time axis has no automatic title (Kibana: the dates are in the tick labels); Custom still applies.
+  const bottom = !x || x.kind === 'date_histogram' ? '' : dimLabelIn(x, state.metrics);
+  return { left: on('left'), right: on('right'), bottom };
 }

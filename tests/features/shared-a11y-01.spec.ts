@@ -17,12 +17,12 @@ test('field Preview button: Enter opens the field dialog, Escape closes it and f
   await logs.expectRowCount(FIXTURE.counts.total);
   const preview = page
     .getByRole('region', { name: 'Available fields' })
-    .getByRole('button', { name: /^Preview ServiceName: / });
+    .getByRole('button', { name: /^Preview TraceId: / });
   await preview.focus();
   // The row's actions show while the row has keyboard focus, with specific names.
-  await expect(page.getByRole('button', { name: 'Add ServiceName as column' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Add TraceId as column' })).toBeVisible();
   await page.keyboard.press('Enter');
-  const dialog = page.getByRole('dialog', { name: 'ServiceName', exact: true });
+  const dialog = page.getByRole('dialog', { name: 'TraceId', exact: true });
   await expect(dialog).toBeVisible();
   await expect(dialog).toHaveAccessibleDescription(HINT);
   await page.keyboard.press('Escape');

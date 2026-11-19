@@ -38,7 +38,8 @@ test('right-click a bucket: Filter by time zooms to that bucket', async ({ page 
   const box = (await svg.boundingBox())!;
   await svg.click({ button: 'right', position: { x: 2, y: box.height - 4 } });
   await page.getByRole('dialog', { name: 'Bucket actions' }).getByRole('button', { name: 'Filter by time' }).click();
-  // First daily bucket of the fixture (2026-01-01 UTC): 1/7 of the base rows.
+  // First daily bucket of the fixture (2026-01-01 UTC): 1/7 of the base rows, plus the row at
+  // exactly 2026-01-02 00:00:00 — the range end is inclusive, as in Kibana (PARITY-HISTOGRAM).
   await expect.poll(() => new URL(page.url()).searchParams.get('to')).toBe(String(FIXTURE.from + 86_400_000));
-  await logs.expectRowCount(5760);
+  await logs.expectRowCount(5761);
 });
