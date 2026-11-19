@@ -55,9 +55,17 @@ export interface LensStyle {
   bottom?: AxisStyle;
   right?: AxisStyle;
   legend?: LegendStyle;
+  /**
+   * Series colours chosen from the legend menu, by series name (breakdown value or metric label);
+   * `#rrggbb` only. They win over the metric's own colour and the stable automatic colour.
+   */
+  colors?: Record<string, string>;
 }
 
 export const MAX_AXIS_TITLE = 120;
+/** At most this many legend colour choices survive the URL; longer series names are dropped. */
+export const MAX_SERIES_COLORS = 50;
+export const MAX_SERIES_COLOR_KEY = 200;
 export const OUTSIDE_ALIGNMENTS: LegendAlignment[] = ['right', 'left', 'top', 'bottom'];
 export const INSIDE_ALIGNMENTS: LegendAlignment[] = ['top-right', 'top-left', 'bottom-right', 'bottom-left'];
 
@@ -127,6 +135,38 @@ function cleanLegend(x: unknown): LegendStyle | undefined {
   });
 }
 
+/** Legend colour choices: string keys up to 200 characters → `#rrggbb`, at most 50 (the rest dropped). */
+export function cleanSeriesColors(x: unknown): Record<string, string> | undefined {
+  if (!x || typeof x !== 'object' || Array.isArray(x)) {
+    return undefined;
+  }
+  const entries = Object.entries(x as Record<string, unknown>)
+    .filter(([k, v]) => k.length <= MAX_SERIES_COLOR_KEY && typeof v === 'string' && /^#[0-9a-fA-F]{6}$/.test(v))
+    .slice(0, MAX_SERIES_COLORS)
+    .map(([k, v]) => [k, (v as string).toLowerCase()] as const);
+  // fromEntries defines own properties, so a "__proto__" key is just a key.
+  return entries.length ? Object.fromEntries(entries) : undefined;
+}
+
+/** The colour chosen for a series in the legend, if any (own keys only). */
+export function seriesColorOf(style: LensStyle | undefined, name: string): string | undefined {
+  const c = style?.colors;
+  return c && Object.prototype.hasOwnProperty.call(c, name) ? c[name] : undefined;
+}
+
+/** A copy of the style with a series colour set (or removed with `undefined`), kept clean. */
+export function withSeriesColor(
+  style: LensStyle | undefined,
+  name: string,
+  color: string | undefined
+): LensStyle | undefined {
+  const colors: Record<string, string> = { ...(style?.colors ?? {}) };
+  delete colors[name];
+  // The newest choice first, so it survives the cap.
+  const next = color ? { [name]: color, ...colors } : colors;
+  return cleanStyle({ ...(style ?? {}), colors: next });
+}
+
 /** Untrusted input (URL / saved chart) → a well-formed style, or undefined when nothing is set. */
 export function cleanStyle(x: unknown): LensStyle | undefined {
   if (!x || typeof x !== 'object' || Array.isArray(x)) {
@@ -140,6 +180,7 @@ export function cleanStyle(x: unknown): LensStyle | undefined {
     bottom: cleanAxis(s.bottom, false),
     right: cleanAxis(s.right, true),
     legend: cleanLegend(s.legend),
+    colors: cleanSeriesColors(s.colors),
   });
 }
 
@@ -213,16 +254,49 @@ export function niceCeil(v: number): number {
   return (n <= 1 ? 1 : n <= 2 ? 2 : n <= 5 ? 5 : 10) * p;
 }
 
+/** Default number of value-axis ticks aimed for (the step is rounded to 1 / 2 / 5 × 10^n). */
+export const TICK_COUNT = 5;
+
+/**
+ * Tick step for a value range (d3's tickIncrement): span / count rounded to 1, 2, 5 or 10 × 10^n,
+ * as Kibana / Elastic Charts do (0–140 → 20, 0–500 → 100). `integer` (counts) never steps below 1.
+ */
+export function tickStep(lo: number, hi: number, count = TICK_COUNT, integer = false): number {
+  const span = Math.abs(hi - lo);
+  if (!(span > 0) || !Number.isFinite(span)) {
+    return 1;
+  }
+  const raw = span / Math.max(1, count);
+  const p = Math.pow(10, Math.floor(Math.log10(raw)));
+  const e = raw / p;
+  const step = (e >= Math.sqrt(50) ? 10 : e >= Math.sqrt(10) ? 5 : e >= Math.SQRT2 ? 2 : 1) * p;
+  return integer ? Math.max(1, step) : step;
+}
+
+/** Rounds away float noise (0.1 + 0.2) at a step's precision. */
+const atStep = (v: number, step: number) => {
+  const d = Math.max(0, -Math.floor(Math.log10(step)) + 1);
+  return +v.toFixed(Math.min(d, 15));
+};
+
+export interface TickOptions {
+  /** Ticks aimed for (default 5; fewer on a short plot). */
+  count?: number;
+  /** All values are whole numbers (counts): no fractional ticks. */
+  integer?: boolean;
+}
+
 /**
  * Value-axis domain from the data's min / max: Full includes 0, Data hugs the data, Custom uses the
  * given min / max (falling back to the data). Log scales need a positive lower bound. `nice` rounds
- * outward to 1 / 2 / 5 × 10^n (powers of ten for log).
+ * outward to the next tick step (powers of ten for log): a 140 peak gives 0–140 with steps of 20.
  */
 export function valueDomain(
   dataMin: number,
   dataMax: number,
   a: Pick<AxisStyle, 'bounds' | 'min' | 'max' | 'nice' | 'scale'>,
-  percentage = false
+  percentage = false,
+  opts: TickOptions = {}
 ): [number, number] {
   if (percentage) {
     return [dataMin < 0 ? -100 : 0, 100];
@@ -249,19 +323,18 @@ export function valueDomain(
     hi = lo + 1;
   }
   if (nice && bounds !== 'custom') {
-    hi = hi > 0 ? niceCeil(hi) : hi;
-    lo = lo < 0 ? -niceCeil(-lo) : bounds === 'data' && lo > 0 ? niceFloor(lo) : lo;
+    // Two passes: rounding outward can change the span enough to change the step.
+    for (let k = 0; k < 2; k++) {
+      const step = tickStep(lo, hi, opts.count, opts.integer);
+      hi = atStep(Math.ceil(hi / step - 1e-9) * step, step);
+      lo = lo < 0 || (bounds === 'data' && lo > 0) ? atStep(Math.floor(lo / step + 1e-9) * step, step) : lo;
+    }
   }
   return [lo, hi];
 }
 
-function niceFloor(v: number): number {
-  const p = Math.pow(10, Math.floor(Math.log10(v)));
-  return Math.floor(v / p) * p;
-}
-
-/** Tick values for a value axis: powers of ten for log, five even steps otherwise (in scale space). */
-export function valueTicks(lo: number, hi: number, scale: AxisScale): number[] {
+/** Tick values for a value axis: powers of ten for log, nice even steps otherwise (in scale space for sqrt). */
+export function valueTicks(lo: number, hi: number, scale: AxisScale, opts: TickOptions = {}): number[] {
   if (scale === 'log' && lo > 0) {
     const out: number[] = [];
     for (let e = Math.ceil(Math.log10(lo) - 1e-9); e <= Math.floor(Math.log10(hi) + 1e-9) && out.length < 12; e++) {
@@ -275,5 +348,10 @@ export function valueTicks(lo: number, hi: number, scale: AxisScale): number[] {
     const [a, b] = [t(lo), t(hi)];
     return [0, 0.25, 0.5, 0.75, 1].map((f) => inv(a + (b - a) * f));
   }
-  return [0, 0.25, 0.5, 0.75, 1].map((f) => lo + (hi - lo) * f);
+  const step = tickStep(lo, hi, opts.count, opts.integer);
+  const out: number[] = [];
+  for (let v = Math.ceil(lo / step - 1e-9) * step; v <= hi + step * 1e-9 && out.length < 50; v += step) {
+    out.push(atStep(v, step));
+  }
+  return out.length >= 2 ? out : [lo, hi];
 }

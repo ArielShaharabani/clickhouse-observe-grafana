@@ -15,7 +15,7 @@ test('single dimension: one click on a bar adds its filter and re-runs; Discover
   await viz.chart.getByRole('button', { name: /^payments · Count of records: / }).click();
   await expect(filterBar(page).getByRole('button', { name: /^Filter actions: ServiceName = payments/ })).toBeVisible();
   await expect(viz.chart.getByRole('button', { name: /^checkout · / })).toHaveCount(0);
-  await expect(viz.chart.getByRole('button', { name: /^payments · Count of records: 9\.3K$/ })).toBeVisible();
+  await expect(viz.chart.getByRole('button', { name: /^payments · Count of records: 9,264$/ })).toBeVisible();
 
   // Same URL on Discover: the pill is there and the count matches.
   const url = page.url().replace('/visualize?', '/logs?');
@@ -37,7 +37,7 @@ test('stacked segment: "Select filters to apply" with both values ticked; untick
   await dialog.getByRole('button', { name: 'Apply' }).click();
   await expect(filterBar(page).getByRole('button', { name: /^Filter actions: SeverityText = error/ })).toBeVisible();
   await expect(filterBar(page).getByRole('button', { name: /^Filter actions: ServiceName/ })).toHaveCount(0);
-  await expect(viz.chart.getByRole('button', { name: /^payments · error: 1\.6K$/ })).toBeVisible(); // 1,575
+  await expect(viz.chart.getByRole('button', { name: /^payments · error: 1,575$/ })).toBeVisible();
   await expect(viz.chart.getByRole('button', { name: /· info: / })).toHaveCount(0);
 });
 

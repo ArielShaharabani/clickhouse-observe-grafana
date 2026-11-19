@@ -25,7 +25,7 @@ test('IT-G: field popover Visualize opens the field chart with the same search c
   await expect(viz.group('Horizontal axis')).toContainText('Top 9 values of SeverityText');
   await expect(viz.group('Vertical axis')).toContainText('Count of records');
   // The query still applies: payments' errors only (1,575).
-  await expect(viz.chart.getByRole('button', { name: /^error · Count of records: 1\.6K$/ })).toBeVisible();
+  await expect(viz.chart.getByRole('button', { name: /^error · Count of records: 1,575$/ })).toBeVisible();
   const after = new URL(page.url()).searchParams;
   for (const k of KEEP) {
     expect(after.get(k)).toBe(before.get(k));

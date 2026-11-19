@@ -2,7 +2,9 @@
  * Custom-drawn XY chart for Lens bar / line / area (spec LENS-INTERACT-01; blueprint "Lens
  * rendering decision": PanelRenderer has no one-click "point clicked" callback, so the XY types are
  * drawn here). One click on a bar segment or point reports {x, series}; dragging across a time axis
- * reports a time range; legend items toggle visibility and offer Filter for / Filter out.
+ * reports a time range (also when the drag starts on a bar); legend items toggle visibility and offer
+ * Filter for / Filter out and a series colour. Hovering (or focusing a mark) shows a crosshair
+ * tooltip with every series at that X (Kibana parity).
  */
 import React, { useEffect, useId, useRef, useState } from 'react';
 import { css, cx } from '@emotion/css';
@@ -20,11 +22,15 @@ import {
   legendVisible,
   LensStyle,
   scalePos,
+  seriesColorOf,
   tickRotation,
+  TICK_COUNT,
   valueDomain,
   valueTicks,
 } from '../style';
 import { dashArray, ResolvedEvent, ResolvedLine } from '../layers';
+import { assignColorSlots, seriesColorKey } from './seriesColors';
+import { timeTicks, tooltipTime } from './timeTicks';
 
 export interface XySelection {
   xIndex: number;
@@ -51,6 +57,10 @@ interface Props {
   axisTitles?: { left: string; bottom: string; right: string };
   /** Reference lines and annotation events to draw (LENS-LAYER-01, resolved by `resolveLayers`). */
   layers?: { lines: ResolvedLine[]; events: ResolvedEvent[] };
+  /** The query's time range (ms): buckets it covers only in part are shaded. */
+  timeRange?: { from: number; to: number };
+  /** Legend ⋮ → colour: a `#rrggbb`, or undefined to go back to the automatic colour. */
+  onSeriesColor?: (seriesName: string, color: string | undefined) => void;
 }
 
 /** A series' value at x: missing → 0 for counts, null (gap) otherwise. */
@@ -62,12 +72,35 @@ function pointValue(s: LensResult['series'][number], x: string | number): number
 const M = { top: 8, right: 8, bottom: 28, left: 52 };
 const HEIGHT_MIN = 200;
 
-const fmt = (v: number) =>
-  Math.abs(v) >= 1e6
-    ? `${+(v / 1e6).toFixed(2)}M`
-    : Math.abs(v) >= 1e3
-      ? `${+(v / 1e3).toFixed(1)}K`
-      : `${+v.toFixed(2)}`;
+const grouped3 = new Intl.NumberFormat('en-US', { maximumFractionDigits: 3 });
+/** A value as Kibana's default number format shows it (`0,0.[000]`): thousands separators, no abbreviation. */
+export const formatNumber = (v: number): string => (Number.isFinite(v) ? grouped3.format(v) : String(v));
+/** An axis tick: separators, abbreviated only from a million up (1,000 · 25,000 · 1.5M). */
+export const formatAxisNumber = (v: number): string => {
+  const a = Math.abs(v);
+  if (a >= 1e12) {
+    return `${grouped3.format(+(v / 1e12).toFixed(2))}T`;
+  }
+  if (a >= 1e9) {
+    return `${+(v / 1e9).toFixed(2)}B`;
+  }
+  if (a >= 1e6) {
+    return `${+(v / 1e6).toFixed(2)}M`;
+  }
+  return formatNumber(v);
+};
+const fmt = formatNumber;
+
+/**
+ * A brushed range in whole seconds, rounded outward and at least 1 s wide: the datasource's
+ * `$__fromTime` / `$__toTime` macros work in seconds, so milliseconds would be truncated in SQL.
+ * (Same rule as the Discover histogram's `brushRange`; to be de-duplicated when both land.)
+ */
+export function brushSeconds(from: number, to: number): [number, number] {
+  const a = Math.floor(Math.min(from, to) / 1000) * 1000;
+  const b = Math.max(a + 1000, Math.ceil(Math.max(from, to) / 1000) * 1000);
+  return [a, b];
+}
 
 /** Text of X position `xi`: the display label of a category (Other / (missing) included), else the time. */
 export function xText(result: LensResult, xi: number, spanMs: number): string {
@@ -141,6 +174,8 @@ export function XyChart({
   style,
   axisTitles,
   layers,
+  timeRange,
+  onSeriesColor,
 }: Props) {
   const styles = useStyles2(getStyles);
   const theme = useTheme2();
@@ -154,6 +189,10 @@ export function XyChart({
   // Removes an in-flight brush's window listeners (also on unmount mid-drag).
   const stopBrush = useRef<(() => void) | null>(null);
   useEffect(() => () => stopBrush.current?.(), []);
+  // A drag that brushed ends with a click on whatever is under the pointer: swallow that one click.
+  const suppressClick = useRef(false);
+  // Crosshair tooltip: the hovered (or focused) X position and series, and where to show it.
+  const [hover, setHover] = useState<{ xi: number; si: number | null; px: number; py: number } | null>(null);
 
   useEffect(() => {
     const el = boxRef.current;
@@ -169,17 +208,34 @@ export function XyChart({
 
   const palette = theme.visualization.palette;
   const metricOf = (si: number): MetricDim | undefined => metrics?.[result.series[si]?.metricIndex];
-  // A metric's own colour applies when the series is the metric itself (no breakdown value).
-  const color = (i: number) => {
+  const hasBreakdown = result.series.some((s) => s.breakdown !== undefined);
+  // Colours: a legend choice, else the metric's own colour (a series that is the metric itself),
+  // else a breakdown value's stable colour (by value, not position), else the metric's position.
+  const slots = hasBreakdown ? assignColorSlots(result.series.map(seriesColorKey), palette.length) : [];
+  const colors = result.series.map((s, i) => {
+    const picked = seriesColorOf(style, s.name);
+    if (picked) {
+      return picked;
+    }
     const own = metricOf(i)?.color;
-    return own && result.series[i]?.breakdown === undefined
-      ? own
-      : theme.visualization.getColorByName(palette[i % palette.length]);
-  };
+    if (own && s.breakdown === undefined) {
+      return own;
+    }
+    return theme.visualization.getColorByName(palette[(hasBreakdown ? slots[i] : i) % palette.length]);
+  });
+  const color = (i: number) => colors[i];
   const fmtOf = (si: number, v: number) => formatValue(v, metricOf(si)?.format, fmt);
+  const axisFmtOf = (si: number, v: number) => formatValue(v, metricOf(si)?.format, formatAxisNumber);
   const visible = result.series.map((s) => !hidden.has(s.name));
+  // Line has no stacking (as in Kibana): a sub-type kept from Bar / Area doesn't change it.
   const mode: 'stacked' | 'percentage' | 'none' =
-    subType === 'percentage' ? 'percentage' : chartType === 'line' || subType === 'unstacked' ? 'none' : 'stacked';
+    chartType === 'line'
+      ? 'none'
+      : subType === 'percentage'
+        ? 'percentage'
+        : subType === 'unstacked'
+          ? 'none'
+          : 'stacked';
   // Horizontal bars (Style → Bar orientation): categories run down the left, values along the bottom.
   const horizontal = chartType === 'bar' && style?.orientation === 'horizontal';
   // Axis side: a right axis for metrics set to Right (unstacked vertical charts; stacks share one axis).
@@ -219,8 +275,6 @@ export function XyChart({
     const vals = refLines.filter((l) => lineSide(l) === sd).map((l) => l.value);
     return percent || vals.length === 0 ? [min, max] : [Math.min(min, ...vals), Math.max(max, ...vals)];
   };
-  const [lo, hi] = valueDomain(...extent('left', stacked.left.min, stacked.left.max), ax.left, percent);
-  const [loR, hiR] = valueDomain(...extent('right', stacked.right.min, stacked.right.max), ax.right, percent);
   const leftScale = percent ? 'linear' : ax.left.scale;
   const rightScale = percent ? 'linear' : ax.right.scale;
 
@@ -228,7 +282,19 @@ export function XyChart({
   const catRot = tickRotation(ax.bottom.orientation);
   const valRot = tickRotation(ax.left.orientation);
   const TITLE = 18;
-  const catTicksDepth = !ax.bottom.ticks ? 8 : horizontal ? 96 : catRot === 0 ? 28 : catRot === -45 ? 56 : 76;
+  // A time axis (vertical charts) has round-time ticks with the date on a second row.
+  const timeAxis = result.xIsTime && !horizontal && result.xs.length > 0;
+  const catTicksDepth = !ax.bottom.ticks
+    ? 8
+    : horizontal
+      ? 96
+      : catRot === 0
+        ? timeAxis
+          ? 40
+          : 28
+        : catRot === -45
+          ? 56
+          : 76;
   const valTicksDepth = !ax.left.ticks ? 8 : horizontal ? (valRot === 0 ? 28 : 56) : 52;
   const m = horizontal
     ? {
@@ -248,6 +314,26 @@ export function XyChart({
   const H = Math.max(size.h, HEIGHT_MIN);
   const plotW = Math.max(1, W - m.left - m.right);
   const plotH = Math.max(1, H - m.top - m.bottom);
+  // Value axes: nice bounds and ticks (0–140 by 20, 0–500 by 100); whole numbers only for counts.
+  const valueLen = horizontal ? plotW : plotH;
+  const allInts = (sd: 'left' | 'right') =>
+    result.series.every((s, si) => sides[si] !== sd || [...s.points.values()].every((v) => Number.isInteger(v)));
+  const tickOpts = (sd: 'left' | 'right') => ({
+    count: Math.max(2, Math.min(TICK_COUNT, Math.floor(valueLen / (horizontal ? 90 : 50)))),
+    integer: !percent && allInts(sd),
+  });
+  const [lo, hi] = valueDomain(
+    ...extent('left', stacked.left.min, stacked.left.max),
+    ax.left,
+    percent,
+    tickOpts('left')
+  );
+  const [loR, hiR] = valueDomain(
+    ...extent('right', stacked.right.min, stacked.right.max),
+    ax.right,
+    percent,
+    tickOpts('right')
+  );
   // Value → pixel along the value axis (y for vertical charts, x for horizontal bars).
   const vPos = (v: number, a: number, b: number, sc: AxisScale) =>
     horizontal ? m.left + scalePos(v, a, b, sc) * plotW : m.top + plotH - scalePos(v, a, b, sc) * plotH;
@@ -255,7 +341,7 @@ export function XyChart({
   const yR = (v: number) => vPos(v, loR, hiR, rightScale);
   const ys = (si: number) => (sides[si] === 'right' ? yR : y);
   const leftFmt = (v: number) =>
-    percent ? `${Math.round(v)}%` : firstOn('left') >= 0 ? fmtOf(firstOn('left'), v) : fmt(v);
+    percent ? `${Math.round(v)}%` : firstOn('left') >= 0 ? axisFmtOf(firstOn('left'), v) : formatAxisNumber(v);
   const n = Math.max(1, result.xs.length);
   const catLen = horizontal ? plotH : plotW;
   const band = catLen / n;
@@ -270,6 +356,11 @@ export function XyChart({
 
   const select = (e: React.MouseEvent | React.KeyboardEvent, xIndex: number, seriesIndex: number) => {
     e.stopPropagation();
+    if (suppressClick.current) {
+      // The click that ends a brush drag is not a click on a mark.
+      suppressClick.current = false;
+      return;
+    }
     const r = (e.currentTarget as Element).getBoundingClientRect();
     onSelect?.({
       xIndex,
@@ -281,22 +372,37 @@ export function XyChart({
   const itemLabel = (xi: number, si: number) =>
     `${xText(result, xi, spanMs)} · ${result.series[si].name}: ${fmtOf(si, pointValue(result.series[si], result.xs[xi]) ?? 0)}`;
 
-  // Brush (time X on a vertical chart only): drag across the plot to pick a range.
+  // Brush (time X on a vertical chart only): drag across the plot — from empty space or from a bar —
+  // to pick a range. A press without movement stays a click (the mark's filter chooser).
   const brushable = result.xIsTime && !!onBrush && !horizontal;
   const pxToTime = (px: number) => {
     const t0 = Number(result.xs[0]);
     const tEnd = Number(result.xs[result.xs.length - 1]) + (bucketMs ?? 0);
     return t0 + ((px - m.left) / plotW) * (tEnd - t0);
   };
-  const onDown = (e: React.MouseEvent<SVGRectElement>) => {
+  const onDown = (e: React.MouseEvent<SVGSVGElement>) => {
+    suppressClick.current = false;
     if (!brushable || !onBrush || e.button !== 0) {
       return;
     }
-    const left = (e.currentTarget.ownerSVGElement as SVGSVGElement).getBoundingClientRect().left;
-    const x = e.clientX - left;
-    setBrush({ x0: x, x1: x });
-    const move = (ev: MouseEvent) =>
-      setBrush((b) => (b ? { ...b, x1: Math.min(m.left + plotW, Math.max(m.left, ev.clientX - left)) } : b));
+    const box = e.currentTarget.getBoundingClientRect();
+    const x = e.clientX - box.left;
+    const yy = e.clientY - box.top;
+    if (x < m.left || x > m.left + plotW || yy < m.top || yy > m.top + plotH) {
+      return;
+    }
+    const clamp = (cx: number) => Math.min(m.left + plotW, Math.max(m.left, cx - box.left));
+    let dragging = false;
+    const move = (ev: MouseEvent) => {
+      const x1 = clamp(ev.clientX);
+      if (!dragging && Math.abs(x1 - x) > 4) {
+        dragging = true;
+        setHover(null);
+      }
+      if (dragging) {
+        setBrush({ x0: x, x1 });
+      }
+    };
     const stop = () => {
       window.removeEventListener('mousemove', move);
       window.removeEventListener('mouseup', up);
@@ -304,10 +410,13 @@ export function XyChart({
     };
     const up = (ev: MouseEvent) => {
       stop();
-      const x1 = Math.min(m.left + plotW, Math.max(m.left, ev.clientX - left));
+      const x1 = clamp(ev.clientX);
       setBrush(null);
-      if (Math.abs(x1 - x) > 4) {
-        onBrush(Math.round(pxToTime(Math.min(x, x1))), Math.round(pxToTime(Math.max(x, x1))));
+      if (dragging && Math.abs(x1 - x) > 4) {
+        suppressClick.current = true;
+        // Only the click that ends this drag is swallowed.
+        setTimeout(() => (suppressClick.current = false), 0);
+        onBrush(...brushSeconds(pxToTime(Math.min(x, x1)), pxToTime(Math.max(x, x1))));
       }
     };
     window.addEventListener('mousemove', move);
@@ -318,11 +427,68 @@ export function XyChart({
   const visibleIdx = result.series.map((_s, i) => i).filter((i) => visible[i]);
   const grouped = chartType === 'bar' && mode === 'none';
   const barW = band * 0.7;
+
+  /** The series under a pointer at X position `xi`: the bar segment containing it, or the nearest line point. */
+  const seriesAt = (xi: number, along: number, across: number): number | null => {
+    let best: number | null = null;
+    let bestD = Infinity;
+    for (const si of visibleIdx) {
+      const sp = spans[si][xi];
+      if (!sp) {
+        continue;
+      }
+      if (chartType === 'bar') {
+        const gi = visibleIdx.indexOf(si);
+        const w = grouped ? barW / visibleIdx.length : barW;
+        const start = cx0(xi) - barW / 2 + (grouped ? gi * w : 0);
+        const a = ys(si)(sp[0]);
+        const b = ys(si)(sp[1]);
+        if (along >= start && along <= start + w && across >= Math.min(a, b) - 1 && across <= Math.max(a, b) + 1) {
+          return si;
+        }
+      } else {
+        const d = Math.abs(ys(si)(sp[1]) - across);
+        if (d < bestD && d <= 24) {
+          best = si;
+          bestD = d;
+        }
+      }
+    }
+    return best;
+  };
+  const onMove = (e: React.MouseEvent<SVGSVGElement>) => {
+    if (brush || result.xs.length === 0) {
+      return;
+    }
+    const box = e.currentTarget.getBoundingClientRect();
+    const px = e.clientX - box.left;
+    const py = e.clientY - box.top;
+    if (px < m.left || px > m.left + plotW || py < m.top || py > m.top + plotH) {
+      setHover(null);
+      return;
+    }
+    const along = horizontal ? py : px;
+    const across = horizontal ? px : py;
+    const xi = Math.max(0, Math.min(n - 1, Math.floor((along - (horizontal ? m.top : m.left)) / band)));
+    const si = seriesAt(xi, along, across);
+    setHover((h) => (h && h.xi === xi && h.si === si && h.px === px && h.py === py ? h : { xi, si, px, py }));
+  };
+  /** A click on the plot (not on a mark) of a line / area chart filters by the series under the pointer. */
+  const onPlotClick = (e: React.MouseEvent<SVGSVGElement>) => {
+    if (suppressClick.current) {
+      suppressClick.current = false;
+      return;
+    }
+    if (chartType !== 'bar' && hover && hover.si !== null && onSelect) {
+      onSelect({ xIndex: hover.xi, seriesIndex: hover.si, clientX: e.clientX, clientY: e.clientY });
+    }
+  };
+  /** Keyboard focus on a mark shows the same tooltip as hovering it. */
+  const focusMark = (xi: number, si: number, px: number, py: number) => setHover({ xi, si, px, py });
   const showValues = chartType === 'bar' && style?.barValues === 'show';
 
   // Legend (Style → Legend): visibility, outside side / inside corner, list or grid.
   const lg = legendOf(style);
-  const hasBreakdown = result.series.some((s) => s.breakdown !== undefined);
   const showLegend = legendVisible(style, result.series.length, hasBreakdown);
   const inside = lg.position === 'inside';
   const sideLegend = !inside && (lg.alignment === 'left' || lg.alignment === 'right');
@@ -377,7 +543,7 @@ export function XyChart({
             <span className={styles.swatch} style={{ background: color(si) }} />
             {s.name || '(empty)'}
           </button>
-          {onLegendFilter && s.breakdown !== undefined && (
+          {((onLegendFilter && s.breakdown !== undefined) || onSeriesColor) && (
             <IconButton
               name="ellipsis-v"
               size="sm"
@@ -387,27 +553,68 @@ export function XyChart({
               onClick={() => setMenuFor(menuFor === s.name ? null : s.name)}
             />
           )}
-          {menuFor === s.name && onLegendFilter && (
+          {menuFor === s.name && (onLegendFilter || onSeriesColor) && (
             <LegendMenu
               className={cx(styles.menu, (lg.alignment.startsWith('top') || inside) && styles.menuDown)}
               label={`Actions for ${s.name}`}
               onClose={() => setMenuFor(null)}
             >
-              <div className={styles.menuTitle}>{s.breakdown || '(empty)'}</div>
-              {(['for', 'out'] as const).map((mo) => (
-                <button
-                  key={mo}
-                  type="button"
-                  role="menuitem"
-                  className={styles.menuItem}
-                  onClick={() => {
-                    setMenuFor(null);
-                    onLegendFilter?.(si, mo);
-                  }}
-                >
-                  {mo === 'for' ? 'Filter for' : 'Filter out'}
-                </button>
-              ))}
+              <div className={styles.menuTitle}>{(s.breakdown ?? s.name) || '(empty)'}</div>
+              {onLegendFilter &&
+                s.breakdown !== undefined &&
+                (['for', 'out'] as const).map((mo) => (
+                  <button
+                    key={mo}
+                    type="button"
+                    role="menuitem"
+                    className={styles.menuItem}
+                    onClick={() => {
+                      setMenuFor(null);
+                      onLegendFilter?.(si, mo);
+                    }}
+                  >
+                    {mo === 'for' ? 'Filter for' : 'Filter out'}
+                  </button>
+                ))}
+              {onSeriesColor && (
+                <div role="group" aria-label="Series color" className={styles.colorGroup}>
+                  <div className={styles.colorTitle}>Color</div>
+                  <div className={styles.colorGrid}>
+                    {LEGEND_COLORS.map((name) => {
+                      const hex = theme.visualization.getColorByName(name);
+                      return (
+                        <button
+                          key={name}
+                          type="button"
+                          role="menuitemradio"
+                          aria-checked={hex.toLowerCase() === colors[si].toLowerCase()}
+                          aria-label={`Color ${name}`}
+                          title={name}
+                          className={styles.colorSwatch}
+                          style={{ background: hex }}
+                          onClick={() => {
+                            setMenuFor(null);
+                            onSeriesColor(s.name, toHex(hex));
+                          }}
+                        />
+                      );
+                    })}
+                  </div>
+                  {seriesColorOf(style, s.name) && (
+                    <button
+                      type="button"
+                      role="menuitem"
+                      className={styles.menuItem}
+                      onClick={() => {
+                        setMenuFor(null);
+                        onSeriesColor(s.name, undefined);
+                      }}
+                    >
+                      Reset color
+                    </button>
+                  )}
+                </div>
+              )}
             </LegendMenu>
           )}
         </div>
@@ -449,8 +656,69 @@ export function XyChart({
     bucketMs ?? (result.xs.length > 1 ? (Number(result.xs[result.xs.length - 1]) - Number(result.xs[0])) / (n - 1) : 0);
   const timePos = (t: number) => m.left + (step > 0 ? ((t - Number(result.xs[0])) / step) * band : band / 2);
   const inPlot = (px: number) => px >= m.left - 0.5 && px <= m.left + plotW + 0.5;
-  const events = result.xIsTime && !horizontal && result.xs.length > 0 ? (layers?.events ?? []) : [];
+  const events = timeAxis ? (layers?.events ?? []) : [];
   const fmtTime = (t: number) => dateTime(t).format('YYYY-MM-DD HH:mm:ss');
+  // Round-time ticks over the drawn time span (bucket starts sit on the band's left edge).
+  const tEnd = result.xs.length > 0 ? Number(result.xs[result.xs.length - 1]) + (step > 0 ? step : 0) : 0;
+  const timeTickVals = timeAxis
+    ? timeTicks(Number(result.xs[0]), tEnd, Math.max(2, Math.floor(plotW / (catRot === 0 ? 80 : 28))))
+    : [];
+  // Partial edge buckets: the time range starts after the first bucket's start / ends before the last one's end.
+  const partial: Array<{ xi: number; x: number; w: number }> = [];
+  if (timeAxis && timeRange && step > 0) {
+    const last = result.xs.length - 1;
+    if (Number(result.xs[0]) < timeRange.from) {
+      partial.push({ xi: 0, x: m.left, w: band });
+    }
+    if (Number(result.xs[last]) + step > timeRange.to && (last > 0 || partial.length === 0)) {
+      partial.push({ xi: last, x: m.left + band * last, w: band });
+    }
+  }
+
+  /** The crosshair tooltip: the X value, then every visible series' value there, the hovered one highlighted. */
+  const MAX_TOOLTIP_ROWS = 20;
+  const tooltipEl = (h: { xi: number; si: number | null; px: number; py: number }) => {
+    const x = result.xs[h.xi];
+    if (x === undefined) {
+      return null;
+    }
+    const header = result.xIsTime ? tooltipTime(Number(x), step) : xText(result, h.xi, spanMs);
+    const rows = visibleIdx
+      .map((si) => ({ si, v: pointValue(result.series[si], x), sp: spans[si][h.xi] }))
+      .filter((r) => r.v !== null);
+    const shown = rows.slice(0, MAX_TOOLTIP_ROWS);
+    const flip = h.px > W / 2;
+    return (
+      <div
+        role="tooltip"
+        data-testid="lens-tooltip"
+        className={styles.tooltip}
+        style={{
+          top: Math.max(0, Math.min(h.py - 12, H - 40 - shown.length * 22)),
+          ...(flip ? { right: W - h.px + 14 } : { left: h.px + 14 }),
+        }}
+      >
+        <div className={styles.tooltipHeader}>{header}</div>
+        {shown.map(({ si, v, sp }) => (
+          <div
+            key={si}
+            className={cx(styles.tooltipRow, h.si === si && styles.tooltipRowOn)}
+            data-testid="lens-tooltip-row"
+            data-highlighted={h.si === si ? 'true' : undefined}
+          >
+            <span className={styles.tooltipSwatch} style={{ background: color(si) }} />
+            <span className={styles.tooltipName}>{result.series[si].name || '(empty)'}</span>
+            <span className={styles.tooltipValue}>
+              {percent && sp ? `${formatNumber(+(sp[1] - sp[0]).toFixed(2))}%` : fmtOf(si, v ?? 0)}
+            </span>
+          </div>
+        ))}
+        {rows.length > shown.length && (
+          <div className={styles.tooltipMore}>+{formatNumber(rows.length - shown.length)} more</div>
+        )}
+      </div>
+    );
+  };
 
   const refLineEls = refLines.map((l) => {
     const p = (lineSide(l) === 'right' ? yR : y)(l.value);
@@ -566,7 +834,16 @@ export function XyChart({
       {!inside && (lg.alignment === 'top' || lg.alignment === 'left') && legendEl}
       <div ref={boxRef} className={styles.plot}>
         {W > 0 && (
-          <svg width={W} height={H} role="group" aria-label={`${chartType} chart`}>
+          <svg
+            width={W}
+            height={H}
+            role="group"
+            aria-label={`${chartType} chart`}
+            onMouseDown={onDown}
+            onMouseMove={onMove}
+            onMouseLeave={() => setHover(null)}
+            onClick={onPlotClick}
+          >
             <defs>
               <clipPath id={clipId}>
                 <rect x={m.left} y={m.top} width={plotW} height={plotH} />
@@ -631,8 +908,52 @@ export function XyChart({
                   )}
                 </g>
               ))}
-            {/* Category axis: optional gridlines and labels. */}
+            {/* Category axis: optional gridlines and labels (round times with the date below on a time axis). */}
+            {timeAxis &&
+              timeTickVals.map((tk) => {
+                const p = timePos(tk.t);
+                if (!inPlot(p)) {
+                  return null;
+                }
+                return (
+                  <g key={`t${tk.t}`}>
+                    {ax.bottom.gridlines && (
+                      <line x1={p} x2={p} y1={m.top} y2={m.top + plotH} className={styles.grid} />
+                    )}
+                    {ax.bottom.ticks && (
+                      <>
+                        <line x1={p} x2={p} y1={m.top + plotH} y2={m.top + plotH + 4} className={styles.axisLine} />
+                        <text
+                          x={p + (catRot ? 0 : 3)}
+                          y={m.top + plotH + 15}
+                          textAnchor={catRot ? 'end' : 'start'}
+                          transform={rotated(p, m.top + plotH + 15, catRot)}
+                          className={styles.tick}
+                          data-testid="lens-category-tick"
+                          data-time={tk.t}
+                        >
+                          {tk.label}
+                        </text>
+                        {tk.sub && catRot === 0 && (
+                          <text
+                            x={p + 3}
+                            y={m.top + plotH + 29}
+                            textAnchor="start"
+                            className={styles.tickSub}
+                            data-testid="lens-category-subtick"
+                          >
+                            {tk.sub}
+                          </text>
+                        )}
+                      </>
+                    )}
+                  </g>
+                );
+              })}
             {result.xs.map((_x, xi) => {
+              if (timeAxis) {
+                return null;
+              }
               if (xi % labelEvery !== 0) {
                 return null;
               }
@@ -738,9 +1059,54 @@ export function XyChart({
               height={plotH}
               fill="transparent"
               className={brushable ? styles.brushable : undefined}
-              onMouseDown={onDown}
               data-testid="lens-plot-area"
             />
+            {/* Buckets the time range covers only in part (Kibana shades them). */}
+            {partial.map((p) => (
+              <rect
+                key={`p${p.xi}`}
+                x={p.x}
+                y={m.top}
+                width={p.w}
+                height={plotH}
+                className={styles.partial}
+                pointerEvents="none"
+                data-testid="lens-partial-bucket"
+              />
+            ))}
+            {/* Hovered X: a shaded band for bars, a crosshair for lines. */}
+            {hover &&
+              (chartType === 'bar' ? (
+                horizontal ? (
+                  <rect
+                    x={m.left}
+                    y={m.top + band * hover.xi}
+                    width={plotW}
+                    height={band}
+                    className={styles.hoverBand}
+                    pointerEvents="none"
+                  />
+                ) : (
+                  <rect
+                    x={m.left + band * hover.xi}
+                    y={m.top}
+                    width={band}
+                    height={plotH}
+                    className={styles.hoverBand}
+                    pointerEvents="none"
+                  />
+                )
+              ) : (
+                <line
+                  x1={cx0(hover.xi)}
+                  x2={cx0(hover.xi)}
+                  y1={m.top}
+                  y2={m.top + plotH}
+                  className={styles.crosshair}
+                  pointerEvents="none"
+                  data-testid="lens-crosshair"
+                />
+              ))}
 
             <g clipPath={`url(#${clipId})`}>
               {chartType === 'bar' &&
@@ -780,9 +1146,9 @@ export function XyChart({
                               className={styles.mark}
                               onClick={(e) => select(e, xi, si)}
                               onKeyDown={(e) => e.key === 'Enter' && select(e, xi, si)}
-                            >
-                              <title>{itemLabel(xi, si)}</title>
-                            </rect>
+                              onFocus={() => focusMark(xi, si, rect.x + rect.width / 2, rect.y)}
+                              onBlur={() => setHover(null)}
+                            />
                             {barValue(si, xi, rect.x, rect.y, rect.width, rect.height, sp)}
                           </React.Fragment>
                         );
@@ -826,25 +1192,33 @@ export function XyChart({
                     <g key={si}>
                       {chartType === 'area' && <path d={area} fill={color(si)} opacity={0.35} pointerEvents="none" />}
                       <path d={line} fill="none" stroke={color(si)} strokeWidth={2} pointerEvents="none" />
-                      {pts.map((p, xi) =>
-                        p ? (
+                      {/* Plain lines (Kibana): a point shows on hover / focus, or when it has no neighbour to join. */}
+                      {pts.map((p, xi) => {
+                        if (!p) {
+                          return null;
+                        }
+                        const shown = hover?.xi === xi || (!pts[xi - 1] && !pts[xi + 1]);
+                        return (
                           <circle
                             key={xi}
                             cx={p[0]}
                             cy={p[1]}
-                            r={n > 80 ? 2 : 3}
+                            r={hover?.xi === xi ? 4 : 3}
                             fill={color(si)}
+                            stroke={hover?.xi === xi ? theme.colors.background.primary : undefined}
+                            opacity={shown ? 1 : 0}
                             role="button"
                             tabIndex={0}
                             aria-label={itemLabel(xi, si)}
-                            className={styles.mark}
+                            className={styles.point}
+                            data-point-visible={shown ? 'true' : 'false'}
                             onClick={(e) => select(e, xi, si)}
                             onKeyDown={(e) => e.key === 'Enter' && select(e, xi, si)}
-                          >
-                            <title>{itemLabel(xi, si)}</title>
-                          </circle>
-                        ) : null
-                      )}
+                            onFocus={() => focusMark(xi, si, p[0], p[1])}
+                            onBlur={() => setHover(null)}
+                          />
+                        );
+                      })}
                     </g>
                   );
                 })}
@@ -864,11 +1238,54 @@ export function XyChart({
             )}
           </svg>
         )}
+        {hover && !brush && tooltipEl(hover)}
         {inside && legendEl}
       </div>
       {!inside && (lg.alignment === 'bottom' || lg.alignment === 'right') && legendEl}
     </div>
   );
+}
+
+/** Colours offered in the legend menu (Grafana palette names, resolved through the theme). */
+export const LEGEND_COLORS = [
+  'green',
+  'yellow',
+  'blue',
+  'orange',
+  'red',
+  'purple',
+  'dark-green',
+  'dark-yellow',
+  'dark-blue',
+  'dark-orange',
+  'dark-red',
+  'dark-purple',
+  'super-light-blue',
+  'light-orange',
+  'light-red',
+  'text',
+];
+
+/** A theme colour (`#rgb`, `#rrggbb`, `rgb(…)`) as `#rrggbb` for the stored choice; black if unknown. */
+export function toHex(c: string): string {
+  const v = c.trim().toLowerCase();
+  if (/^#[0-9a-f]{6}$/.test(v)) {
+    return v;
+  }
+  if (/^#[0-9a-f]{3}$/.test(v)) {
+    return `#${v[1]}${v[1]}${v[2]}${v[2]}${v[3]}${v[3]}`;
+  }
+  const rgb = /^rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/.exec(v);
+  if (rgb) {
+    return `#${rgb
+      .slice(1, 4)
+      .map((x) => Math.min(255, Number(x)).toString(16).padStart(2, '0'))
+      .join('')}`;
+  }
+  if (/^#[0-9a-f]{8}$/.test(v)) {
+    return v.slice(0, 7);
+  }
+  return '#000000';
 }
 
 const getStyles = (theme: GrafanaTheme2) => ({
@@ -910,6 +1327,79 @@ const getStyles = (theme: GrafanaTheme2) => ({
   tick: css`
     fill: ${theme.colors.text.secondary};
     font-size: 11px;
+  `,
+  tickSub: css`
+    fill: ${theme.colors.text.secondary};
+    font-size: 10px;
+  `,
+  axisLine: css`
+    stroke: ${theme.colors.border.medium};
+  `,
+  partial: css`
+    fill: ${theme.colors.text.disabled};
+    opacity: 0.18;
+  `,
+  hoverBand: css`
+    fill: ${theme.colors.text.primary};
+    opacity: 0.06;
+  `,
+  crosshair: css`
+    stroke: ${theme.colors.text.secondary};
+    stroke-dasharray: 3 3;
+  `,
+  point: css`
+    cursor: pointer;
+    &:focus {
+      outline: none;
+      opacity: 1;
+      stroke: ${theme.colors.text.primary};
+    }
+  `,
+  tooltip: css`
+    position: absolute;
+    z-index: 3;
+    pointer-events: none;
+    min-width: 160px;
+    max-width: 320px;
+    padding: ${theme.spacing(0.5, 0)};
+    background: ${theme.colors.background.primary};
+    border: 1px solid ${theme.colors.border.medium};
+    border-radius: ${theme.shape.radius.default};
+    box-shadow: ${theme.shadows.z3};
+    font-size: ${theme.typography.bodySmall.fontSize};
+  `,
+  tooltipHeader: css`
+    font-weight: ${theme.typography.fontWeightMedium};
+    padding: ${theme.spacing(0.25, 1)};
+  `,
+  tooltipRow: css`
+    display: flex;
+    align-items: center;
+    gap: ${theme.spacing(1)};
+    padding: ${theme.spacing(0.25, 1)};
+  `,
+  tooltipRowOn: css`
+    background: ${theme.colors.action.hover};
+    font-weight: ${theme.typography.fontWeightMedium};
+  `,
+  tooltipSwatch: css`
+    width: 4px;
+    align-self: stretch;
+    min-height: 14px;
+    border-radius: 1px;
+  `,
+  tooltipName: css`
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  `,
+  tooltipValue: css`
+    font-variant-numeric: tabular-nums;
+  `,
+  tooltipMore: css`
+    color: ${theme.colors.text.secondary};
+    padding: ${theme.spacing(0.25, 1)};
   `,
   brushable: css`
     cursor: crosshair;
@@ -1000,6 +1490,35 @@ const getStyles = (theme: GrafanaTheme2) => ({
     bottom: auto;
     top: 100%;
   `,
+  colorGroup: css`
+    border-top: 1px solid ${theme.colors.border.weak};
+    margin-top: ${theme.spacing(0.5)};
+    padding-top: ${theme.spacing(0.5)};
+  `,
+  colorTitle: css`
+    font-size: ${theme.typography.bodySmall.fontSize};
+    color: ${theme.colors.text.secondary};
+    padding: ${theme.spacing(0, 0.5, 0.5)};
+  `,
+  colorGrid: css`
+    display: grid;
+    grid-template-columns: repeat(8, 16px);
+    gap: 4px;
+    padding: ${theme.spacing(0, 0.5, 0.5)};
+  `,
+  colorSwatch: css`
+    width: 16px;
+    height: 16px;
+    padding: 0;
+    border: 1px solid ${theme.colors.border.medium};
+    border-radius: 2px;
+    cursor: pointer;
+    &[aria-checked='true'],
+    &:focus-visible {
+      outline: 2px solid ${theme.colors.text.primary};
+      outline-offset: 1px;
+    }
+  `,
   menuTitle: css`
     font-weight: ${theme.typography.fontWeightMedium};
     padding: ${theme.spacing(0.5)};
@@ -1035,7 +1554,9 @@ function LegendMenu({
   const ref = useRef<HTMLDivElement>(null);
   const { dialogProps } = usePopoverDialog(ref, { onClose, autoFocus: false });
   useEffect(() => {
-    ref.current?.querySelector<HTMLElement>('[role="menuitem"]')?.focus({ preventScroll: true });
+    ref.current
+      ?.querySelector<HTMLElement>('[role="menuitem"], [role="menuitemradio"]')
+      ?.focus({ preventScroll: true });
   }, []);
   return (
     <div

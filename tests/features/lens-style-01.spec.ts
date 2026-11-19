@@ -35,12 +35,8 @@ test('Style: horizontal bars and bar values, kept in the URL, with no new query'
   await radio(page, 'Bar orientation', 'Horizontal').click();
   await expect(page.getByTestId('lens-xy')).toHaveAttribute('data-orientation', 'horizontal');
   await radio(page, 'Bar values', 'Show, if able').click();
-  await expect(
-    viz.chart
-      .getByTestId('lens-bar-value')
-      .filter({ hasText: '9,264' })
-      .or(viz.chart.getByTestId('lens-bar-value').filter({ hasText: '9.3K' }))
-  ).toHaveCount(1);
+  // Values with thousands separators (Kibana), not abbreviated.
+  await expect(viz.chart.getByTestId('lens-bar-value').filter({ hasText: '9,264' })).toHaveCount(1);
   await expect.poll(() => lensParam(page).style).toMatchObject({ orientation: 'horizontal', barValues: 'show' });
   expect(queries).toBe(0);
 
@@ -73,7 +69,7 @@ test('Style: axis title (custom / none), log scale, custom bounds', async ({ pag
   const upper = left.getByRole('textbox', { name: 'Upper bound' });
   await upper.fill('20000');
   await upper.press('Enter');
-  await expect(viz.chart.getByTestId('lens-value-tick').last()).toHaveText(/20(,000|K|\.0K)/);
+  await expect(viz.chart.getByTestId('lens-value-tick').last()).toHaveText('20,000');
   // An inverted range is refused, not applied.
   const lower = left.getByRole('textbox', { name: 'Lower bound' });
   await lower.fill('50000');

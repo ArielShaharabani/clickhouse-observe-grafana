@@ -15,6 +15,7 @@ import {
   tickRotation,
   valueDomain,
   valueTicks,
+  tickStep,
 } from '../style';
 import { StylePanel } from '../StylePanel';
 import { switchChart } from '../suggest';
@@ -110,10 +111,15 @@ describe('style helpers', () => {
 
   it('value domains: full includes zero, data hugs the data, custom wins, log is positive', () => {
     expect(valueDomain(20, 87, { bounds: 'full' })).toEqual([0, 100]);
-    expect(valueDomain(20, 87, { bounds: 'data' })).toEqual([20, 100]);
+    expect(valueDomain(20, 87, { bounds: 'data' })).toEqual([20, 90]);
     expect(valueDomain(20, 87, { bounds: 'data', nice: false })).toEqual([20, 87]);
     expect(valueDomain(20, 87, { bounds: 'custom', min: 10, max: 50 })).toEqual([10, 50]);
-    expect(valueDomain(-30, 87, { bounds: 'full' })).toEqual([-50, 100]);
+    expect(valueDomain(-30, 87, { bounds: 'full' })).toEqual([-40, 100]);
+    // Kibana parity: a 140 peak gives 0–140 (not 200), 420 → 500, counts never get fractional steps.
+    expect(valueDomain(0, 140, {})).toEqual([0, 140]);
+    expect(valueDomain(0, 120, {})).toEqual([0, 120]);
+    expect(valueDomain(0, 420, {})).toEqual([0, 500]);
+    expect(valueDomain(0, 5, {}, false, { integer: true })).toEqual([0, 5]);
     expect(valueDomain(0, 870, { scale: 'log' })).toEqual([1, 1000]);
     expect(valueDomain(3, 870, { scale: 'log' })).toEqual([1, 1000]);
     expect(valueDomain(0, 40, {}, true)).toEqual([0, 100]);
@@ -126,7 +132,15 @@ describe('style helpers', () => {
     // Log: values ≤ 0 sit at the bottom instead of NaN.
     expect(scalePos(0, 1, 100, 'log')).toBe(0);
     expect(valueTicks(1, 1000, 'log')).toEqual([1, 10, 100, 1000]);
-    expect(valueTicks(0, 100, 'linear')).toEqual([0, 25, 50, 75, 100]);
+    expect(valueTicks(0, 100, 'linear')).toEqual([0, 20, 40, 60, 80, 100]);
+    expect(valueTicks(0, 140, 'linear')).toEqual([0, 20, 40, 60, 80, 100, 120, 140]);
+    expect(valueTicks(0, 500, 'linear')).toEqual([0, 100, 200, 300, 400, 500]);
+    // No 1.25 on a count axis.
+    expect(valueTicks(0, 5, 'linear', { integer: true })).toEqual([0, 1, 2, 3, 4, 5]);
+    expect(valueTicks(0, 2, 'linear', { integer: true })).toEqual([0, 1, 2]);
+    expect(valueTicks(0, 0.3, 'linear')).toEqual([0, 0.05, 0.1, 0.15, 0.2, 0.25, 0.3]);
+    expect(tickStep(0, 140)).toBe(20);
+    expect(tickStep(0, 2, 6, true)).toBe(1);
     expect(valueTicks(0, 100, 'sqrt')[2]).toBeCloseTo(25);
   });
 });
@@ -233,7 +247,9 @@ describe('XyChart with a style', () => {
     const { rerender } = render(<XyChart chartType="line" result={one} style={{ left: { scale: 'log' } }} />);
     expect(screen.getAllByTestId('lens-value-tick').map((t) => t.textContent)).toEqual(['1', '10', '100']);
     rerender(<XyChart chartType="line" result={one} style={{ left: { bounds: 'custom', min: 0, max: 40 } }} />);
-    expect(screen.getAllByTestId('lens-value-tick').map((t) => t.textContent)).toEqual(['0', '10', '20', '30', '40']);
+    const ticks = screen.getAllByTestId('lens-value-tick').map((t) => t.textContent);
+    expect(ticks[0]).toBe('0');
+    expect(ticks[ticks.length - 1]).toBe('40');
   });
 
   it('legend: show / hide, right side, inside corner, grid layout', () => {

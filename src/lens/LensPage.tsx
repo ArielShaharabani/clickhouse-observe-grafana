@@ -39,6 +39,7 @@ import { StylePanel, StyleToolbar, StyleView } from './StylePanel';
 import { DimensionEditor } from './DimensionEditor';
 import { LensInterval, stepBucket } from './interval';
 import { addBucket, addMetric, metricForField, nextBucketField, queryShape, replaceDim } from './dimensions';
+import { withSeriesColor } from './style';
 import {
   BucketDim,
   decodeLens,
@@ -65,7 +66,6 @@ import { ExtraLayer } from './layers';
 import { useLayerData } from './useLayerData';
 import { DefaultTimeRangeContext, resolveDefaultTimeRange } from '../utils/defaultTimeRange';
 import { panelSourceOf } from './panelSource';
-
 
 interface Group {
   name: string;
@@ -249,7 +249,12 @@ export function LensPage() {
       setSearchParams(
         (prev) => {
           const sp = new URLSearchParams(prev);
-          const enc = encodeLogsState({ search: '', filters: next, columns: [], timeRange: resolveDefaultTimeRange(defaultTime) });
+          const enc = encodeLogsState({
+            search: '',
+            filters: next,
+            columns: [],
+            timeRange: resolveDefaultTimeRange(defaultTime),
+          });
           const v = enc.get('filters');
           if (v) {
             sp.set('filters', v);
@@ -358,14 +363,17 @@ export function LensPage() {
   // Run the chart query.
   const [result, setResult] = useState<{
     key: string;
+    /** `queryKey` without the chart type / sub-type: a type switch may keep showing this result. */
+    baseKey: string;
+    /** The chart state the rows were shaped for. */
+    lens: LensState;
     data?: LensResult;
     error?: string;
     bucketMs?: number;
     interval?: LensInterval;
   } | null>(null);
   // Names are display-only: renaming a dimension must not re-run the query.
-  const queryKey = JSON.stringify([
-    encodeLens(queryShape(lens)),
+  const queryContext = [
     config.datasourceUid,
     config.database,
     config.logsTable,
@@ -373,7 +381,10 @@ export function LensPage() {
     filters,
     timeRange.from.valueOf(),
     timeRange.to.valueOf(),
-  ]);
+  ];
+  const queryKey = JSON.stringify([encodeLens(queryShape(lens)), ...queryContext]);
+  const { chartType: _ct, subType: _st, ...lensBase } = queryShape(lens);
+  const baseKey = JSON.stringify([JSON.stringify(lensBase), ...queryContext]);
   useEffect(() => {
     if (isEmptyLens(lens) || !config.datasourceUid || fieldsLoading) {
       return;
@@ -399,11 +410,14 @@ export function LensPage() {
         !cancelled &&
         setResult({
           key: queryKey,
+          baseKey,
+          lens,
           data: shapeLensRows(lens, rows, intervalMs, { interval, range }),
           bucketMs: intervalMs,
           interval,
         }),
-      (e) => !cancelled && setResult({ key: queryKey, error: e instanceof Error ? e.message : String(e) })
+      (e) =>
+        !cancelled && setResult({ key: queryKey, baseKey, lens, error: e instanceof Error ? e.message : String(e) })
     );
     return () => {
       cancelled = true;
@@ -413,6 +427,9 @@ export function LensPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [queryKey, fieldsLoading]);
   const current = result?.key === queryKey ? result : null;
+  // A chart-type switch re-runs the query; until the new rows arrive keep drawing the previous chart
+  // (same dimensions, filters and time) instead of a blank spinner frame. It is not interactive.
+  const stale = !current && result?.data && result.baseKey === baseKey ? result : null;
 
   // Reference line / annotation layers (LENS-LAYER-01): their own small queries.
   const xyChart = isXy(lens.chartType);
@@ -619,7 +636,11 @@ export function LensPage() {
     }
     return targets;
   };
-  const kbDrag = useKeyboardDrag(dropTargetsFor, (f) => f.label, (f) => f.id);
+  const kbDrag = useKeyboardDrag(
+    dropTargetsFor,
+    (f) => f.label,
+    (f) => f.id
+  );
   const dndHelpId = useId();
   // The dimension's button in the list: focus returns there when its editor closes.
   const dimsRef = useRef<HTMLElement>(null);
@@ -813,7 +834,12 @@ export function LensPage() {
                 onSelect={onSelect}
                 onLegendFilter={lens.buckets[1]?.kind === 'terms' ? onLegendFilter : undefined}
                 layerData={layerData}
+                onSeriesColor={(name, color) => setLens({ ...lens, style: withSeriesColor(lens.style, name, color) })}
               />
+            ) : stale?.data ? (
+              <div className={styles.staleChart} data-testid="lens-chart-stale" aria-busy="true">
+                <LensChart state={stale.lens} result={stale.data} timeRange={timeRange} bucketMs={stale.bucketMs} />
+              </div>
             ) : (
               <div className={styles.empty}>
                 <Spinner />
@@ -1117,6 +1143,11 @@ const getStyles = (theme: GrafanaTheme2) => ({
   chartAreaOver: css`
     box-shadow: inset 0 0 0 2px ${theme.colors.primary.border};
     background: ${theme.colors.primary.transparent};
+  `,
+  staleChart: css`
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
   `,
   empty: css`
     flex: 1;

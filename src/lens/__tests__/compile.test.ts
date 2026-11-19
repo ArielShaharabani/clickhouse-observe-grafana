@@ -97,8 +97,9 @@ describe('shapeLensRows', () => {
     ]);
     expect(r.xIsTime).toBe(true);
     expect(r.xs).toEqual([Date.UTC(2026, 0, 1), Date.UTC(2026, 0, 1, 6)]);
-    expect(r.series.map((s) => s.name)).toEqual(['error', 'info']);
-    expect(r.series[0].points.get(Date.UTC(2026, 0, 1))).toBe(1);
+    // Legend / stack order: by total count, descending (info 5 > error 3), as in Kibana.
+    expect(r.series.map((s) => s.name)).toEqual(['info', 'error']);
+    expect(r.series[1].points.get(Date.UTC(2026, 0, 1))).toBe(1);
     expect(r.table.columns).toEqual(['Timestamp', 'Top 9 values of SeverityText', 'Count of records']);
   });
 
