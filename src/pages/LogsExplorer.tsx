@@ -68,6 +68,7 @@ const RESULTS_TABS: Array<{ label: string; value: ResultsTab }> = [
 
 export { defaultColumns } from '../data/columns';
 import { logsQueryReducer } from './_logsQueryReducer';
+import { DefaultTimeRangeContext, resolveDefaultTimeRange } from '../utils/defaultTimeRange';
 
 const INITIAL_FETCH = 200;
 const PAGE_SIZE_OPTIONS = [10, 25, 50, 100, 250, 500];
@@ -87,13 +88,6 @@ function readDetailSplit(): number {
   return raw > 0.2 && raw < 0.8 ? raw : DEFAULT_DETAIL_SPLIT;
 }
 
-function defaultTimeRange(): TimeRange {
-  return {
-    from: dateTime(Date.now() - 3600 * 1000),
-    to: dateTime(Date.now()),
-    raw: { from: 'now-1h', to: 'now' },
-  };
-}
 
 
 export interface LogsExplorerProps {
@@ -106,6 +100,7 @@ export interface LogsExplorerProps {
 export function LogsExplorer({ tabId, tabStrip }: LogsExplorerProps = {}) {
   const styles = useStyles2(getStyles);
   const config = useContext(SourceConfigContext);
+  const defaultTime = useContext(DefaultTimeRangeContext);
   const { activeView, setActiveViewId, views } = useContext(DataViewContext);
   const caps = viewCapabilities(config);
 
@@ -151,7 +146,7 @@ export function LogsExplorer({ tabId, tabStrip }: LogsExplorerProps = {}) {
       };
     }
   );
-  const [timeRange, setTimeRange] = useState<TimeRange>(() => initialUrlState.timeRange ?? defaultTimeRange());
+  const [timeRange, setTimeRange] = useState<TimeRange>(() => initialUrlState.timeRange ?? resolveDefaultTimeRange(defaultTime));
   const getTraceHref = useTraceExploreLink(config.datasourceUid, timeRange);
 
   // Discovered once here (not just via <FieldsProvider> in descendants) so executeQuery below can

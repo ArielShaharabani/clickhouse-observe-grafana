@@ -21,6 +21,7 @@ import {
   EMPTY_COLUMN_MAPPING,
 } from '../../types';
 import { migrateLegacyConfig } from '../../data/dataViews';
+import { cleanDefaultTimeRange } from '../../utils/defaultTimeRange';
 import { ColumnMappingForm } from '../ColumnMappingForm';
 import { epochGuesser, TimeFieldSelect, useTableColumns } from '../DataViewPicker/TimeFieldSelect';
 
@@ -39,6 +40,12 @@ const AppConfig = ({ plugin }: AppConfigProps) => {
   const [ai, setAi] = useState<AiProviderConfig>(
     () => jsonData?.ai ?? { enabled: false, baseUrl: '', model: '', token: '' }
   );
+  // Default time range (Kibana's timepicker:timeDefaults): saved only when it parses, else unset.
+  const [timeFrom, setTimeFrom] = useState(() => jsonData?.defaultTimeRange?.from ?? 'now-1h');
+  const [timeTo, setTimeTo] = useState(() => jsonData?.defaultTimeRange?.to ?? 'now');
+  const cleanedTime = cleanDefaultTimeRange({ from: timeFrom, to: timeTo });
+  const timeValid = cleanedTime.from === timeFrom.trim() && cleanedTime.to === timeTo.trim();
+
   function patchAi(patch: Partial<AiProviderConfig>) {
     setAi((prev) => ({ ...prev, ...patch }));
   }
@@ -85,7 +92,7 @@ const AppConfig = ({ plugin }: AppConfigProps) => {
       await updatePlugin(plugin.meta.id, {
         enabled,
         pinned,
-        jsonData: { ...jsonData, dataViews: views, ai },
+        jsonData: { ...jsonData, dataViews: views, ai, defaultTimeRange: timeValid ? cleanedTime : undefined },
       });
       setSaveStatus('saved');
       setTimeout(() => setSaveStatus('idle'), 2000);
@@ -237,6 +244,19 @@ const AppConfig = ({ plugin }: AppConfigProps) => {
           </div>
         ))}
       </div>
+
+      <FieldSet label="Default time range">
+        <div className={styles.empty}>
+          The range Discover and Visualize open on when a link carries none. Use time expressions
+          (<code>now-1h</code>, <code>now</code>) or absolute dates (<code>2026-01-01T00:00:00Z</code>).
+        </div>
+        <Field label="From" invalid={!timeValid} error={!timeValid ? 'Not a valid range; the last hour is used' : undefined}>
+          <Input width={30} value={timeFrom} onChange={(e: ChangeEvent<HTMLInputElement>) => setTimeFrom(e.target.value)} />
+        </Field>
+        <Field label="To">
+          <Input width={30} value={timeTo} onChange={(e: ChangeEvent<HTMLInputElement>) => setTimeTo(e.target.value)} />
+        </Field>
+      </FieldSet>
 
       <FieldSet label="AI Assistant">
         <div className={styles.empty} style={{ marginBottom: 12 }}>

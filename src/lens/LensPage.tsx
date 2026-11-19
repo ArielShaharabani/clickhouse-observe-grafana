@@ -64,10 +64,8 @@ import { LiveRegion, srOnly } from '../components/a11y/dialog';
 import { LayerItemEditor, LayerItemRef, LayersSection } from './LayerPanel';
 import { ExtraLayer } from './layers';
 import { useLayerData } from './useLayerData';
+import { DefaultTimeRangeContext, resolveDefaultTimeRange } from '../utils/defaultTimeRange';
 
-function defaultRange(): TimeRange {
-  return { from: dateTime(Date.now() - 3600 * 1000), to: dateTime(Date.now()), raw: { from: 'now-1h', to: 'now' } };
-}
 
 interface Group {
   name: string;
@@ -124,6 +122,7 @@ export function dimensionGroups(s: LensState): Group[] {
 export function LensPage() {
   const styles = useStyles2(getStyles);
   const config = useContext(SourceConfigContext);
+  const defaultTime = useContext(DefaultTimeRangeContext);
   const { activeView, views, setActiveViewId } = useContext(DataViewContext);
   const [searchParams, setSearchParams] = useSearchParams();
   const paramsKey = searchParams.toString();
@@ -198,7 +197,7 @@ export function LensPage() {
   const urlState = useMemo(() => decodeLogsState(new URLSearchParams(paramsKey)), [paramsKey]);
   const search = urlState.search ?? '';
   const filters = useMemo(() => urlState.filters ?? [], [urlState]);
-  const timeRange = useMemo(() => urlState.timeRange ?? defaultRange(), [urlState]);
+  const timeRange = useMemo(() => urlState.timeRange ?? resolveDefaultTimeRange(defaultTime), [urlState, defaultTime]);
   // LENS-SAVE-01 draft, scoped to the datasource + table the chart was built on.
   const draftScope = draftScopeOf(config);
   const urlLens = useMemo(() => decodeLens(new URLSearchParams(paramsKey).get('lens')) ?? EMPTY_LENS, [paramsKey]);
@@ -250,7 +249,7 @@ export function LensPage() {
       setSearchParams(
         (prev) => {
           const sp = new URLSearchParams(prev);
-          const enc = encodeLogsState({ search: '', filters: next, columns: [], timeRange: defaultRange() });
+          const enc = encodeLogsState({ search: '', filters: next, columns: [], timeRange: resolveDefaultTimeRange(defaultTime) });
           const v = enc.get('filters');
           if (v) {
             sp.set('filters', v);
@@ -639,11 +638,14 @@ export function LensPage() {
       <div className={styles.toolbar}>
         <span className={styles.title}>Visualize</span>
         <DataViewPicker />
-        <span className={styles.context} title={`${config.database}.${config.logsTable}`}>
-          {config.database}.{config.logsTable}
-          {search && ` · ${search}`}
-          {filters.length > 0 && ` · ${filters.length} filter${filters.length > 1 ? 's' : ''}`}
-        </span>
+        {/* The picker already names the data view; only the carried query / filters are summarised. */}
+        {(search || filters.length > 0) && (
+          <span className={styles.context} data-testid="lens-context">
+            {[search, filters.length > 0 ? `${filters.length} filter${filters.length > 1 ? 's' : ''}` : '']
+              .filter(Boolean)
+              .join(' · ')}
+          </span>
+        )}
         <div className={styles.spacer} />
         <LinkButton href={exploreUrl} target="_blank" variant="secondary" size="sm" icon="compass" fill="outline">
           Explore in Discover

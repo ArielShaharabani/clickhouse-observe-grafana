@@ -50,7 +50,11 @@ export function DataViewPicker() {
   return (
     <>
       <div className={styles.wrapper} ref={menuRef}>
-        <button className={styles.trigger} onClick={() => setOpen((v) => !v)} title="Switch data view">
+        <button
+          className={styles.trigger}
+          onClick={() => setOpen((v) => !v)}
+          title={activeView ? `Switch data view (${activeView.database}.${activeView.logsTable})` : 'Switch data view'}
+        >
           <span className={styles.triggerPrefix}>Data view</span>
           <span className={styles.triggerDivider} />
           <Icon name="layers-alt" size="sm" />

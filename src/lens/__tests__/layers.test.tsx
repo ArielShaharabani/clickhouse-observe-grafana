@@ -178,11 +178,16 @@ describe('cleanLayers (untrusted URL / draft / saved chart input)', () => {
     expect(sanitizeLayers(undefined, allowed)).toBeUndefined();
   });
 
-  it('is not part of the chart query; XY chart switches keep it, other types drop it', () => {
+  it('is not part of the chart query; XY chart switches keep it, other types park it until switching back', () => {
     expect(queryShape(base).layers).toBeUndefined();
     expect(switchChart(base, 'line', ctx).layers).toEqual(base.layers);
-    expect(switchChart(base, 'table', ctx).layers).toBeUndefined();
-    expect(switchChart(switchChart(base, 'table', ctx), 'bar', ctx).layers).toBeUndefined();
+    const table = switchChart(base, 'table', ctx);
+    expect(table.layers).toBeUndefined();
+    expect(table.parked?.layers).toEqual(base.layers);
+    expect(queryShape(table).parked).toBeUndefined();
+    const back = switchChart(table, 'bar', ctx);
+    expect(back.layers).toEqual(base.layers);
+    expect(back.parked).toBeUndefined();
   });
 });
 

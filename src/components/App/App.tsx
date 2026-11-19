@@ -25,6 +25,7 @@ import {
 import { decodeLogsState } from '../../data/urlState';
 import { getRememberedView, rememberView, resolveTraceLanding, TraceLanding } from '../../data/traceViewChoice';
 import { TraceViewPickerModal } from '../TraceViewPickerModal';
+import { cleanDefaultTimeRange, DefaultTimeRangeContext } from '../../utils/defaultTimeRange';
 
 // Visualize is its own chunk: Discover users never pay for it.
 const LensPage = React.lazy(() => import('../../lens/LensPage').then((m) => ({ default: m.LensPage })));
@@ -70,6 +71,7 @@ function App(props: AppRootProps<AppJsonData>) {
 
   // Shared views from jsonData (admin-managed); migrate from legacy sourceConfig if needed.
   const sharedViews = useMemo(() => migrateLegacyConfig(jsonData), [jsonData]);
+  const defaultTime = useMemo(() => cleanDefaultTimeRange(jsonData.defaultTimeRange), [jsonData]);
 
   // Personal views from localStorage (per-browser, per-user).
   const [personalViews, setPersonalViews] = useState<DataView[]>(() => loadPersonalViews());
@@ -232,6 +234,7 @@ function App(props: AppRootProps<AppJsonData>) {
     >
       <AiConfigContext.Provider value={jsonData.ai ?? null}>
         <SourceConfigContext.Provider value={sourceConfig}>
+          <DefaultTimeRangeContext.Provider value={defaultTime}>
           {traceLanding.status === 'choosing' ? (
             <TraceViewPickerModal
               landing={traceLanding}
@@ -243,6 +246,7 @@ function App(props: AppRootProps<AppJsonData>) {
               <AppRoutes />
             </Suspense>
           )}
+          </DefaultTimeRangeContext.Provider>
         </SourceConfigContext.Provider>
       </AiConfigContext.Provider>
     </DataViewContext.Provider>

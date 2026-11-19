@@ -55,7 +55,11 @@ async function pickView(page: Page, name: string) {
   await page.getByRole('button', { name: new RegExp(`^${name}`) }).click();
 }
 const pill = (page: Page, text: RegExp) => page.getByRole('button', { name: text });
-const ctxLabel = (page: Page) => page.getByTitle(/^default\./);
+// The active table is in the picker's tooltip; the carried query / filters in the context summary.
+const picker = (page: Page) => page.getByRole('button', { name: /^Data view/ });
+const expectTable = (page: Page, table: string) =>
+  expect(picker(page)).toHaveAttribute('title', `Switch data view (default.${table})`);
+const ctxLabel = (page: Page) => page.getByTestId('lens-context');
 
 test('#16b: Visualize has a data view picker; switching keeps query and time, drops fields the view lacks', async ({
   page,
@@ -64,7 +68,7 @@ test('#16b: Visualize has a data view picker; switching keeps query and time, dr
   const viz = new VisualizePage(page);
   await viz.open({ q: 'SeverityText:error' });
   await expect(page.getByRole('button', { name: /^Data view.*Spec fixture logs/ })).toBeVisible();
-  await expect(ctxLabel(page)).toHaveText(/default\.spec_logs/);
+  await expectTable(page, 'spec_logs');
 
   await viz.addField('ServiceName');
   await viz.addField('SeverityNumber');
@@ -72,7 +76,7 @@ test('#16b: Visualize has a data view picker; switching keeps query and time, dr
   await expect(viz.dimensions).toContainText('ServiceName');
 
   await pickView(page, 'Eval OTel');
-  await expect(ctxLabel(page)).toHaveText(/default\.eval_otel/);
+  await expectTable(page, 'eval_otel');
   // SeverityNumber is not a column of eval_otel: its dimension is dropped, ServiceName stays.
   await expect(viz.dimensions).not.toContainText('SeverityNumber');
   await expect(viz.dimensions).toContainText('ServiceName');
@@ -96,7 +100,7 @@ test('#16b: the chart re-queries the new view (counts follow the table)', async 
 
   // otel_logs has no rows in the fixture week: the same chart has no payments bar there.
   await pickView(page, 'OTel demo logs');
-  await expect(ctxLabel(page)).toHaveText(/default\.otel_logs/);
+  await expectTable(page, 'otel_logs');
   await expect(viz.dimensions).toContainText('ServiceName');
   await expect(paymentsBar).toHaveCount(0);
 
@@ -127,7 +131,7 @@ test('#16b / D7: on another table plain filters arrive disabled, pinned ones fol
 test('#16b: the URL data view applies on Visualize, and Explore in Discover carries it', async ({ page }) => {
   const viz = new VisualizePage(page);
   await viz.open({ ds: 'otel-demo' });
-  await expect(ctxLabel(page)).toHaveText(/default\.otel_logs/);
+  await expectTable(page, 'otel_logs');
   await expect(page.getByRole('button', { name: /^Data view.*OTel demo logs/ })).toBeVisible();
   const href = await page.getByRole('link', { name: 'Explore in Discover' }).getAttribute('href');
   expect(new URLSearchParams(href!.split('?')[1]).get('ds')).toBe('otel-demo');
@@ -159,7 +163,8 @@ test('#16c: Visualize from the side menu (no params) restores the tab context', 
   const before = new URL(page.url()).searchParams;
 
   await page.goto(`/a/${pluginJson.id}/visualize`);
-  await expect(ctxLabel(page)).toHaveText(/default\.otel_logs · ServiceName:payments/);
+  await expectTable(page, 'otel_logs');
+  await expect(ctxLabel(page)).toHaveText(/ServiceName:payments/);
   const after = new URL(page.url()).searchParams;
   for (const k of ['q', 'from', 'to', 'ds']) {
     expect(after.get(k)).toBe(before.get(k));

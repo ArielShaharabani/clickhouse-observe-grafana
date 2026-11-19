@@ -73,9 +73,7 @@ export function addField(state: LensState, field: LensField, ctx: LensContext): 
       metrics.push(countMetric());
     }
   } else if (field.type === 'time') {
-    if (!buckets.some((b) => b.kind === 'date_histogram')) {
-      buckets = [dateDim(field.sqlExpr, field.label), ...buckets];
-    }
+    return addTimeBucket(state, field, ctx);
   } else if (field.type === 'number') {
     if (metrics.some((m) => m.op === 'median' && m.field === field.sqlExpr)) {
       return state;
@@ -120,8 +118,48 @@ export function addField(state: LensState, field: LensField, ctx: LensContext): 
  * buckets carry over in order; a time-based XY type with no date bucket gets one on X; anything
  * the target can't hold is dropped. The layer is never cleared.
  */
-export function switchChart(state: LensState, target: ChartType, ctx: LensContext, subType?: XySubType): LensState {
+/** Charts that can show a date histogram. */
+const showsTime = (t: ChartType) => isXy(t) || t === 'table';
+
+/**
+ * A time field on the workspace or a bucket slot: a date histogram, first. On a chart that can't show
+ * time (Metric, Pie) it switches to the chart the user came from (or a line chart, LENS-AUTO-01) —
+ * like Kibana, where dropping a date field picks a suggestion that can use it — and a date
+ * histogram parked by an earlier switch comes back instead of a new one.
+ */
+export function addTimeBucket(state: LensState, field: LensField, ctx: LensContext): LensState {
+  const parkedDate = state.parked?.buckets.some((b) => b.kind === 'date_histogram');
   let buckets = [...state.buckets];
+  if (!parkedDate && !buckets.some((b) => b.kind === 'date_histogram')) {
+    buckets = [dateDim(field.sqlExpr, field.label), ...buckets];
+  }
+  const metrics = state.metrics.length > 0 ? state.metrics : [countMetric()];
+  if (state.buckets.length === 0 && state.metrics.length === 0 && !state.parked) {
+    return withDefaults({ chartType: chooseChart(buckets), buckets, metrics });
+  }
+  const target = showsTime(state.chartType)
+    ? state.chartType
+    : state.parked && showsTime(state.parked.chartType)
+      ? state.parked.chartType
+      : 'line';
+  return switchChart({ ...state, buckets, metrics }, target, ctx, state.subType ?? state.parked?.subType);
+}
+
+export function switchChart(state: LensState, target: ChartType, ctx: LensContext, subType?: XySubType): LensState {
+  const parked = state.parked;
+  // Bring back what an earlier switch parked (a date histogram returns to X, the rest after).
+  let buckets = [...state.buckets];
+  if (parked && parked.buckets.length > 0) {
+    const have = new Set(buckets.map((b) => b.id));
+    const hasDate = buckets.some((b) => b.kind === 'date_histogram');
+    const back = parked.buckets.filter((b) => !have.has(b.id) && !(hasDate && b.kind === 'date_histogram'));
+    buckets = [
+      ...back.filter((b) => b.kind === 'date_histogram'),
+      ...buckets,
+      ...back.filter((b) => b.kind !== 'date_histogram'),
+    ];
+  }
+  const offered = buckets;
   let metrics = [...state.metrics];
   switch (target) {
     case 'line':
@@ -164,15 +202,33 @@ export function switchChart(state: LensState, target: ChartType, ctx: LensContex
     metrics = [countMetric(), ...metrics];
   }
   const next: LensState = { chartType: target, buckets, metrics };
+  // Style and layers (LENS-STYLE-01, LENS-LAYER-01) only draw on XY charts; parked otherwise.
+  const style = isXy(state.chartType) ? state.style : parked?.style;
+  const layers = isXy(state.chartType) ? state.layers : parked?.layers;
   if (isXy(target)) {
-    next.subType = subType ?? state.subType ?? 'stacked';
-    if (state.style && isXy(state.chartType)) {
-      next.style = state.style;
+    next.subType = subType ?? state.subType ?? parked?.subType ?? 'stacked';
+    if (style) {
+      next.style = style;
     }
-    // Reference line / annotation layers (LENS-LAYER-01) only draw on XY charts.
-    if (state.layers && isXy(state.chartType)) {
-      next.layers = state.layers;
+    if (layers) {
+      next.layers = layers;
     }
+  }
+  // Park what the target can't show, so switching back restores it (Kibana keeps unused columns).
+  const kept = new Set(buckets.map((b) => b.id));
+  const dropped = offered.filter((b) => !kept.has(b.id) && (b.kind === 'date_histogram' || !showsTime(target)));
+  const parkStyle = isXy(target) ? undefined : style;
+  const parkLayers = isXy(target) ? undefined : layers;
+  if (dropped.length > 0 || parkStyle || parkLayers) {
+    const from = isXy(state.chartType) ? state.chartType : (parked?.chartType ?? state.chartType);
+    const fromSub = isXy(state.chartType) ? state.subType : parked?.subType;
+    next.parked = {
+      chartType: from,
+      ...(fromSub ? { subType: fromSub } : {}),
+      buckets: dropped.map(({ pivot: _p, ...b }) => b as BucketDim),
+      ...(parkStyle ? { style: parkStyle } : {}),
+      ...(parkLayers ? { layers: parkLayers } : {}),
+    };
   }
   return next;
 }
