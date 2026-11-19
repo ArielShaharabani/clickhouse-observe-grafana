@@ -16,6 +16,7 @@ import { Icon, Portal, useStyles2 } from '@grafana/ui';
 import { FilterPill } from '../../types';
 import { FieldValue } from '../../sql/kql/_values';
 import { FilterEditForm } from './FilterEditForm';
+import { usePopoverDialog } from '../a11y/dialog';
 
 interface AddFilterPopoverProps {
   /** Page-supplied value lookup (bound to the page's own table/filters). */
@@ -46,7 +47,13 @@ export function AddFilterPopover({ loadValues, onAddFilter }: AddFilterPopoverPr
 
   return (
     <div ref={anchorRef} className={styles.wrapper}>
-      <button className={styles.triggerBtn} onClick={openPopover} title="Add a structured filter">
+      <button
+        className={styles.triggerBtn}
+        onClick={openPopover}
+        title="Add a structured filter"
+        aria-haspopup="dialog"
+        aria-expanded={isOpen}
+      >
         <Icon name="plus-circle" size="sm" />
         Add filter
       </button>
@@ -56,11 +63,7 @@ export function AddFilterPopover({ loadValues, onAddFilter }: AddFilterPopoverPr
           {/* Click-outside backdrop */}
           <div className={styles.backdrop} onClick={close} />
 
-          <div
-            className={styles.panel}
-            style={{ top: popoverPos.top, left: popoverPos.left }}
-            onClick={(e) => e.stopPropagation()}
-          >
+          <FilterPanel className={styles.panel} pos={popoverPos} label="Add filter" onClose={close}>
             <div className={styles.panelHeader}>
               <span className={styles.panelTitle}>Add filter</span>
             </div>
@@ -73,9 +76,45 @@ export function AddFilterPopover({ loadValues, onAddFilter }: AddFilterPopoverPr
               }}
               onCancel={close}
             />
-          </div>
+          </FilterPanel>
         </Portal>
       )}
+    </div>
+  );
+}
+
+/**
+ * The positioned filter panel (Add filter, Edit filter) as a dialog (SHARED-A11Y-01): announced
+ * with the dialog hint, Escape closes it, focus moves in and goes back to the opener.
+ */
+export function FilterPanel({
+  className,
+  pos,
+  label,
+  onClose,
+  returnFocus,
+  children,
+}: {
+  className: string;
+  pos: { top: number; left: number };
+  label: string;
+  onClose: () => void;
+  returnFocus?: () => HTMLElement | null | undefined;
+  children: React.ReactNode;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  const { dialogProps, hint } = usePopoverDialog(ref, { onClose, returnFocus });
+  return (
+    <div
+      ref={ref}
+      {...dialogProps}
+      aria-label={label}
+      className={className}
+      style={{ top: pos.top, left: pos.left, outline: 'none' }}
+      onClick={(e) => e.stopPropagation()}
+    >
+      {hint}
+      {children}
     </div>
   );
 }

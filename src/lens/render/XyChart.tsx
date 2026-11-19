@@ -9,6 +9,7 @@ import { css, cx } from '@emotion/css';
 import { dateTime, GrafanaTheme2 } from '@grafana/data';
 import { IconButton, useStyles2, useTheme2 } from '@grafana/ui';
 import { LensResult } from '../compile';
+import { moveMenuFocus, usePopoverDialog } from '../../components/a11y/dialog';
 import { ChartType, MetricDim, XySubType } from '../state';
 import { formatValue } from '../metricOptions';
 import {
@@ -369,14 +370,16 @@ export function XyChart({
               name="ellipsis-v"
               size="sm"
               tooltip={`Legend actions for ${s.name || '(empty)'}`}
+              aria-haspopup="menu"
+              aria-expanded={menuFor === s.name}
               onClick={() => setMenuFor(menuFor === s.name ? null : s.name)}
             />
           )}
           {menuFor === s.name && onLegendFilter && (
-            <div
+            <LegendMenu
               className={cx(styles.menu, (lg.alignment.startsWith('top') || inside) && styles.menuDown)}
-              role="menu"
-              aria-label={`Actions for ${s.name}`}
+              label={`Actions for ${s.name}`}
+              onClose={() => setMenuFor(null)}
             >
               <div className={styles.menuTitle}>{s.breakdown || '(empty)'}</div>
               {(['for', 'out'] as const).map((mo) => (
@@ -393,7 +396,7 @@ export function XyChart({
                   {mo === 'for' ? 'Filter for' : 'Filter out'}
                 </button>
               ))}
-            </div>
+            </LegendMenu>
           )}
         </div>
       ))}
@@ -880,3 +883,46 @@ const getStyles = (theme: GrafanaTheme2) => ({
     }
   `,
 });
+
+/**
+ * Legend ⋮ menu (SHARED-A11Y-01): focus starts on the first item, Up / Down / Home / End move,
+ * Escape or Tab closes it and focus goes back to the ⋮ button.
+ */
+function LegendMenu({
+  className,
+  label,
+  onClose,
+  children,
+}: {
+  className: string;
+  label: string;
+  onClose: () => void;
+  children: React.ReactNode;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  const { dialogProps } = usePopoverDialog(ref, { onClose, autoFocus: false });
+  useEffect(() => {
+    ref.current?.querySelector<HTMLElement>('[role="menuitem"]')?.focus({ preventScroll: true });
+  }, []);
+  return (
+    <div
+      ref={ref}
+      className={className}
+      role="menu"
+      tabIndex={-1}
+      aria-label={label}
+      onKeyDown={(e) => {
+        if (ref.current && moveMenuFocus(ref.current, e.key)) {
+          e.preventDefault();
+        } else if (e.key === 'Tab') {
+          e.preventDefault();
+          onClose();
+        } else {
+          dialogProps.onKeyDown(e);
+        }
+      }}
+    >
+      {children}
+    </div>
+  );
+}

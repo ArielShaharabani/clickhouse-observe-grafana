@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { splitHighlights } from '../sql/kql/highlight';
 import { copyToClipboard, valueActions } from '../actions/registry';
 import { ActionIconButton } from '../actions/ActionIconButton';
@@ -161,6 +161,9 @@ export function LogsTable({
   // `selectedRow` (which opens the detail panel). Arrows / Home / End / PgUp / PgDn move it;
   // Enter opens the Expand popover for it (DISC-TABLE-01 keyboard model).
   const [rawFocus, setFocusCell] = useState<CellPos>({ ri: -1, ci: 0 });
+  // SHARED-A11Y-01: focus stays on the grid; aria-activedescendant names the cursor cell.
+  const cellIdPrefix = useId();
+  const cellId = (ri: number, ci: number) => `${cellIdPrefix}-cell-${ri}-${ci}`;
   // Clamped to the current page, so rendering and key handling always agree after a re-query.
   const focusCell: CellPos =
     rawFocus.ri < 0 || rows.length === 0
@@ -354,6 +357,11 @@ export function LogsTable({
       ref={wrapperRef}
       role="grid"
       aria-label="Log results"
+      aria-activedescendant={
+        gridFocused && focusCell.ri >= 0 && focusCell.ri < rows.length && columns[focusCell.ci]
+          ? cellId(focusCell.ri, focusCell.ci)
+          : undefined
+      }
       tabIndex={0}
       onKeyDown={onTableKeyDown}
       onFocus={() => setGridFocused(true)}
@@ -380,6 +388,7 @@ export function LogsTable({
               return (
                 <th
                   key={col.id}
+                  aria-sort={isSorted ? (sort!.dir === 'asc' ? 'ascending' : 'descending') : undefined}
                   className={cx(
                     styles.th,
                     styles.dataTh,
@@ -428,24 +437,34 @@ export function LogsTable({
                     {draggable && (
                       <Icon name="draggabledots" size="sm" className={styles.dragHandle} title="Drag to reorder" />
                     )}
-                    <span
-                      className={onSort ? styles.sortable : ''}
-                      onClick={() => onSort?.(col.key)}
-                    >
-                      {col.displayName}
-                      {isSorted && (
-                        <Icon
-                          name={sort!.dir === 'asc' ? 'arrow-up' : 'arrow-down'}
-                          size="xs"
-                        />
-                      )}
-                    </span>
+                    {onSort ? (
+                      // A button, so sorting works from the keyboard too (SHARED-A11Y-01).
+                      <button
+                        type="button"
+                        className={cx(styles.sortable, styles.sortBtn)}
+                        title={`Sort by ${col.displayName}`}
+                        onClick={() => onSort(col.key)}
+                      >
+                        {col.displayName}
+                        {isSorted && (
+                          <Icon name={sort!.dir === 'asc' ? 'arrow-up' : 'arrow-down'} size="xs" />
+                        )}
+                      </button>
+                    ) : (
+                      <span className={styles.sortable}>
+                        {col.displayName}
+                        {isSorted && (
+                          <Icon name={sort!.dir === 'asc' ? 'arrow-up' : 'arrow-down'} size="xs" />
+                        )}
+                      </span>
+                    )}
                     {!col.isCore && (
                       <div className={styles.colActions}>
                         {onMoveColumn && idx > 0 && (
                           <button
                             className={styles.colBtn}
                             title="Move left"
+                            aria-label={`Move ${col.displayName} left`}
                             onClick={() => onMoveColumn(col.id, 'left')}
                           >
                             <Icon name="angle-left" size="xs" />
@@ -455,6 +474,7 @@ export function LogsTable({
                           <button
                             className={styles.colBtn}
                             title="Move right"
+                            aria-label={`Move ${col.displayName} right`}
                             onClick={() => onMoveColumn(col.id, 'right')}
                           >
                             <Icon name="angle-right" size="xs" />
@@ -464,6 +484,7 @@ export function LogsTable({
                           <button
                             className={styles.colBtn}
                             title="Remove column"
+                            aria-label={`Remove column ${col.displayName}`}
                             onClick={() => onRemoveColumn(col)}
                           >
                             <Icon name="times" size="xs" />
@@ -548,6 +569,7 @@ export function LogsTable({
                     return (
                       <td
                         key={col.id}
+                        id={cellId(i, ci)}
                         data-cell={`${i}:${ci}`}
                         aria-selected={isFocusedCell || undefined}
                         className={cx(
@@ -773,7 +795,16 @@ const getStyles = (theme: GrafanaTheme2) => ({
     gap: 1px;
     margin-left: auto;
     opacity: 0;
-    th:hover & { opacity: 1; }
+    th:hover &,
+    th:focus-within & { opacity: 1; }
+  `,
+  sortBtn: css`
+    background: transparent;
+    border: none;
+    padding: 0;
+    color: inherit;
+    font: inherit;
+    text-align: left;
   `,
   colBtn: css`
     background: transparent;

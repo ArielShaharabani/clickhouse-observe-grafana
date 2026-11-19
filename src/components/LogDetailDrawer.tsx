@@ -519,6 +519,7 @@ export function LogDetailDrawer({
             <Input
               prefix={<Icon name="search" />}
               placeholder="Search field names and values"
+              aria-label="Search field names and values"
               value={searchAttr}
               onChange={(e) => setSearchAttr(e.currentTarget.value)}
               className={styles.attrSearch}

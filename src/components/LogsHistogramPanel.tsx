@@ -121,7 +121,8 @@ export function LogsHistogramPanel({
               colorMode={colorModeFor(breakdown)}
               bucketMs={resolvedInterval.intervalMs}
             />
-            <span className={styles.histogramMeta}>
+            {/* SHARED-A11Y-01: the new hit count is spoken after each search. */}
+            <span className={styles.histogramMeta} role="status">
               {totalEvents.toLocaleString()} rows (count) &middot; {formatRangeCaption(timeRange)} (interval: {resolvedInterval.label})
             </span>
           </>

@@ -1,4 +1,5 @@
-import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { DialogHint } from './a11y/dialog';
 import { copyToClipboard, valueActions } from '../actions/registry';
 import { css, cx } from '@emotion/css';
 import { dateTime, formattedValueToString, getValueFormat, GrafanaTheme2, TimeRange } from '@grafana/data';
@@ -161,11 +162,20 @@ export function VolumeHistogram({
     if (!breakdownPopover) {
       return;
     }
-    requestAnimationFrame(() => popoverRef.current?.querySelector<HTMLButtonElement>('button')?.focus());
+    // SHARED-A11Y-01: focus goes back to the legend ⋮ (the opener) when the popover closes.
+    const opener = document.activeElement as HTMLElement | null;
+    const raf = requestAnimationFrame(() => popoverRef.current?.querySelector<HTMLButtonElement>('button')?.focus());
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setBreakdownPopover(null);
     document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
+    return () => {
+      cancelAnimationFrame(raf);
+      document.removeEventListener('keydown', onKey);
+      if ((!document.activeElement || document.activeElement === document.body) && opener?.isConnected) {
+        opener.focus({ preventScroll: true });
+      }
+    };
   }, [breakdownPopover]);
+  const popoverHintId = useId();
   // dragStart holds the live drag-anchor value used by the imperative mouse-move math below.
   // isDragging mirrors "is a drag in progress" into state so the render below (hover band
   // visibility) doesn't read a ref during render.
@@ -877,9 +887,11 @@ export function VolumeHistogram({
             className={styles.popover}
             role="dialog"
             aria-label={`Actions for ${breakdownPopover.level || '(empty)'}`}
+            aria-describedby={popoverHintId}
             style={{ left: breakdownPopover.clientX, top: breakdownPopover.clientY }}
             onClick={(e) => e.stopPropagation()}
           >
+            <DialogHint id={popoverHintId} />
             <div className={styles.popoverTitle} title={breakdownPopover.level}>
               {breakdownPopover.level || '(empty)'}
             </div>

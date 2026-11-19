@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { css, cx } from '@emotion/css';
 import { GrafanaTheme2 } from '@grafana/data';
 import { useStyles2, Icon, Portal } from '@grafana/ui';
@@ -6,6 +6,8 @@ import { FilterOp, FilterPill } from '../types';
 import { filterLabel, negateFilter, removeFilter, toggleDisabled, updateFilter } from '../sql/filters';
 import { FieldValue } from '../sql/kql/_values';
 import { FilterEditForm } from './AddFilter/FilterEditForm';
+import { FilterPanel } from './AddFilter/AddFilterPopover';
+import { moveMenuFocus, usePopoverDialog } from './a11y/dialog';
 import { pinFilterInStore, replacePinInStore, unpinFilterInStore } from '../state/sharedSearch';
 
 const NEGATED_OPS: ReadonlySet<FilterOp> = new Set(['!=', 'not_contains', 'not_one_of', 'not_exists', 'not_between']);
@@ -64,6 +66,9 @@ export function FilterPills({ filters, onChange, loadValues, pinTable }: FilterP
   };
   const [menu, setMenu] = useState<OpenMenu | null>(null);
   const [editing, setEditing] = useState<OpenMenu | null>(null);
+  // Pill buttons by filter id: focus goes back to the pill when its menu or editor closes.
+  const pillButtons = useRef(new Map<string, HTMLButtonElement>());
+  const pillButton = (id: string) => pillButtons.current.get(id) ?? null;
 
   if (filters.length === 0) {
     return null;
@@ -94,7 +99,15 @@ export function FilterPills({ filters, onChange, loadValues, pinTable }: FilterP
             title={filterLabel(f)}
           >
             <button
+              ref={(el) => {
+                if (el) {
+                  pillButtons.current.set(f.id, el);
+                } else {
+                  pillButtons.current.delete(f.id);
+                }
+              }}
               className={styles.pillBody}
+              aria-haspopup="menu"
               aria-label={`Filter actions: ${filterLabel(f)}${f.pinned ? ' (pinned)' : ''}${f.disabled ? ' (disabled)' : ''}`}
               onClick={(e) => setMenu({ id: f.id, rect: e.currentTarget.getBoundingClientRect() })}
             >
@@ -118,6 +131,7 @@ export function FilterPills({ filters, onChange, loadValues, pinTable }: FilterP
                 anchorRect={menu.rect}
                 pill={f}
                 onClose={() => setMenu(null)}
+                returnFocus={() => pillButton(f.id)}
                 onEdit={() => {
                   setEditing(menu);
                   setMenu(null);
@@ -153,6 +167,7 @@ export function FilterPills({ filters, onChange, loadValues, pinTable }: FilterP
                 pill={f}
                 loadValues={loadValues}
                 onCancel={() => setEditing(null)}
+                returnFocus={() => pillButton(f.id)}
                 onSubmit={(patched) => {
                   replaceIfPinned(f, { ...f, ...patched });
                   onChange(updateFilter(filters, f.id, patched));
@@ -187,11 +202,23 @@ interface FilterPillMenuProps {
   onToggleDisabled: () => void;
   onTogglePin: () => void;
   onDelete: () => void;
+  /** The pill button, focused again when the menu closes. */
+  returnFocus: () => HTMLElement | null;
 }
 
 const MENU_HEIGHT_ESTIMATE = 215;
 
-function FilterPillMenu({ anchorRect, pill, onClose, onEdit, onToggleNegate, onToggleDisabled, onTogglePin, onDelete }: FilterPillMenuProps) {
+function FilterPillMenu({
+  anchorRect,
+  pill,
+  onClose,
+  returnFocus,
+  onEdit,
+  onToggleNegate,
+  onToggleDisabled,
+  onTogglePin,
+  onDelete,
+}: FilterPillMenuProps) {
   const styles = useStyles2(getStyles);
   const negated = NEGATED_OPS.has(pill.op);
   const flipUp = anchorRect.bottom + 6 + MENU_HEIGHT_ESTIMATE > window.innerHeight;
@@ -200,33 +227,53 @@ function FilterPillMenu({ anchorRect, pill, onClose, onEdit, onToggleNegate, onT
     left: Math.max(8, Math.min(anchorRect.left, window.innerWidth - 220 - 8)),
   };
 
+  // SHARED-A11Y-01: Escape closes, focus starts on the first item and returns to the pill.
+  const ref = useRef<HTMLDivElement>(null);
+  const { dialogProps } = usePopoverDialog(ref, { onClose, returnFocus, autoFocus: false });
+  useEffect(() => {
+    ref.current?.querySelector<HTMLElement>('[role="menuitem"]')?.focus({ preventScroll: true });
+  }, []);
+
   return (
     <Portal>
       <div className={styles.backdrop} onClick={onClose} />
       <div
+        ref={ref}
         className={styles.menu}
         role="menu"
+        tabIndex={-1}
         aria-label="Filter actions"
         style={{ top: pos.top, left: pos.left }}
         onClick={(e) => e.stopPropagation()}
+        onKeyDown={(e) => {
+          if (ref.current && moveMenuFocus(ref.current, e.key)) {
+            e.preventDefault();
+          } else if (e.key === 'Tab') {
+            // A menu is not a tab stop: close it and go back to the pill.
+            e.preventDefault();
+            onClose();
+          } else {
+            dialogProps.onKeyDown(e);
+          }
+        }}
       >
-        <button className={styles.menuItem} onClick={onTogglePin}>
+        <button type="button" role="menuitem" className={styles.menuItem} onClick={onTogglePin}>
           <Icon name="gf-pin" size="sm" />
           {pill.pinned ? 'Unpin' : 'Pin across pages'}
         </button>
-        <button className={styles.menuItem} onClick={onEdit}>
+        <button type="button" role="menuitem" className={styles.menuItem} onClick={onEdit}>
           <Icon name="pen" size="sm" />
           Edit filter
         </button>
-        <button className={styles.menuItem} onClick={onToggleNegate}>
+        <button type="button" role="menuitem" className={styles.menuItem} onClick={onToggleNegate}>
           <Icon name="minus-circle" size="sm" />
           {negated ? 'Include results' : 'Exclude results'}
         </button>
-        <button className={styles.menuItem} onClick={onToggleDisabled}>
+        <button type="button" role="menuitem" className={styles.menuItem} onClick={onToggleDisabled}>
           <Icon name="eye-slash" size="sm" />
           {pill.disabled ? 'Re-enable' : 'Temporarily disable'}
         </button>
-        <button className={styles.menuItem} onClick={onDelete}>
+        <button type="button" role="menuitem" className={styles.menuItem} onClick={onDelete}>
           <Icon name="trash-alt" size="sm" />
           Delete
         </button>
@@ -244,28 +291,27 @@ interface FilterPillEditPopoverProps {
   loadValues: (sqlExpr: string) => Promise<FieldValue[]>;
   onCancel: () => void;
   onSubmit: (pill: FilterPill) => void;
+  returnFocus: () => HTMLElement | null;
 }
 
 const EDIT_PANEL_W = 760;
 
-function FilterPillEditPopover({ anchorRect, pill, loadValues, onCancel, onSubmit }: FilterPillEditPopoverProps) {
+function FilterPillEditPopover({ anchorRect, pill, loadValues, onCancel, onSubmit, returnFocus }: FilterPillEditPopoverProps) {
   const styles = useStyles2(getStyles);
   const pos = {
     top: anchorRect.bottom + 6,
     left: Math.max(8, Math.min(anchorRect.left, window.innerWidth - EDIT_PANEL_W - 8)),
   };
 
-  const stop = useCallback((e: React.MouseEvent) => e.stopPropagation(), []);
-
   return (
     <Portal>
       <div className={styles.backdrop} onClick={onCancel} />
-      <div className={styles.editPanel} style={{ top: pos.top, left: pos.left }} onClick={stop}>
+      <FilterPanel className={styles.editPanel} pos={pos} label="Edit filter" onClose={onCancel} returnFocus={returnFocus}>
         <div className={styles.panelHeader}>
           <span className={styles.panelTitle}>Edit filter</span>
         </div>
         <FilterEditForm initial={pill} loadValues={loadValues} onSubmit={onSubmit} onCancel={onCancel} />
-      </div>
+      </FilterPanel>
     </Portal>
   );
 }

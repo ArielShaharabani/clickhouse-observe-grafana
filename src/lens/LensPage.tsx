@@ -5,7 +5,7 @@
  * Shares the search context with Discover through the URL (q, filters, from/to); the Lens state
  * itself lives in the `lens` param so an unsaved visualization survives a refresh (IT-K).
  */
-import React, { useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useContext, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { css, cx } from '@emotion/css';
 import { dateTime, GrafanaTheme2, IconName, locationUtil, TimeRange } from '@grafana/data';
@@ -59,6 +59,8 @@ import { shiftTimeRange, zoomOutTimeRange } from '../utils/timeRangeNav';
 import { QueryProgress } from '../components/QueryProgress/QueryProgress';
 import { lensApproxNote } from './approx';
 import { LensInspector } from './Inspector';
+import { DND_INSTRUCTIONS, DropTarget, useKeyboardDrag } from './keyboardDnd';
+import { LiveRegion, srOnly } from '../components/a11y/dialog';
 
 function defaultRange(): TimeRange {
   return { from: dateTime(Date.now() - 3600 * 1000), to: dateTime(Date.now()), raw: { from: 'now-1h', to: 'now' } };
@@ -550,6 +552,27 @@ export function LensPage() {
     }
   };
   const [dragOver, setDragOver] = useState(false);
+  // SHARED-A11Y-01: keyboard alternative to dragging a field onto the workspace or a dimension
+  // group, with spoken instructions (live region). Targets are the same as the mouse drop zones.
+  const dropTargetsFor = (f: LensField): DropTarget[] => {
+    const targets: DropTarget[] = [{ id: 'workspace', label: 'the workspace', drop: () => onAdd(f) }];
+    if (!isEmptyLens(lens) && !editingDim && !styleView) {
+      for (const g of dimensionGroups(lens)) {
+        if ((g.dims.length === 0 || g.multi) && canAddTo(g)) {
+          targets.push({ id: `group:${g.name}`, label: g.name, drop: () => addToGroup(g, f) });
+        }
+      }
+    }
+    return targets;
+  };
+  const kbDrag = useKeyboardDrag(dropTargetsFor, (f) => f.label, (f) => f.id);
+  const dndHelpId = useId();
+  // The dimension's button in the list: focus returns there when its editor closes.
+  const dimsRef = useRef<HTMLElement>(null);
+  const dimButton = (id: string) =>
+    Array.from(dimsRef.current?.querySelectorAll<HTMLElement>('[data-dim-edit]') ?? []).find(
+      (el) => el.dataset.dimEdit === id
+    );
 
   // LENS-INTERACT-02: Discover in a new tab, same context and data view (the one this page queries),
   // default columns plus the chart's top-values fields. A new tab bypasses Grafana's router, so the
@@ -622,6 +645,10 @@ export function LensPage() {
             onChange={(e) => setNameFilter(e.currentTarget.value)}
           />
           {fieldsLoading && <Spinner size="sm" />}
+          <span id={dndHelpId} className={srOnly}>
+            {DND_INSTRUCTIONS}
+          </span>
+          <LiveRegion message={kbDrag.message} testId="lens-dnd-live" />
           <div className={styles.fieldList}>
             {shownFields.map((f) => (
               <div
@@ -641,6 +668,17 @@ export function LensPage() {
                   size="sm"
                 />
                 <span className={styles.fieldName}>{f.label}</span>
+                <button
+                  type="button"
+                  className={cx(styles.dragHandle, kbDrag.isLifted(f) && styles.dragHandleLifted)}
+                  aria-label={`Drag ${f.label}`}
+                  aria-describedby={dndHelpId}
+                  aria-pressed={kbDrag.isLifted(f)}
+                  onKeyDown={kbDrag.onKeyDown(f)}
+                  onBlur={kbDrag.onBlur(f)}
+                >
+                  <Icon name="draggabledots" size="sm" />
+                </button>
                 <Button
                   size="sm"
                   variant="secondary"
@@ -665,7 +703,10 @@ export function LensPage() {
             )}
           </div>
           <div
-            className={cx(styles.chartArea, dragOver && styles.chartAreaOver)}
+            className={cx(
+              styles.chartArea,
+              (dragOver || kbDrag.activeTargetId === 'workspace') && styles.chartAreaOver
+            )}
             onDragOver={(e) => {
               if (e.dataTransfer.types.includes(FIELD_DRAG_MIME)) {
                 e.preventDefault();
@@ -786,7 +827,7 @@ export function LensPage() {
             onCancel={() => setChooser(null)}
           />
         )}
-        <section className={styles.dims} aria-label="Dimensions">
+        <section ref={dimsRef} className={styles.dims} aria-label="Dimensions">
           {!isEmptyLens(lens) && !editingDim && (
             <ChartTypeSwitcher
               value={lens.chartType}
@@ -822,6 +863,7 @@ export function LensPage() {
                 removeDim(editingDim.id);
               }}
               onClose={() => setEditingId(null)}
+              returnFocus={() => dimButton(editingDim.id)}
             />
           ) : isEmptyLens(lens) ? (
             <div className={styles.emptySub}>Dimensions appear here as you add fields.</div>
@@ -834,6 +876,7 @@ export function LensPage() {
                     <button
                       type="button"
                       className={styles.dimLabel}
+                      data-dim-edit={d.id}
                       aria-label={`Edit ${dimLabelIn(d, lens.metrics)}`}
                       onClick={() => setEditingId(d.id)}
                     >
@@ -850,7 +893,7 @@ export function LensPage() {
                 {(g.dims.length === 0 || g.multi) && (
                   <button
                     type="button"
-                    className={styles.slot}
+                    className={cx(styles.slot, kbDrag.activeTargetId === `group:${g.name}` && styles.slotTarget)}
                     aria-label={`Add to ${g.name}`}
                     disabled={!canAddTo(g)}
                     title={canAddTo(g) ? undefined : 'No other field can be added here'}
@@ -947,6 +990,24 @@ const getStyles = (theme: GrafanaTheme2) => ({
     &:hover {
       background: ${theme.colors.action.hover};
     }
+  `,
+  dragHandle: css`
+    display: flex;
+    align-items: center;
+    padding: 0;
+    background: none;
+    border: none;
+    border-radius: ${theme.shape.radius.default};
+    color: ${theme.colors.text.secondary};
+    cursor: grab;
+  `,
+  dragHandleLifted: css`
+    color: ${theme.colors.primary.text};
+    box-shadow: 0 0 0 2px ${theme.colors.primary.border};
+  `,
+  slotTarget: css`
+    border-color: ${theme.colors.primary.border} !important;
+    background: ${theme.colors.primary.transparent};
   `,
   fieldName: css`
     flex: 1;
