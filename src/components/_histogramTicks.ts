@@ -36,10 +36,15 @@ const STEPS = [
 const CHAR_PX = 6.5;
 /** Minimum clear space between two neighbouring labels. */
 const GAP_PX = 16;
+/** Minimum distance between ticks, so the axis stays readable (Kibana spaces ticks ~80-120 px). */
+const MIN_SPACING_PX = 80;
 /** Width of a date / month second line ("Jan 12, 2026", "September 2026"). */
 const SUB_LABEL_PX = 90;
 
 function mainFormat(step: number): string {
+  if (step >= 28 * DAY) {
+    return 'MMM YYYY';
+  }
   if (step >= DAY) {
     return 'Do';
   }
@@ -78,8 +83,8 @@ export function timeTicks(t0: number, t1: number, widthPx: number): AxisTick[] {
     STEPS.find((s) => {
       const spacing = (width * s) / span;
       const labelPx = mainFormat(s).replace('Do', '00th').length * CHAR_PX;
-      return spacing >= labelPx + GAP_PX && spacing >= 48;
-    }) ?? Math.ceil(span / DAY / Math.max(1, Math.floor(width / 64))) * DAY;
+      return spacing >= labelPx + GAP_PX && spacing >= MIN_SPACING_PX;
+    }) ?? Math.ceil(span / DAY / Math.max(1, Math.floor(width / MIN_SPACING_PX))) * DAY;
   const fmt = mainFormat(step);
   const ticks: AxisTick[] = [];
   let prevSubPx = -Infinity;
@@ -91,7 +96,7 @@ export function timeTicks(t0: number, t1: number, widthPx: number): AxisTick[] {
     // A second line marks a new day (sub-day steps) or a new month (day steps).
     const key = step >= DAY ? d.format('YYYY-MM') : d.format('YYYY-MM-DD');
     let subLabel: string | null = null;
-    if (key !== prevKey && px - prevSubPx >= SUB_LABEL_PX + 10) {
+    if (step < 28 * DAY && key !== prevKey && px - prevSubPx >= SUB_LABEL_PX + 10) {
       subLabel = step >= DAY ? d.format('MMMM YYYY') : d.format('MMM D, YYYY');
       prevSubPx = px;
     }
