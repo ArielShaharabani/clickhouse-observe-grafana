@@ -45,6 +45,9 @@ interface SearchBarProps {
    *  either surface warms the other. */
   loadMapKeys: (mapColumn: string) => Promise<KeysResult>;
   placeholder?: string;
+  /** Called with the syntax error when a commit is refused, and with null once a valid query is
+   *  committed — lets the page stop showing results of the previous query as if current. */
+  onInvalidQuery?: (message: string | null) => void;
 }
 
 /** Readable short labels for the autocomplete badge — replaces the old single-letter badge. */
@@ -62,6 +65,7 @@ export function SearchBar({
   onSearch,
   loadValues,
   loadMapKeys,
+  onInvalidQuery,
   placeholder = 'Filter logs with KQL  ·  level:error and service:payment*  ·  responseTime > 500',
 }: SearchBarProps) {
   const styles = useStyles2(getStyles);
@@ -277,17 +281,20 @@ export function SearchBar({
         setSuggestions([]);
         setOpen(false);
         setMapKeyState(null);
-        setParseError(e instanceof KqlSyntaxError ? e.message : String(e));
+        const message = e instanceof KqlSyntaxError ? e.message : String(e);
+        setParseError(message);
+        onInvalidQuery?.(message);
         return;
       }
     }
     setParseError(null);
+    onInvalidQuery?.(null);
     setSuggestions([]);
     setOpen(false);
     setMapKeyState(null);
     onChange(inputValue);
     onSearch();
-  }, [inputValue, onChange, onSearch]);
+  }, [inputValue, onChange, onSearch, onInvalidQuery]);
 
   const onKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
     if (!open || suggestions.length === 0) {

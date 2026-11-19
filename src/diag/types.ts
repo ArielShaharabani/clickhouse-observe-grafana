@@ -22,6 +22,8 @@ export type QueryOp =
   | 'mapKeys'
   | 'jsonPaths'
   | 'fieldValues'
+  /** Discover "Search entire time range": min / max event time (src/sql/timeBounds.ts). */
+  | 'timeBounds'
   /** Field statistics tab batch profile (src/sql/fieldStats.ts). */
   | 'fieldStats'
   | 'traceLink'
