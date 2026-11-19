@@ -95,7 +95,7 @@ test('#16b: the chart re-queries the new view (counts follow the table)', async 
   const viz = new VisualizePage(page);
   await viz.open();
   await viz.addField('ServiceName');
-  const paymentsBar = viz.chart.getByRole('button', { name: /^payments · Count of records: 9\.3K$/ });
+  const paymentsBar = viz.chart.getByRole('button', { name: /^payments · Count of records: 9,264$/ });
   await expect(paymentsBar).toBeVisible();
 
   // otel_logs has no rows in the fixture week: the same chart has no payments bar there.
