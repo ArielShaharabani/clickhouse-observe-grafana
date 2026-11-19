@@ -92,6 +92,7 @@ test('previous / next shift the window by its own length; zoom out doubles it', 
 test('a range link with ISO-8601 from/to opens the same window', async ({ page }) => {
   const logs = new LogsPage(page);
   await logs.open({ from: '2026-01-01T00:00:00.000Z', to: '2026-01-02T00:00:00.000Z' });
-  await logs.expectRowCount(5760);
+  // 5,760 rows of Jan 1 plus the one at exactly Jan 2 00:00:00 (inclusive end, as in Kibana).
+  await logs.expectRowCount(5761);
   await expect(page.getByTestId('time-duration-badge')).toHaveText('~1d');
 });
