@@ -91,6 +91,17 @@ export const formatAxisNumber = (v: number): string => {
 };
 const fmt = formatNumber;
 
+/**
+ * A brushed range in whole seconds, rounded outward and at least 1 s wide: the datasource's
+ * `$__fromTime` / `$__toTime` macros work in seconds, so milliseconds would be truncated in SQL.
+ * (Same rule as the Discover histogram's `brushRange`; to be de-duplicated when both land.)
+ */
+export function brushSeconds(from: number, to: number): [number, number] {
+  const a = Math.floor(Math.min(from, to) / 1000) * 1000;
+  const b = Math.max(a + 1000, Math.ceil(Math.max(from, to) / 1000) * 1000);
+  return [a, b];
+}
+
 /** Text of X position `xi`: the display label of a category (Other / (missing) included), else the time. */
 export function xText(result: LensResult, xi: number, spanMs: number): string {
   return result.xIsTime
@@ -405,7 +416,7 @@ export function XyChart({
         suppressClick.current = true;
         // Only the click that ends this drag is swallowed.
         setTimeout(() => (suppressClick.current = false), 0);
-        onBrush(Math.round(pxToTime(Math.min(x, x1))), Math.round(pxToTime(Math.max(x, x1))));
+        onBrush(...brushSeconds(pxToTime(Math.min(x, x1)), pxToTime(Math.max(x, x1))));
       }
     };
     window.addEventListener('mousemove', move);

@@ -8,7 +8,7 @@ import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { dateTime } from '@grafana/data';
 import { LensResult, LensSeries, orderSeries, shapeLensRows } from '../compile';
 import { queryShape } from '../dimensions';
-import { formatAxisNumber, formatNumber, toHex, XyChart } from '../render/XyChart';
+import { brushSeconds, formatAxisNumber, formatNumber, toHex, XyChart } from '../render/XyChart';
 import { assignColorSlots, hashString, seriesColorKey } from '../render/seriesColors';
 import { timeStep, timeTicks } from '../render/timeTicks';
 import { autoAxisTitles } from '../render/styleConfig';
@@ -176,6 +176,16 @@ describe('brush from a bar (item 3)', () => {
     expect(onBrush).toHaveBeenCalledTimes(1);
     const [from, to] = onBrush.mock.calls[0];
     expect(from).toBeLessThan(to);
+    // Whole seconds (the datasource time macros work in seconds).
+    expect(from % 1000).toBe(0);
+    expect(to % 1000).toBe(0);
+  });
+
+  it('brushSeconds rounds outward to whole seconds, at least one second wide', () => {
+    expect(brushSeconds(1_500, 4_200)).toEqual([1_000, 5_000]);
+    expect(brushSeconds(4_200, 1_500)).toEqual([1_000, 5_000]);
+    expect(brushSeconds(2_000, 2_000)).toEqual([2_000, 3_000]);
+    expect(brushSeconds(2_100, 2_300)).toEqual([2_000, 3_000]);
     expect(onSelect).not.toHaveBeenCalled();
   });
 
