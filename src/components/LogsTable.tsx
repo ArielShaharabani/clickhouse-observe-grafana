@@ -402,7 +402,7 @@ export function LogsTable({
     return { maxWidth: w, width: col.type === 'text' ? w : undefined, overflow: 'hidden', textOverflow: 'ellipsis' };
   };
   const startResize = (e: React.PointerEvent<HTMLDivElement>, id: string) => {
-    if (e.button !== 0) {
+    if (e.button > 0) {
       return;
     }
     e.preventDefault();
