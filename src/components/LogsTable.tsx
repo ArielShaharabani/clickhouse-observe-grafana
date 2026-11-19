@@ -463,8 +463,7 @@ export function LogsTable({
         id: 'copy-values',
         label: 'Copy column',
         icon: 'copy',
-        run: () => void copyToClipboard(rows.map((r) => cellTextValue(r[col.key])).join('
-')),
+        run: () => void copyToClipboard(rows.map((r) => cellTextValue(r[col.key])).join('\n')),
       });
     }
     if (onRemoveColumn && !col.isCore) {

@@ -121,7 +121,7 @@ export async function loadSharedSearches(): Promise<SavedSearch[]> {
     );
     const uids = (Array.isArray(hits) ? hits : []).map((h) => h?.uid).filter(isDashboardUid);
     const found = await Promise.all(
-      uids.map(async (uid) => {
+      uids.map(async (uid): Promise<SavedSearch | null> => {
         try {
           const res = await srv.get<{ dashboard?: Record<string, unknown> }>(
             `/api/dashboards/uid/${uid}`,

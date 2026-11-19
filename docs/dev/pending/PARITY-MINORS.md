@@ -20,7 +20,7 @@ Shared store: Grafana dashboards tagged `observe-saved-search`, payload in a cus
 
 | Area | Row |
 | --- | --- |
-| Jest | `src/data/__tests__/savedSearchesShared.test.ts`, `src/lens/__tests__/handoff.test.ts` (breakdown), `parityGrid.test.tsx` (Copy column) |
+| Jest | `src/data/__tests__/savedSearchesShared.test.ts`, `src/lens/__tests__/handoff.test.ts` (breakdown), `a11y.test.tsx` (header menu lists Copy column) |
 | E2E | `tests/features/feat-parity-minors.spec.ts` — not run (coordinator) |
 
 ## Deferred
