@@ -179,6 +179,7 @@ describe('brush from a bar (item 3)', () => {
     // Whole seconds (the datasource time macros work in seconds).
     expect(from % 1000).toBe(0);
     expect(to % 1000).toBe(0);
+    expect(onSelect).not.toHaveBeenCalled();
   });
 
   it('brushSeconds rounds outward to whole seconds, at least one second wide', () => {
@@ -186,7 +187,6 @@ describe('brush from a bar (item 3)', () => {
     expect(brushSeconds(4_200, 1_500)).toEqual([1_000, 5_000]);
     expect(brushSeconds(2_000, 2_000)).toEqual([2_000, 3_000]);
     expect(brushSeconds(2_100, 2_300)).toEqual([2_000, 3_000]);
-    expect(onSelect).not.toHaveBeenCalled();
   });
 
   it('a press without movement on a bar is still a click', () => {
