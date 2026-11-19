@@ -3,6 +3,8 @@ import { splitHighlights } from '../sql/kql/highlight';
 import { copyToClipboard, valueActions } from '../actions/registry';
 import { ActionIconButton } from '../actions/ActionIconButton';
 import { CellExpandPopover } from './CellExpandPopover';
+import { ColumnHeaderMenu, ColumnMenuItem } from './ColumnHeaderMenu';
+import { MAX_COLUMN_WIDTH, MIN_COLUMN_WIDTH } from '../data/columns';
 import { DEFAULT_GRID_DISPLAY, GridDisplay } from './GridDisplayOptions';
 import { css, cx } from '@emotion/css';
 import { GrafanaTheme2, DateTime, dateTimeFormat, toUtc } from '@grafana/data';
@@ -16,7 +18,11 @@ interface LogsTableProps {
   columns: SelectedColumn[];
   sort?: { col: string; dir: 'asc' | 'desc' };
   onRowClick: (row: LogRow) => void;
-  onSort?: (col: string) => void;
+  /** Header menu sort: `dir` is the chosen direction (Sort ascending / descending). */
+  onSort?: (col: string, dir?: 'asc' | 'desc') => void;
+  /** Header resize handle (PARITY-GRID): the new width in px, or undefined to reset it. Omit to
+   *  hide the handles. */
+  onResizeColumn?: (id: string, width: number | undefined) => void;
   onRemoveColumn?: (col: SelectedColumn) => void;
   onMoveColumn?: (id: string, direction: 'left' | 'right') => void;
   /** Drag-and-drop reorder: fired on drop with the dragged column's id and the id of the column
@@ -52,6 +58,18 @@ interface LogsTableProps {
 }
 
 type CellPos = { ri: number; ci: number };
+
+/** Horizontal cell padding (both sides) — a set column width is the cell's outer width. */
+const CELL_PAD_X = 24;
+/** Arrow-key step of a focused resize handle. */
+const RESIZE_KEY_STEP = 16;
+
+/** Width a column renders at: the user's, else the built-in one for time / level columns. */
+function columnWidth(col: SelectedColumn): number | undefined {
+  return col.width ?? (col.type === 'time' ? 190 : col.type === 'level' ? 80 : undefined);
+}
+
+const clampWidth = (w: number) => Math.round(Math.min(MAX_COLUMN_WIDTH, Math.max(MIN_COLUMN_WIDTH, w)));
 
 /** Shared with LogDetailDrawer's header summary so the row and detail view agree on color. */
 export function severityColor(severity: unknown): string {
@@ -134,6 +152,7 @@ export function LogsTable({
   sort,
   onRowClick,
   onSort,
+  onResizeColumn,
   onRemoveColumn,
   onMoveColumn,
   onMoveColumnTo,
@@ -178,6 +197,27 @@ export function LogsTable({
   // when the page changes and doesn't come back when returning (pages are fresh arrays).
   const [expanded, setExpanded] = useState<{ rows: LogRow[]; row: LogRow; colId: string } | null>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
+  // When the detail panel closes (Escape, its close button) focus would fall to <body>: give it
+  // back to the row's "Open detail" button, like Kibana returns focus to the row.
+  const prevSelectedRef = useRef<LogRow | null | undefined>(selectedRow);
+  useEffect(() => {
+    const prev = prevSelectedRef.current;
+    prevSelectedRef.current = selectedRow;
+    if (!prev || selectedRow) {
+      return;
+    }
+    const active = document.activeElement;
+    if (active && active !== document.body && active.isConnected) {
+      return;
+    }
+    const i = rows.indexOf(prev);
+    const btn = i >= 0 ? wrapperRef.current?.querySelector<HTMLElement>(`[data-expand-row="${i}"]`) : null;
+    (btn ?? wrapperRef.current)?.focus({ preventScroll: true });
+  }, [selectedRow, rows]);
+  // Header menu (sort / move / remove / copy name) and live column resizing.
+  const [menu, setMenu] = useState<{ colId: string; rect: DOMRect } | null>(null);
+  const [liveWidth, setLiveWidth] = useState<{ id: string; width: number } | null>(null);
+  const resizeRef = useRef<{ id: string; startX: number; startW: number; width: number } | null>(null);
   useEffect(() => {
     if (!gridFocused || focusCell.ri < 0) {
       return;
@@ -347,6 +387,78 @@ export function LogsTable({
     setKeyboardNav(true);
     setFocusCell(next);
   };
+  // Effective width of a column: live while dragging its handle, else set / built-in.
+  const widthOf = (col: SelectedColumn) => (liveWidth?.id === col.id ? liveWidth.width : columnWidth(col));
+  const widthStyle = (col: SelectedColumn): React.CSSProperties | undefined => {
+    const w = widthOf(col);
+    return w === undefined ? undefined : { width: w, minWidth: w, maxWidth: w };
+  };
+  // Cell content of a resized column is capped too (table cells treat width only as a hint).
+  const contentWidthStyle = (col: SelectedColumn): React.CSSProperties | undefined => {
+    if (col.width === undefined && liveWidth?.id !== col.id) {
+      return undefined;
+    }
+    const w = Math.max(0, (widthOf(col) ?? 0) - CELL_PAD_X);
+    return { maxWidth: w, width: col.type === 'text' ? w : undefined, overflow: 'hidden', textOverflow: 'ellipsis' };
+  };
+  const startResize = (e: React.PointerEvent<HTMLDivElement>, id: string) => {
+    if (e.button !== 0) {
+      return;
+    }
+    e.preventDefault();
+    e.stopPropagation();
+    const th = e.currentTarget.parentElement;
+    const startW = th ? th.getBoundingClientRect().width : 150;
+    e.currentTarget.setPointerCapture?.(e.pointerId);
+    resizeRef.current = { id, startX: e.clientX, startW, width: clampWidth(startW) };
+    setLiveWidth({ id, width: clampWidth(startW) });
+  };
+  const moveResize = (e: React.PointerEvent<HTMLDivElement>) => {
+    const r = resizeRef.current;
+    if (!r) {
+      return;
+    }
+    r.width = clampWidth(r.startW + e.clientX - r.startX);
+    setLiveWidth({ id: r.id, width: r.width });
+  };
+  const endResize = (e: React.PointerEvent<HTMLDivElement>) => {
+    const r = resizeRef.current;
+    if (!r) {
+      return;
+    }
+    e.currentTarget.releasePointerCapture?.(e.pointerId);
+    resizeRef.current = null;
+    setLiveWidth(null);
+    onResizeColumn?.(r.id, r.width);
+  };
+  const hasMenu = Boolean(onSort || onMoveColumn || onRemoveColumn);
+  const menuCol = menu ? columns.find((c) => c.id === menu.colId) : undefined;
+  const menuItems = (col: SelectedColumn): ColumnMenuItem[] => {
+    const idx = columns.findIndex((c) => c.id === col.id);
+    const sorted = sort?.col === col.key ? sort.dir : undefined;
+    const items: ColumnMenuItem[] = [];
+    if (onSort) {
+      items.push(
+        { id: 'asc', label: 'Sort ascending', icon: 'arrow-up', active: sorted === 'asc', run: () => onSort(col.key, 'asc') },
+        { id: 'desc', label: 'Sort descending', icon: 'arrow-down', active: sorted === 'desc', run: () => onSort(col.key, 'desc') }
+      );
+    }
+    if (onMoveColumn && idx > 0) {
+      items.push({ id: 'left', label: 'Move left', icon: 'arrow-left', run: () => onMoveColumn(col.id, 'left') });
+    }
+    if (onMoveColumn && idx < columns.length - 1) {
+      items.push({ id: 'right', label: 'Move right', icon: 'arrow-right', run: () => onMoveColumn(col.id, 'right') });
+    }
+    if (onResizeColumn && col.width !== undefined) {
+      items.push({ id: 'width', label: 'Reset width', icon: 'arrows-h', run: () => onResizeColumn(col.id, undefined) });
+    }
+    items.push({ id: 'copy', label: 'Copy name', icon: 'copy', run: () => void copyToClipboard(col.sqlExpr) });
+    if (onRemoveColumn && !col.isCore) {
+      items.push({ id: 'remove', label: 'Remove column', icon: 'times', run: () => onRemoveColumn(col) });
+    }
+    return items;
+  };
+
   // The cell whose action bar is showing: the hovered one, else the keyboard-focused one.
   const activeCell =
     hoveredCell ?? (gridFocused && keyboardNav && focusCell.ri >= 0 && columns[focusCell.ci] ? { ri: focusCell.ri, ci: columns[focusCell.ci].id } : null);
@@ -382,7 +494,7 @@ export function LogsTable({
           <tr>
             {showCompare && <th className={cx(styles.th, styles.compareTh)} aria-hidden="true" />}
             <th className={cx(styles.th, styles.expandTh)} aria-hidden="true" />
-            {columns.map((col, idx) => {
+            {columns.map((col) => {
               const isSorted = sort?.col === col.key;
               const draggable = Boolean(onMoveColumnTo);
               return (
@@ -397,9 +509,13 @@ export function LogsTable({
                     dragOverId === col.id && dragOverId !== draggedId && styles.thDragOver,
                     fieldDropTargetId === col.id && styles.fieldDropTarget
                   )}
-                  style={col.type === 'time' ? { width: 190 } : col.type === 'level' ? { width: 80 } : undefined}
+                  style={widthStyle(col)}
                   draggable={draggable}
                   onDragStart={(e) => {
+                    if (resizeRef.current) {
+                      e.preventDefault();
+                      return;
+                    }
                     setDraggedId(col.id);
                     e.dataTransfer.effectAllowed = 'move';
                   }}
@@ -437,62 +553,67 @@ export function LogsTable({
                     {draggable && (
                       <Icon name="draggabledots" size="sm" className={styles.dragHandle} title="Drag to reorder" />
                     )}
-                    {onSort ? (
-                      // A button, so sorting works from the keyboard too (SHARED-A11Y-01).
+                    {hasMenu ? (
+                      // Kibana-style header: the name opens the column menu (sort, move, remove,
+                      // copy name); a button, so it works from the keyboard (SHARED-A11Y-01).
                       <button
                         type="button"
                         className={cx(styles.sortable, styles.sortBtn)}
-                        title={`Sort by ${col.displayName}`}
-                        onClick={() => onSort(col.key)}
+                        title={`Column actions: ${col.displayName}`}
+                        aria-haspopup="menu"
+                        aria-expanded={menu?.colId === col.id}
+                        data-col-menu={col.id}
+                        onClick={(e) => setMenu({ colId: col.id, rect: e.currentTarget.getBoundingClientRect() })}
                       >
-                        {col.displayName}
+                        <span className={styles.thName}>{col.displayName}</span>
                         {isSorted && (
                           <Icon name={sort!.dir === 'asc' ? 'arrow-up' : 'arrow-down'} size="xs" />
                         )}
+                        <Icon name="angle-down" size="xs" className={styles.menuCaret} />
                       </button>
                     ) : (
                       <span className={styles.sortable}>
-                        {col.displayName}
+                        <span className={styles.thName}>{col.displayName}</span>
                         {isSorted && (
                           <Icon name={sort!.dir === 'asc' ? 'arrow-up' : 'arrow-down'} size="xs" />
                         )}
                       </span>
                     )}
-                    {!col.isCore && (
-                      <div className={styles.colActions}>
-                        {onMoveColumn && idx > 0 && (
-                          <button
-                            className={styles.colBtn}
-                            title="Move left"
-                            aria-label={`Move ${col.displayName} left`}
-                            onClick={() => onMoveColumn(col.id, 'left')}
-                          >
-                            <Icon name="angle-left" size="xs" />
-                          </button>
-                        )}
-                        {onMoveColumn && idx < columns.length - 1 && (
-                          <button
-                            className={styles.colBtn}
-                            title="Move right"
-                            aria-label={`Move ${col.displayName} right`}
-                            onClick={() => onMoveColumn(col.id, 'right')}
-                          >
-                            <Icon name="angle-right" size="xs" />
-                          </button>
-                        )}
-                        {onRemoveColumn && (
-                          <button
-                            className={styles.colBtn}
-                            title="Remove column"
-                            aria-label={`Remove column ${col.displayName}`}
-                            onClick={() => onRemoveColumn(col)}
-                          >
-                            <Icon name="times" size="xs" />
-                          </button>
-                        )}
-                      </div>
-                    )}
                   </div>
+                  {onResizeColumn && (
+                    <div
+                      role="separator"
+                      aria-orientation="vertical"
+                      aria-label={`Resize column ${col.displayName}`}
+                      aria-valuenow={columnWidth(col)}
+                      aria-valuemin={MIN_COLUMN_WIDTH}
+                      aria-valuemax={MAX_COLUMN_WIDTH}
+                      tabIndex={0}
+                      title="Drag to resize, double-click to reset"
+                      className={cx(styles.resizeHandle, liveWidth?.id === col.id && styles.resizeHandleActive)}
+                      draggable={false}
+                      onMouseDown={(e) => {
+                        // Keeps the header's native drag (reorder) from starting.
+                        e.preventDefault();
+                        e.stopPropagation();
+                      }}
+                      onPointerDown={(e) => startResize(e, col.id)}
+                      onPointerMove={moveResize}
+                      onPointerUp={endResize}
+                      onPointerCancel={endResize}
+                      onDoubleClick={() => onResizeColumn(col.id, undefined)}
+                      onKeyDown={(e) => {
+                        if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') {
+                          return;
+                        }
+                        e.preventDefault();
+                        e.stopPropagation();
+                        const th = e.currentTarget.parentElement;
+                        const cur = th ? th.getBoundingClientRect().width : (columnWidth(col) ?? 150);
+                        onResizeColumn(col.id, clampWidth(cur + (e.key === 'ArrowRight' ? RESIZE_KEY_STEP : -RESIZE_KEY_STEP)));
+                      }}
+                    />
+                  )}
                 </th>
               );
             })}
@@ -533,6 +654,7 @@ export function LogsTable({
                   <td className={cx(styles.td, styles.expandTd)}>
                     <button
                       className={styles.expandBtn}
+                      data-expand-row={i}
                       title={isSelected ? 'Close detail' : 'Open detail'}
                       aria-pressed={isSelected}
                       onClick={() => {
@@ -572,10 +694,11 @@ export function LogsTable({
                         id={cellId(i, ci)}
                         data-cell={`${i}:${ci}`}
                         aria-selected={isFocusedCell || undefined}
+                        style={widthStyle(col)}
                         className={cx(
                           styles.td,
                           styles.dataTd,
-                          col.type === 'text' && styles.bodyCell,
+                          col.type === 'text' && widthOf(col) === undefined && styles.bodyCell,
                           isFocusedCell && styles.focusedCell,
                           fieldDropTargetId === col.id && styles.fieldDropTarget
                         )}
@@ -598,11 +721,12 @@ export function LogsTable({
                               : styles.cell,
                             col.type === 'text' && wrap && styles.wrapped
                           )}
-                          style={
-                            col.type === 'text' && !wrap
+                          style={{
+                            ...(col.type === 'text' && !wrap
                               ? { WebkitLineClamp: bodyLines, minHeight: `${bodyLines * 1.5}em` }
-                              : undefined
-                          }
+                              : undefined),
+                            ...contentWidthStyle(col),
+                          }}
                         >
                           {renderCell(col, row, matchers.get(col.id), styles.matchHighlight)}
                         </span>
@@ -615,7 +739,10 @@ export function LogsTable({
                           />
                         )}
                         {!isExpanded && activeCell?.ri === i && activeCell.ci === col.id && (
-                          <div className={styles.cellToolbar} style={{ opacity: 1, pointerEvents: 'auto' }}>
+                          <div
+                            className={cx(styles.cellToolbar, i === 0 && styles.cellToolbarBelow)}
+                            style={{ opacity: 1, pointerEvents: 'auto' }}
+                          >
                               {valueActions(
                                 // Empty values and raw Map/JSON container cells offer copy only.
                                 { field: col.sqlExpr, value: cellTextValue(rawValue), filterable: !!filterable },
@@ -648,6 +775,19 @@ export function LogsTable({
           })}
         </tbody>
       </table>
+      {menu && menuCol && (
+        <ColumnHeaderMenu
+          columnName={menuCol.displayName}
+          anchorRect={menu.rect}
+          items={menuItems(menuCol)}
+          onClose={() => setMenu(null)}
+          returnFocus={() =>
+            Array.from(wrapperRef.current?.querySelectorAll<HTMLElement>('[data-col-menu]') ?? []).find(
+              (el) => el.dataset.colMenu === menuCol.id
+            ) ?? null
+          }
+        />
+      )}
     </div>
   );
 }
@@ -790,32 +930,55 @@ const getStyles = (theme: GrafanaTheme2) => ({
     gap: 2px;
     &:hover { color: ${theme.colors.text.primary}; }
   `,
-  colActions: css`
-    display: flex;
-    gap: 1px;
-    margin-left: auto;
+  thName: css`
+    overflow: hidden;
+    text-overflow: ellipsis;
+  `,
+  menuCaret: css`
+    color: ${theme.colors.text.disabled};
     opacity: 0;
     th:hover &,
     th:focus-within & { opacity: 1; }
+  `,
+  resizeHandle: css`
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: 7px;
+    cursor: col-resize;
+    touch-action: none;
+    outline: none;
+    &::after {
+      content: '';
+      position: absolute;
+      top: 25%;
+      bottom: 25%;
+      right: 2px;
+      width: 2px;
+      border-radius: 1px;
+      background: ${theme.colors.border.medium};
+      opacity: 0;
+    }
+    th:hover &::after,
+    &:focus-visible::after { opacity: 1; }
+    &:hover::after,
+    &:focus-visible::after { background: ${theme.colors.primary.main}; }
+  `,
+  resizeHandleActive: css`
+    &::after {
+      opacity: 1;
+      background: ${theme.colors.primary.main};
+    }
   `,
   sortBtn: css`
     background: transparent;
     border: none;
     padding: 0;
+    min-width: 0;
     color: inherit;
     font: inherit;
     text-align: left;
-  `,
-  colBtn: css`
-    background: transparent;
-    border: none;
-    cursor: pointer;
-    padding: 1px 2px;
-    color: ${theme.colors.text.secondary};
-    display: flex;
-    align-items: center;
-    border-radius: 2px;
-    &:hover { color: ${theme.colors.text.primary}; background: ${theme.colors.action.hover}; }
   `,
   tr: css`
     border-bottom: 1px solid ${theme.colors.border.weak};
@@ -831,8 +994,13 @@ const getStyles = (theme: GrafanaTheme2) => ({
   trSelected: css`
     background: ${theme.colors.action.selected} !important;
   `,
+  /** The anchor of the surrounding-documents page: its own colour on every row (even rows' zebra
+   *  and hover included) plus an accent bar, like Kibana's highlighted anchor. */
   trAnchor: css`
-    background: ${theme.isDark ? 'rgba(255, 214, 0, 0.16)' : 'rgba(255, 230, 128, 0.45)'};
+    background: ${theme.isDark ? 'rgba(255, 214, 0, 0.18)' : 'rgba(255, 230, 128, 0.55)'} !important;
+    & > td:first-of-type {
+      box-shadow: inset 3px 0 0 0 ${theme.colors.warning.main};
+    }
   `,
   trFocused: css`
     box-shadow: inset 0 0 0 1px ${theme.colors.primary.border};
@@ -889,9 +1057,19 @@ const getStyles = (theme: GrafanaTheme2) => ({
       transition: none;
     }
   `,
+  /** The message column takes the leftover width but never less than a readable minimum: with
+   *  many columns the grid scrolls sideways instead of squeezing it to a word per line. */
   bodyCell: css`
     max-width: 0;
     width: 100%;
+    & > span {
+      min-width: 18em;
+    }
+  `,
+  /** First row: below the cell, so it never covers the sticky column header. */
+  cellToolbarBelow: css`
+    top: auto;
+    bottom: -14px;
   `,
   timestamp: css`
     color: ${theme.colors.text.primary};
