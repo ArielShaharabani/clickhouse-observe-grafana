@@ -1,12 +1,16 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { css } from '@emotion/css';
 import { GrafanaTheme2, TimeRange, dateTime, rangeUtil } from '@grafana/data';
-import { Button, ConfirmModal, Icon, Input, Modal, useStyles2 } from '@grafana/ui';
+import { Button, ConfirmModal, Field, Icon, Input, Modal, useStyles2 } from '@grafana/ui';
 import { SavedSearch, LogsQueryState } from '../../types';
 import {
   deleteSearch,
-  loadSavedSearches,
+  deleteSharedSearch,
+  loadLocalSearches,
+  loadSharedSearches,
+  parseTags,
   saveSearch,
+  saveSharedSearch,
 } from '../../data/savedSearches';
 
 interface SavedSearchMenuProps {
@@ -23,23 +27,34 @@ export function SavedSearchMenu({ queryState, timeRange, onLoad, activeDataViewI
   const [searches, setSearches] = useState<SavedSearch[]>([]);
   const [saveModalOpen, setSaveModalOpen] = useState(false);
   const [saveName, setSaveName] = useState('');
+  const [saveDescription, setSaveDescription] = useState('');
+  const [saveTags, setSaveTags] = useState('');
+  const [saveNote, setSaveNote] = useState('');
+  const [saving, setSaving] = useState(false);
   const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState('');
   const menuRef = useRef<HTMLDivElement>(null);
 
   // Re-reads localStorage (an external source, not React state) each time the menu opens,
   // so saved/deleted searches from other tabs/components show up on next open.
+  // Shared searches (Grafana dashboards) and browser-only ones are re-read each time the menu opens.
   useEffect(() => {
-    if (open) {
-      const all = loadSavedSearches();
-      // Show searches for the active view + legacy searches (no dataViewId) when a view is set;
-      // show all when no view is active (shouldn't happen in practice).
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setSearches(
-        activeDataViewId
-          ? all.filter((s) => !s.dataViewId || s.dataViewId === activeDataViewId)
-          : all
-      );
+    if (!open) {
+      return;
     }
+    let cancelled = false;
+    const visible = (all: SavedSearch[]) =>
+      activeDataViewId ? all.filter((s) => !s.dataViewId || s.dataViewId === activeDataViewId) : all;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setSearches(visible(loadLocalSearches()));
+    loadSharedSearches().then((shared) => {
+      if (!cancelled) {
+        setSearches(visible([...shared, ...loadLocalSearches()]));
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
   }, [open, activeDataViewId]);
 
   useEffect(() => {
@@ -54,26 +69,46 @@ export function SavedSearchMenu({ queryState, timeRange, onLoad, activeDataViewI
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [open]);
 
-  function handleSave() {
+  async function handleSave() {
     const name = saveName.trim();
-    if (!name) {
+    if (!name || saving) {
       return;
     }
-    saveSearch(
-      {
-        name,
-        search: queryState.search,
-        filters: queryState.filters,
-        columns: queryState.columns,
-        sort: queryState.sort,
-        timeRange: {
-          from: typeof timeRange.raw.from === 'string' ? timeRange.raw.from : String(timeRange.from.valueOf()),
-          to: typeof timeRange.raw.to === 'string' ? timeRange.raw.to : String(timeRange.to.valueOf()),
-        },
+    const entry = {
+      name,
+      description: saveDescription.trim() || undefined,
+      tags: parseTags(saveTags),
+      search: queryState.search,
+      filters: queryState.filters,
+      columns: queryState.columns,
+      sort: queryState.sort,
+      timeRange: {
+        from: typeof timeRange.raw.from === 'string' ? timeRange.raw.from : String(timeRange.from.valueOf()),
+        to: typeof timeRange.raw.to === 'string' ? timeRange.raw.to : String(timeRange.to.valueOf()),
       },
-      activeDataViewId
-    );
+    };
+    setSaving(true);
+    try {
+      await saveSharedSearch(entry, activeDataViewId);
+      setSaveNote('');
+      closeSave();
+    } catch {
+      // The viewer cannot create dashboards: keep it in this browser and say so.
+      saveSearch(entry, activeDataViewId);
+      setSaveNote('You cannot create dashboards, so the search was saved in this browser only.');
+      closeSave(true);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function closeSave(keepNote = false) {
     setSaveName('');
+    setSaveDescription('');
+    setSaveTags('');
+    if (!keepNote) {
+      setSaveNote('');
+    }
     setSaveModalOpen(false);
   }
 
@@ -93,9 +128,19 @@ export function SavedSearchMenu({ queryState, timeRange, onLoad, activeDataViewI
     setOpen(false);
   }
 
-  function handleDelete(id: string) {
-    deleteSearch(id);
-    setSearches((prev) => prev.filter((s) => s.id !== id));
+  async function handleDelete(id: string) {
+    const target = searches.find((s) => s.id === id);
+    try {
+      if (target?.sharedUid) {
+        await deleteSharedSearch(target.sharedUid);
+      } else {
+        deleteSearch(id);
+      }
+      setSearches((prev) => prev.filter((s) => s.id !== id));
+      setDeleteError('');
+    } catch {
+      setDeleteError('Could not delete the shared search (you may lack permission).');
+    }
     setDeleteId(null);
   }
 
@@ -130,6 +175,8 @@ export function SavedSearchMenu({ queryState, timeRange, onLoad, activeDataViewI
               Save current
             </Button>
           </div>
+          {deleteError && <div className={styles.empty}>{deleteError}</div>}
+          {saveNote && <div className={styles.empty}>{saveNote}</div>}
           {searches.length === 0 && (
             <div className={styles.empty}>No saved searches yet</div>
           )}
@@ -137,7 +184,11 @@ export function SavedSearchMenu({ queryState, timeRange, onLoad, activeDataViewI
             <div key={s.id} className={styles.item}>
               <button className={styles.itemName} onClick={() => handleLoad(s)}>
                 <Icon name="search" size="sm" />
-                <span>{s.name}</span>
+                <span title={s.description}>
+                  {s.name}
+                  {s.sharedUid ? '' : ' (this browser)'}
+                  {s.tags?.length ? <span className={styles.tags}> {s.tags.map((t) => `#${t}`).join(' ')}</span> : null}
+                </span>
               </button>
               <button
                 className={styles.deleteBtn}
@@ -154,19 +205,34 @@ export function SavedSearchMenu({ queryState, timeRange, onLoad, activeDataViewI
       <Modal
         title="Save search"
         isOpen={saveModalOpen}
-        onDismiss={() => setSaveModalOpen(false)}
+        onDismiss={() => closeSave()}
       >
         <div className={styles.saveForm}>
+          <div className={styles.hint}>
+            Saved for everyone who can view dashboards (stored as a tagged Grafana dashboard).
+          </div>
           <Input
             placeholder="Search name"
+            aria-label="Search name"
             value={saveName}
             onChange={(e) => setSaveName(e.currentTarget.value)}
             autoFocus
             onKeyDown={(e) => { if (e.key === 'Enter') { handleSave(); } }}
           />
+          <Field label="Description">
+            <Input
+              value={saveDescription}
+              maxLength={1000}
+              onChange={(e) => setSaveDescription(e.currentTarget.value)}
+              aria-label="Search description"
+            />
+          </Field>
+          <Field label="Tags" description="Comma separated">
+            <Input value={saveTags} onChange={(e) => setSaveTags(e.currentTarget.value)} aria-label="Search tags" />
+          </Field>
           <div className={styles.saveActions}>
-            <Button variant="secondary" onClick={() => setSaveModalOpen(false)}>Cancel</Button>
-            <Button variant="primary" disabled={!saveName.trim()} onClick={handleSave}>Save</Button>
+            <Button variant="secondary" onClick={() => closeSave()}>Cancel</Button>
+            <Button variant="primary" disabled={!saveName.trim() || saving} onClick={handleSave}>Save</Button>
           </div>
         </div>
       </Modal>
@@ -245,6 +311,12 @@ const getStyles = (theme: GrafanaTheme2) => ({
     padding: ${theme.spacing(0.75)};
     color: ${theme.colors.text.disabled};
     &:hover { color: ${theme.colors.error.text}; }
+  `,
+  hint: css`
+    margin: 0;
+  `,
+  tags: css`
+    color: ${theme.colors.text.secondary};
   `,
   saveForm: css`
     display: flex;

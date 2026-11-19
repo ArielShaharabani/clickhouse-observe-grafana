@@ -232,4 +232,9 @@ export interface SavedSearch {
   createdAt: string;
   /** Scope this saved search to a specific data view; undefined = legacy (all views). */
   dataViewId?: string;
+  /** Free text shown in the list (Kibana's saved-object description). */
+  description?: string;
+  tags?: string[];
+  /** Dashboard uid when stored as a shared Grafana saved object; absent = browser-only. */
+  sharedUid?: string;
 }

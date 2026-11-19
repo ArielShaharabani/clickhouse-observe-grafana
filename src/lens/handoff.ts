@@ -5,7 +5,7 @@
  * page's own state — `lens` for Visualize, `cols` for Discover. Pure functions so both directions
  * are unit-tested without rendering either page.
  */
-import { EncodeLogsUrlStateInput, encodeLogsState } from '../data/urlState';
+import { BreakdownUrl, EncodeLogsUrlStateInput, encodeLogsState } from '../data/urlState';
 import { defaultColumns, fieldToColumn } from '../data/columns';
 import { prefixRoute } from '../utils/utils.routing';
 import { FieldModel } from '../sql/fieldModel';
@@ -94,7 +94,27 @@ export function discoverColumns(lens: LensState, fields: FieldModel[], config: S
   return cols;
 }
 
-/** /logs link carrying the search context and the given grid columns. */
-export function discoverUrl(c: HandoffContext, columns: SelectedColumn[], interval?: IntervalMode): string {
-  return `${prefixRoute('logs')}?${encodeLogsState({ ...c, columns, interval }).toString()}`;
+/**
+ * Discover histogram breakdown for Explore in Discover: the chart's first top-values bucket when
+ * it is a known column (`col:<expr>`); anything else (map keys, expressions) has no breakdown.
+ */
+export function discoverBreakdownOf(lens: LensState, fields: FieldModel[]): BreakdownUrl | undefined {
+  const bySql = new Map(fields.filter((f) => f.id.startsWith('col:')).map((f) => [f.sqlExpr, f]));
+  for (const b of lens.buckets) {
+    const f = b.kind === 'terms' ? bySql.get(b.field) : undefined;
+    if (f) {
+      return { kind: 'field', fieldId: f.id };
+    }
+  }
+  return undefined;
+}
+
+/** /logs link carrying the search context, the given grid columns, interval and breakdown. */
+export function discoverUrl(
+  c: HandoffContext,
+  columns: SelectedColumn[],
+  interval?: IntervalMode,
+  breakdown?: BreakdownUrl
+): string {
+  return `${prefixRoute('logs')}?${encodeLogsState({ ...c, columns, interval, breakdown }).toString()}`;
 }
