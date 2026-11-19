@@ -101,14 +101,17 @@ export function SavedSearchMenu({ queryState, timeRange, onLoad, activeDataViewI
 
   return (
     <div className={styles.wrapper} ref={menuRef}>
+      {/* A menu, not a status: secondary style, a folder icon, a caret and the full name. No
+          tooltip — the label says it all, and a tooltip would cover the open menu's "Save current". */}
       <Button
-        variant="primary"
+        variant="secondary"
         size="sm"
-        icon="search"
+        icon="folder-open"
         onClick={() => setOpen((v) => !v)}
-        tooltip="Saved searches"
+        aria-expanded={open}
+        aria-haspopup="true"
       >
-        Saved
+        Saved searches <Icon name={open ? 'angle-up' : 'angle-down'} />
       </Button>
 
       {open && (

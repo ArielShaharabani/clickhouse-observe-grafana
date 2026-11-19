@@ -1,6 +1,11 @@
 /**
  * "Save Lens visualization" (spec LENS-SAVE-01): title, description, add to an existing / new /
  * no dashboard, and optionally to the panel library. "Save and go to dashboard" opens the result.
+ *
+ * Opened from a dashboard panel (Edit in Visualize, `returnTo` set): Kibana's "Save and return".
+ * The dialog starts with the panel's own title / description and replaces that panel in place
+ * (same id and position) on its dashboard, then goes back to it with the time range the user had
+ * there. "Save as new" switches to the usual destinations.
  */
 import React, { useEffect, useId, useState } from 'react';
 import { css } from '@emotion/css';
@@ -20,15 +25,23 @@ import {
   useStyles2,
 } from '@grafana/ui';
 import { errMsg } from '../errMsg';
-import { appendPanelsToDashboard, buildNewDashboard, ExportedPanel } from '../data/panelExport';
+import {
+  appendPanelsToDashboard,
+  buildNewDashboard,
+  dashboardTime,
+  ExportedPanel,
+  replacePanelInDashboard,
+} from '../data/panelExport';
 import {
   createLibraryPanel,
+  dashboardSaveError,
   deleteLibraryPanel,
   getDashboard,
   saveDashboard,
   searchDashboards,
 } from '../data/dashboards';
 import { LensPanel } from './panelExport';
+import { dashboardReturnPath, DashboardReturn } from './panelSource';
 
 export type SaveDestination = 'existing' | 'new' | 'none';
 
@@ -42,10 +55,26 @@ export interface SaveLensRequest {
   timeRange: TimeRange;
 }
 
-/** Time of a new dashboard: the range the chart was built on, relative strings kept. */
-function dashboardTime(r: TimeRange): { from: string; to: string } {
-  const raw = (v: unknown, d: { toISOString: () => string }) => (typeof v === 'string' ? v : d.toISOString());
-  return { from: raw(r.raw.from, r.from), to: raw(r.raw.to, r.to) };
+/** The dashboard panel being edited, as loaded when Visualize opened (Save and return). */
+export interface ReturnTarget extends DashboardReturn {
+  /** The dashboard JSON as loaded; its `version` is the optimistic lock for the save. */
+  dashboard: Record<string, unknown>;
+  folderUid?: string;
+  dashboardTitle: string;
+  panelTitle: string;
+  panelDescription: string;
+}
+
+/**
+ * Save and return: the panel replaces panel `panelId` (same id, same grid position) on the
+ * dashboard as it was loaded. The save is not an overwrite: Grafana compares the loaded `version`
+ * and refuses with `version-mismatch` if someone saved the dashboard in between. Returns the path
+ * back to the dashboard with its time range.
+ */
+export async function saveAndReturn(target: ReturnTarget, panel: LensPanel): Promise<string> {
+  const merged = replacePanelInDashboard(target.dashboard, target.panelId, panel as ExportedPanel);
+  await saveDashboard(merged, { folderUid: target.folderUid, overwrite: false });
+  return dashboardReturnPath(target);
 }
 
 /**
@@ -86,34 +115,51 @@ interface Props {
   buildPanel: (title: string, description: string) => LensPanel;
   timeRange: TimeRange;
   canSaveDashboards: boolean;
+  /** Opened from a dashboard panel: Save and return replaces it. */
+  returnTo?: ReturnTarget;
+  /** Start on Save as new (the toolbar's "Save as new") instead of Save and return. */
+  startAsNew?: boolean;
 }
 
-export function SaveLensModal({ isOpen, onDismiss, defaultTitle, buildPanel, timeRange, canSaveDashboards }: Props) {
+export function SaveLensModal({
+  isOpen,
+  onDismiss,
+  defaultTitle,
+  buildPanel,
+  timeRange,
+  canSaveDashboards,
+  returnTo,
+  startAsNew,
+}: Props) {
   const styles = useStyles2(getStyles);
   const ids = useId();
-  const [title, setTitle] = useState(defaultTitle);
-  const [description, setDescription] = useState('');
+  const [title, setTitle] = useState(returnTo?.panelTitle || defaultTitle);
+  const [description, setDescription] = useState(returnTo?.panelDescription ?? '');
   const [destination, setDestination] = useState<SaveDestination>('new');
   const [dashboardUid, setDashboardUid] = useState<string | undefined>();
   const [library, setLibrary] = useState(false);
-  const [dashboardTitle, setDashboardTitle] = useState(defaultTitle);
+  const [dashboardTitle, setDashboardTitle] = useState(returnTo?.panelTitle || defaultTitle);
   const [titleEdited, setTitleEdited] = useState(false);
   const [options, setOptions] = useState<Array<{ label: string; value: string }> | null>(null);
   const [loadError, setLoadError] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const [asNew, setAsNew] = useState(!returnTo || Boolean(startAsNew));
 
   // Reset each time the modal opens (state adjusted during render, as in AddToDashboardModal).
   const [wasOpen, setWasOpen] = useState(isOpen);
   if (isOpen !== wasOpen) {
     setWasOpen(isOpen);
     if (isOpen) {
-      setTitle(defaultTitle);
-      setDescription('');
+      // From a dashboard panel, the dialog keeps the panel's own title (not a generated one).
+      const start = returnTo?.panelTitle || defaultTitle;
+      setAsNew(!returnTo || Boolean(startAsNew));
+      setTitle(start);
+      setDescription(returnTo?.panelDescription ?? '');
       setDestination(canSaveDashboards ? 'new' : 'none');
       setDashboardUid(undefined);
       setLibrary(false);
-      setDashboardTitle(defaultTitle);
+      setDashboardTitle(start);
       setTitleEdited(false);
       setOptions(null);
       setLoadError('');
@@ -140,12 +186,31 @@ export function SaveLensModal({ isOpen, onDismiss, defaultTitle, buildPanel, tim
   }, [isOpen, destination, options, loadError]);
 
   const toDashboard = destination !== 'none';
+  const replacing = Boolean(returnTo) && !asNew;
+  const canReturn = !saving && Boolean(title.trim()) && canSaveDashboards;
   const canSave =
     !saving &&
     Boolean(title.trim()) &&
     (toDashboard
       ? canSaveDashboards && (destination === 'new' ? Boolean(dashboardTitle.trim()) : Boolean(dashboardUid))
       : library);
+
+  const onSaveAndReturn = async () => {
+    if (!returnTo) {
+      return;
+    }
+    setSaving(true);
+    setError('');
+    try {
+      const path = await saveAndReturn(returnTo, buildPanel(title.trim(), description));
+      onDismiss();
+      locationService.push(path);
+    } catch (e) {
+      setError(e instanceof Error && e.name === 'PanelNotFoundError' ? e.message : dashboardSaveError(e));
+    } finally {
+      setSaving(false);
+    }
+  };
 
   const onSave = async () => {
     setSaving(true);
@@ -169,7 +234,7 @@ export function SaveLensModal({ isOpen, onDismiss, defaultTitle, buildPanel, tim
         });
       }
     } catch (e) {
-      setError(errMsg(e));
+      setError(dashboardSaveError(e, destination === 'new' ? dashboardTitle.trim() || title.trim() : undefined));
     } finally {
       setSaving(false);
     }
@@ -204,6 +269,14 @@ export function SaveLensModal({ isOpen, onDismiss, defaultTitle, buildPanel, tim
           onChange={(e) => setDescription(e.currentTarget.value)}
         />
       </Field>
+      {replacing && returnTo && (
+        <Alert title="Save and return" severity="info" className={styles.alert}>
+          Replaces this panel on the dashboard &quot;{returnTo.dashboardTitle}&quot; (same place and size), then goes
+          back to the dashboard.
+        </Alert>
+      )}
+      {!replacing && (
+        <>
       <Field
         label="Add to dashboard"
         description={canSaveDashboards ? undefined : 'You do not have permission to save dashboards.'}
@@ -259,13 +332,26 @@ export function SaveLensModal({ isOpen, onDismiss, defaultTitle, buildPanel, tim
       >
         <Switch id={`${ids}-lib`} value={library} onChange={(e) => setLibrary(e.currentTarget.checked)} />
       </Field>
+        </>
+      )}
       <div className={styles.actions}>
         <Button variant="secondary" onClick={onDismiss} disabled={saving}>
           Cancel
         </Button>
-        <Button variant="primary" onClick={onSave} disabled={!canSave}>
-          {saving ? <Spinner size="sm" inline /> : toDashboard ? 'Save and go to dashboard' : 'Save to library'}
-        </Button>
+        {returnTo && (
+          <Button variant="secondary" onClick={() => setAsNew((v) => !v)} disabled={saving}>
+            {replacing ? 'Save as new' : 'Back to Save and return'}
+          </Button>
+        )}
+        {replacing ? (
+          <Button variant="primary" onClick={onSaveAndReturn} disabled={!canReturn}>
+            {saving ? <Spinner size="sm" inline /> : 'Save and return'}
+          </Button>
+        ) : (
+          <Button variant="primary" onClick={onSave} disabled={!canSave}>
+            {saving ? <Spinner size="sm" inline /> : toDashboard ? 'Save and go to dashboard' : 'Save to library'}
+          </Button>
+        )}
       </div>
     </Modal>
   );

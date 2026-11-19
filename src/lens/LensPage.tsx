@@ -24,8 +24,7 @@ import { hasSearchContext, rememberSearchContext, restoreSearchContext } from '.
 import { draftScopeOf, visualizeEntry } from './entry';
 import { discoverColumns, discoverIntervalOf, discoverUrl, lensContextFor } from './handoff';
 import { buildLensPanel, defaultPanelTitle } from './panelExport';
-import { SaveLensModal } from './SaveLensModal';
-import { canCreateDashboards } from '../utils/permissions';
+import { SaveActions } from './SaveActions';
 import { loadLensDraft, saveLensDraft } from './draft';
 import { FilterPills } from '../components/FilterPills';
 import { useAutocompleteSources } from '../autocomplete/service';
@@ -510,7 +509,6 @@ export function LensPage() {
   // LENS-INTERACT-01: one click on a bar / point. One candidate filter → applied at once; several
   // (X value + breakdown value, or a time bucket + breakdown) → "Select filters to apply".
   const [chooser, setChooser] = useState<FilterChoice[] | null>(null);
-  const [saveOpen, setSaveOpen] = useState(false);
   const [inspectOpen, setInspectOpen] = useState(false);
   const buildPanel = (title: string, description: string) =>
     buildLensPanel(
@@ -671,9 +669,13 @@ export function LensPage() {
         >
           Inspect
         </Button>
-        <Button size="sm" icon="save" onClick={() => setSaveOpen(true)} disabled={isEmptyLens(lens) || fieldsLoading}>
-          Save
-        </Button>
+        <SaveActions
+          paramsKey={paramsKey}
+          disabled={isEmptyLens(lens) || fieldsLoading}
+          defaultTitle={defaultPanelTitle(lens)}
+          buildPanel={buildPanel}
+          timeRange={timeRange}
+        />
         <TimeRangePicker
           value={timeRange}
           onChange={setTimeRange}
@@ -869,14 +871,6 @@ export function LensPage() {
             onClose={() => setInspectOpen(false)}
           />
         )}
-        <SaveLensModal
-          isOpen={saveOpen}
-          onDismiss={() => setSaveOpen(false)}
-          defaultTitle={defaultPanelTitle(lens)}
-          buildPanel={buildPanel}
-          timeRange={timeRange}
-          canSaveDashboards={canCreateDashboards()}
-        />
         {chooser && (
           <FilterChooser
             choices={chooser}

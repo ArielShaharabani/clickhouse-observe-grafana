@@ -57,6 +57,30 @@ export function defaultPanelTitle(state: LensState): string {
   return `${metric}${terms.length ? ` by ${terms.join(' and ')}` : ''}${time ? ' over time' : ''}`;
 }
 
+/** A date histogram on X with a breakdown: one series per breakdown value (and metric). */
+function splitTimeSeries(state: LensState): boolean {
+  const [x, split] = state.buckets;
+  return x?.kind === 'date_histogram' && !!split && split.kind !== 'date_histogram';
+}
+
+/**
+ * Series names of a split time series. After `partitionByValues` each series is a metric field
+ * (`m0`) labelled with its breakdown value (`b1`), which Grafana would show as "m0 checkout"
+ * (a rename before partitioning doesn't survive it). Name each metric field from its labels
+ * instead: the value alone for one metric (Visualize's legend), "value · metric" for several.
+ */
+function splitSeriesNames(state: LensState): unknown[] {
+  const labels = uniqueMetricLabels(state.metrics);
+  const value = '${__field.labels.' + bucketAlias(1) + '}';
+  return state.metrics.map((_, i) => ({
+    matcher: { id: 'byName', options: metricAlias(i) },
+    properties: [
+      // `$` in a label would read as a dashboard variable in Grafana's display name template.
+      { id: 'displayName', value: labels.length > 1 ? `${value} · ${labels[i].replace(/\$/g, '＄')}` : value },
+    ],
+  }));
+}
+
 function rename(names: Record<string, string>): Transformation {
   return { id: 'organize', options: { renameByName: names, excludeByName: {}, indexByName: {} } };
 }
@@ -73,7 +97,14 @@ export function buildLensPanel(
   if (!panel.fieldConfig) {
     return panel;
   }
-  const fieldConfig = withMetricAppearance(panel.fieldConfig, state, xy);
+  // Split time series keep the metric aliases as field names (see splitSeriesNames), so their
+  // per-metric overrides match the alias, not the label.
+  const fieldConfig = withMetricAppearance(
+    panel.fieldConfig,
+    state,
+    xy,
+    splitTimeSeries(state) ? (i) => ({ id: 'byName', options: metricAlias(i) }) : undefined
+  );
   if (!xy || (panel.type !== 'timeseries' && panel.type !== 'barchart')) {
     return { ...panel, fieldConfig };
   }
@@ -101,6 +132,8 @@ function baseLensPanel(
   const stacking = stackingOf(state);
   // Everything renamed except the split column, which the partition / pivot transformations read.
   const withoutSplit = Object.fromEntries(Object.entries(names).filter(([k]) => k !== bucketAlias(1)));
+  // Split time series: the metrics keep their aliases too (named by splitSeriesNames).
+  const timeOnly = Object.fromEntries(Object.entries(names).filter(([k]) => k === bucketAlias(0)));
   const base = {
     id: opts.id,
     title: opts.title?.trim() || chartTitle(state),
@@ -132,7 +165,7 @@ function baseLensPanel(
         const transformations: Transformation[] =
           split && split.kind !== 'date_histogram'
             ? [
-                rename(withoutSplit),
+                rename(timeOnly),
                 { id: 'partitionByValues', options: { fields: [bucketAlias(1)], keepFields: false } },
                 { id: 'prepareTimeSeries', options: { format: 'many' } },
               ]
@@ -149,9 +182,12 @@ function baseLensPanel(
                 drawStyle: state.chartType === 'bar' ? 'bars' : 'line',
                 showPoints: 'never',
                 stacking: { mode: stacking, group: 'A' },
+                // Missing buckets are gaps, never a line drawn across them (count charts are
+                // zero-filled by the query, see fillsEmptyBuckets).
+                spanNulls: false,
               },
             },
-            overrides: [],
+            overrides: splitTimeSeries(state) ? splitSeriesNames(state) : [],
           },
         };
       }

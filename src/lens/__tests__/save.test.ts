@@ -52,7 +52,7 @@ describe('LENS-SAVE-01 dashboard SQL', () => {
     const s = lens('bar', [date, level], 'stacked');
     const dash = compileLens(s, config, conds, range, 'dashboard').sql;
     expect(dash).toContain('$__timeInterval("Timestamp") AS b0');
-    expect(dash).not.toContain('toStartOfInterval');
+    expect(dash).not.toContain('toStartOfInterval("Timestamp"');
     expect(compileLens(s, config, conds, range).sql).toContain('toStartOfInterval("Timestamp", INTERVAL');
   });
 
@@ -103,10 +103,12 @@ describe('LENS-SAVE-01 panel per chart type', () => {
     const p = panel(lens('area', [date, level], 'percentage'));
     expect(p.type).toBe('timeseries');
     expect(ids(p)).toEqual(['organize', 'partitionByValues', 'prepareTimeSeries']);
-    // Metric and X keep readable names; the split column stays b1 for the partition.
-    expect(p.transformations?.[0].options).toEqual(
-      expect.objectContaining({ renameByName: { b0: 'Timestamp', m0: 'Count of records' } })
-    );
+    // X keeps its readable name; the split column stays b1 for the partition and the metric stays
+    // m0, named per series from its b1 label (PARITY-DASHBOARDS: no "m0 checkout" legend).
+    expect(p.transformations?.[0].options).toEqual(expect.objectContaining({ renameByName: { b0: 'Timestamp' } }));
+    expect(p.fieldConfig?.overrides).toEqual([
+      { matcher: { id: 'byName', options: 'm0' }, properties: [{ id: 'displayName', value: '$' + '{__field.labels.b1}' }] },
+    ]);
     expect(p.transformations?.[1].options).toEqual({ fields: ['b1'], keepFields: false });
     expect((p.fieldConfig?.defaults as any).custom.stacking.mode).toBe('percent');
     expect((p.fieldConfig?.defaults as any).custom.fillOpacity).toBe(50);

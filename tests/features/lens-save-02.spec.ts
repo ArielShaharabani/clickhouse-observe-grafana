@@ -34,6 +34,10 @@ test('a panel added from Visualize reopens there from the panel menu, with chart
   expect(sp.get('q')).toBe('SeverityText:error');
   expect(sp.get('ds')).toBe('spec-fixture');
   expect(sp.get('lens')).toContain('ServiceName');
+  // Save and return context (PARITY-DASHBOARDS): the dashboard and the panel it came from.
+  expect(sp.get('dash')).toMatch(/^[A-Za-z0-9_-]{1,40}$/);
+  expect(sp.get('panel')).toMatch(/^\d+$/);
+  await expect(page.getByRole('button', { name: 'Save and return' })).toBeVisible();
   await expect(viz.dimensions).toContainText('ServiceName');
   await expect(viz.chart).toHaveAttribute('data-chart-type', 'bar');
 });

@@ -29,6 +29,7 @@ import { isConvertedTimestamp, timeExpr } from '../sql/timeExpr';
 import {
   bucketStartSql,
   dashboardBucketSql,
+  dashboardFillSql,
   intervalMs as ivMs,
   LensInterval,
   parseInterval,
@@ -461,7 +462,14 @@ export function compileLens(
   );
   const first = state.buckets[0];
   let orderBy: string | null = null;
-  if (first?.kind === 'date_histogram' || first?.kind === 'range' || first?.kind === 'filters') {
+  if (first?.kind === 'date_histogram' && mode === 'dashboard' && fillsEmptyBuckets(state)) {
+    // Saved panels, Include empty rows: ClickHouse returns no row for an empty bucket, so Grafana
+    // would draw a line straight across the gap. Fill the buckets with zero counts (as Visualize
+    // does), per breakdown value: the other group columns lead, so WITH FILL fills within each.
+    const rest = groupBy.filter((g) => g !== bucketAlias(0));
+    const fill = dashboardFillSql(parseInterval(first.interval), !first.unbound);
+    orderBy = `ORDER BY ${[...rest, `${bucketAlias(0)} ${fill}`].join(', ')}`;
+  } else if (first?.kind === 'date_histogram' || first?.kind === 'range' || first?.kind === 'filters') {
     orderBy = `ORDER BY ${groupBy.join(', ')}`;
   } else if (first) {
     // Ordered by the chosen rank; the synthetic Other / (missing) rows always come last.
@@ -497,6 +505,21 @@ export function compileLens(
     configSettingsFragments(config)
   );
   return { sql, intervalMs, interval };
+}
+
+/**
+ * Whether a saved panel gap-fills its date buckets: Include empty rows on (the default) and only
+ * count metrics, the series Visualize itself draws as zero for an empty bucket (other metrics have
+ * no value there, and a filled 0 would be wrong).
+ */
+export function fillsEmptyBuckets(state: LensState): boolean {
+  const x = state.buckets[0];
+  return (
+    x?.kind === 'date_histogram' &&
+    x.emptyRows !== false &&
+    state.metrics.length > 0 &&
+    state.metrics.every((m) => m.op === 'count')
+  );
 }
 
 /**

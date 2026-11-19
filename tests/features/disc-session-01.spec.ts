@@ -21,12 +21,15 @@ test('Share: relative link by default, absolute when toggled, unsaved warning, C
   await expect(modal).toBeVisible();
 
   const link = modal.getByLabel('Share link');
+  // Short link by default (PARITY-DASHBOARDS); turn it off to check the full link's parameters.
+  await expect(link).toHaveValue(/\/goto\/[A-Za-z0-9_-]+/);
+  await modal.locator('#share-short-link').click({ force: true });
   await expect(link).toHaveValue(/[?&]q=payments(&|$)/);
   await expect(link).toHaveValue(/from=now-2y/);
   await expect(modal.getByText('You have unsaved changes')).toBeVisible();
   await expect(modal.getByRole('button', { name: /Copy link/ })).toBeVisible();
 
-  await modal.getByRole('switch').click({ force: true });
+  await modal.locator('#share-absolute-time').click({ force: true });
   await expect(link).toHaveValue(/from=\d{13}/);
   await expect(link).toHaveValue(/to=\d{13}/);
 
@@ -41,7 +44,7 @@ test('Share: an absolute range is shared as is (toggle disabled)', async ({ page
   await logs.open();
   await page.getByRole('button', { name: 'Share', exact: true }).click();
   const modal = page.getByRole('dialog', { name: 'Share this Discover session' });
-  await expect(modal.getByRole('switch')).toBeDisabled();
+  await expect(modal.locator('#share-absolute-time')).toBeDisabled();
   await expect(modal.getByText('The current range is already absolute.')).toBeVisible();
 });
 
