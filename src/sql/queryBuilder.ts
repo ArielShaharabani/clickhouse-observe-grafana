@@ -497,13 +497,17 @@ export function buildLogsQuery(
     sortCol = coreAliasToRawColumn(sortCol, config) ?? sortCol;
   }
   const sortDir = state.sort?.dir === 'asc' ? 'ASC' : 'DESC';
+  // Kibana breaks ties of any non-time sort by time, newest first: without it, rows sharing a
+  // sort value come back in arbitrary (and page-to-page unstable) order.
+  const timeTie = c.timestamp ? (isGrid ? CORE_ALIAS.timestamp : timeExpr(config)) : null;
+  const tieBreak = sortCol && timeTie && sortCol !== timeTie && sortCol !== CORE_ALIAS.timestamp ? `, ${timeTie} DESC` : '';
 
   return withSettings(
     [
       `SELECT ${selectParts.join(', ')}`,
       `FROM ${tbl}`,
       conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : null,
-      sortCol ? `ORDER BY ${sortCol} ${sortDir}` : null,
+      sortCol ? `ORDER BY ${sortCol} ${sortDir}${tieBreak}` : null,
       pagination
         ? `LIMIT ${pagination.limit} OFFSET ${pagination.offset}`
         : `LIMIT ${state.limit}`,
