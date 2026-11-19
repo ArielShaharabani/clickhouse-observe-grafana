@@ -70,6 +70,7 @@ Discover is a three-region page: field sidebar (left, \~295 px, resizable and co
 
 - **Placement:** row 2 far right; split button with a secondary `Send to background` action (runs the search as a stored background search).
 - **States:** `Refresh` (blue) when clean; `Update` (green) when query/time changed but not run.
+- **Auto-refresh:** paused by default (Kibana `refreshInterval:(pause:!t)`). A chosen interval is kept in the URL (`refresh=1m`, see SHARED-STATE-02).
 - **Grafana:** run-query button exists; dirty-state styling and background searches are missing.
 
 ### DISC-SIDEBAR-01 Field list
@@ -105,10 +106,16 @@ Discover is a three-region page: field sidebar (left, \~295 px, resizable and co
 - **Hover tooltip:** header with bucket start (`2026-11-15 09:00`), one row per series with colour swatch, name and count, hovered series highlighted; footer `Right-click to show actions`.
 - **Right-click (pinned tooltip):** tooltip freezes with a checkbox per series and actions `Filter by time` (set time range to that bucket) and `Filter N selected series` (adds filter pills for the ticked series).
 - **Brush:** click-drag across the chart sets an absolute time range; the picker shows `Nov 15, 01:22 → 18:43 ~17h`; interval recomputes; URL `_g.time` becomes ISO strings.
+  - The range is the exact dragged times (a 4.8 h → 14.4 h drag over a day is 04:48 → 14:24), not snapped to bucket edges, then re-bucketed. It is rounded outwards to whole seconds (the datasource time macros are second precision, so the range shown is the range queried) and is at least one second, or one pixel's worth of time, wide: a drag inside one bucket never gives an empty `from == to` range. A click (no drag) zooms to the clicked bucket, start to end, like `Filter by time`.
+- **Time bounds:** every query includes both ends (`>= from AND <= to`, as Kibana), and the histogram keeps a bucket that starts exactly at `to`, so the `N rows` caption, the grid, field statistics and Visualize agree (08:00–12:00 on the fixture: 2,161).
+- **Partial buckets:** a bucket only partly inside the range (starts before `from` or ends after `to`) is drawn faded on a grey band, and its tooltip says so. Not for week / month / year buckets (calendar widths).
+- **Too-fine intervals:** nothing in the interval menu is disabled. A fixed Second / Minute / Hour / Day interval that would exceed 1,000 buckets is scaled up to the finest round multiple that fits (Minute over 7 days → 15 minutes), and the caption says `(interval: Minute, scaled to 15 minutes)` with a warning `⚠ Scaled to 15 minutes` (Kibana: "scaled to 10 minutes").
+- **Axis:** ticks fall on round times (every 30 minutes, every hour, midnight, …), at least ~80 px apart so labels never collide. Sub-day ticks read `HH:mm` with the date as a second line on the first tick and at each new day; day ticks read `1st … 7th` with `January 2026` under the first tick and at each new month; multi-month ticks read `Jan 2026`. The axis row grows to two lines when a tick has a second line, so it never overlaps the caption.
 - **Grafana:** brush-to-zoom exists in time series panels; series-selection actions and a logs-volume-style default chart exist only in Explore.
 
 ### DISC-CHART-02 Breakdown
 
+- **Default:** `No breakdown` (a single series), as in Kibana; an explicit `bd` URL parameter wins.
 - **Interaction:** `No breakdown ⌄` opens a searchable list of aggregatable fields (incl. `_index`, `_ignored`). Choosing one turns the label into `Breakdown by host.name` and stacks bars by its top values. A legend appears on the right.
 - **Legend:** click an item isolates it (others shown with an eye-slash icon, y-axis rescales); Ctrl+click hides it. Hover shows ⋮ → popover titled with the value: `Filter for`, `Filter out`.
 - **Also reachable from:** field popover 📊 icon (DISC-SIDEBAR-02).
