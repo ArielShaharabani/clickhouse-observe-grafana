@@ -55,6 +55,9 @@ interface LogsTableProps {
   onPageStep?: (delta: 1 | -1) => boolean;
   /** Surrounding documents (DISC-DOC-02): the anchor row, highlighted pale yellow. */
   anchorRow?: LogRow | null;
+  /** Shown instead of the default "No logs found" text when there are no rows (Discover's
+   *  empty / failed state); the drop target around it stays. */
+  emptyState?: React.ReactNode;
 }
 
 type CellPos = { ri: number; ci: number };
@@ -162,6 +165,7 @@ export function LogsTable({
   onAddFilter,
   timeFilterable = true,
   onDropField,
+  emptyState,
   highlighterFor,
   display = DEFAULT_GRID_DISPLAY,
   onPageStep,
@@ -309,11 +313,13 @@ export function LogsTable({
         onDragLeave={() => setIsFieldDragOver(false)}
         onDrop={onTableDrop}
       >
-        <EmptyState
-          variant="not-found"
-          hideImage
-          message="No logs found for the selected time range and filters."
-        />
+        {emptyState ?? (
+          <EmptyState
+            variant="not-found"
+            hideImage
+            message="No logs found for the selected time range and filters."
+          />
+        )}
       </div>
     );
   }

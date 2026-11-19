@@ -3,7 +3,17 @@ import { css, cx } from '@emotion/css';
 import { GrafanaTheme2 } from '@grafana/data';
 import { useStyles2, Icon, Portal } from '@grafana/ui';
 import { FilterOp, FilterPill } from '../types';
-import { filterLabel, negateFilter, removeFilter, toggleDisabled, updateFilter } from '../sql/filters';
+import {
+  filterLabel,
+  groupWithNext,
+  negateFilter,
+  removeFilter,
+  removeFromGroup,
+  setGroupOp,
+  toggleDisabled,
+  updateFilter,
+} from '../sql/filters';
+import { applicableActions, applyToAll, applyToAllPins, ApplyToAllAction } from '../state/queryMenu';
 import { FieldValue } from '../sql/kql/_values';
 import { FilterEditForm } from './AddFilter/FilterEditForm';
 import { FilterPanel } from './AddFilter/AddFilterPopover';
@@ -66,6 +76,8 @@ export function FilterPills({ filters, onChange, loadValues, pinTable }: FilterP
   };
   const [menu, setMenu] = useState<OpenMenu | null>(null);
   const [editing, setEditing] = useState<OpenMenu | null>(null);
+  const [bulkMenu, setBulkMenu] = useState<DOMRect | null>(null);
+  const bulkButton = useRef<HTMLButtonElement>(null);
   // Pill buttons by filter id: focus goes back to the pill when its menu or editor closes.
   const pillButtons = useRef(new Map<string, HTMLButtonElement>());
   const pillButton = (id: string) => pillButtons.current.get(id) ?? null;
@@ -82,19 +94,41 @@ export function FilterPills({ filters, onChange, loadValues, pinTable }: FilterP
     onChange(removeFilter(filters, id));
   };
 
-  return (
-    <div className={styles.container} data-testid="filter-pills">
-      {filters.map((f) => {
+  const applyBulk = (action: ApplyToAllAction) => {
+    const next = applyToAll(filters, action);
+    applyToAllPins(filters, next, action, pinTable);
+    onChange(next);
+  };
+  const removeAll = () => {
+    filters.forEach((f) => f.pinned && unpinFilterInStore(f));
+    onChange([]);
+  };
+
+  // A group is a run of adjacent pills with the same group id (the helpers in sql/filters.ts keep
+  // members adjacent); anything else renders as before.
+  const groupSize = (g: string | undefined) => (g ? filters.filter((x) => x.group === g).length : 0);
+  const pillNodes = filters.map((f, idx) => {
         const { notPrefix, fieldPart, rest } = pillText(f);
         const negated = NEGATED_OPS.has(f.op);
+        const grouped = groupSize(f.group) > 1;
+        const firstInGroup = grouped && filters[idx - 1]?.group !== f.group;
+        const lastOfGroup = f.group ? filters.map((x) => x.group).lastIndexOf(f.group) : idx;
         return (
+          <React.Fragment key={f.id}>
+          {grouped && !firstInGroup && (
+            <span className={styles.groupOp} aria-hidden="true">
+              {f.groupOp === 'or' ? 'OR' : 'AND'}
+            </span>
+          )}
           <span
-            key={f.id}
+            data-group={grouped ? f.group : undefined}
+            data-group-op={grouped ? (f.groupOp === 'or' ? 'or' : 'and') : undefined}
             className={cx(
               styles.pill,
               f.pinned && styles.pillPinned,
               negated && styles.pillNegated,
-              f.disabled && styles.pillDisabled
+              f.disabled && styles.pillDisabled,
+              grouped && styles.pillGrouped
             )}
             title={filterLabel(f)}
           >
@@ -158,6 +192,20 @@ export function FilterPills({ filters, onChange, loadValues, pinTable }: FilterP
                   onRemove(f.id);
                   setMenu(null);
                 }}
+                canGroupWithNext={lastOfGroup < filters.length - 1}
+                onGroupWithNext={() => {
+                  onChange(groupWithNext(filters, f.id));
+                  setMenu(null);
+                }}
+                groupOp={grouped ? (f.groupOp === 'or' ? 'or' : 'and') : undefined}
+                onToggleGroupOp={() => {
+                  onChange(setGroupOp(filters, f.group!, f.groupOp === 'or' ? 'and' : 'or'));
+                  setMenu(null);
+                }}
+                onRemoveFromGroup={() => {
+                  onChange(removeFromGroup(filters, f.id));
+                  setMenu(null);
+                }}
               />
             )}
 
@@ -176,14 +224,119 @@ export function FilterPills({ filters, onChange, loadValues, pinTable }: FilterP
               />
             )}
           </span>
+          </React.Fragment>
         );
-      })}
+      });
+
+  return (
+    <div className={styles.container} data-testid="filter-pills">
+      {pillNodes}
+      <button
+        ref={bulkButton}
+        type="button"
+        className={styles.clearAll}
+        aria-haspopup="menu"
+        aria-label="All filters actions"
+        title="Actions for all filters"
+        onClick={(e) => setBulkMenu(e.currentTarget.getBoundingClientRect())}
+      >
+        <Icon name="ellipsis-v" size="sm" />
+      </button>
+      {bulkMenu && (
+        <BulkMenu
+          anchorRect={bulkMenu}
+          actions={applicableActions(filters)}
+          onAction={(a) => {
+            applyBulk(a);
+            setBulkMenu(null);
+          }}
+          onRemoveAll={() => {
+            removeAll();
+            setBulkMenu(null);
+          }}
+          onClose={() => setBulkMenu(null)}
+          returnFocus={() => bulkButton.current}
+        />
+      )}
       {filters.length > 1 && (
         <button className={styles.clearAll} onClick={() => onChange([])}>
           Clear all
         </button>
       )}
     </div>
+  );
+}
+
+const BULK_LABEL: Record<ApplyToAllAction, string> = {
+  enable: 'Enable all',
+  disable: 'Disable all',
+  pin: 'Pin all',
+  unpin: 'Unpin all',
+  invert: 'Invert inclusion',
+};
+
+/** Bulk actions over every filter (Kibana's filter-bar menu); same actions as the query menu's
+ *  "Apply to all", plus Remove all. */
+function BulkMenu({
+  anchorRect,
+  actions,
+  onAction,
+  onRemoveAll,
+  onClose,
+  returnFocus,
+}: {
+  anchorRect: DOMRect;
+  actions: ApplyToAllAction[];
+  onAction: (a: ApplyToAllAction) => void;
+  onRemoveAll: () => void;
+  onClose: () => void;
+  returnFocus: () => HTMLElement | null;
+}) {
+  const styles = useStyles2(getStyles);
+  const ref = useRef<HTMLDivElement>(null);
+  const { dialogProps } = usePopoverDialog(ref, { onClose, returnFocus, autoFocus: false });
+  useEffect(() => {
+    ref.current?.querySelector<HTMLElement>('[role="menuitem"]')?.focus({ preventScroll: true });
+  }, []);
+  const height = (actions.length + 1) * 32 + 8;
+  const flipUp = anchorRect.bottom + 6 + height > window.innerHeight;
+  const pos = {
+    top: flipUp ? Math.max(8, anchorRect.top - 6 - height) : anchorRect.bottom + 6,
+    left: Math.max(8, Math.min(anchorRect.left, window.innerWidth - 220 - 8)),
+  };
+  return (
+    <Portal>
+      <div className={styles.backdrop} onClick={onClose} />
+      <div
+        ref={ref}
+        className={styles.menu}
+        role="menu"
+        tabIndex={-1}
+        aria-label="All filters actions"
+        style={{ top: pos.top, left: pos.left }}
+        onClick={(e) => e.stopPropagation()}
+        onKeyDown={(e) => {
+          if (ref.current && moveMenuFocus(ref.current, e.key)) {
+            e.preventDefault();
+          } else if (e.key === 'Tab') {
+            e.preventDefault();
+            onClose();
+          } else {
+            dialogProps.onKeyDown(e);
+          }
+        }}
+      >
+        {actions.map((a) => (
+          <button key={a} type="button" role="menuitem" className={styles.menuItem} onClick={() => onAction(a)}>
+            {BULK_LABEL[a]}
+          </button>
+        ))}
+        <button type="button" role="menuitem" className={styles.menuItem} onClick={onRemoveAll}>
+          <Icon name="trash-alt" size="sm" />
+          Remove all
+        </button>
+      </div>
+    </Portal>
   );
 }
 
@@ -202,11 +355,18 @@ interface FilterPillMenuProps {
   onToggleDisabled: () => void;
   onTogglePin: () => void;
   onDelete: () => void;
+  /** Group (OR / AND) actions. */
+  canGroupWithNext: boolean;
+  onGroupWithNext: () => void;
+  /** Set when the pill is in a group: the group's current operator. */
+  groupOp?: 'or' | 'and';
+  onToggleGroupOp: () => void;
+  onRemoveFromGroup: () => void;
   /** The pill button, focused again when the menu closes. */
   returnFocus: () => HTMLElement | null;
 }
 
-const MENU_HEIGHT_ESTIMATE = 215;
+const MENU_HEIGHT_ESTIMATE = 300;
 
 function FilterPillMenu({
   anchorRect,
@@ -218,6 +378,11 @@ function FilterPillMenu({
   onToggleDisabled,
   onTogglePin,
   onDelete,
+  canGroupWithNext,
+  onGroupWithNext,
+  groupOp,
+  onToggleGroupOp,
+  onRemoveFromGroup,
 }: FilterPillMenuProps) {
   const styles = useStyles2(getStyles);
   const negated = NEGATED_OPS.has(pill.op);
@@ -273,6 +438,24 @@ function FilterPillMenu({
           <Icon name="eye-slash" size="sm" />
           {pill.disabled ? 'Re-enable' : 'Temporarily disable'}
         </button>
+        {canGroupWithNext && (
+          <button type="button" role="menuitem" className={styles.menuItem} onClick={onGroupWithNext}>
+            <Icon name="link" size="sm" />
+            Group with next filter (OR)
+          </button>
+        )}
+        {groupOp && (
+          <button type="button" role="menuitem" className={styles.menuItem} onClick={onToggleGroupOp}>
+            <Icon name="exchange-alt" size="sm" />
+            {groupOp === 'or' ? 'Match all in group (AND)' : 'Match any in group (OR)'}
+          </button>
+        )}
+        {groupOp && (
+          <button type="button" role="menuitem" className={styles.menuItem} onClick={onRemoveFromGroup}>
+            <Icon name="times" size="sm" />
+            Remove from group
+          </button>
+        )}
         <button type="button" role="menuitem" className={styles.menuItem} onClick={onDelete}>
           <Icon name="trash-alt" size="sm" />
           Delete
@@ -322,6 +505,15 @@ const getStyles = (theme: GrafanaTheme2) => ({
   pillPinned: css({
     borderStyle: 'solid',
     borderColor: theme.colors.primary.border,
+  }),
+  pillGrouped: css({
+    borderStyle: 'dashed',
+    borderColor: theme.colors.info.border,
+  }),
+  groupOp: css({
+    fontSize: theme.typography.bodySmall.fontSize,
+    fontWeight: theme.typography.fontWeightMedium,
+    color: theme.colors.info.text,
   }),
   pinIcon: css({
     marginRight: theme.spacing(0.5),

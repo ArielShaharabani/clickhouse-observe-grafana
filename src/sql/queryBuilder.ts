@@ -414,13 +414,43 @@ export function buildWhereConditions(config: SourceConfig, state: LogsQueryState
   if (state.search.trim()) {
     conditions.push(buildSearchClause(state.search, config, index));
   }
-  for (const f of state.filters) {
+  conditions.push(...buildFilterConditions(state.filters, config, index));
+  return conditions;
+}
+
+/**
+ * One WHERE condition per enabled filter, except that the enabled pills of an OR group
+ * (`group` + `groupOp: 'or'`) become a single `(a OR b)` condition placed where the group's first
+ * enabled pill stands. AND groups are the plain top-level AND. Every clause still goes through
+ * buildFilterClause (values quoted there).
+ */
+export function buildFilterConditions(filters: FilterPill[], config: SourceConfig, index?: FieldIndex): string[] {
+  const out: string[] = [];
+  const orGroups = new Map<string, number>(); // group id -> index into `out`
+  const orClauses = new Map<string, string[]>();
+  for (const f of filters) {
     if (f.disabled) {
       continue;
     }
-    conditions.push(buildFilterClause(f, config, index));
+    const clause = buildFilterClause(f, config, index);
+    if (f.group && f.groupOp === 'or') {
+      const list = orClauses.get(f.group);
+      if (list) {
+        list.push(clause);
+      } else {
+        orClauses.set(f.group, [clause]);
+        orGroups.set(f.group, out.length);
+        out.push('');
+      }
+    } else {
+      out.push(clause);
+    }
   }
-  return conditions;
+  for (const [group, at] of orGroups) {
+    const list = orClauses.get(group)!;
+    out[at] = list.length === 1 ? list[0] : `(${list.map((c) => `(${c})`).join(' OR ')})`;
+  }
+  return out;
 }
 
 export interface BuildLogsQueryOpts {
@@ -1050,11 +1080,7 @@ export function buildSurroundingDocsQuery(
   }
   // Like Kibana, the anchor is fetched by its id alone: filters only narrow the neighbours.
   if (opts.direction !== 'anchor') {
-    for (const f of opts.filters) {
-      if (!f.disabled) {
-        conditions.push(buildFilterClause(f, config, index));
-      }
-    }
+    conditions.push(...buildFilterConditions(opts.filters, config, index));
   }
   const extraSelect = extraColumnSelects(opts.columns);
   return withSettings(

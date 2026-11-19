@@ -1,8 +1,8 @@
 /**
  * useFieldDiscovery covers three phases: A (system.columns), B (Tuple elements, parsed from A's own
  * type strings) and C (paths inside native JSON columns, one distinctJSONPaths query per column).
- * Map keys are the deliberate omission — they stay on-demand in FieldKeysPopover, because listing
- * them always costs a scan of row data, while Phase C's query is answered from part metadata.
+ * Phase D publishes the keys of each Map column (an unfiltered sample of the latest rows, capped)
+ * as ordinary `source: 'map'` fields; it never blocks the fields already published.
  *
  * Note the module-level caches survive between tests in this file, so each test uses its own
  * logsTable name rather than trying to clear them.
@@ -53,10 +53,36 @@ describe('useFieldDiscovery — columns (Phase A)', () => {
 
     expect(result.current.error).toBeNull();
     expect(result.current.fields.map((f) => f.name).sort()).toEqual(['Body', 'LogAttributes', 'Timestamp']);
-    // Map-key discovery does not run here — a Map column is published only as itself
-    // (source: 'column'), never expanded into per-key fields.
+    // No keys came back from the Map sample: a Map column is published only as itself.
     expect(result.current.fields.every((f) => f.source === 'column')).toBe(true);
-    expect(mockRunQueryRows).toHaveBeenCalledTimes(1);
+    // system.columns + one Map key sample.
+    expect(mockRunQueryRows).toHaveBeenCalledTimes(2);
+  });
+
+  it('publishes Map keys as first-class fields, sorted and capped, and survives a failed sample', async () => {
+    mockRunQueryRows.mockImplementation(async ({ sql }) => {
+      if (sql.includes('system.columns')) {
+        return [
+          { name: 'Body', type: 'String' },
+          { name: 'ResourceAttributes', type: 'Map(LowCardinality(String), String)' },
+          { name: 'LogAttributes', type: 'Map(LowCardinality(String), String)' },
+        ];
+      }
+      if (sql.includes('mapKeys') && sql.includes('ResourceAttributes')) {
+        const keys = ['service.name', 'host.name', ...Array.from({ length: 150 }, (_, i) => `k${String(i).padStart(3, '0')}`)];
+        return keys.map((k) => ({ k, total: 500 }));
+      }
+      throw new Error('boom');
+    });
+    const keyCfg = { ...config, logsTable: 'otel_logs_mapkeys' };
+    const { result } = renderHook(() => useFieldDiscovery(keyCfg, timeRange));
+    await waitFor(() => expect(result.current.fields.some((f) => f.source === 'map')).toBe(true));
+    const mapFields = result.current.fields.filter((f) => f.source === 'map');
+    expect(mapFields).toHaveLength(100);
+    expect(mapFields[0].displayName).toBe('ResourceAttributes.host.name');
+    expect(mapFields[0].sqlExpr).toBe("ResourceAttributes['host.name']");
+    expect(mapFields.every((f) => f.mapColumn === 'ResourceAttributes')).toBe(true);
+    expect(result.current.error).toBeNull();
   });
 
   it('surfaces a system.columns failure as `error`, with no fields published', async () => {

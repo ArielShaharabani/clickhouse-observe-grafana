@@ -108,7 +108,7 @@ export function LogsHistogramPanel({
         )}
       </div>
       {!collapsed &&
-        (volumeData.length > 0 ? (
+        (volumeData.length > 0 && (totalEvents > 0 || volLoading) ? (
           <>
             <VolumeHistogram
               data={volumeData}

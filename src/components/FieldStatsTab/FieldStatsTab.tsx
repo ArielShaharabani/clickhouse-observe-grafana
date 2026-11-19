@@ -28,6 +28,10 @@ const pctText = (n: number, of: number) => {
   return `${p === 100 || p === 0 ? p.toFixed(0) : p.toFixed(1)}%`;
 };
 
+/** An empty string is a value, shown like Kibana's "(blank)". */
+export const BLANK_LABEL = '(blank)';
+const valueLabel = (v: string) => (v === '' ? BLANK_LABEL : v);
+
 /** Containers are profiled through their keys / paths, not as a whole (same rule as the field list). */
 export function isProfilableField(f: FieldModel): boolean {
   return !(f.source === 'column' && (f.type === 'map' || f.type === 'json' || f.type === 'tuple'));
@@ -98,7 +102,12 @@ export function FieldStatsTab({ queryState, timeRange, onAddFilter, onVisualize 
       return;
     }
     const ctrl = new AbortController();
-    const targets = pageFields.map((f) => ({ sqlExpr: f.sqlExpr, numeric: f.type === 'number' }));
+    const targets = pageFields.map((f) => ({
+      sqlExpr: f.sqlExpr,
+      numeric: f.type === 'number',
+      time: f.type === 'time' && f.source !== 'map',
+      blankIsValue: f.source !== 'map',
+    }));
     fetchFieldStatsBatch(config, targets, {
       table: config.logsTable,
       conditions,
@@ -254,6 +263,15 @@ function MiniDistribution({ field, stats }: { field: FieldModel; stats: FieldSta
     return <span className={styles.muted}>No values</span>;
   }
   const num = stats.numeric;
+  if (stats.range) {
+    return (
+      <div className={styles.mini} aria-label={`${field.displayName} from ${stats.range.min} to ${stats.range.max}`}>
+        <span className={styles.muted}>{stats.range.min}</span>
+        <span className={styles.muted}>→</span>
+        <span className={styles.muted}>{stats.range.max}</span>
+      </div>
+    );
+  }
   if (num && num.count > 0) {
     const peak = Math.max(...num.buckets, 1);
     return (
@@ -288,7 +306,7 @@ function MiniDistribution({ field, stats }: { field: FieldModel; stats: FieldSta
             key={t.value}
             className={styles.stripBar}
             style={{ flexGrow: Math.max(1, t.count) }}
-            title={`${t.value}: ${pctText(t.count, stats.docs)}`}
+            title={`${valueLabel(t.value)}: ${pctText(t.count, stats.docs)}`}
           />
         ))}
       </span>
@@ -320,6 +338,17 @@ function ExpandedStats({
           <dt>Distinct values</dt>
           <dd>{stats.distinct.toLocaleString()}</dd>
         </dl>
+        {stats.range && (
+          <>
+            <h6 className={styles.sectionTitle}>Range</h6>
+            <dl className={styles.dl}>
+              <dt>earliest</dt>
+              <dd>{stats.range.min}</dd>
+              <dt>latest</dt>
+              <dd>{stats.range.max}</dd>
+            </dl>
+          </>
+        )}
         {num && (
           <>
             <h6 className={styles.sectionTitle}>Summary</h6>
@@ -335,12 +364,12 @@ function ExpandedStats({
         )}
       </section>
       <section className={styles.grow}>
-        <h6 className={styles.sectionTitle}>Top values</h6>
-        {stats.top.length === 0 && <span className={styles.muted}>No values in the sample</span>}
-        {stats.top.map((t) => (
+        {!stats.range && <h6 className={styles.sectionTitle}>Top values</h6>}
+        {!stats.range && stats.top.length === 0 && <span className={styles.muted}>No values in the sample</span>}
+        {(stats.range ? [] : stats.top).map((t) => (
           <div key={t.value} className={styles.valueRow}>
             <div className={styles.valueBar} style={{ width: `${Math.max(2, pct(t.count, stats.docs))}%` }} />
-            <span className={styles.value}>{t.value}</span>
+            <span className={styles.value}>{valueLabel(t.value)}</span>
             <span className={styles.muted}>
               {t.count.toLocaleString()} ({pctText(t.count, stats.docs)})
             </span>
