@@ -128,14 +128,23 @@ export function replaceDim(s: LensState, d: BucketDim | MetricDim): LensState {
 }
 
 /** Adds a Count of records metric (the "+ Add" slot of a metric group); returns it for editing. */
-export function addMetric(s: LensState, ctx: LensContext): { state: LensState; id: string } {
-  const m: MetricDim = { kind: 'metric', id: newId('m'), op: 'count' };
+export function addMetric(
+  s: LensState,
+  ctx: LensContext,
+  patch: Partial<Pick<MetricDim, 'role'>> = {}
+): { state: LensState; id: string } {
+  const m: MetricDim = { kind: 'metric', id: newId('m'), op: 'count', ...patch };
   return { state: switchChart({ ...s, metrics: [...s.metrics, m] }, s.chartType, ctx, s.subType), id: m.id };
 }
 
 /** Adds a top-values bucket on `field` at the end of the buckets (X first, then Breakdown). */
-export function addBucket(s: LensState, field: LensField, ctx: LensContext): { state: LensState; id: string } {
-  const b: BucketDim = { kind: 'terms', id: newId('b'), field: field.sqlExpr, label: field.label, size: 9 };
+export function addBucket(
+  s: LensState,
+  field: LensField,
+  ctx: LensContext,
+  patch: Pick<BucketDim, 'pivot'> = {}
+): { state: LensState; id: string } {
+  const b: BucketDim = { kind: 'terms', id: newId('b'), field: field.sqlExpr, label: field.label, size: 9, ...patch };
   return { state: switchChart({ ...s, buckets: [...s.buckets, b] }, s.chartType, ctx, s.subType), id: b.id };
 }
 
@@ -166,11 +175,16 @@ export function metricForField(id: string, field: LensField): MetricDim | undefi
 
 /** Display-only parts (names) removed — what the chart query actually depends on. */
 export function queryShape(s: LensState): LensState {
+  // Style / Legend (LENS-STYLE-01) never changes the SQL.
+  const { style: _style, ...rest } = s;
   return {
-    ...s,
-    buckets: s.buckets.map(({ name: _n, ...b }) => b as BucketDim),
-    // Format, colour and axis side are display-only too.
-    metrics: s.metrics.map(({ name: _n, format: _f, color: _c, axis: _a, ...m }) => m as MetricDim),
+    ...rest,
+    // Table pivot (Split metrics by) only reshapes the same rows.
+    buckets: s.buckets.map(({ name: _n, pivot: _p, ...b }) => b as BucketDim),
+    // Format, colour and axis side are display-only too, and so are the Table / Metric chart options.
+    metrics: s.metrics.map(
+      ({ name: _n, format: _f, color: _c, axis: _a, role: _r, summary: _s, colorBy: _b, ...m }) => m as MetricDim
+    ),
   };
 }
 

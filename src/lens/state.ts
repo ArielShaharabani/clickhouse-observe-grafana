@@ -9,6 +9,7 @@
  */
 import { FieldType } from '../sql/fieldModel';
 import { formulaErrors, FormulaFields, MAX_FORMULA_LEN } from './formula';
+import { cleanStyle, LensStyle } from './style';
 import { isIntervalValue } from './interval';
 import { cleanMetricOptions, MetricOptions, optionsLabelSuffix } from './metricOptions';
 
@@ -265,9 +266,23 @@ export interface MetricDim extends MetricOptions {
   /** For `formula`: the fields it may use (name as written → field SQL expression + numeric). */
   formulaFields?: FormulaFields;
   name?: string;
+  /** Metric chart (LENS-CHART-01): this metric is the tiles' Maximum value (progress bar), not a tile value. */
+  role?: 'max';
+  /** Table (LENS-CHART-01): summary row function of this metric's column(s). */
+  summary?: TableSummary;
+  /** Table (LENS-CHART-01): colour the cell background or text by value. */
+  colorBy?: 'cell' | 'text';
 }
 
-export type BucketDim = DateHistogramDim | TermsDim | RangeDim | FiltersDim;
+/** Summary row functions of a Table metric column (Kibana's "Summary row"). */
+export type TableSummary = 'sum' | 'avg' | 'count' | 'min' | 'max';
+export const TABLE_SUMMARIES: readonly TableSummary[] = ['sum', 'avg', 'count', 'min', 'max'];
+
+/**
+ * A bucket dimension. `pivot` (Table only, LENS-CHART-01): the bucket is in "Split metrics by" —
+ * its values become metric columns instead of rows.
+ */
+export type BucketDim = (DateHistogramDim | TermsDim | RangeDim | FiltersDim) & { pivot?: true };
 
 /** One custom range of an Intervals bucket: `from <= x < to`, either end open. */
 export interface RangeSpec {
@@ -411,6 +426,8 @@ export function filterLabel(f: FilterSpec): string {
 export interface LensState {
   chartType: ChartType;
   subType?: XySubType;
+  /** XY Style / Legend settings (LENS-STYLE-01); display-only. */
+  style?: LensStyle;
   buckets: BucketDim[];
   metrics: MetricDim[];
 }
@@ -537,6 +554,21 @@ export function encodeLens(s: LensState): string {
 const CHARTS: readonly ChartType[] = ['line', 'area', 'bar', 'metric', 'table', 'pie'];
 const OPS: readonly MetricOp[] = ['count', 'median', 'avg', 'sum', 'min', 'max', 'unique', 'percentile', 'formula'];
 
+/** Table / Metric chart options of a metric (LENS-CHART-01), from untrusted input. */
+function cleanChartOptions(m: MetricDim): Pick<MetricDim, 'role' | 'summary' | 'colorBy'> {
+  const out: Pick<MetricDim, 'role' | 'summary' | 'colorBy'> = {};
+  if (m.role === 'max') {
+    out.role = 'max';
+  }
+  if (TABLE_SUMMARIES.includes(m.summary as TableSummary)) {
+    out.summary = m.summary;
+  }
+  if (m.colorBy === 'cell' || m.colorBy === 'text') {
+    out.colorBy = m.colorBy;
+  }
+  return out;
+}
+
 /** Keeps only a well-formed `{ name: { expr, numeric } }` map of untrusted input. */
 function cleanFormulaFields(x: unknown): FormulaFields | undefined {
   if (!x || typeof x !== 'object' || Array.isArray(x)) {
@@ -578,16 +610,15 @@ export function decodeLens(raw: string | null | undefined): LensState | undefine
             (b.kind === 'filters' && b.field === '' && Array.isArray(b.filters)))
       )
       .map((b): BucketDim => {
-        switch (b.kind) {
-          case 'terms':
-            return cleanTerms(b);
-          case 'range':
-            return cleanRange(b);
-          case 'filters':
-            return cleanFilters(b);
-          default:
-            return cleanDateHistogram(b);
-        }
+        const out: BucketDim =
+          b.kind === 'terms'
+            ? cleanTerms(b)
+            : b.kind === 'range'
+              ? cleanRange(b)
+              : b.kind === 'filters'
+                ? cleanFilters(b)
+                : cleanDateHistogram(b);
+        return b.pivot === true ? { ...out, pivot: true } : out;
       });
     const metrics = (v.metrics as MetricDim[])
       .filter(
@@ -604,7 +635,7 @@ export function decodeLens(raw: string | null | undefined): LensState | undefine
       )
       .map((m): MetricDim => {
         // Only known, well-typed keys survive (the URL is untrusted).
-        const opts = cleanMetricOptions(m as unknown as Record<string, unknown>);
+        const opts = { ...cleanMetricOptions(m as unknown as Record<string, unknown>), ...cleanChartOptions(m) };
         if (m.op === 'formula') {
           return {
             kind: 'metric',
@@ -628,7 +659,8 @@ export function decodeLens(raw: string | null | undefined): LensState | undefine
         return out;
       });
     const subType = ['stacked', 'percentage', 'unstacked'].includes(v.subType) ? (v.subType as XySubType) : undefined;
-    return { chartType: v.chartType, subType, buckets, metrics };
+    const style = cleanStyle(v.style);
+    return { chartType: v.chartType, subType, buckets, metrics, ...(style ? { style } : {}) };
   } catch {
     return undefined;
   }

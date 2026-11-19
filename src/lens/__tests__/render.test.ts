@@ -54,10 +54,15 @@ describe('dimension groups per chart (LENS-DIM-01 names)', () => {
       'Vertical axis:1',
       'Breakdown:0',
     ]);
-    expect(names({ chartType: 'table', buckets: [svc, date], metrics: [count] })).toEqual(['Rows:2', 'Metrics:1']);
+    expect(names({ chartType: 'table', buckets: [svc, date], metrics: [count] })).toEqual([
+      'Rows:2',
+      'Split metrics by:0',
+      'Metrics:1',
+    ]);
     expect(names({ chartType: 'metric', buckets: [svc], metrics: [count] })).toEqual([
       'Primary metric:1',
       'Secondary metric:0',
+      'Maximum value:0',
       'Break down by:1',
     ]);
     expect(names({ chartType: 'pie', buckets: [svc], metrics: [count] })).toEqual(['Slice by:1', 'Size by:1']);

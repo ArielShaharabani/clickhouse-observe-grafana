@@ -267,3 +267,24 @@ LENS-DATAVIEW acceptance:
 | Alert rule: `$` escaped only inside literals, count query keeps time macros, no time field → no rule, defaults shape (A count, B threshold, condition B, window = range clamped) (jest `sessionActions.test.ts`) | ✅ |
 | Share modal + ⋮ menu render, absolute toggle, unsaved warning hidden when a saved search matches, Inspect callback (jest `src/components/__tests__/SessionActions.test.tsx`) | ✅ |
 | Share link round trip, absolute toggle, toggle disabled on absolute ranges; CSV download of the current search; Create alert rule prefill; Inspect from ⋮; New session clears the search (`tests/features/disc-session-01.spec.ts`) | written, e2e not run (coordinator) |
+
+### LENS-CHART-01 (PR 41)
+| Case | Status |
+| --- | --- |
+| Pivot: one row per row-bucket value, one column per pivot value × metric, missing combination empty, cap 100; no pivot → unchanged; table panel gets the pivoted frame (jest `chartSpecifics.test.tsx`) | ✅ |
+| Summary / colour overrides per (pivot) column, avg → mean, text colouring, no option → no override, exported panel carries them (jest) | ✅ |
+| Metric tiles: per breakdown value, secondary metric, progress against maximum (0 max → no bar, capped 100 %), value format, empty → dash, rendered progressbar (jest) | ✅ |
+| Groups / add to Maximum value / add to Split metrics by / switchChart drops roles / display-only options keep the query shape / URL round-trip and hostile values dropped (jest) | ✅ |
+| Table pivot on the fixture (error column, payments errors, one row per service); summary Sum footer = total and colour by value without a re-query; Metric tiles with secondary + progress (payments ≈ 17 %); Maximum value add + switch to Bar; hostile link values dropped (`tests/features/lens-chart-01.spec.ts`) | e2e not run (coordinator) |
+| Metric chart switch now renders `data-panel="tiles"` (`lens-type-01.spec.ts` updated) | e2e not run (coordinator) |
+
+### LENS-STYLE-01 (PR 41)
+| Case | Status |
+| --- | --- |
+| `cleanStyle`: known keys only, bad values / inverted or non-finite bounds / long titles / mismatched legend alignment dropped; URL codec round-trip; hostile style dropped (jest `style.test.tsx`) | ✅ |
+| Display-only: `queryShape` drops style; XY chart switches keep it, Table drops it (jest) | ✅ |
+| Scales: value domains (full / data / custom / log / percentage), log and sqrt positions, ticks (jest) | ✅ |
+| XyChart: auto titles, Auto legend, horizontal geometry, bar values, titles / ticks off, log ticks, custom bounds, legend right / inside / grid / hidden (jest) | ✅ |
+| StylePanel: changes through `cleanStyle`, horizontal relabels the axes, Data bounds disabled for bars, Back, bounds order and junk not applied (jest) | ✅ |
+| Dashboard export: barchart orientation / values / rotation / legend, axis label / gridlines / log / min / max (jest) | ✅ |
+| E2E (`tests/features/lens-style-01.spec.ts`): horizontal + bar values kept in the URL with no new query and across reload, Back; custom / none axis title, log scale, custom bounds and refused inverted range; legend auto / show / right / inside corner / grid / hide; hostile shared style | not run (coordinator) |

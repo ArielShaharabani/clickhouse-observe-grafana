@@ -40,8 +40,8 @@ Status values: `todo` · `in-progress` · `done` (with PR link) · `skipped` (wi
 | 24 | LENS-DIM-04 | Top values editor | 3 | Build | done | PR 20 |
 | 25 | SHARED-PERF-01 | Loading / sampling cues | 3 | Verify | done | PR 30 |
 | 23 | LENS-DIM-03 | Formula editor | 2 | Build | done | PR 30 |
-| 26 | LENS-CHART-01 | Table + Metric specifics | 2 | Build | todo | |
-| 27 | LENS-STYLE-01 | Style + Legend panels | 2 | Build | todo | |
+| 26 | LENS-CHART-01 | Table + Metric specifics | 2 | Build | done | PR 41 |
+| 27 | LENS-STYLE-01 | Style + Legend panels | 2 | Build | done | PR 41 |
 | 28 | LENS-LAYER-01 | Layers | 2 | Build | todo | |
 | 29 | LENS-INSPECT-01 | Inspector (reuse Diagnostics) | 2 | Build | done | PR 38 |
 | 30 | DISC-SEARCH-03 | Saved queries menu | 2 | Verify | done | PR 38 |

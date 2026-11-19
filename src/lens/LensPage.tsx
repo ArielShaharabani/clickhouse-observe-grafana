@@ -36,6 +36,7 @@ import { DEFAULT_LOGS_QUERY_STATE, FilterPill } from '../types';
 import { compileLens, LensResult, realKey, shapeLensRows } from './compile';
 import { LensChart } from './render/LensChart';
 import { CHART_ICONS, ChartTypeSwitcher } from './ChartTypeSwitcher';
+import { StylePanel, StyleToolbar, StyleView } from './StylePanel';
 import { DimensionEditor } from './DimensionEditor';
 import { LensInterval, stepBucket } from './interval';
 import { addBucket, addMetric, metricForField, nextBucketField, queryShape, replaceDim } from './dimensions';
@@ -70,6 +71,8 @@ interface Group {
   dims: Array<BucketDim | MetricDim>;
   /** Holds several dimensions (the slot stays after the first). */
   multi?: boolean;
+  /** What a dimension added here is marked as (LENS-CHART-01): a Table pivot, a Metric chart maximum. */
+  tag?: 'pivot' | 'max';
 }
 
 /** Dimension groups as each chart type names them (LENS-DIM-01). */
@@ -87,15 +90,24 @@ export function dimensionGroups(s: LensState): Group[] {
       ];
     case 'table':
       return [
-        { name: 'Rows', role: 'bucket', dims: s.buckets, multi: true },
+        { name: 'Rows', role: 'bucket', dims: s.buckets.filter((b) => !b.pivot), multi: true },
+        { name: 'Split metrics by', role: 'bucket', dims: s.buckets.filter((b) => b.pivot), multi: true, tag: 'pivot' },
         { name: 'Metrics', role: 'metric', dims: s.metrics, multi: true },
       ];
-    case 'metric':
+    case 'metric': {
+      const values = s.metrics.filter((m) => m.role !== 'max');
       return [
-        { name: 'Primary metric', role: 'metric', dims: s.metrics.slice(0, 1) },
-        { name: 'Secondary metric', role: 'metric', dims: s.metrics.slice(1, 2) },
+        { name: 'Primary metric', role: 'metric', dims: values.slice(0, 1) },
+        { name: 'Secondary metric', role: 'metric', dims: values.slice(1, 2) },
+        {
+          name: 'Maximum value',
+          role: 'metric',
+          dims: s.metrics.filter((m) => m.role === 'max').slice(0, 1),
+          tag: 'max',
+        },
         { name: 'Break down by', role: 'bucket', dims: opt(b0) },
       ];
+    }
     case 'pie':
       return [
         { name: 'Slice by', role: 'bucket', dims: s.buckets },
@@ -424,6 +436,7 @@ export function LensPage() {
   // Dimension being edited (LENS-DIM-02). Its group is looked up in the current state each render,
   // so a chart change elsewhere (suggestion, type switch) retitles or closes the editor.
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [styleView, setStyleView] = useState<StyleView | null>(null);
   const editingGroup = editingId
     ? dimensionGroups(lens).find((g) => g.dims.some((d) => d.id === editingId))
     : undefined;
@@ -431,15 +444,16 @@ export function LensPage() {
   const canAddTo = (g: Group) => g.role === 'metric' || !!nextBucketField(lens, lensFields);
   const addToGroup = (g: Group, dropped?: LensField) => {
     if (g.role === 'metric') {
-      const { state, id } = addMetric(lens, ctx);
+      const role = g.tag === 'max' ? ('max' as const) : undefined;
+      const { state, id } = addMetric(lens, ctx, role ? { role } : {});
       const m = dropped ? metricForField(id, dropped) : undefined;
-      setLens(m ? replaceDim(state, m) : state);
+      setLens(m ? replaceDim(state, role ? { ...m, role } : m) : state);
       setEditingId(id);
       return;
     }
     const field = dropped && dropped.type !== 'records' ? dropped : nextBucketField(lens, lensFields);
     if (field) {
-      const { state, id } = addBucket(lens, field, ctx);
+      const { state, id } = addBucket(lens, field, ctx, g.tag === 'pivot' ? { pivot: true } : {});
       setLens(state);
       setEditingId(id);
     }
@@ -781,7 +795,19 @@ export function LensPage() {
               onSubTypeChange={(sub) => setLens(switchChart(lens, lens.chartType, ctx, sub))}
             />
           )}
-          {editingGroup && editingDim ? (
+          {!isEmptyLens(lens) && !editingDim && !styleView && isXy(lens.chartType) && (
+            <StyleToolbar onOpen={setStyleView} />
+          )}
+          {styleView && !editingDim && isXy(lens.chartType) ? (
+            <StylePanel
+              view={styleView}
+              chartType={lens.chartType}
+              style={lens.style}
+              hasRightAxis={lens.metrics.some((m) => m.axis === 'right')}
+              onChange={(style) => setLens({ ...lens, style })}
+              onBack={() => setStyleView(null)}
+            />
+          ) : editingGroup && editingDim ? (
             <DimensionEditor
               dim={editingDim}
               group={editingGroup.name}

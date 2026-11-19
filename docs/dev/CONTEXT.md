@@ -1,7 +1,7 @@
 # Context snapshot — read this to restart
 
 Saved after every feature (and every review-fix round). A new session can resume from this file plus `PROGRESS.md` alone.
-Last saved: 2026-11-18, #32 DISC-SESSION-01 merged (PR 38, v0.42.0).
+Last saved: 2026-11-18, #27 LENS-STYLE-01 merged (PR 41, v0.44.0).
 
 ## Goal
 Bring Kibana Discover + Lens style exploration to Grafana on ClickHouse by extending the **ClickHouse Observe** app plugin.
@@ -50,6 +50,8 @@ Bring Kibana Discover + Lens style exploration to Grafana on ClickHouse by exten
 | 29 | LENS-INSPECT-01: Visualize Inspector (Data / Requests) | 38 | src/lens/Inspector.tsx, src/lens/inspectorData.ts |
 | 31 | DISC-NAV-01: Discover session tabs | 38 | src/state/discoverTabs.ts, src/components/DiscoverTabs/DiscoverTabs.tsx, src/pages/DiscoverTabsHost.tsx |
 | 32 | DISC-SESSION-01: Share, CSV export, new session, alert rule | 38 | src/data/csvExport.ts, src/data/shareLink.ts, src/data/alertRule.ts, src/components/SessionActions/SessionActions.tsx |
+| 26 | LENS-CHART-01: Table and Metric chart specifics | 41 | src/lens/tableChart.ts, src/lens/render/MetricTiles.tsx, src/lens/TableMetricOptions.tsx |
+| 27 | LENS-STYLE-01: Style and Legend panels | 41 | src/lens/style.ts, src/lens/StylePanel.tsx, src/lens/render/styleConfig.ts |
 
 ## Key decisions (details in DECISIONS.md)
 - Frontend-only; queries via grafana-clickhouse-datasource (`src/data/runQuery.ts`). Plain React + @grafana/ui, no Scenes.

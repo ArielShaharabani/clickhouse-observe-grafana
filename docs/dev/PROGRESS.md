@@ -1,8 +1,8 @@
 # Progress — read this first when resuming
 
 **Current item:** none in flight.
-**Last completed step:** batch PR 38 (supersedes 34–37): #30 query menu (0.39.0), #29 Inspector (0.40.0), #31 session tabs (0.41.0), #32 share/export/alert (0.42.0); 1,420 jest, e2e 176 + fixes (114 affected re-run green).
-**Next step:** remaining PLAN todos: #26 LENS-CHART-01, #27 LENS-STYLE-01, #28 LENS-LAYER-01, then #33 SHARED-A11Y-01 last. Fan out (no containers), merge as one batch: one full e2e `--workers=3` under `.e2e-lock`. Follow-up: Discover "Add to dashboard" export does not escape `$` in search values (flagged by #32).
+**Last completed step:** batch PR 41 (supersedes 39, 40): #26 Table + Metric specifics (0.43.0), #27 Style + Legend (0.44.0).
+**Next step:** remaining PLAN todos: #28 LENS-LAYER-01, then #33 SHARED-A11Y-01 last. Fan out (no containers), merge as one batch: one full e2e `--workers=3` under `.e2e-lock`. Follow-up: Discover "Add to dashboard" export does not escape `$` in search values (flagged by #32).
 **Open issues:** none. Deferred Lens items: per-group drag-and-drop (LENS-DIM-01 DnD; workspace drop works), formula (#23), advanced metric options (filter by, time shift), value format/colour/axis side (LENS-STYLE-01), date interval picker, "Other" bucket. Deferred elsewhere: DISC-DOC-02 links (#20); histogram now-line; field list Empty/Meta; grid Summary column etc. (#16); popover Visualize (#15).
 
 ## Environment notes
