@@ -20,6 +20,11 @@ import { runQueryRows } from '../data/runQuery';
 export interface FieldStatsTarget {
   sqlExpr: string;
   numeric: boolean;
+  /** Time field: profiled as a min / max range instead of categories. */
+  time?: boolean;
+  /** An empty string is a value (shown as "(blank)"), only NULL is missing — true for real columns,
+   *  false for Map keys, where ClickHouse returns '' for an absent key. */
+  blankIsValue?: boolean;
 }
 
 export interface FieldStatsBatchOpts {
@@ -54,10 +59,14 @@ export interface FieldStats {
   distinct: number;
   top: FieldTopValue[];
   numeric?: FieldNumericSummary;
+  /** Time fields: earliest / latest value in the sample (text as ClickHouse renders it). */
+  range?: { min: string; max: string };
 }
 
-/** Same "absent" stand-ins buildFieldTopValuesQuery drops (empty, '{}', '[]', 'null'). */
-const present = (v: string) => `(notEmpty(${v}) AND ${v} NOT IN ('{}', '[]', 'null'))`;
+/** Same "absent" stand-ins buildFieldTopValuesQuery drops (empty, '{}', '[]', 'null'). With
+ *  `blankIsValue` the empty string counts (Kibana's "(blank)") and only NULL is missing. */
+const present = (v: string, blankIsValue?: boolean) =>
+  blankIsValue ? `(isNotNull(${v}) AND ${v} NOT IN ('{}', '[]', 'null'))` : `(notEmpty(${v}) AND ${v} NOT IN ('{}', '[]', 'null'))`;
 
 export function buildFieldStatsBatchQuery(
   config: SourceConfig,
@@ -77,9 +86,15 @@ export function buildFieldStatsBatchQuery(
   const mid: string[] = ['count() AS total'];
   const outer: string[] = ['total'];
   targets.forEach((t, i) => {
-    inner.push(`ifNull(toString(${t.sqlExpr}), '') AS v${i}`);
+    inner.push(t.blankIsValue ? `toString(${t.sqlExpr}) AS v${i}` : `ifNull(toString(${t.sqlExpr}), '') AS v${i}`);
+    const pr = present(`v${i}`, t.blankIsValue);
     // value -> count over the sample, absent values left out.
-    mid.push(`sumMap(if(${present(`v${i}`)}, [v${i}], []), if(${present(`v${i}`)}, [toUInt64(1)], [])) AS m${i}`);
+    mid.push(`sumMap(if(${pr}, [assumeNotNull(v${i})], []), if(${pr}, [toUInt64(1)], [])) AS m${i}`);
+    if (t.time) {
+      // DateTime / Date render as fixed-width sortable text, so string min / max is the time range.
+      mid.push(`minIf(v${i}, ${pr}) AS tmin${i}`, `maxIf(v${i}, ${pr}) AS tmax${i}`);
+      outer.push(`ifNull(tmin${i}, '') AS tlo${i}`, `ifNull(tmax${i}, '') AS thi${i}`);
+    }
     const sorted = `arraySlice(arrayReverseSort(x -> x.2, arrayZip(tupleElement(m${i}, 1), tupleElement(m${i}, 2))), 1, ${topN})`;
     outer.push(
       `arraySum(tupleElement(m${i}, 2)) AS d${i}`,
@@ -152,6 +167,9 @@ export function parseFieldStatsRow(
       distinct: Number(row[`u${i}`] ?? 0),
       top: values.map((value, j) => ({ value, count: counts[j] ?? 0 })),
     };
+    if (t.time && stats.docs > 0) {
+      stats.range = { min: String(row[`tlo${i}`] ?? ''), max: String(row[`thi${i}`] ?? '') };
+    }
     if (t.numeric) {
       const count = Number(row[`nn${i}`] ?? 0);
       const buckets = arr(row[`bk${i}`]).map(Number);

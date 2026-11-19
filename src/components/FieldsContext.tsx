@@ -8,7 +8,7 @@ import { runQueryRows } from '../data/runQuery';
 import { SourceConfig } from '../types';
 import { errMsg } from '../errMsg';
 import { coarseTimeBucket } from '../sql/timeBucket';
-import { clearKeysCacheForTable } from '../sql/keys';
+import { buildMapKeyField, clearKeysCacheForTable, loadColumnKeys, MAX_MAP_KEY_FIELDS } from '../sql/keys';
 import { clearValuesCacheForTable } from '../sql/kql/_values';
 
 // Re-exported for existing importers (FieldSidebar/FieldKeysPopover, sql/keys.ts,
@@ -55,6 +55,9 @@ function jsonPathCacheKey(config: SourceConfig, table: string, jsonColumn: strin
 /** Max JSON-path discovery queries in flight at once — one per JSON column, so a wide schema
  *  doesn't open a connection per column at mount. */
 const DISCOVERY_CONCURRENCY = 4;
+
+/** Map columns whose keys are published as fields (the cap bounds the discovery queries of a wide schema). */
+const MAX_MAP_COLUMNS = 6;
 
 /**
  * Runs `fn` over `items` with at most `limit` in flight at once. Used by this file's Phase C
@@ -317,6 +320,7 @@ export function useFieldDiscovery(
     const jsonCols = columns.filter((c) => c.type === 'json');
     if (jsonCols.length === 0) {
       setLoading(false);
+      await publishMapKeys(columns, tupleFields, [], runId);
       return;
     }
 
@@ -373,6 +377,50 @@ export function useFieldDiscovery(
         : null
     );
     setLoading(false);
+    await publishMapKeys(columns, tupleFields, jsonFields, runId);
+  }
+
+  // Phase D — Map keys as first-class fields (Kibana parity: `ResourceAttributes.host.name`).
+  // Published after everything else and never blocking: a failed or slow key sample must not cost
+  // the user the fields already shown. The sample is the table's latest rows (no filters), capped
+  // per column, so the list is stable across search / filter changes.
+  async function publishMapKeys(
+    columns: FieldModel[],
+    tupleFields: FieldModel[],
+    jsonFields: FieldModel[],
+    runId: number
+  ) {
+    const mapCols = columns
+      .filter((c) => c.type === 'map')
+      .map((c) => c.name)
+      .slice(0, MAX_MAP_COLUMNS);
+    if (mapCols.length === 0) {
+      return;
+    }
+    const perMap = await runWithConcurrencyLimit(mapCols, DISCOVERY_CONCURRENCY, async (name) => {
+      try {
+        const res = await loadColumnKeys(config, name, {
+          table: resolvedTable,
+          conditions: [],
+          timeRange,
+          cacheKey: 'fields',
+        });
+        return res.keys
+          .map((k) => k.key)
+          .sort((a, b) => a.localeCompare(b))
+          .slice(0, MAX_MAP_KEY_FIELDS)
+          .map((key) => buildMapKeyField(name, { key }));
+      } catch {
+        return [] as FieldModel[];
+      }
+    });
+    if (runRef.current !== runId) {
+      return;
+    }
+    const mapFields = perMap.flat();
+    if (mapFields.length > 0) {
+      setFields([...columns, ...tupleFields, ...jsonFields, ...mapFields]);
+    }
   }
 
   const refresh = () => loadFields(true);
