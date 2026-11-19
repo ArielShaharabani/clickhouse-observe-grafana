@@ -34,7 +34,11 @@ beforeAll(() => {
   };
 });
 
-const series = (name: string, pts: Array<[string | number, number]>, breakdown: string | undefined = name): LensSeries => ({
+const series = (
+  name: string,
+  pts: Array<[string | number, number]>,
+  breakdown: string | undefined = name
+): LensSeries => ({
   name,
   points: new Map(pts),
   breakdown,
@@ -123,8 +127,7 @@ describe('line has no stacking (item 2)', () => {
     const { container, rerender } = render(<XyChart chartType="line" subType="percentage" result={timeResult} />);
     const ticks = () => screen.getAllByTestId('lens-value-tick').map((t) => t.textContent ?? '');
     expect(ticks().some((t) => t.includes('%'))).toBe(false);
-    const cy = () =>
-      Number(container.querySelector('[aria-label$="error: 305"]')?.getAttribute('cy'));
+    const cy = () => Number(container.querySelector('[aria-label$="error: 305"]')?.getAttribute('cy'));
     const unstacked = cy();
     rerender(<XyChart chartType="line" subType="stacked" result={timeResult} />);
     expect(cy()).toBe(unstacked);
@@ -244,11 +247,40 @@ describe('stable series colours and legend order (item 4)', () => {
 
 describe('value axis (item 5) and number formatting (item 8)', () => {
   it('a 140 peak gives 0–140 by 20, no fractional ticks on counts', () => {
-    const peak: LensResult = { ...cats, series: [series('x', [['a', 140], ['b', 3]], undefined)] };
+    const peak: LensResult = {
+      ...cats,
+      series: [
+        series(
+          'x',
+          [
+            ['a', 140],
+            ['b', 3],
+          ],
+          undefined
+        ),
+      ],
+    };
     const { rerender } = render(<XyChart chartType="bar" result={peak} />);
     const ticks = () => screen.getAllByTestId('lens-value-tick').map((t) => t.textContent);
     expect(ticks()).toEqual(['0', '20', '40', '60', '80', '100', '120', '140']);
-    rerender(<XyChart chartType="bar" result={{ ...cats, series: [series('x', [['a', 5], ['b', 3]], undefined)] }} />);
+    rerender(
+      <XyChart
+        chartType="bar"
+        result={{
+          ...cats,
+          series: [
+            series(
+              'x',
+              [
+                ['a', 5],
+                ['b', 3],
+              ],
+              undefined
+            ),
+          ],
+        }}
+      />
+    );
     expect(ticks()).toEqual(['0', '1', '2', '3', '4', '5']);
   });
 
@@ -266,7 +298,16 @@ describe('time axis (item 6)', () => {
     const start = new Date(2026, 0, 5, 6, 0).getTime();
     const ticks = timeTicks(start, start + 9 * H, 10);
     expect(ticks.map((t) => t.label)).toEqual([
-      '06:00', '07:00', '08:00', '09:00', '10:00', '11:00', '12:00', '13:00', '14:00', '15:00',
+      '06:00',
+      '07:00',
+      '08:00',
+      '09:00',
+      '10:00',
+      '11:00',
+      '12:00',
+      '13:00',
+      '14:00',
+      '15:00',
     ]);
     expect(ticks[0].sub).toBe('January 5, 2026');
     expect(ticks.slice(1).every((t) => t.sub === undefined)).toBe(true);
@@ -286,9 +327,9 @@ describe('time axis (item 6)', () => {
       metrics: [{ kind: 'metric', id: 'm', op: 'count' }],
     };
     expect(autoAxisTitles(state).bottom).toBe('');
-    expect(autoAxisTitles({ ...state, buckets: [{ ...state.buckets[0], kind: 'terms', size: 9 } as any] }).bottom).not.toBe(
-      ''
-    );
+    expect(
+      autoAxisTitles({ ...state, buckets: [{ ...state.buckets[0], kind: 'terms', size: 9 } as any] }).bottom
+    ).not.toBe('');
     render(
       <XyChart
         chartType="bar"
@@ -310,11 +351,23 @@ describe('plain lines (item 7)', () => {
   it('points are hidden except an isolated one and the hovered X', () => {
     const gappy: LensResult = {
       ...timeResult,
-      series: [{ ...series('v', [[t0, 1], [t0 + H, 2], [t0 + 3 * H, 4]], undefined), zeroFill: false }],
+      series: [
+        {
+          ...series(
+            'v',
+            [
+              [t0, 1],
+              [t0 + H, 2],
+              [t0 + 3 * H, 4],
+            ],
+            undefined
+          ),
+          zeroFill: false,
+        },
+      ],
     };
     render(<XyChart chartType="line" result={gappy} bucketMs={H} />);
-    const vis = () =>
-      screen.getAllByRole('button', { name: /· v:/ }).map((c) => c.getAttribute('data-point-visible'));
+    const vis = () => screen.getAllByRole('button', { name: /· v:/ }).map((c) => c.getAttribute('data-point-visible'));
     expect(vis()).toEqual(['false', 'false', 'true']);
     fireEvent.mouseMove(svgOf(), { clientX: 60, clientY: 100 });
     expect(vis()).toEqual(['true', 'false', 'true']);
@@ -341,9 +394,9 @@ describe('legend colour picker (item 10)', () => {
   });
 
   it('stored colours are cleaned (URL is untrusted), capped, and never reach the query shape', () => {
-    expect(
-      cleanStyle({ colors: { a: '#AABBCC', b: 'red', c: '#12345', ['x'.repeat(201)]: '#000000', d: 5 } })
-    ).toEqual({ colors: { a: '#aabbcc' } });
+    expect(cleanStyle({ colors: { a: '#AABBCC', b: 'red', c: '#12345', ['x'.repeat(201)]: '#000000', d: 5 } })).toEqual(
+      { colors: { a: '#aabbcc' } }
+    );
     expect(cleanStyle({ colors: ['#000000'] })).toBeUndefined();
     const many = Object.fromEntries(Array.from({ length: 80 }, (_v, i) => [`s${i}`, '#000000']));
     expect(Object.keys(cleanStyle({ colors: many })!.colors!)).toHaveLength(MAX_SERIES_COLORS);

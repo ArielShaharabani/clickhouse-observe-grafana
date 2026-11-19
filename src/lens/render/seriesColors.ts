@@ -44,7 +44,7 @@ export function assignColorSlots(keys: string[], paletteSize: number, preferred 
     }
     if (slot < 0) {
       // Every base colour is taken: the rest of the palette, then wrap around.
-      slot = overflow < size ? overflow++ : (overflow++ % size);
+      slot = overflow < size ? overflow++ : overflow++ % size;
     }
     used.add(slot);
     slots.push(slot);

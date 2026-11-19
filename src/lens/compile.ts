@@ -445,9 +445,7 @@ export function compileLens(
     const coarse = coarsePrunePredicate(config);
     const windows = [
       `(${timeCond})`,
-      ...shifts.map(
-        (sp) => `(${ts} >= $__fromTime - ${chInterval(sp)} AND ${ts} <= $__toTime - ${chInterval(sp)})`
-      ),
+      ...shifts.map((sp) => `(${ts} >= $__fromTime - ${chInterval(sp)} AND ${ts} <= $__toTime - ${chInterval(sp)})`),
     ];
     outer = [
       ...conditions.filter((c) => c !== timeCond && c !== coarse),
@@ -856,7 +854,13 @@ export function orderSeries(state: LensState, series: LensSeries[]): LensSeries[
     return series;
   }
   const dir = rankDirOf(b) === 'asc' ? 1 : -1;
-  const rankIdx = b.rankBy === 'metric' ? Math.max(0, state.metrics.findIndex((m) => m.id === b.rankMetric)) : 0;
+  const rankIdx =
+    b.rankBy === 'metric'
+      ? Math.max(
+          0,
+          state.metrics.findIndex((m) => m.id === b.rankMetric)
+        )
+      : 0;
   // One group per breakdown value (its display label, the part every series of the value shares).
   const groupOf = (s: LensSeries) => `${s.synthetic ? '1' : '0'}${s.breakdown ?? ''}`;
   const totals = new Map<string, number>();

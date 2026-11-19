@@ -124,7 +124,16 @@ export function timeTicks(t0: number, t1: number, maxTicks: number): TimeTick[] 
   const s = timeStep(t0, t1, maxTicks);
   const out: TimeTick[] = [];
   const fmt = (t: number, f: string) => dateTime(t).format(f);
-  const label = s.unit === 'ms' ? (s.n < MIN ? 'HH:mm:ss' : 'HH:mm') : s.unit === 'month' ? 'MMM' : s.unit === 'year' ? 'YYYY' : 'MMM D';
+  const label =
+    s.unit === 'ms'
+      ? s.n < MIN
+        ? 'HH:mm:ss'
+        : 'HH:mm'
+      : s.unit === 'month'
+        ? 'MMM'
+        : s.unit === 'year'
+          ? 'YYYY'
+          : 'MMM D';
   const subFmt = s.unit === 'ms' ? 'MMMM D, YYYY' : s.unit === 'year' ? undefined : 'YYYY';
   let prevSub: string | undefined;
   for (let t = firstTick(t0, s); t <= t1 && out.length < 200; t = next(t, s)) {

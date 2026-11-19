@@ -155,7 +155,11 @@ export function seriesColorOf(style: LensStyle | undefined, name: string): strin
 }
 
 /** A copy of the style with a series colour set (or removed with `undefined`), kept clean. */
-export function withSeriesColor(style: LensStyle | undefined, name: string, color: string | undefined): LensStyle | undefined {
+export function withSeriesColor(
+  style: LensStyle | undefined,
+  name: string,
+  color: string | undefined
+): LensStyle | undefined {
   const colors: Record<string, string> = { ...(style?.colors ?? {}) };
   delete colors[name];
   // The newest choice first, so it survives the cap.

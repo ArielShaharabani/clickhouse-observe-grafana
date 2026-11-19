@@ -68,7 +68,6 @@ import { useLayerData } from './useLayerData';
 import { DefaultTimeRangeContext, resolveDefaultTimeRange } from '../utils/defaultTimeRange';
 import { panelSourceOf } from './panelSource';
 
-
 interface Group {
   name: string;
   /** What the group's "+ Add" slot adds. */
@@ -251,7 +250,12 @@ export function LensPage() {
       setSearchParams(
         (prev) => {
           const sp = new URLSearchParams(prev);
-          const enc = encodeLogsState({ search: '', filters: next, columns: [], timeRange: resolveDefaultTimeRange(defaultTime) });
+          const enc = encodeLogsState({
+            search: '',
+            filters: next,
+            columns: [],
+            timeRange: resolveDefaultTimeRange(defaultTime),
+          });
           const v = enc.get('filters');
           if (v) {
             sp.set('filters', v);
@@ -414,8 +418,7 @@ export function LensPage() {
           interval,
         }),
       (e) =>
-        !cancelled &&
-        setResult({ key: queryKey, baseKey, lens, error: e instanceof Error ? e.message : String(e) })
+        !cancelled && setResult({ key: queryKey, baseKey, lens, error: e instanceof Error ? e.message : String(e) })
     );
     return () => {
       cancelled = true;
@@ -635,7 +638,11 @@ export function LensPage() {
     }
     return targets;
   };
-  const kbDrag = useKeyboardDrag(dropTargetsFor, (f) => f.label, (f) => f.id);
+  const kbDrag = useKeyboardDrag(
+    dropTargetsFor,
+    (f) => f.label,
+    (f) => f.id
+  );
   const dndHelpId = useId();
   // The dimension's button in the list: focus returns there when its editor closes.
   const dimsRef = useRef<HTMLElement>(null);

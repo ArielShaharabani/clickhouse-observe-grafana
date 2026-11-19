@@ -218,7 +218,13 @@ export function XyChart({
   const visible = result.series.map((s) => !hidden.has(s.name));
   // Line has no stacking (as in Kibana): a sub-type kept from Bar / Area doesn't change it.
   const mode: 'stacked' | 'percentage' | 'none' =
-    chartType === 'line' ? 'none' : subType === 'percentage' ? 'percentage' : subType === 'unstacked' ? 'none' : 'stacked';
+    chartType === 'line'
+      ? 'none'
+      : subType === 'percentage'
+        ? 'percentage'
+        : subType === 'unstacked'
+          ? 'none'
+          : 'stacked';
   // Horizontal bars (Style → Bar orientation): categories run down the left, values along the bottom.
   const horizontal = chartType === 'bar' && style?.orientation === 'horizontal';
   // Axis side: a right axis for metrics set to Right (unstacked vertical charts; stacks share one axis).
@@ -300,9 +306,7 @@ export function XyChart({
   // Value axes: nice bounds and ticks (0–140 by 20, 0–500 by 100); whole numbers only for counts.
   const valueLen = horizontal ? plotW : plotH;
   const allInts = (sd: 'left' | 'right') =>
-    result.series.every(
-      (s, si) => sides[si] !== sd || [...s.points.values()].every((v) => Number.isInteger(v))
-    );
+    result.series.every((s, si) => sides[si] !== sd || [...s.points.values()].every((v) => Number.isInteger(v)));
   const tickOpts = (sd: 'left' | 'right') => ({
     count: Math.max(2, Math.min(TICK_COUNT, Math.floor(valueLen / (horizontal ? 90 : 50)))),
     integer: !percent && allInts(sd),
@@ -902,7 +906,9 @@ export function XyChart({
                 }
                 return (
                   <g key={`t${tk.t}`}>
-                    {ax.bottom.gridlines && <line x1={p} x2={p} y1={m.top} y2={m.top + plotH} className={styles.grid} />}
+                    {ax.bottom.gridlines && (
+                      <line x1={p} x2={p} y1={m.top} y2={m.top + plotH} className={styles.grid} />
+                    )}
                     {ax.bottom.ticks && (
                       <>
                         <line x1={p} x2={p} y1={m.top + plotH} y2={m.top + plotH + 4} className={styles.axisLine} />
