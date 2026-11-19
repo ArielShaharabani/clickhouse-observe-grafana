@@ -132,6 +132,13 @@ Added 2026-11-18 at the user's request (importance 4): the bucket flyout's other
 
 - **Add layer menu:** `Select layer type` → Visualization (another series set, can use a different data view and chart sub-type), Annotations (event markers from a query or manual), Reference lines (static or computed thresholds).
 - **Layer actions:** ⚙ settings (e.g. random sampling), Clear layer, Duplicate layer.
+- **Built (XY charts, 2026-11-19):**
+  - `+ Add layer` → `Select layer type`: Reference lines; Annotations (enabled only with a date histogram on the horizontal axis of a vertical chart); Visualization shown disabled ("Not available yet").
+  - **Reference lines** (up to 10 per layer): `Value` Static value (a number; a new line starts at the data's highest value) or Computed (Count, Average, Sum, Minimum, Maximum, Median, Unique count of a field, over the chart's query, filters and time range); Label (drawn as text at the line), Color, Axis side Left / Right (when a metric is on the right axis), Line style Solid / Dashed / Dotted, Fill None / Above / Below. A line outside the data widens its axis so it stays visible.
+  - **Annotations** (up to 10 per layer): `Type` Static date (`Annotation date`, optional `End date` for a range, format `YYYY-MM-DD HH:mm[:ss]`, browser time zone) or Query (KQL through the search bar's compiler; invalid KQL is refused in the editor; the newest 100 matching documents in the time range, ignoring the chart's query and filters, as Kibana's default "ignore global filters"); Label, Color. Markers are dashed vertical lines (ranges are shaded bands) with a hover title.
+  - **Layer actions** (⋮ on the layer card): Duplicate layer, Clear layer, Remove layer. Up to 5 extra layers.
+  - Layers are kept in the `lens` URL param and the draft, survive XY chart-type switches (dropped for Metric / Table / Pie), and never re-run the chart query; computed lines and query annotations run their own queries.
+  - **Dashboard export:** static reference lines on the left axis become Grafana thresholds drawn as lines (dashed when every line is dashed / dotted, with area when every line fills above). Labels, computed lines, right-axis lines and annotations are not exported (no panel-level Grafana equivalent).
 
 ### LENS-INTERACT-01 Click-to-filter drilldown
 
