@@ -10,6 +10,31 @@ Versions track the plugin's release history. `Unreleased` collects commits not y
 
 ---
 
+## [0.51.0] — 2026-11-19
+
+### Added
+
+- **Visualize XY tooltip (Kibana parity).** Hovering a Bar / Line / Area chart shows a crosshair and a tooltip with every series at that X (time header `Jan 5, 2026 @ 09:00`, colour, name, value with thousands separators), the series under the pointer highlighted; focusing a bar or point with the keyboard shows it too.
+- **Legend colour picker.** The legend ⋮ menu has a colour palette and `Reset color`; the choice is kept in the chart state (URL, draft, saved chart) and does not re-run the query.
+
+### Changed
+
+- **Stable series colours.** A breakdown value keeps its colour across chart types and click-filters (colour by value, not by position).
+- **Legend and stack order** follow the Top values rank (count descending by default), with Other / (missing) last.
+- **Value axis** ends on a nice tick (a 140 peak → 0–140 by 20 instead of 0–200) and count axes never show fractional ticks.
+- **Time axis** ticks fall on round times with the date under the first tick; no automatic "Timestamp" axis title; partial first / last buckets are shaded.
+- **Lines** are drawn without a dot on every point (dots on hover, focus or isolated points).
+- **Numbers** in the XY chart use thousands separators (`9,264` instead of `9.3K`); axes abbreviate only from a million.
+- **Line has no sub-type** (Kibana Line never stacks): the Stacked / Percentage / Unstacked control is hidden for Line, which always draws unstacked; old links with line + stacked still load.
+- **Chart type switch** keeps the previous chart on screen until the new one is ready (no blank frame).
+
+### Fixed
+
+- Brushing a time range now also works when the drag starts on a bar; a click without movement still opens the filter chooser.
+- Line charts with a Percentage sub-type kept from Bar / Area no longer draw percentages (chart, `panelSpec` and dashboard export).
+
+---
+
 ## [0.50.0] — 2026-11-19
 
 ### Added
