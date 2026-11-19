@@ -41,8 +41,9 @@ test('hover shows a crosshair tooltip with every series at that time, separators
   const viz = new VisualizePage(page);
   await viz.open({ lens: timeLens('bar') });
   const box = (await plot(page).boundingBox())!;
-  // Near the bottom of a bar in the middle of the range: the first stacked series (info).
-  await page.mouse.move(box.x + box.width * 0.5, box.y + box.height - 3);
+  // The middle of an info bar (the first stacked series), so the pointer is on a bar, not in a gap.
+  const info = (await viz.chart.getByRole('button', { name: / · info: / }).nth(10).boundingBox())!;
+  await page.mouse.move(info.x + info.width / 2, info.y + info.height / 2);
   const tip = page.getByTestId('lens-tooltip');
   await expect(tip).toBeVisible();
   await expect(tip).toContainText('2026 @');
@@ -83,12 +84,12 @@ test('Line has no sub-type; an old line + stacked link still loads as a plain li
   const viz = new VisualizePage(page);
   await viz.open({ lens: timeLens('line') });
   await expect(viz.chart).toHaveAttribute('data-chart-type', 'line');
-  await expect(page.getByRole('radio', { name: 'Stacked' })).toHaveCount(0);
+  await expect(page.getByRole('radio', { name: 'Stacked', exact: true })).toHaveCount(0);
   await expect(page.getByText('Line stacked')).toHaveCount(0);
   // Bar keeps the stored sub-type.
   await page.getByRole('button', { name: 'Chart type: Line' }).click();
   await page.getByRole('option', { name: /^Bar/ }).click();
-  await expect(page.getByRole('radio', { name: 'Stacked' })).toBeChecked();
+  await expect(page.getByRole('radio', { name: 'Stacked', exact: true })).toBeChecked();
 });
 
 test('a drag that starts on a bar brushes the time range; a click on a bar still filters', async ({ page }) => {
@@ -116,13 +117,15 @@ test('a drag that starts on a bar brushes the time range; a click on a bar still
 test('a series keeps its colour after a click-filter and across chart types', async ({ page }) => {
   const viz = new VisualizePage(page);
   await viz.open({ lens: serviceBars() });
-  const errorFill = () => viz.chart.getByRole('button', { name: /^payments · error: / }).getAttribute('fill');
-  const before = await errorFill();
+  // info is the biggest series, so it always keeps its own hash colour; a smaller series that
+  // collided may move to the next free slot once its neighbours are filtered away (seriesColors.ts).
+  const infoFill = () => viz.chart.getByRole('button', { name: /^payments · info: / }).getAttribute('fill');
+  const before = await infoFill();
   expect(before).toBeTruthy();
-  await page.getByRole('button', { name: 'Legend actions for error' }).click();
+  await page.getByRole('button', { name: 'Legend actions for info' }).click();
   await page.getByRole('menuitem', { name: 'Filter for' }).click();
-  await expect(viz.chart.getByRole('button', { name: /· info: / })).toHaveCount(0);
-  await expect.poll(errorFill).toBe(before);
+  await expect(viz.chart.getByRole('button', { name: /· error: / })).toHaveCount(0);
+  await expect.poll(infoFill).toBe(before);
 });
 
 test('value axis: nice ticks with separators, no K, no fractions on counts', async ({ page }) => {

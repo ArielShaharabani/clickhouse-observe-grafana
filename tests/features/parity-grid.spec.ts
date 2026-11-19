@@ -17,7 +17,7 @@ async function openHeaderMenu(page: Page, logs: LogsPage, name: string) {
 }
 
 async function addColumnFromSidebar(page: Page, field: string) {
-  const row = page.locator('.field-item-row').filter({ has: page.getByTitle(field, { exact: true }) });
+  const row = page.locator('.field-item-row').filter({ has: page.getByRole('button', { name: new RegExp(`^Preview ${field}: `) }) });
   await row.hover();
   await row.getByRole('button', { name: `Add ${field} as column` }).click();
 }
@@ -144,12 +144,13 @@ test('surrounding documents: highlighted anchor, dense rows, Add filter', async 
   const logs = new LogsPage(page);
   await logs.open();
   await logs.expectRowCount(FIXTURE.counts.total);
-  await logs.grid.getByRole('button', { name: 'Open detail' }).first().click();
+  // Not the newest row: the anchor needs newer documents for "Load newer".
+  await logs.grid.getByRole('button', { name: 'Open detail' }).nth(20).click();
   await page.getByRole('button', { name: 'View surrounding documents' }).click();
   const anchor = page.getByRole('grid').locator('tbody tr[data-anchor="true"]');
   await expect(anchor).toBeVisible({ timeout: 30_000 });
   const bg = (loc: typeof anchor) => loc.evaluate((el) => getComputedStyle(el).backgroundColor);
-  const neighbour = page.getByRole('grid').locator('tbody tr').nth(0);
+  const neighbour = page.getByRole('grid').locator('tbody tr:not([data-anchor="true"])').first();
   expect(await bg(anchor)).not.toBe(await bg(neighbour));
   expect((await neighbour.boundingBox())!.height).toBeLessThan(45);
   await expect(page.getByRole('button', { name: 'Add filter' })).toBeVisible();

@@ -205,6 +205,14 @@ export function AddToDashboardModal({
     setError('');
     try {
       const panels = buildPanels();
+      if (destination === 'new') {
+        // Grafana can save the same title twice in the General folder (new dashboards go there), so
+        // refuse it here, as the warning under the title announces.
+        const same = await findDashboardsByTitle(newTitle.trim()).catch(() => []);
+        if (same.some((h) => !h.folderTitle)) {
+          throw Object.assign(new Error('name-exists'), { data: { status: 'name-exists' } });
+        }
+      }
       const result =
         destination === 'new'
           ? await saveDashboard(buildNewDashboard(panels, newTitle.trim(), dashboardTime(timeRange)))

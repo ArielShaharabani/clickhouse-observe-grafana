@@ -81,7 +81,8 @@ test('time bucket + breakdown in one Apply: both the filter and the time range a
   await viz.chart
     .getByRole('button', { name: /^\S+ \S+ · payments: / })
     .first()
-    .click();
+    // Points of different series can coincide (same count), and the top one would take a real click.
+    .dispatchEvent('click');
   const dialog = page.getByRole('dialog', { name: 'Select filters to apply' });
   await expect(dialog.getByRole('checkbox')).toHaveCount(2);
   await dialog.getByRole('button', { name: 'Apply' }).click();

@@ -63,7 +63,10 @@ test('Edit in Visualize → Save and return replaces the panel in place and keep
   await expect(dialog.getByLabel(/^Title/)).toHaveValue(title); // the panel's title, not a generated one
   await dialog.getByRole('button', { name: 'Save and return' }).click();
 
-  await expect(page).toHaveURL(new RegExp(`/d/${uid}.*from=${FIXTURE.incident.from}`));
+  // Grafana may rewrite the epoch range to ISO strings, so accept either form.
+  await expect(page).toHaveURL(
+    new RegExp(`/d/${uid}.*from=(${FIXTURE.incident.from}|${new Date(FIXTURE.incident.from).toISOString().replace(/[:.]/g, (c) => (c === '.' ? '\.' : '(:|%3A)'))})`)
+  );
   const after = await (await page.request.get(`/api/dashboards/uid/${uid}`)).json();
   expect(after.dashboard.panels).toHaveLength(before.dashboard.panels.length); // no duplicate
   expect(after.dashboard.panels[0]).toMatchObject({ id: original.id, gridPos: original.gridPos, title });

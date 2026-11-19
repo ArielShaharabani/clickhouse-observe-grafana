@@ -9,6 +9,9 @@ import { FIXTURE } from '../fixture';
 // Fixture: one row every 15 s from 2026-01-01 00:00 UTC (rows at every whole hour and midnight),
 // plus 1,200 payments rows on 2026-01-05 09:00–10:59:54.
 
+// The fixture and the expected tick labels are UTC; Grafana shows the browser's zone.
+test.use({ timezoneId: 'UTC' });
+
 const H = 3_600_000;
 const JAN5 = Date.UTC(2026, 0, 5);
 const urlParams = (page: Page) => new URL(page.url()).searchParams;
@@ -27,8 +30,9 @@ async function drag(page: Page, fromPct: number, toPct: number) {
 
 test('brush uses the exact dragged times, not whole buckets (Kibana 07:43 → 11:48)', async ({ page }) => {
   const logs = new LogsPage(page);
-  // 24 h, auto 30-minute buckets (48 bars, all whole).
-  await logs.open({ from: String(JAN5), to: String(JAN5 + 24 * H) });
+  // 24 h, auto 30-minute buckets (48 bars, all whole). The range end is inclusive and the fixture
+  // has a row exactly at midnight, so end one second early to keep that row from adding a 49th bar.
+  await logs.open({ from: String(JAN5), to: String(JAN5 + 24 * H - 1000) });
   await expect(caption(page)).toContainText('Auto - 30 minutes');
   const box = await drag(page, 0.2, 0.6);
   await expect.poll(() => urlParams(page).get('from')).not.toBe(String(JAN5));

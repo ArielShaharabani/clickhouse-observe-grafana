@@ -3,7 +3,7 @@
  * `POST /api/short-urls { path }` → `{ uid, url }`, where `url` is `<root>/goto/<uid>?orgId=…`.
  *
  * `path` is relative to Grafana's root URL (no leading slash, no sub-path), as Grafana's own share
- * dialogs send it. The response is untrusted: only a same-origin `/goto/` URL is used; anything
+ * dialogs send it. The response is untrusted: only its `/goto/<uid>` path is used, on this origin; anything
  * else (or an error) falls back to the full link, so Copy link always has something to copy.
  */
 import { config, getBackendSrv } from '@grafana/runtime';
@@ -31,7 +31,11 @@ export function relativeGrafanaPath(fullUrl: string, origin: string, appSubUrl =
   return rel && !rel.includes('..') ? rel : undefined;
 }
 
-/** A short URL from Grafana's response, or undefined when it is not a same-origin `/goto/` link. */
+/**
+ * A short URL from Grafana's response, or undefined when it has no `/goto/<uid>` path. Only the
+ * path and query are taken: the link is rebuilt on the origin the user is on, because Grafana
+ * builds `url` from its configured root_url, which differs behind a proxy or on another port.
+ */
 export function validShortUrl(res: unknown, origin: string): string | undefined {
   const url = (res as { url?: unknown } | undefined)?.url;
   if (typeof url !== 'string' || url.length > 2048) {
@@ -39,7 +43,10 @@ export function validShortUrl(res: unknown, origin: string): string | undefined 
   }
   try {
     const u = new URL(url, origin);
-    return u.origin === origin && /\/goto\/[A-Za-z0-9_-]+$/.test(u.pathname) ? u.toString() : undefined;
+    if (!/^https?:$/.test(u.protocol) || !/^(\/[A-Za-z0-9_.-]+)*\/goto\/[A-Za-z0-9_-]+$/.test(u.pathname) || u.pathname.includes('..')) {
+      return undefined;
+    }
+    return `${origin}${u.pathname}${u.search}`;
   } catch {
     return undefined;
   }

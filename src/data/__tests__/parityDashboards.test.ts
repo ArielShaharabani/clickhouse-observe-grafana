@@ -168,11 +168,12 @@ describe('short links', () => {
     expect(relativeGrafanaPath('not a url', origin)).toBeUndefined();
   });
 
-  it('accepts only same-origin /goto/ responses', () => {
+  it('accepts only /goto/ responses, rebuilt on this origin', () => {
     expect(validShortUrl({ url: `${origin}/goto/abc_1?orgId=1` }, origin)).toBe(`${origin}/goto/abc_1?orgId=1`);
     expect(validShortUrl({ url: `${origin}/goto/../admin` }, origin)).toBeUndefined();
     expect(validShortUrl({ url: `${origin}/goto/abc_1` }, origin)).toBe(`${origin}/goto/abc_1`);
-    expect(validShortUrl({ url: 'http://evil.example/goto/abc' }, origin)).toBeUndefined();
+    expect(validShortUrl({ url: 'http://localhost:3000/goto/abc?orgId=1' }, origin)).toBe(`${origin}/goto/abc?orgId=1`);
+    expect(validShortUrl({ url: 'http://evil.example/admin' }, origin)).toBeUndefined();
     expect(validShortUrl({ url: 'javascript:alert(1)' }, origin)).toBeUndefined();
     expect(validShortUrl({}, origin)).toBeUndefined();
   });
