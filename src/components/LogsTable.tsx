@@ -464,6 +464,14 @@ export function LogsTable({
       items.push({ id: 'width', label: 'Reset width', icon: 'arrows-h', run: () => onResizeColumn(col.id, undefined) });
     }
     items.push({ id: 'copy', label: 'Copy name', icon: 'copy', run: () => void copyToClipboard(col.sqlExpr) });
+    if (rows.length > 0) {
+      items.push({
+        id: 'copy-values',
+        label: 'Copy column',
+        icon: 'copy',
+        run: () => void copyToClipboard(rows.map((r) => cellTextValue(r[col.key])).join('\n')),
+      });
+    }
     if (onRemoveColumn && !col.isCore) {
       items.push({ id: 'remove', label: 'Remove column', icon: 'times', run: () => onRemoveColumn(col) });
     }

@@ -295,6 +295,7 @@ describe('results grid', () => {
       'Sort descending',
       'Move left',
       'Copy name',
+      'Copy column',
       'Remove column',
     ]);
     fireEvent.click(within(menu).getByRole('menuitem', { name: 'Sort descending' }));

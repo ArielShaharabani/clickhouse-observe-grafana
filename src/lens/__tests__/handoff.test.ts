@@ -150,3 +150,18 @@ describe('visualizeUrl without context', () => {
     expect(decodeLens(params(url).get('lens'))).toEqual(expect.objectContaining({ chartType: 'bar' }));
   });
 });
+
+describe('discoverBreakdownOf (Explore in Discover keeps the breakdown)', () => {
+  const { discoverBreakdownOf } = jest.requireActual('../handoff');
+  const svc = field('ServiceName', 'string');
+  it('carries the first terms bucket that is a known column as bd=field:col:<expr>', () => {
+    const lens = lensForField(svc, ctx)!;
+    const bd = discoverBreakdownOf(lens, [svc]);
+    expect(bd).toEqual({ kind: 'field', fieldId: 'col:ServiceName' });
+    const url = discoverUrl({ search: '', filters: [], timeRange: range }, [], undefined, bd);
+    expect(new URL(url, 'http://x').searchParams.get('bd')).toBe('field:col:ServiceName');
+  });
+  it('is undefined when the field is not a known column', () => {
+    expect(discoverBreakdownOf(lensForField(svc, ctx)!, [])).toBeUndefined();
+  });
+});

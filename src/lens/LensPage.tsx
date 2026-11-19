@@ -22,7 +22,7 @@ import { buildWhereConditions } from '../sql/queryBuilder';
 import { filtersForViewSwitch, loadPinnedFilters, tableKey } from '../state/sharedSearch';
 import { hasSearchContext, rememberSearchContext, restoreSearchContext } from '../state/lastSearch';
 import { draftScopeOf, visualizeEntry } from './entry';
-import { discoverColumns, discoverIntervalOf, discoverUrl, lensContextFor } from './handoff';
+import { discoverBreakdownOf, discoverColumns, discoverIntervalOf, discoverUrl, lensContextFor } from './handoff';
 import { buildLensPanel, defaultPanelTitle } from './panelExport';
 import { SaveActions } from './SaveActions';
 import { loadLensDraft, saveLensDraft } from './draft';
@@ -663,7 +663,8 @@ export function LensPage() {
         discoverUrl(
           { search, filters, timeRange, viewId: activeView?.id },
           discoverColumns(lens, fields, config),
-          discoverIntervalOf(lens)
+          discoverIntervalOf(lens),
+          discoverBreakdownOf(lens, fields)
         )
       ),
     [search, filters, timeRange, activeView?.id, lens, fields, config]
