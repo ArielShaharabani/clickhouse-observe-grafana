@@ -99,7 +99,8 @@ export function LayersSection({ layers, timeAxis, suggestedValue, suggestedTime,
               <IconButton
                 name="ellipsis-v"
                 size="sm"
-                tooltip={`Layer actions for ${title}`}
+                // aria-label, not tooltip: a hover tooltip stays up over the opened menu and covers its first item.
+                aria-label={`Layer actions for ${title}`}
                 aria-expanded={menuFor === layer.id}
                 onClick={() => setMenuFor(menuFor === layer.id ? null : layer.id)}
               />

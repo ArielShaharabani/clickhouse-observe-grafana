@@ -28,7 +28,7 @@ const barOverTime = (layers?: object) =>
 const lensParam = (page: Page) => JSON.parse(new URL(page.url()).searchParams.get('lens') ?? '{}');
 const bars = (viz: VisualizePage) => viz.chart.getByRole('group', { name: 'bar chart' }).getByRole('button');
 const radio = (page: Page, group: string, option: string) =>
-  page.getByRole('radiogroup', { name: group }).getByText(option, { exact: true });
+  page.getByRole('radiogroup', { name: group }).getByRole('radio', { name: option, exact: true });
 
 test('Reference line: add a static line from Add layer, label it, kept in the URL with no new chart query', async ({
   page,
