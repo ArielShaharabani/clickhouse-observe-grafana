@@ -65,6 +65,7 @@ import { LayerItemEditor, LayerItemRef, LayersSection } from './LayerPanel';
 import { ExtraLayer } from './layers';
 import { useLayerData } from './useLayerData';
 import { DefaultTimeRangeContext, resolveDefaultTimeRange } from '../utils/defaultTimeRange';
+import { panelSourceOf } from './panelSource';
 
 
 interface Group {
@@ -517,7 +518,18 @@ export function LensPage() {
       config,
       buildWhereConditions(config, { ...DEFAULT_LOGS_QUERY_STATE, search, filters }, fieldIndex),
       timeRange,
-      { id: 1, gridPos: { x: 0, y: 0, w: 12, h: 8 }, title, description }
+      {
+        id: 1,
+        gridPos: { x: 0, y: 0, w: 12, h: 8 },
+        title,
+        description,
+        source: panelSourceOf({
+          lens: encodeLens(lens),
+          search,
+          filters: filters.length > 0 ? JSON.stringify(filters) : undefined,
+          viewId: activeView?.id,
+        }),
+      }
     );
   // Same pill the action registry's Filter for / Filter out builds everywhere else.
   const pillFor = (field: string, value: string, mode: 'for' | 'out'): FilterPill =>

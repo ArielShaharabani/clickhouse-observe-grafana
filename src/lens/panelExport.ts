@@ -15,12 +15,15 @@ import { withMetricAppearance } from './render/fieldConfig';
 import { tableOverrides } from './tableChart';
 import { autoAxisTitles, withLensStyle } from './render/styleConfig';
 import { withReferenceThresholds } from './render/layerConfig';
+import { VISUALIZE_SOURCE_KEY } from './panelSource';
 
 export interface LensPanelOpts {
   id: number;
   gridPos: GridPos;
   title?: string;
   description?: string;
+  /** `panelSourceOf(...)`: lets the dashboard panel menu reopen the chart in Visualize. */
+  source?: string;
 }
 
 export interface LensPanel extends ExportedPanel {
@@ -104,7 +107,16 @@ function baseLensPanel(
     ...(opts.description?.trim() ? { description: opts.description.trim() } : {}),
     gridPos: opts.gridPos,
     datasource,
-    targets: [{ refId: 'A', datasource, editorType: 'sql' as const, format: FORMAT_TABLE, rawSql: sql }],
+    targets: [
+      {
+        refId: 'A',
+        datasource,
+        editorType: 'sql' as const,
+        format: FORMAT_TABLE,
+        rawSql: sql,
+        ...(opts.source ? { [VISUALIZE_SOURCE_KEY]: opts.source } : {}),
+      },
+    ],
   };
 
   switch (state.chartType) {

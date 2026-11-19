@@ -59,6 +59,7 @@ Rules to implement:
 
 * **Purpose:** change how the same data is shown (single number ↔ time histogram ↔ bars ↔ table) without rebuilding the query.
 * **Interaction:** one control. Click the switcher (it shows the current type, e.g. `Bar ⌄`), optionally type to filter (`Metric`), then Enter or click. The workspace re-renders immediately; data view, query, filters, time range and fields are kept. No query editor, query type or field re-selection is involved. The same switch is also one click away through a suggestion card (LENS-SUGG-01), and from Discover's histogram via `Edit visualization`, whose first suggestions are `Count of records` (Metric), `Area stacked` and `Bar percentage`.
+* **Parked dimensions (Kibana keeps a layer's unused columns):** a switch to a chart that can't show a dimension (Metric or Pie can't show a date histogram; only XY charts draw Style and layers) parks it in the state instead of discarding it; switching back to a chart that can show it restores the same dimension (id, interval, settings). A time field dropped on Metric or Pie returns to the chart the user came from (or a line over time), with the parked date histogram; a time field dropped on a bucket slot is a date histogram, not top values. Parked dimensions ride in the `lens` URL param, never change the chart query, and are cleaned and sanitized like visible ones.
 * **Dimension remapping (observed):**
 
 | From | Switched to | Resulting dimensions |
@@ -169,3 +170,8 @@ Added 2026-11-18 at the user's request (importance 4): the bucket flyout's other
 
 - **Save** opens the modal `Save Lens visualization`: Title, Description (optional), `Add to dashboard` Existing (with `Select dashboard`) / New / None, `Add to library` toggle; primary button `Save and go to dashboard`. Unsaved state is kept in the URL and session storage, so refresh does not lose work.
 - **Grafana:** library panels exist; missing quick save-to-dashboard from an exploratory chart.
+
+### LENS-SAVE-02 Edit in Visualize from a dashboard panel
+
+- **Kibana:** a Lens panel on a dashboard has `Edit visualization in Lens` in its panel menu; it reopens the editor with the panel's chart, query and filters, and the dashboard's time range.
+- **Built:** a panel added from Visualize carries its Visualize state on its query target (`observeVisualize`: `lens`, `q`, `filters`, `ds`, no time). The dashboard panel menu gets `Extensions → Edit in Visualize` (a Grafana panel-menu link extension) on those panels only; it opens Visualize with the dashboard's current time range. The panel stays an ordinary Grafana panel (Edit, transformations); the link is an extra way back. The stored value is untrusted dashboard JSON: only those four parameters pass, the size is capped at 16,000 characters, and Visualize decodes and sanitizes it like any shared link.
