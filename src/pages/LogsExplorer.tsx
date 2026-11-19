@@ -16,7 +16,7 @@ import { CompareLogsModal } from '../components/CompareLogsModal';
 import { resolveInterval, ResolvedInterval, fillEmptyBuckets } from '../components/VolumeHistogram';
 import { LogsHistogramPanel } from '../components/LogsHistogramPanel';
 import { FieldSidebar, fieldToColumn } from '../components/FieldSidebar/FieldSidebar';
-import { FieldsContext, useFieldDiscovery } from '../components/FieldsContext';
+import { discoveryKey, FieldsContext, useFieldDiscovery } from '../components/FieldsContext';
 import { PaginationBar } from '../components/PaginationBar';
 import { FieldStatsTab } from '../components/FieldStatsTab/FieldStatsTab';
 import { DataViewPicker } from '../components/DataViewPicker/DataViewPicker';
@@ -47,7 +47,7 @@ import {
   VolumeDataPoint,
 } from '../types';
 import type { FieldModel } from '../sql/fieldModel';
-import { BreakdownUrl, decodeLogsState, encodeLogsState } from '../data/urlState';
+import { BreakdownUrl, decodeLogsState, encodeLogsState, resolveBreakdownField } from '../data/urlState';
 import { loadPinnedFilters, mergePinnedFilters, normalizePinnedFlags, tableKey } from '../state/sharedSearch';
 import { rememberSearchContext } from '../state/lastSearch';
 import { TAB_PARAM } from '../state/discoverTabs';
@@ -230,13 +230,15 @@ export function LogsExplorer({ tabId, tabStrip }: LogsExplorerProps = {}) {
 
   // Histogram controls.
   // Breakdown: `breakdownChoice` is null until the user explicitly picks something — the
-  // *effective* value (`breakdown`, derived below) falls back to severity/none based on the
-  // view's current capabilities. Deriving it instead of computing a default once at mount and
-  // trying to "catch up" via an effect sidesteps a real race: on a full page load `config` starts
-  // out empty and hydrates async (see SourceConfigContext), so caps.hasSeverity often isn't true
-  // yet on the render that would have set the initial value. A derived value can't go stale like
-  // that — whatever caps.hasSeverity is *right now* is what an unset choice resolves to.
+  // *effective* value (`breakdown`, derived below) is the URL's field breakdown once it resolves,
+  // else "No breakdown" (Kibana's default; it used to default to severity). Derived rather than
+  // set once at mount, so a URL field breakdown applies as soon as field discovery has it.
   const [intervalMode, setIntervalMode] = useState<IntervalMode>(() => initialUrlState.interval ?? 'auto');
+  // Paused by default, as in Kibana (it used to default to 30s, re-querying an absolute past
+  // window every 30 seconds). A chosen interval is kept in the URL (`refresh`).
+  const [refreshInterval, setRefreshInterval] = useState<string>(
+    () => initialUrlState.refresh ?? RefreshPicker.offOption.value ?? ''
+  );
   const [breakdownChoice, setBreakdown] = useState<BreakdownSel | null>(() =>
     initialUrlState.breakdown && initialUrlState.breakdown.kind !== 'field' ? { kind: initialUrlState.breakdown.kind } : null
   );
@@ -250,13 +252,20 @@ export function LogsExplorer({ tabId, tabStrip }: LogsExplorerProps = {}) {
   // Only resolve against the URL's own view: until a `?ds=` switch lands, fieldsState holds the
   // default view's fields, whose same-named field may map to a different table/expression.
   const urlViewActive = !initialUrlState.viewId || activeView?.id === initialUrlState.viewId;
+  // Lenient for hand-written links: `bd=field:ServiceName` (no `col:` prefix) resolves to the
+  // column field `col:ServiceName` and the URL is rewritten with the canonical id.
   const pendingBreakdownField = useMemo(
     () =>
-      pendingBreakdownFieldId && urlViewActive
-        ? fieldsState.fields.find((f) => f.id === pendingBreakdownFieldId)
-        : undefined,
+      pendingBreakdownFieldId && urlViewActive ? resolveBreakdownField(pendingBreakdownFieldId, fieldsState.fields) : undefined,
     [pendingBreakdownFieldId, urlViewActive, fieldsState.fields]
   );
+  // A URL breakdown field that discovery (finished, for this view's table) doesn't know is
+  // dropped, so the URL stops claiming a breakdown the chart doesn't show.
+  const discoverySettled =
+    urlViewActive && !fieldsState.loading && fieldsState.fields.length > 0 && fieldsState.fieldsFor === discoveryKey(config);
+  if (pendingBreakdownFieldId && discoverySettled && !pendingBreakdownField) {
+    setPendingBreakdownFieldId(undefined);
+  }
   // Memoized: when breakdownChoice is null this falls back to a freshly-built object literal —
   // without useMemo that's a new reference every render, which churns executeQuery's identity
   // (it depends on breakdown) and retriggers the effect that calls it, in an infinite fetch loop.
@@ -265,10 +274,8 @@ export function LogsExplorer({ tabId, tabStrip }: LogsExplorerProps = {}) {
       breakdownChoice ??
       (pendingBreakdownField
         ? { kind: 'field', field: pendingBreakdownField }
-        : caps.hasSeverity
-          ? { kind: 'severity' }
-          : { kind: 'none' }),
-    [breakdownChoice, pendingBreakdownField, caps.hasSeverity]
+        : { kind: 'none' }),
+    [breakdownChoice, pendingBreakdownField]
   );
 
   // Reset query state when the active data view changes so stale field refs don't carry over.
@@ -577,7 +584,8 @@ export function LogsExplorer({ tabId, tabStrip }: LogsExplorerProps = {}) {
       interval: intervalMode,
       // An unresolved URL field breakdown stays in the URL until the user picks another breakdown
       // or switches view, so a link copied mid-load still carries it.
-      breakdown: breakdownToUrl(breakdownChoice, pendingBreakdownFieldId),
+      breakdown: breakdownToUrl(breakdownChoice, pendingBreakdownField?.id ?? pendingBreakdownFieldId),
+      refresh: refreshInterval,
     });
     if (tabId) {
       next.set(TAB_PARAM, tabId);
@@ -587,7 +595,7 @@ export function LogsExplorer({ tabId, tabStrip }: LogsExplorerProps = {}) {
       setSearchParams(next, { replace: true });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [queryState.search, queryState.filters, queryState.sort, queryState.columns, effectiveColumns, timeRange, activeView?.id, intervalMode, breakdownChoice, pendingBreakdownFieldId]);
+  }, [queryState.search, queryState.filters, queryState.sort, queryState.columns, effectiveColumns, timeRange, activeView?.id, intervalMode, breakdownChoice, pendingBreakdownFieldId, pendingBreakdownField?.id, refreshInterval]);
 
 
   const resolvedInterval = useMemo<ResolvedInterval>(
@@ -1024,7 +1032,6 @@ export function LogsExplorer({ tabId, tabStrip }: LogsExplorerProps = {}) {
   // Auto-refresh: re-run the query on a tunable interval via RefreshPicker. Reads through
   // latestExecuteQuery (kept fresh above) rather than closing over `executeQuery` directly, so
   // the interval doesn't need to be torn down and restarted on every queryState change.
-  const [refreshInterval, setRefreshInterval] = useState<string>('30s');
   useEffect(() => {
     if (!refreshInterval || refreshInterval === RefreshPicker.offOption.value) {
       return;

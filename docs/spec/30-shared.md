@@ -55,6 +55,8 @@ State is encoded with Rison in two hash parameters plus a tab id. Observed examp
 
 **Default time range** (Kibana's advanced setting `timepicker:timeDefaults`): the app config's `Default time range` (`jsonData.defaultTimeRange`, Grafana time expressions or absolute ISO dates; default the last hour) is the range Discover and Visualize open on when the URL carries none. Invalid, inverted or oversize values fall back to the last hour. Dev provisioning sets the fixture window (2026-01-01 → 2026-01-08 UTC), matching the Kibana comparison stack.
 
+**Observe URL parameters for these** (query string, untrusted, validated on read): `refresh` = auto-refresh interval (`5s` … `1d`, at least 5 s; absent = paused, the default; anything else reads as paused and is dropped from the URL). `bd` = histogram breakdown (`none`, `severity`, `field:<field id>`): a hand-written `field:ServiceName` (no `col:` prefix) resolves to the column field and the URL is rewritten as `field:col:ServiceName`; a field the data view doesn't have, or a malformed value, is dropped from the URL once field discovery finishes, so the URL never claims a breakdown the chart doesn't show.
+
 Rules: `_g` carries time, refresh and pinned filters across apps; `_a` is per app. Brushing writes ISO strings into `_g.time`. Context view uses a path route `#/context/<dataViewId>/<docId>` with the same `_a`/`_g`.
 
 ### SHARED-STATE-03 Propagation between views

@@ -11,9 +11,9 @@
 import React from 'react';
 import { css } from '@emotion/css';
 import { dateTime, GrafanaTheme2, TimeRange } from '@grafana/data';
-import { IconButton, LinkButton, useStyles2 } from '@grafana/ui';
+import { Icon, IconButton, LinkButton, useStyles2 } from '@grafana/ui';
 import { BreakdownSel, FilterPill, IntervalMode, VolumeDataPoint } from '../types';
-import { VolumeHistogram, ResolvedInterval, HistogramColorMode } from './VolumeHistogram';
+import { VolumeHistogram, ResolvedInterval, HistogramColorMode, isCalendarUnit } from './VolumeHistogram';
 import { IntervalPicker } from './HistogramControls/IntervalPicker';
 import { BreakdownPicker } from './HistogramControls/BreakdownPicker';
 
@@ -113,17 +113,28 @@ export function LogsHistogramPanel({
             <VolumeHistogram
               data={volumeData}
               timeRange={timeRange}
-              height={120}
+              height={128}
               loading={volLoading}
               onSelectRange={onSelectRange}
               breakdownTarget={breakdownTarget}
               onAddFilter={onAddFilter}
               colorMode={colorModeFor(breakdown)}
               bucketMs={resolvedInterval.intervalMs}
+              calendarBuckets={isCalendarUnit(resolvedInterval.unit)}
             />
             {/* SHARED-A11Y-01: the new hit count is spoken after each search. */}
             <span className={styles.histogramMeta} role="status">
               {totalEvents.toLocaleString()} rows (count) &middot; {formatRangeCaption(timeRange)} (interval: {resolvedInterval.label})
+              {resolvedInterval.scaledTo && (
+                // Kibana's warning when a chosen interval is too fine for the range.
+                <span
+                  className={styles.scaledNotice}
+                  data-testid="histogram-interval-scaled"
+                  title={`The chosen interval would create too many buckets for this time range, so it was scaled to ${resolvedInterval.scaledTo}.`}
+                >
+                  <Icon name="exclamation-triangle" size="sm" /> Scaled to {resolvedInterval.scaledTo}
+                </span>
+              )}
             </span>
           </>
         ) : (
@@ -155,7 +166,15 @@ const getStyles = (theme: GrafanaTheme2) => ({
     gap: ${theme.spacing(1)};
     padding-bottom: ${theme.spacing(1)};
   `,
+  scaledNotice: css`
+    display: inline-flex;
+    align-items: center;
+    gap: ${theme.spacing(0.5)};
+    margin-left: ${theme.spacing(1)};
+    color: ${theme.colors.warning.text};
+  `,
   histogramMeta: css`
+    margin-top: ${theme.spacing(0.5)};
     font-size: 12px;
     line-height: 16px;
     text-align: center;

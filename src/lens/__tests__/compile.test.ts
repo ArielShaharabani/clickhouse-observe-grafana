@@ -42,8 +42,8 @@ describe('compileLens', () => {
       conds,
       range
     );
-    expect(intervalMs).toBe(6 * 3600 * 1000); // 7 days / ~60 buckets → 6 hours
-    expect(sql).toContain('toUnixTimestamp(toStartOfInterval("Timestamp", INTERVAL 21600 SECOND)) * 1000 AS b0');
+    expect(intervalMs).toBe(3 * 3600 * 1000); // 7 days / ~60 buckets → 3 hours (Kibana; PARITY-HISTOGRAM)
+    expect(sql).toContain('toUnixTimestamp(toStartOfInterval("Timestamp", INTERVAL 10800 SECOND)) * 1000 AS b0');
     expect(sql).toContain('WITH top1 AS (SELECT toString("SeverityText") AS v FROM "default"."spec_logs" WHERE');
     expect(sql).toContain(
       'ServiceName = \'payments\' AND toString("SeverityText") IS NOT NULL GROUP BY v ORDER BY count() DESC LIMIT 9)'
