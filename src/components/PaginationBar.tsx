@@ -40,6 +40,7 @@ export function PaginationBar({
       <div className={styles.left}>
         <span className={styles.label}>Rows per page</span>
         <Select
+          aria-label="Rows per page"
           value={pageSize}
           options={sizeOptions}
           onChange={(v) => v.value != null && onPageSizeChange(v.value)}

@@ -1,9 +1,10 @@
-import React, { useContext, useEffect, useRef, useState } from 'react';
+import React, { useContext, useEffect, useId, useRef, useState } from 'react';
 import { isBreakdownField } from '../../sql/fieldModel';
 import { css } from '@emotion/css';
 import { GrafanaTheme2 } from '@grafana/data';
 import { Icon, useStyles2 } from '@grafana/ui';
 import { BreakdownSel } from '../../types';
+import { DialogHint } from '../a11y/dialog';
 import { useFields } from '../FieldsContext';
 import { SourceConfigContext } from '../App/App';
 import { getToolbarButtonStyles } from './_toolbarButton';
@@ -52,6 +53,7 @@ export function BreakdownPicker({ value, onChange, hasSeverity }: Props) {
   const wrapperRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
+  const hintId = useId();
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
@@ -98,7 +100,7 @@ export function BreakdownPicker({ value, onChange, hasSeverity }: Props) {
         ref={triggerRef}
         type="button"
         className={toolbarStyles.trigger}
-        aria-haspopup="true"
+        aria-haspopup="dialog"
         aria-expanded={open}
         title={triggerLabel(value)}
         onClick={() => setOpen((v) => !v)}
@@ -108,7 +110,8 @@ export function BreakdownPicker({ value, onChange, hasSeverity }: Props) {
       </button>
 
       {open && (
-        <div className={styles.dropdown} role="dialog" aria-label="Breakdown field">
+        <div className={styles.dropdown} role="dialog" aria-label="Breakdown field" aria-describedby={hintId}>
+          <DialogHint id={hintId} />
           <div className={styles.searchRow}>
             <input
               ref={inputRef}

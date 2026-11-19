@@ -33,7 +33,7 @@ export function StyleToolbar({ onOpen }: ToolbarProps) {
   const styles = useStyles2(getStyles);
   return (
     <div className={styles.toolbar} role="toolbar" aria-label="Chart settings">
-      <Button size="sm" variant="secondary" icon="paint-brush" onClick={() => onOpen('style')}>
+      <Button size="sm" variant="secondary" icon="palette" onClick={() => onOpen('style')}>
         Style
       </Button>
       <Button size="sm" variant="secondary" icon="list-ul" onClick={() => onOpen('legend')}>

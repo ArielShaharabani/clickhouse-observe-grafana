@@ -23,6 +23,8 @@ import { withMetricAppearance } from './fieldConfig';
 import { MetricTiles } from './MetricTiles';
 import { tableColumns, tableOverrides } from '../tableChart';
 import { autoAxisTitles, withLensStyle } from './styleConfig';
+import { LayerData, resolveLayers } from '../layers';
+import { withReferenceThresholds } from './layerConfig';
 
 interface PanelSpec {
   pluginId: string;
@@ -55,7 +57,7 @@ export function panelSpec(state: LensState, result: LensResult): PanelSpec {
     spec.pluginId === 'barchart' ? 'barchart' : 'timeseries',
     autoAxisTitles(state)
   );
-  return { ...spec, ...styled };
+  return { ...spec, ...withReferenceThresholds(styled, state) };
 }
 
 function basePanelSpec(state: LensState, result: LensResult): PanelSpec {
@@ -156,9 +158,20 @@ interface Props {
   /** One click on a bar segment / point (XY charts, LENS-INTERACT-01). */
   onSelect?: (sel: XySelection) => void;
   onLegendFilter?: (seriesIndex: number, mode: 'for' | 'out') => void;
+  /** Computed reference values and query annotation events (LENS-LAYER-01). */
+  layerData?: LayerData;
 }
 
-export function LensChart({ state, result, timeRange, onChangeTimeRange, bucketMs, onSelect, onLegendFilter }: Props) {
+export function LensChart({
+  state,
+  result,
+  timeRange,
+  onChangeTimeRange,
+  bucketMs,
+  onSelect,
+  onLegendFilter,
+  layerData,
+}: Props) {
   if (state.chartType === 'bar' || state.chartType === 'line' || state.chartType === 'area') {
     // Custom-drawn so one click can filter (PanelRenderer has no point-click callback).
     return (
@@ -174,6 +187,7 @@ export function LensChart({ state, result, timeRange, onChangeTimeRange, bucketM
           metrics={state.metrics}
           style={state.style}
           axisTitles={autoAxisTitles(state)}
+          layers={state.layers ? resolveLayers(state.layers, layerData) : undefined}
         />
       </div>
     );

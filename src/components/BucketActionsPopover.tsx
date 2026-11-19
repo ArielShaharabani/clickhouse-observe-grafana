@@ -1,9 +1,10 @@
-import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import React, { useLayoutEffect, useRef, useState } from 'react';
 import { css } from '@emotion/css';
 import { dateTime, GrafanaTheme2, toUtc } from '@grafana/data';
 import { Button, Checkbox, Portal, useStyles2 } from '@grafana/ui';
 import { makeFilter } from '../sql/filters';
 import { FilterPill } from '../types';
+import { usePopoverDialog } from './a11y/dialog';
 
 export interface BucketSeries {
   name: string;
@@ -57,9 +58,8 @@ export function BucketActionsPopover({ time, bucketMs, series, clientX, clientY,
   const ref = useRef<HTMLDivElement>(null);
   const [checked, setChecked] = useState<Set<string>>(() => new Set());
   const [pos, setPos] = useState({ left: clientX, top: clientY });
-  useEffect(() => {
-    ref.current?.focus();
-  }, []);
+  // SHARED-A11Y-01: dialog hint, Escape (also before focus moved in), focus back to the opener.
+  const { dialogProps, hint } = usePopoverDialog(ref, { onClose });
   // Keep the whole popover on screen (it's position: fixed, so nothing can scroll to it).
   useLayoutEffect(() => {
     const el = ref.current;
@@ -91,18 +91,12 @@ export function BucketActionsPopover({ time, bucketMs, series, clientX, clientY,
       <div className={styles.backdrop} onMouseDown={onClose} onContextMenu={(e) => e.preventDefault()} />
       <div
         ref={ref}
-        role="dialog"
+        {...dialogProps}
         aria-label="Bucket actions"
-        tabIndex={-1}
         className={styles.popover}
         style={pos}
-        onKeyDown={(e) => {
-          if (e.key === 'Escape') {
-            e.preventDefault();
-            onClose();
-          }
-        }}
       >
+        {hint}
         <div className={styles.time}>{dateTime(time).format('YYYY-MM-DD HH:mm:ss')}</div>
         {canFilterSeries &&
           series.map((s) => (

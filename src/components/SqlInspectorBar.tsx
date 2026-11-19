@@ -137,6 +137,7 @@ export function SqlInspectorBar({
         <>
           <textarea
             className={styles.sqlEditor}
+            aria-label="SQL query"
             value={rawSqlDraft}
             onChange={(e) => onRawSqlDraftChange(e.target.value)}
             onKeyDown={(e) => {

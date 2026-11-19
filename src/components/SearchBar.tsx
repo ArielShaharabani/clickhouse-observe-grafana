@@ -359,6 +359,7 @@ export function SearchBar({
           onFocus={onFocus}
           onBlur={onBlur}
           placeholder={placeholder}
+          aria-label="Search logs (KQL)"
           autoComplete="off"
           spellCheck={false}
         />

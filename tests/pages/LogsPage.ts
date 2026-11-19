@@ -41,7 +41,7 @@ export class LogsPage {
   /** Open a pill's menu and pick an action. */
   async pillAction(labelStart: string, action: string | RegExp) {
     await this.pill(labelStart).click();
-    await this.page.getByRole('menu', { name: 'Filter actions' }).getByRole('button', { name: action }).click();
+    await this.page.getByRole('menu', { name: 'Filter actions' }).getByRole('menuitem', { name: action }).click();
   }
 
   /** The results grid. */

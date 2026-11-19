@@ -9,6 +9,7 @@ import { css, cx } from '@emotion/css';
 import { dateTime, GrafanaTheme2 } from '@grafana/data';
 import { IconButton, useStyles2, useTheme2 } from '@grafana/ui';
 import { LensResult } from '../compile';
+import { moveMenuFocus, usePopoverDialog } from '../../components/a11y/dialog';
 import { ChartType, MetricDim, XySubType } from '../state';
 import { formatValue } from '../metricOptions';
 import {
@@ -23,6 +24,7 @@ import {
   valueDomain,
   valueTicks,
 } from '../style';
+import { dashArray, ResolvedEvent, ResolvedLine } from '../layers';
 
 export interface XySelection {
   xIndex: number;
@@ -47,6 +49,8 @@ interface Props {
   style?: LensStyle;
   /** Automatic axis titles (Style → Axis title Auto). */
   axisTitles?: { left: string; bottom: string; right: string };
+  /** Reference lines and annotation events to draw (LENS-LAYER-01, resolved by `resolveLayers`). */
+  layers?: { lines: ResolvedLine[]; events: ResolvedEvent[] };
 }
 
 /** A series' value at x: missing → 0 for counts, null (gap) otherwise. */
@@ -136,6 +140,7 @@ export function XyChart({
   metrics,
   style,
   axisTitles,
+  layers,
 }: Props) {
   const styles = useStyles2(getStyles);
   const theme = useTheme2();
@@ -206,8 +211,16 @@ export function XyChart({
     bottom: axisTitle(style, 'bottom', axisTitles?.bottom ?? ''),
   };
   const percent = mode === 'percentage';
-  const [lo, hi] = valueDomain(stacked.left.min, stacked.left.max, ax.left, percent);
-  const [loR, hiR] = valueDomain(stacked.right.min, stacked.right.max, ax.right, percent);
+  // Reference lines sit on their value axis (on the left one when nothing is drawn on the right) and
+  // widen its domain so they stay visible, as in Kibana.
+  const refLines = layers?.lines ?? [];
+  const lineSide = (l: ResolvedLine): 'left' | 'right' => (l.axis === 'right' && hasRight ? 'right' : 'left');
+  const extent = (sd: 'left' | 'right', min: number, max: number): [number, number] => {
+    const vals = refLines.filter((l) => lineSide(l) === sd).map((l) => l.value);
+    return percent || vals.length === 0 ? [min, max] : [Math.min(min, ...vals), Math.max(max, ...vals)];
+  };
+  const [lo, hi] = valueDomain(...extent('left', stacked.left.min, stacked.left.max), ax.left, percent);
+  const [loR, hiR] = valueDomain(...extent('right', stacked.right.min, stacked.right.max), ax.right, percent);
   const leftScale = percent ? 'linear' : ax.left.scale;
   const rightScale = percent ? 'linear' : ax.right.scale;
 
@@ -369,14 +382,16 @@ export function XyChart({
               name="ellipsis-v"
               size="sm"
               tooltip={`Legend actions for ${s.name || '(empty)'}`}
+              aria-haspopup="menu"
+              aria-expanded={menuFor === s.name}
               onClick={() => setMenuFor(menuFor === s.name ? null : s.name)}
             />
           )}
           {menuFor === s.name && onLegendFilter && (
-            <div
+            <LegendMenu
               className={cx(styles.menu, (lg.alignment.startsWith('top') || inside) && styles.menuDown)}
-              role="menu"
-              aria-label={`Actions for ${s.name}`}
+              label={`Actions for ${s.name}`}
+              onClose={() => setMenuFor(null)}
             >
               <div className={styles.menuTitle}>{s.breakdown || '(empty)'}</div>
               {(['for', 'out'] as const).map((mo) => (
@@ -393,7 +408,7 @@ export function XyChart({
                   {mo === 'for' ? 'Filter for' : 'Filter out'}
                 </button>
               ))}
-            </div>
+            </LegendMenu>
           )}
         </div>
       ))}
@@ -428,6 +443,119 @@ export function XyChart({
   };
 
   const rotated = (x: number, yy: number, deg: number) => (deg ? `rotate(${deg} ${x} ${yy})` : undefined);
+
+  // Annotation events: on a time X axis of a vertical chart, at their time within the buckets.
+  const step =
+    bucketMs ?? (result.xs.length > 1 ? (Number(result.xs[result.xs.length - 1]) - Number(result.xs[0])) / (n - 1) : 0);
+  const timePos = (t: number) => m.left + (step > 0 ? ((t - Number(result.xs[0])) / step) * band : band / 2);
+  const inPlot = (px: number) => px >= m.left - 0.5 && px <= m.left + plotW + 0.5;
+  const events = result.xIsTime && !horizontal && result.xs.length > 0 ? (layers?.events ?? []) : [];
+  const fmtTime = (t: number) => dateTime(t).format('YYYY-MM-DD HH:mm:ss');
+
+  const refLineEls = refLines.map((l) => {
+    const p = (lineSide(l) === 'right' ? yR : y)(l.value);
+    if (!(horizontal ? p >= m.left - 0.5 && p <= m.left + plotW + 0.5 : p >= m.top - 0.5 && p <= m.top + plotH + 0.5)) {
+      return null;
+    }
+    const valueText = percent ? `${l.value}` : fmt(l.value);
+    const name = `Reference line: ${l.text} (${valueText})`;
+    const fill =
+      l.fill === 'none'
+        ? null
+        : horizontal
+          ? l.fill === 'above'
+            ? { x: p, y: m.top, width: m.left + plotW - p, height: plotH }
+            : { x: m.left, y: m.top, width: p - m.left, height: plotH }
+          : l.fill === 'above'
+            ? { x: m.left, y: m.top, width: plotW, height: p - m.top }
+            : { x: m.left, y: p, width: plotW, height: m.top + plotH - p };
+    return (
+      <g
+        key={`rl-${l.id}`}
+        role="img"
+        aria-label={name}
+        data-testid="lens-reference-line"
+        data-value={l.value}
+        data-axis={lineSide(l)}
+        pointerEvents="none"
+      >
+        <title>{name}</title>
+        {fill && <rect {...fill} fill={l.color} opacity={0.12} data-testid="lens-reference-fill" />}
+        {horizontal ? (
+          <line
+            x1={p}
+            x2={p}
+            y1={m.top}
+            y2={m.top + plotH}
+            stroke={l.color}
+            strokeWidth={2}
+            strokeDasharray={dashArray(l.lineStyle)}
+          />
+        ) : (
+          <line
+            x1={m.left}
+            x2={m.left + plotW}
+            y1={p}
+            y2={p}
+            stroke={l.color}
+            strokeWidth={2}
+            strokeDasharray={dashArray(l.lineStyle)}
+          />
+        )}
+        {l.label && (
+          <text
+            x={horizontal ? p + 4 : m.left + plotW - 4}
+            y={horizontal ? m.top + 12 : p - 4}
+            textAnchor={horizontal ? 'start' : 'end'}
+            fill={l.color}
+            className={styles.refLabel}
+            data-testid="lens-reference-label"
+          >
+            {l.label}
+          </text>
+        )}
+      </g>
+    );
+  });
+
+  const eventEls = events.map((e) => {
+    const x0 = timePos(e.time);
+    const x1 = e.end !== undefined ? timePos(e.end) : undefined;
+    const a = x1 === undefined ? x0 : Math.max(m.left, Math.min(x0, x1));
+    const b = x1 === undefined ? x0 : Math.min(m.left + plotW, Math.max(x0, x1));
+    if (x1 === undefined ? !inPlot(x0) : b < a) {
+      return null;
+    }
+    const name = `Annotation: ${e.text} at ${fmtTime(e.time)}${e.end !== undefined ? ` to ${fmtTime(e.end)}` : ''}`;
+    return (
+      <g key={`an-${e.key}`} role="img" aria-label={name} data-testid="lens-annotation" data-time={e.time}>
+        <title>{name}</title>
+        {x1 !== undefined ? (
+          <rect
+            x={a}
+            y={m.top}
+            width={Math.max(1, b - a)}
+            height={plotH}
+            fill={e.color}
+            opacity={0.12}
+            pointerEvents="none"
+          />
+        ) : (
+          <line
+            x1={x0}
+            x2={x0}
+            y1={m.top}
+            y2={m.top + plotH}
+            stroke={e.color}
+            strokeWidth={1.5}
+            strokeDasharray="4 3"
+            pointerEvents="none"
+          />
+        )}
+        <path d={`M${a - 5},${m.top} L${a + 5},${m.top} L${a},${m.top + 7} Z`} fill={e.color} />
+      </g>
+    );
+  });
 
   return (
     <div
@@ -720,6 +848,8 @@ export function XyChart({
                     </g>
                   );
                 })}
+              {refLineEls}
+              {eventEls}
             </g>
 
             {brush && (
@@ -767,6 +897,12 @@ const getStyles = (theme: GrafanaTheme2) => ({
     paint-order: stroke;
     stroke: ${theme.colors.background.primary};
     stroke-width: 2px;
+  `,
+  refLabel: css`
+    font-size: 11px;
+    paint-order: stroke;
+    stroke: ${theme.colors.background.primary};
+    stroke-width: 3px;
   `,
   grid: css`
     stroke: ${theme.colors.border.weak};
@@ -880,3 +1016,46 @@ const getStyles = (theme: GrafanaTheme2) => ({
     }
   `,
 });
+
+/**
+ * Legend ⋮ menu (SHARED-A11Y-01): focus starts on the first item, Up / Down / Home / End move,
+ * Escape or Tab closes it and focus goes back to the ⋮ button.
+ */
+function LegendMenu({
+  className,
+  label,
+  onClose,
+  children,
+}: {
+  className: string;
+  label: string;
+  onClose: () => void;
+  children: React.ReactNode;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  const { dialogProps } = usePopoverDialog(ref, { onClose, autoFocus: false });
+  useEffect(() => {
+    ref.current?.querySelector<HTMLElement>('[role="menuitem"]')?.focus({ preventScroll: true });
+  }, []);
+  return (
+    <div
+      ref={ref}
+      className={className}
+      role="menu"
+      tabIndex={-1}
+      aria-label={label}
+      onKeyDown={(e) => {
+        if (ref.current && moveMenuFocus(ref.current, e.key)) {
+          e.preventDefault();
+        } else if (e.key === 'Tab') {
+          e.preventDefault();
+          onClose();
+        } else {
+          dialogProps.onKeyDown(e);
+        }
+      }}
+    >
+      {children}
+    </div>
+  );
+}

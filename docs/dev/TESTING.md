@@ -288,3 +288,34 @@ LENS-DATAVIEW acceptance:
 | StylePanel: changes through `cleanStyle`, horizontal relabels the axes, Data bounds disabled for bars, Back, bounds order and junk not applied (jest) | ✅ |
 | Dashboard export: barchart orientation / values / rotation / legend, axis label / gridlines / log / min / max (jest) | ✅ |
 | E2E (`tests/features/lens-style-01.spec.ts`): horizontal + bar values kept in the URL with no new query and across reload, Back; custom / none axis title, log scale, custom bounds and refused inverted range; legend auto / show / right / inside corner / grid / hide; hostile shared style | not run (coordinator) |
+
+### LENS-LAYER-01 (PR 42)
+| Case | Status |
+| --- | --- |
+| `cleanLayers`: known keys only; hostile labels / ids / colours / non-finite values / out-of-range times / inverted ranges / unknown ops and kinds / over-long queries dropped or capped; layer and item caps; URL codec round-trip; hostile layers dropped (jest `layers.test.tsx`) | ✅ |
+| `sanitizeLens` drops computed lines on undiscovered fields; `queryShape` strips layers; XY switches keep them, Table drops them (jest) | ✅ |
+| Layer actions: add, clear, duplicate (fresh ids), remove, upsert, caps; `resolveLayers` before / after computed values and events (jest) | ✅ |
+| SQL: computed values (quoted hostile field, chart conditions, one row), annotation query (KQL compiled and escaped, empty = all, invalid = none, `LIMIT 100 BY k`), row shaping (jest) | ✅ |
+| XyChart: line with label as text (markup not rendered), dashed + fill, axis widened for a line above the data, annotation point / range positions, none off-plot or on a category axis (jest) | ✅ |
+| LayersSection / LayerItemEditor: Select layer type (Visualization disabled, Annotations need a time axis), add items with defaults, layer actions, static value / invalid number, computed field pick, style / fill / axis / label, annotation date + range validation, KQL refused, type switches (jest) | ✅ |
+| Dashboard export: thresholds steps / colours / dashed+area, computed and right-axis lines skipped, mixed styles, no layers unchanged (jest) | ✅ |
+| E2E (`tests/features/lens-layer-01.spec.ts`): add static line via Add layer with label + dashed style, kept in URL with no new chart query and across reload, Back; invalid value refused, computed Count = fixture total; manual range annotation and KQL query annotation (invalid refused, 100 payments markers); duplicate / clear / remove layer; hostile shared layers | not run (coordinator) |
+
+### SHARED-A11Y-01 (PR 42)
+| Case | Status |
+| --- | --- |
+| Audit: custom popovers (field, Add / Edit filter, pill menu, bucket actions, histogram legend, cell Expand, Breakdown picker, legend ⋮ menu, dimension editor) | fixed: dialog / menu roles, hint, Escape, focus in and back |
+| Audit: Grafana Modal / Drawer / Dropdown / Combobox (Save, Share, Inspector, Query menu, session actions, tab menus, filter chooser) | already OK (Grafana built-in) |
+| Audit: Grafana Toggletip (Display options, field type filter) | Escape / focus already OK; role dialog + hint added |
+| Audit: Chart type switcher (custom listbox), formula editor suggestions, KQL suggestions | already OK (listbox / combobox, Escape) |
+| Audit: grid arrows, Home / End, Ctrl+Home / End, PgUp / PgDn, Enter, Shift+Enter, Esc (DISC-TABLE-01) | already OK; `aria-activedescendant`, sort button, `aria-sort`, named column actions added |
+| Audit: drag and drop (Discover field → grid, column reorder, tab reorder; Visualize field → workspace / group) | Discover: button alternatives already present (actions now visible on focus); Visualize: keyboard drag mode added |
+| Audit: icon-only buttons / unlabeled inputs | buttons all named; 5 inputs labeled (KQL bar, SQL editor, rows per page, detail search, data view search) |
+| `usePopoverDialog`: role / description, focus in, Escape inside and from the page, ignores a used Escape, focus back, keeps user-moved focus; `moveMenuFocus` (jest `src/components/a11y/__tests__/a11y.test.tsx`) | ✅ |
+| Pill menu menuitems, arrows, Escape / Tab back to the pill; Edit filter dialog back to the pill; Add filter dialog back to the trigger (jest) | ✅ |
+| Field `Preview log.level: string` opens the field dialog, Escape returns focus; row action names (jest) | ✅ |
+| Grid `aria-activedescendant` follows the cursor; sort button + `aria-sort`; `Move X left/right`, `Remove column X`; Expand / bucket / Toggletip dialogs carry the hint (jest) | ✅ |
+| Keyboard drag: lift / move / drop / cancel / blur, spoken messages, Escape does not reach the page (jest `src/lens/__tests__/a11y.test.tsx`) | ✅ |
+| Legend ⋮ menu focus / arrows / Escape back to ⋮; dimension editor Escape closes, page Escape does not, focus to the dimension (jest) | ✅ |
+| E2E (`tests/features/shared-a11y-01.spec.ts`): field Preview + Escape focus return; pill menu arrows / Escape / Edit filter dialog; Add filter dialog; grid active descendant + Expand; Display options; Visualize keyboard drag to the workspace and to Breakdown with live messages, editor Escape back to the dimension, cancel; legend ⋮ menu | not run (coordinator) |
+| E2E selector updates: `LogsPage.pillAction` and `disc-doc-02` pick pill menu items by role `menuitem` (were `button`) | not run (coordinator) |

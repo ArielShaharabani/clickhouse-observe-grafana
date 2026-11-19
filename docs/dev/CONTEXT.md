@@ -1,7 +1,7 @@
 # Context snapshot — read this to restart
 
 Saved after every feature (and every review-fix round). A new session can resume from this file plus `PROGRESS.md` alone.
-Last saved: 2026-11-18, #27 LENS-STYLE-01 merged (PR 41, v0.44.0).
+Last saved: 2026-11-19, #33 SHARED-A11Y-01 merged (PR 42, v0.46.0).
 
 ## Goal
 Bring Kibana Discover + Lens style exploration to Grafana on ClickHouse by extending the **ClickHouse Observe** app plugin.
@@ -52,6 +52,8 @@ Bring Kibana Discover + Lens style exploration to Grafana on ClickHouse by exten
 | 32 | DISC-SESSION-01: Share, CSV export, new session, alert rule | 38 | src/data/csvExport.ts, src/data/shareLink.ts, src/data/alertRule.ts, src/components/SessionActions/SessionActions.tsx |
 | 26 | LENS-CHART-01: Table and Metric chart specifics | 41 | src/lens/tableChart.ts, src/lens/render/MetricTiles.tsx, src/lens/TableMetricOptions.tsx |
 | 27 | LENS-STYLE-01: Style and Legend panels | 41 | src/lens/style.ts, src/lens/StylePanel.tsx, src/lens/render/styleConfig.ts |
+| 28 | LENS-LAYER-01: Visualize reference line and annotation layers | 42 | src/lens/layers.ts, src/lens/LayerPanel.tsx, src/lens/useLayerData.ts, src/lens/render/layerConfig.ts, src/lens/compile.ts, src/lens/render/XyChart.tsx |
+| 33 | SHARED-A11Y-01: Keyboard and accessibility | 42 | src/components/a11y/dialog.tsx, src/lens/keyboardDnd.ts, src/lens/LensPage.tsx, src/lens/DimensionEditor.tsx, src/components/* |
 
 ## Key decisions (details in DECISIONS.md)
 - Frontend-only; queries via grafana-clickhouse-datasource (`src/data/runQuery.ts`). Plain React + @grafana/ui, no Scenes.
@@ -113,3 +115,5 @@ Status 2026-11-18 (later): PR 18 merged (v0.27.0; gates 930 jest, 79 e2e). Agent
 - Batch-3 (PR 38) full e2e: 176 passed, 5 failed (tab rename fill, duplicate KQL menu item, two CSV downloads named by UUID, and pre-existing disc-table-01 Expand → likely tab strip/session-actions regression). Fix agent on co-wt/batch-3 (port 3020). PR 39 open = #26 LENS-CHART-01 (Table pivot + summary/colour-by-value, Metric tiles; display-only; 1,376 jest). #27 LENS-STYLE-01 agent running. Batch-4 = #26 + #27.
 - PR 40 open = #27 LENS-STYLE-01 (Style + Legend panels, display-only; 1,377 jest). Batch-4 (`feat/batch-4`, worktree co-wt/batch-4) = PR 39 + PR 40 merged (conflicts in dimensions.ts queryShape, panelExport.ts, LensChart.tsx resolved: keep both), typecheck/lint/lens jest green. Fold after PR 38 merges (0.43.0 / 0.44.0), then full e2e. #28 Layers next after batch-4; #33 a11y last.
 - 2026-11-19: PR 38 merged (v0.42.0; batch-3 fixes: shared `src/utils/download.ts` with a non-bubbling click — Grafana's router hijacks bubbling <a> clicks so blob downloads got UUID names; tab rename opens after the menu closes; Expand popover is fixed-position). PRs 34–37 closed. Batch-4 = PR 41 (supersedes 39, 40), folded 0.43.0/0.44.0, gates green (1,455 jest), full e2e running on `co-batch-4` port 3021. Remaining: #28 Layers, #33 a11y.
+- 2026-11-19: PR 41 merged (v0.44.0; e2e found a real bug — the Table summary-row override used `custom.footer`, but Grafana only applies overrides on registered option ids, here `custom.footer.reducers`; and Grafana 13 radio inputs overlay their labels, so e2e clicks radios by role, not label text). PRs 39/40 closed. Batch-5 = PR 42 (#28 LENS-LAYER-01 + #33 SHARED-A11Y-01, folded 0.45.0 / 0.46.0; also fixes master typecheck: `palette` icon, Slider `inputId`), 1,502 jest, full e2e 197/202 then the 5 fixed (radio helper; the layer ⋮ button used a hover tooltip that covered its own menu → aria-label). PLAN complete except #21 (skipped by user).
+- ClickHouse gotcha: after a run is reaped mid-query, the server's RSS can stay above `max_server_memory_usage` (2 GiB) and it then refuses every query, the healthcheck included (container shows `unhealthy`, MEMORY_LIMIT_EXCEEDED). `docker restart clickhouse-observe-grafana-dev-clickhouse-1` fixes it (data is on the volume); check health before every e2e run. A normal full run stays under ~1 GB RSS.

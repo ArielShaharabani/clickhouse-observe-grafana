@@ -4,8 +4,9 @@
  * values: Field, Number of values, Name. Date histogram (LENS-DIM-05): Field, Customize time
  * interval / Minimum interval, Include empty rows, Drop partial intervals, Bind to global time picker.
  */
-import React, { useId, useState } from 'react';
+import React, { useId, useRef, useState } from 'react';
 import { css, cx } from '@emotion/css';
+import { usePopoverDialog } from '../components/a11y/dialog';
 import { dateTime, GrafanaTheme2 } from '@grafana/data';
 import {
   Button,
@@ -77,6 +78,8 @@ interface Props {
   onChange: (d: BucketDim | MetricDim) => void;
   onRemove: () => void;
   onClose: () => void;
+  /** Where focus goes when the editor closes (the dimension's button in the list). */
+  returnFocus?: () => HTMLElement | null | undefined;
 }
 
 export function DimensionEditor({
@@ -90,8 +93,12 @@ export function DimensionEditor({
   onChange,
   onRemove,
   onClose,
+  returnFocus,
 }: Props) {
   const styles = useStyles2(getStyles);
+  // SHARED-A11Y-01: Escape inside the editor closes it; focus moves in and back to the dimension.
+  const panelRef = useRef<HTMLDivElement>(null);
+  const { dialogProps, hint } = usePopoverDialog(panelRef, { onClose, returnFocus, escapeFromPage: false });
   const fieldId = useId();
   const fnLabelId = useId();
   const rankMetricId = useId();
@@ -99,7 +106,8 @@ export function DimensionEditor({
   const fieldOptions = (list: LensField[]) => list.map((f) => ({ label: f.label, value: f.sqlExpr }));
 
   return (
-    <div className={styles.panel} role="dialog" aria-label={`Edit ${group}`}>
+    <div ref={panelRef} className={styles.panel} {...dialogProps} aria-label={`Edit ${group}`}>
+      {hint}
       <div className={styles.header}>
         <span className={styles.title}>{group}</span>
         <IconButton name="times" tooltip="Close editor" onClick={onClose} />

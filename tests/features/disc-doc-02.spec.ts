@@ -90,7 +90,7 @@ test('IT-I: query dropped, filters carried over disabled, re-enabling one applie
   await expect(rows(page)).toHaveCount(11);
 
   await pills.getByRole('button', { name: /^Filter actions: ServiceName = payments/ }).click();
-  await page.getByRole('menu', { name: 'Filter actions' }).getByRole('button', { name: 'Re-enable' }).click();
+  await page.getByRole('menu', { name: 'Filter actions' }).getByRole('menuitem', { name: 'Re-enable' }).click();
   await expect(pills.getByRole('button', { name: /^Filter actions: ServiceName = payments/ })).not.toHaveAccessibleName(
     /\(disabled\)$/
   );
