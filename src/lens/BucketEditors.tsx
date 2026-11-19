@@ -121,6 +121,7 @@ export function RangeEditor({
               max={7}
               step={1}
               value={dim.granularity ?? DEFAULT_GRANULARITY}
+              inputId="lens-intervals-granularity"
               ariaLabelForHandle="Granularity"
               onAfterChange={(v) => v !== undefined && onChange(withRangeOptions(dim, { granularity: v }))}
             />
