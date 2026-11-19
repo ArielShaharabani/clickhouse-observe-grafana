@@ -35,6 +35,8 @@ export interface ExportedPanel {
     editorType: 'sql';
     format: number;
     rawSql: string;
+    /** Visualize state of a panel added from Visualize ("Edit in Visualize", lens/panelSource.ts). */
+    observeVisualize?: string;
   }>;
   transformations?: Array<{ id: string; options: Record<string, unknown> }>;
   options?: Record<string, unknown>;

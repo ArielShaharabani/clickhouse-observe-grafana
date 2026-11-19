@@ -10,6 +10,10 @@ apps:
     disabled: false
     jsonData:
       defaultDataViewId: spec-fixture
+      # Open on the fixture's window (like the Kibana comparison stack's timepicker:timeDefaults).
+      defaultTimeRange:
+        from: '2026-01-01T00:00:00Z'
+        to: '2026-01-08T00:00:00Z'
       dataViews:
         - id: spec-fixture
           name: Spec fixture logs

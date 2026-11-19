@@ -86,6 +86,11 @@ test('Visualize from the side menu restores the active tab’s search context', 
   await logs.searchInput.fill('ServiceName:inventory');
   await logs.searchInput.press('Enter');
   await expect.poll(() => param(page, 'q')).toBe('ServiceName:inventory');
+  // The context is saved right after the URL updates (a React effect); a full page load straight
+  // after the URL changes can beat it under load, so wait until it is stored.
+  await expect
+    .poll(() => page.evaluate(() => window.sessionStorage.getItem('clickhouse-observe.lastSearch') ?? ''))
+    .toContain('inventory');
 
   await page.goto(`/a/${pluginJson.id}/visualize`);
   await expect.poll(() => param(page, 'q')).toBe('ServiceName:inventory');

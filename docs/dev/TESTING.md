@@ -319,3 +319,13 @@ LENS-DATAVIEW acceptance:
 | Legend ⋮ menu focus / arrows / Escape back to ⋮; dimension editor Escape closes, page Escape does not, focus to the dimension (jest) | ✅ |
 | E2E (`tests/features/shared-a11y-01.spec.ts`): field Preview + Escape focus return; pill menu arrows / Escape / Edit filter dialog; Add filter dialog; grid active descendant + Expand; Display options; Visualize keyboard drag to the workspace and to Breakdown with live messages, editor Escape back to the dimension, cancel; legend ⋮ menu | not run (coordinator) |
 | E2E selector updates: `LogsPage.pillAction` and `disc-doc-02` pick pill menu items by role `menuitem` (were `button`) | not run (coordinator) |
+
+### COMPARE-FIXES (PR 43)
+| Case | Status |
+| --- | --- |
+| Parking: Bar over time → Metric → Bar restores the same date histogram and breakdown; Metric → Pie → Line; time field dropped on Metric returns to Bar with the parked date; from-scratch Metric + time field → line; time field on a bucket slot → date histogram; not in `queryShape`; URL round-trip; hostile / oversize parked input; `sanitizeLens` (jest `parked.test.ts`) | ✅ |
+| Layers park on Table and come back on Bar (jest `layers.test.tsx`, updated) | ✅ |
+| Edit in Visualize: exported target carries the source; path has chart, query, filters, view, dashboard time (relative and absolute); hidden without a source / without a chart; unknown params dropped, oversize refused, path stays under the plugin route (jest `panelSource.test.ts`) | ✅ |
+| Default time range: relative / absolute kept; missing, junk, inverted, oversize, injection-shaped fall back to the last hour; resolves to a TimeRange (jest `defaultTimeRange.test.ts`) | ✅ |
+| E2E `tests/features/lens-save-02.spec.ts`: save to a new dashboard → panel menu → Extensions → Edit in Visualize reopens the chart with query and view; a plain panel has no item | ✅ |
+| E2E `lens-dataview.spec.ts` updated: the active table is asserted on the picker's tooltip | full run |

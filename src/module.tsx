@@ -1,10 +1,11 @@
 import React, { Suspense, lazy } from 'react';
-import { AppPlugin, PluginExtensionPoints, type AppRootProps } from '@grafana/data';
+import { AppPlugin, PluginExtensionPoints, type AppRootProps, type PluginExtensionPanelContext } from '@grafana/data';
 import { LoadingPlaceholder } from '@grafana/ui';
 import type { AppConfigProps } from './components/AppConfig/AppConfig';
 import { AppJsonData } from './types';
 import { buildTraceToLogsPath, TraceViewLinkContext } from './data/traceToLogsLink';
 import { PLUGIN_BASE_URL } from './constants';
+import { editInVisualizePath } from './lens/panelSource';
 
 const LazyApp = lazy(() => import('./components/App/App'));
 const LazyAppConfig = lazy(() => import('./components/AppConfig/AppConfig'));
@@ -46,6 +47,20 @@ export const plugin = new AppPlugin<AppJsonData>()
     path: `${PLUGIN_BASE_URL}/logs`,
     configure: (ctx) => {
       const path = buildTraceToLogsPath(ctx);
+      return path ? { path } : undefined;
+    },
+  })
+  // Kibana's "Edit visualization in Lens": panels added from Visualize reopen there, with the
+  // dashboard's time range (lens/panelSource.ts). Hidden on every other panel. Declared in
+  // plugin.json's extensions.addedLinks like the link above.
+  .addLink<PluginExtensionPanelContext>({
+    title: 'Edit in Visualize',
+    description: 'Open this panel in ClickHouse Observe Visualize to keep editing it',
+    targets: [PluginExtensionPoints.DashboardPanelMenu],
+    icon: 'chart-line',
+    path: `${PLUGIN_BASE_URL}/visualize`,
+    configure: (ctx) => {
+      const path = ctx ? editInVisualizePath(ctx) : undefined;
       return path ? { path } : undefined;
     },
   });

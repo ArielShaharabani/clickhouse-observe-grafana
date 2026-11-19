@@ -20,7 +20,7 @@
       "large": "img/logo.svg"
     },
     "screenshots": [],
-    "version": "0.46.0",
+    "version": "0.47.0",
     "updated": "%TODAY%"
   },
   "includes": [
@@ -65,6 +65,11 @@
         "title": "View logs in ClickHouse Observe",
         "description": "Open this trace's logs in the ClickHouse Observe log explorer",
         "targets": ["grafana/traceview/header/actions"]
+      },
+      {
+        "title": "Edit in Visualize",
+        "description": "Open this panel in ClickHouse Observe Visualize to keep editing it",
+        "targets": ["grafana/dashboard/panel/menu"]
       }
     ]
   }

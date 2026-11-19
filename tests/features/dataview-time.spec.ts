@@ -82,7 +82,7 @@ test('edit a personal view: switch the time field, the epoch unit is guessed and
   const logs = new LogsPage(page);
   await logs.open({ ds: 'epoch-s' });
   await logs.expectRowCount(FIXTURE.counts.total);
-  await page.getByTitle('Switch data view').click();
+  await page.getByTitle(/^Switch data view/).click();
   await page.getByTitle('Edit data view').first().click();
   const dialog = page.getByRole('dialog');
   await expect(dialog.getByTestId('converted-time-note')).toContainText('Epoch seconds');

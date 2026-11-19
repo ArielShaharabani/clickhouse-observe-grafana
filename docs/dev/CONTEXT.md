@@ -1,7 +1,7 @@
 # Context snapshot — read this to restart
 
 Saved after every feature (and every review-fix round). A new session can resume from this file plus `PROGRESS.md` alone.
-Last saved: 2026-11-19, #33 SHARED-A11Y-01 merged (PR 42, v0.46.0).
+Last saved: 2026-11-19, #- COMPARE-FIXES merged (PR 43, v0.47.0).
 
 ## Goal
 Bring Kibana Discover + Lens style exploration to Grafana on ClickHouse by extending the **ClickHouse Observe** app plugin.
@@ -54,6 +54,7 @@ Bring Kibana Discover + Lens style exploration to Grafana on ClickHouse by exten
 | 27 | LENS-STYLE-01: Style and Legend panels | 41 | src/lens/style.ts, src/lens/StylePanel.tsx, src/lens/render/styleConfig.ts |
 | 28 | LENS-LAYER-01: Visualize reference line and annotation layers | 42 | src/lens/layers.ts, src/lens/LayerPanel.tsx, src/lens/useLayerData.ts, src/lens/render/layerConfig.ts, src/lens/compile.ts, src/lens/render/XyChart.tsx |
 | 33 | SHARED-A11Y-01: Keyboard and accessibility | 42 | src/components/a11y/dialog.tsx, src/lens/keyboardDnd.ts, src/lens/LensPage.tsx, src/lens/DimensionEditor.tsx, src/components/* |
+| - | COMPARE-FIXES: Kibana comparison fixes: Edit in Visualize, parked dimensions, default time range | 43 | src/lens/panelSource.ts, src/module.tsx, src/lens/suggest.ts, src/lens/state.ts, src/utils/defaultTimeRange.ts, src/components/AppConfig/AppConfig.tsx |
 
 ## Key decisions (details in DECISIONS.md)
 - Frontend-only; queries via grafana-clickhouse-datasource (`src/data/runQuery.ts`). Plain React + @grafana/ui, no Scenes.

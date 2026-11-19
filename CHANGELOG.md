@@ -10,6 +10,21 @@ Versions track the plugin's release history. `Unreleased` collects commits not y
 
 ---
 
+## [0.47.0] — 2026-11-19
+
+### Added
+- **Edit in Visualize from a dashboard panel** (LENS-SAVE-02; spec 20-lens.md). Panels added to a dashboard from Visualize get `Extensions → Edit in Visualize` in their panel menu (Kibana's "Edit visualization in Lens"): it reopens the chart in Visualize with its dimensions, query, filters and data view, and the dashboard's time range. The panel stays a normal Grafana panel. Other panels don't show the item. Requires a Grafana restart (plugin.json declares the new link).
+- **Default time range setting** (spec 30-shared.md SHARED-STATE-02; Kibana's `timepicker:timeDefaults`). App config → `Default time range` (From / To, time expressions or absolute dates): the range Discover and Visualize open on when a link carries none. Dev provisioning opens on the fixture window (2026-01-01 → 2026-01-08 UTC).
+
+### Changed
+- Visualize no longer repeats the data view's table next to the data view picker; the table is in the picker's tooltip. The carried query / filter summary shows only when there is one.
+
+### Fixed
+- **Visualize: switching to Metric (or Pie) lost the date histogram and there was no way back** (LENS-TYPE-01). The dimensions a chart can't show (a date histogram on Metric / Pie, an XY chart's Style and layers) are now parked and come back when switching to a chart that can show them. Dropping a time field on Metric / Pie returns to the time chart; it used to be silently dropped again.
+- Visualize: a time field dropped on a bucket slot (Horizontal axis, Break down by, Rows) makes a date histogram instead of top values of timestamps.
+
+---
+
 ## [0.46.0] — 2026-11-19
 
 ### Added

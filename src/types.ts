@@ -214,6 +214,8 @@ export interface AppJsonData {
   sourceConfig?: SourceConfig;
   /** AI column-mapping assist settings, admin-configured. */
   ai?: AiProviderConfig;
+  /** Range Discover and Visualize open on when the URL has none (Kibana's timepicker:timeDefaults). */
+  defaultTimeRange?: { from: string; to: string };
 }
 
 export interface SavedSearch {

@@ -21,7 +21,7 @@ import {
   newDimId,
   TermsDim,
 } from './state';
-import { isLensField, LensContext, switchChart } from './suggest';
+import { addTimeBucket, isLensField, LensContext, switchChart } from './suggest';
 
 /** Quick functions, in the editor grid's order. */
 export const QUICK_FUNCTIONS: MetricOp[] = ['avg', 'count', 'max', 'median', 'min', 'percentile', 'sum', 'unique'];
@@ -144,6 +144,12 @@ export function addBucket(
   ctx: LensContext,
   patch: Pick<BucketDim, 'pivot'> = {}
 ): { state: LensState; id: string } {
+  // A time field buckets by date (like the workspace drop), not by its top values.
+  if (field.type === 'time') {
+    const state = addTimeBucket(s, field, ctx);
+    const date = state.buckets.find((x) => x.kind === 'date_histogram');
+    return { state, id: date?.id ?? '' };
+  }
   const b: BucketDim = { kind: 'terms', id: newId('b'), field: field.sqlExpr, label: field.label, size: 9, ...patch };
   return { state: switchChart({ ...s, buckets: [...s.buckets, b] }, s.chartType, ctx, s.subType), id: b.id };
 }
@@ -176,7 +182,7 @@ export function metricForField(id: string, field: LensField): MetricDim | undefi
 /** Display-only parts (names) removed — what the chart query actually depends on. */
 export function queryShape(s: LensState): LensState {
   // Style / Legend (LENS-STYLE-01) never changes the SQL; layers (LENS-LAYER-01) run their own queries.
-  const { style: _style, layers: _layers, ...rest } = s;
+  const { style: _style, layers: _layers, parked: _parked, ...rest } = s;
   return {
     ...rest,
     // Table pivot (Split metrics by) only reshapes the same rows.

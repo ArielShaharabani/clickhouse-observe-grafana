@@ -433,7 +433,25 @@ export interface LensState {
   layers?: ExtraLayer[];
   buckets: BucketDim[];
   metrics: MetricDim[];
+  /**
+   * What the current chart can't show, kept from the chart the user switched away from (Kibana keeps
+   * a layer's unused columns): a date histogram dropped by Metric / Pie, an XY chart's Style and
+   * layers. Switching back restores it. Not part of the chart query.
+   */
+  parked?: LensParked;
 }
+
+export interface LensParked {
+  /** The last chart that could show the parked buckets (where a dropped time field returns to). */
+  chartType: ChartType;
+  subType?: XySubType;
+  buckets: BucketDim[];
+  style?: LensStyle;
+  layers?: ExtraLayer[];
+}
+
+/** At most this many parked buckets survive the URL. */
+const MAX_PARKED = 8;
 
 /** A field as the suggestion engine sees it. `records` is the virtual "Records" field (count). */
 export interface LensField {
@@ -587,6 +605,66 @@ function cleanFormulaFields(x: unknown): FormulaFields | undefined {
   return out;
 }
 
+const isStr = (x: unknown) => typeof x === 'string';
+const okDimName = (n: unknown) => n === undefined || (isStr(n) && (n as string).length <= MAX_NAME);
+
+/** Known bucket kinds with well-typed keys only (the URL is untrusted). */
+function cleanBuckets(raw: unknown): BucketDim[] {
+  if (!Array.isArray(raw)) {
+    return [];
+  }
+return (raw as BucketDim[])
+    .filter(
+      (b) =>
+        b &&
+        isStr(b.id) &&
+        isStr(b.field) &&
+        isStr(b.label) &&
+        okDimName(b.name) &&
+        ((b.kind === 'date_histogram' && isIntervalValue(b.interval)) ||
+          (b.kind === 'terms' && Number.isInteger(b.size) && b.size > 0) ||
+          b.kind === 'range' ||
+          (b.kind === 'filters' && b.field === '' && Array.isArray(b.filters)))
+    )
+    .map((b): BucketDim => {
+      const out: BucketDim =
+        b.kind === 'terms'
+          ? cleanTerms(b)
+          : b.kind === 'range'
+            ? cleanRange(b)
+            : b.kind === 'filters'
+              ? cleanFilters(b)
+              : cleanDateHistogram(b);
+      return b.pivot === true ? { ...out, pivot: true } : out;
+    });
+}
+
+function cleanParked(raw: unknown): LensParked | undefined {
+  if (!raw || typeof raw !== 'object') {
+    return undefined;
+  }
+  const p = raw as Record<string, unknown>;
+  if (!CHARTS.includes(p.chartType as ChartType)) {
+    return undefined;
+  }
+  const buckets = cleanBuckets(p.buckets).slice(0, MAX_PARKED);
+  const style = cleanStyle(p.style);
+  const layers = cleanLayers(p.layers);
+  if (buckets.length === 0 && !style && !layers) {
+    return undefined;
+  }
+  const subType = ['stacked', 'percentage', 'unstacked'].includes(p.subType as string)
+    ? (p.subType as XySubType)
+    : undefined;
+  return {
+    chartType: p.chartType as ChartType,
+    ...(subType ? { subType } : {}),
+    buckets,
+    ...(style ? { style } : {}),
+    ...(layers ? { layers } : {}),
+  };
+}
+
 export function decodeLens(raw: string | null | undefined): LensState | undefined {
   if (!raw) {
     return undefined;
@@ -599,30 +677,7 @@ export function decodeLens(raw: string | null | undefined): LensState | undefine
     const str = (x: unknown) => typeof x === 'string';
     const okName = (n: unknown) => n === undefined || (str(n) && (n as string).length <= MAX_NAME);
     const okPct = (p: unknown) => p === undefined || (typeof p === 'number' && Number.isFinite(p) && p >= 1 && p <= 99);
-    const buckets = (v.buckets as BucketDim[])
-      .filter(
-        (b) =>
-          b &&
-          str(b.id) &&
-          str(b.field) &&
-          str(b.label) &&
-          okName(b.name) &&
-          ((b.kind === 'date_histogram' && isIntervalValue(b.interval)) ||
-            (b.kind === 'terms' && Number.isInteger(b.size) && b.size > 0) ||
-            b.kind === 'range' ||
-            (b.kind === 'filters' && b.field === '' && Array.isArray(b.filters)))
-      )
-      .map((b): BucketDim => {
-        const out: BucketDim =
-          b.kind === 'terms'
-            ? cleanTerms(b)
-            : b.kind === 'range'
-              ? cleanRange(b)
-              : b.kind === 'filters'
-                ? cleanFilters(b)
-                : cleanDateHistogram(b);
-        return b.pivot === true ? { ...out, pivot: true } : out;
-      });
+    const buckets = cleanBuckets(v.buckets);
     const metrics = (v.metrics as MetricDim[])
       .filter(
         (m) =>
@@ -664,6 +719,7 @@ export function decodeLens(raw: string | null | undefined): LensState | undefine
     const subType = ['stacked', 'percentage', 'unstacked'].includes(v.subType) ? (v.subType as XySubType) : undefined;
     const style = cleanStyle(v.style);
     const layers = cleanLayers(v.layers);
+    const parked = cleanParked(v.parked);
     return {
       chartType: v.chartType,
       subType,
@@ -671,6 +727,7 @@ export function decodeLens(raw: string | null | undefined): LensState | undefine
       metrics,
       ...(style ? { style } : {}),
       ...(layers ? { layers } : {}),
+      ...(parked ? { parked } : {}),
     };
   } catch {
     return undefined;
@@ -694,6 +751,7 @@ export function sanitizeLens(s: LensState, allowed: ReadonlySet<string>): LensSt
   const ids = new Set(metrics.map((m) => m.id));
   // Computed reference lines (LENS-LAYER-01) follow the same field rule.
   const layers = sanitizeLayers(s.layers, allowed);
+  const parked = sanitizeParked(s.parked, allowed);
   const buckets = kept.map((b) =>
     b.kind === 'terms' && b.rankBy === 'metric' && !(b.rankMetric && ids.has(b.rankMetric))
       ? { ...b, rankBy: undefined, rankMetric: undefined }
@@ -703,7 +761,8 @@ export function sanitizeLens(s: LensState, allowed: ReadonlySet<string>): LensSt
     kept.length === s.buckets.length &&
     metrics.length === s.metrics.length &&
     buckets.every((b, i) => b === kept[i]) &&
-    layers === s.layers
+    layers === s.layers &&
+    parked === s.parked
   ) {
     return s;
   }
@@ -714,7 +773,23 @@ export function sanitizeLens(s: LensState, allowed: ReadonlySet<string>): LensSt
   if (buckets.length === 0 && s.chartType !== 'metric' && s.chartType !== 'table') {
     return { chartType: 'metric', buckets, metrics };
   }
-  return { ...s, buckets, metrics, ...(layers ? { layers } : {}) };
+  const { layers: _l, parked: _p, ...rest } = s;
+  return { ...rest, buckets, metrics, ...(layers ? { layers } : {}), ...(parked ? { parked } : {}) };
+}
+
+/** Parked buckets / layers follow the same field rule as the visible ones. */
+function sanitizeParked(p: LensParked | undefined, allowed: ReadonlySet<string>): LensParked | undefined {
+  if (!p) {
+    return p;
+  }
+  const buckets = p.buckets.filter((b) => b.kind === 'filters' || allowed.has(b.field));
+  const layers = sanitizeLayers(p.layers, allowed);
+  if (buckets.length === p.buckets.length && layers === p.layers) {
+    return p;
+  }
+  const { layers: _l, ...rest } = p;
+  const out: LensParked = { ...rest, buckets, ...(layers ? { layers } : {}) };
+  return out.buckets.length === 0 && !out.style && !out.layers ? undefined : out;
 }
 
 /**
