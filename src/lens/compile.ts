@@ -833,5 +833,64 @@ export function shapeLensRows(
   ]);
   const xLabels = xs.map((v) => (xIsTime ? String(v) : (xInfo.get(v)?.label ?? String(v))));
   const xSynthetic = xs.map((v) => xInfo.get(v)?.synthetic ?? false);
-  return { xs, xLabels, xSynthetic, xIsTime, series: [...seriesMap.values()], table: { columns, rows: tableRows } };
+  return {
+    xs,
+    xLabels,
+    xSynthetic,
+    xIsTime,
+    series: orderSeries(state, [...seriesMap.values()]),
+    table: { columns, rows: tableRows },
+  };
+}
+
+/**
+ * Legend / stack order of a Top values breakdown, as in Kibana: by the rank (count total
+ * descending by default; the rank metric's total for "Custom metric"; alphabetical for
+ * "Alphabetical"; ascending when the rank direction is), with the synthetic "Other" / "(missing)"
+ * series last. Several metrics per breakdown value stay together, in metric order. Other
+ * breakdowns keep the query's order.
+ */
+export function orderSeries(state: LensState, series: LensSeries[]): LensSeries[] {
+  const b = state.buckets[1];
+  if (b?.kind !== 'terms' || series.length < 2) {
+    return series;
+  }
+  const dir = rankDirOf(b) === 'asc' ? 1 : -1;
+  const rankIdx = b.rankBy === 'metric' ? Math.max(0, state.metrics.findIndex((m) => m.id === b.rankMetric)) : 0;
+  // One group per breakdown value (its display label, the part every series of the value shares).
+  const groupOf = (s: LensSeries) => `${s.synthetic ? '1' : '0'}${s.breakdown ?? ''}`;
+  const totals = new Map<string, number>();
+  const firstSeen = new Map<string, number>();
+  series.forEach((s, i) => {
+    const g = groupOf(s);
+    if (!firstSeen.has(g)) {
+      firstSeen.set(g, i);
+    }
+    if (s.metricIndex === rankIdx) {
+      let t = 0;
+      s.points.forEach((v) => (t += v));
+      totals.set(g, t);
+    }
+  });
+  return series
+    .map((s, i) => ({ s, i, g: groupOf(s) }))
+    .sort((p, q) => {
+      if (!!p.s.synthetic !== !!q.s.synthetic) {
+        return p.s.synthetic ? 1 : -1;
+      }
+      if (p.g !== q.g && !p.s.synthetic) {
+        const byRank =
+          b.rankBy === 'alpha'
+            ? dir * (p.s.breakdown ?? '').localeCompare(q.s.breakdown ?? '')
+            : dir * ((totals.get(p.g) ?? 0) - (totals.get(q.g) ?? 0));
+        if (byRank !== 0) {
+          return byRank;
+        }
+      }
+      if (p.g !== q.g) {
+        return (firstSeen.get(p.g) ?? 0) - (firstSeen.get(q.g) ?? 0);
+      }
+      return p.s.metricIndex - q.s.metricIndex || p.i - q.i;
+    })
+    .map((x) => x.s);
 }
