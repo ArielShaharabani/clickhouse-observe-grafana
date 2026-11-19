@@ -10,6 +10,35 @@ Versions track the plugin's release history. `Unreleased` collects commits not y
 
 ---
 
+## [0.46.0] — 2026-11-19
+
+### Added
+- **Keyboard and screen-reader support** (#33, SHARED-A11Y-01; spec 30-shared.md "Keyboard and accessibility").
+  - **Popovers are dialogs:** the field popover, Add filter, Edit filter, histogram bucket actions, histogram legend actions, cell Expand, Breakdown picker, Display options, field type filter and the Visualize dimension editor are announced as dialogs with "You are in a dialog. Press Escape, or click outside the dialog, to close." Escape closes them (also when they were opened by mouse and focus is still on the page), focus moves in when they open and goes back to the opener when they close.
+  - **Menus:** the filter pill menu and the Visualize legend ⋮ menu are real menus: focus starts on the first item, ↑ / ↓ / Home / End move, Escape or Tab closes and returns to the pill or ⋮ button.
+  - **Field buttons:** Discover field rows have a `Preview log.level: string` button that opens the field popover from the keyboard; the row's actions (`Add log.level as column`, exists / missing) show while the row has keyboard focus. Visualize keeps `Add log.level to workspace`.
+  - **Keyboard drag and drop on Visualize:** each field has a `Drag <field>` handle. Space or Enter lifts the field, the arrow keys move between the drop targets that accept it (the workspace and each dimension group's slot, highlighted), Space or Enter drops it, Escape cancels. Every step is spoken through a live region ("Lifted ServiceName. 3 drop targets. Over the workspace…", "Dropped ServiceName on Breakdown.").
+  - **Results grid:** the keyboard cell is exposed through `aria-activedescendant`; column headers sort with a button (and carry `aria-sort`); column actions are named per column (`Move ServiceName left`, `Remove column ServiceName`) and show on keyboard focus.
+  - The hit count under the histogram is a status region (the new count is spoken after each search); the KQL bar, SQL editor, rows-per-page, document-detail search and data view search have accessible names.
+
+### Fixed
+- Visualize: the Style toolbar button used an icon name that no longer exists in @grafana/ui 13 (`paint-brush` → `palette`), and the Intervals granularity slider lacked the now-required `inputId`; both broke `npm run typecheck` on batch-4.
+
+---
+
+## [0.45.0] — 2026-11-19
+
+### Added
+- **Layers on Visualize** (#28, LENS-LAYER-01; spec 20-lens.md "Layers"). XY charts (bar, line, area) get `+ Add layer` below the dimensions → `Select layer type`: Reference lines, Annotations (time charts only), Visualization (shown, not available yet). Each layer is a card with ⋮ layer actions Duplicate layer, Clear layer, Remove layer; its items open an editor that replaces the panel (`← Back`), like Style.
+  - **Reference lines:** Static value (a new line starts at the data's highest value) or Computed (Count, Average, Sum, Minimum, Maximum, Median, Unique count of a field, over the chart's query, filters and time range); Label, Color, Axis side Left / Right, Line style Solid / Dashed / Dotted, Fill None / Above / Below. A line beyond the data widens the axis so it stays visible.
+  - **Annotations:** Static date (a point in time or a range with an End date) or Query (KQL; marks the newest 100 matching documents in the time range, ignoring the chart's query and filters as in Kibana's default); Label, Color. Drawn as dashed vertical markers (ranges as shaded bands) with a hover title.
+  - Layers live in the chart (`lens` URL param, draft), survive switches between bar / line / area, and carry over to exported dashboard panels as Grafana thresholds (static left-axis reference lines).
+
+### Changed
+- The Style toolbar button uses the `palette` icon and the Intervals granularity slider has an `inputId` (fixes two typecheck errors on the base, same change as in `feat/shared-a11y-01`).
+
+---
+
 ## [0.44.0] — 2026-11-18
 
 ### Added
