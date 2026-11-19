@@ -31,7 +31,7 @@ export class VisualizePage {
   }
 
   group(name: string) {
-    return this.dimensions.getByRole('group', { name });
+    return this.dimensions.getByRole('group', { name, exact: true });
   }
 
   async addField(label: string) {

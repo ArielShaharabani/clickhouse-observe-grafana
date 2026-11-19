@@ -16,7 +16,7 @@ const barByService = (style?: object) =>
   });
 
 const radio = (page: Page, group: string, option: string) =>
-  page.getByRole('radiogroup', { name: group }).getByText(option, { exact: true });
+  page.getByRole('radiogroup', { name: group }).getByRole('radio', { name: option, exact: true });
 
 const bars = (viz: VisualizePage) => viz.chart.getByRole('group', { name: 'bar chart' }).getByRole('button');
 
@@ -59,17 +59,17 @@ test('Style: axis title (custom / none), log scale, custom bounds', async ({ pag
 
   await viz.dimensions.getByRole('button', { name: 'Style' }).click();
   const left = page.getByRole('region', { name: 'Left axis' });
-  await left.getByRole('radiogroup', { name: 'Axis title' }).getByText('Custom', { exact: true }).click();
+  await left.getByRole('radiogroup', { name: 'Axis title' }).getByRole('radio', { name: 'Custom', exact: true }).click();
   await left.getByRole('textbox', { name: 'Left axis title' }).fill('Documents');
   await expect(page.getByTestId('lens-axis-title-left')).toHaveText('Documents');
-  await left.getByRole('radiogroup', { name: 'Axis title' }).getByText('None', { exact: true }).click();
+  await left.getByRole('radiogroup', { name: 'Axis title' }).getByRole('radio', { name: 'None', exact: true }).click();
   await expect(page.getByTestId('lens-axis-title-left')).toHaveCount(0);
 
-  await left.getByRole('radiogroup', { name: 'Axis scale' }).getByText('Logarithmic', { exact: true }).click();
+  await left.getByRole('radiogroup', { name: 'Axis scale' }).getByRole('radio', { name: 'Logarithmic', exact: true }).click();
   await expect(viz.chart.getByTestId('lens-value-tick').first()).toHaveText(/^1(\.0)?$/);
 
-  await left.getByRole('radiogroup', { name: 'Axis scale' }).getByText('Linear', { exact: true }).click();
-  await left.getByRole('radiogroup', { name: 'Bounds' }).getByText('Custom', { exact: true }).click();
+  await left.getByRole('radiogroup', { name: 'Axis scale' }).getByRole('radio', { name: 'Linear', exact: true }).click();
+  await left.getByRole('radiogroup', { name: 'Bounds' }).getByRole('radio', { name: 'Custom', exact: true }).click();
   const upper = left.getByRole('textbox', { name: 'Upper bound' });
   await upper.fill('20000');
   await upper.press('Enter');

@@ -132,7 +132,9 @@ export function tableOverrides(columns: TableColumn[], metrics: MetricDim[]): un
     }
     const properties: Array<{ id: string; value: unknown }> = [];
     if (m.summary) {
-      properties.push({ id: 'custom.footer', value: { reducers: [SUMMARY_REDUCERS[m.summary]] } });
+      // Grafana registers the footer option as custom.footer.reducers; an override on an
+      // unregistered id (e.g. custom.footer) is silently ignored.
+      properties.push({ id: 'custom.footer.reducers', value: [SUMMARY_REDUCERS[m.summary]] });
     }
     if (m.colorBy) {
       properties.push({

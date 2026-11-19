@@ -81,7 +81,7 @@ describe('Table: summary row and colour by value', () => {
     expect(overrides[0]).toEqual({
       matcher: { id: 'byName', options: 'ERROR › Count of records' },
       properties: [
-        { id: 'custom.footer', value: { reducers: ['sum'] } },
+        { id: 'custom.footer.reducers', value: ['sum'] },
         { id: 'custom.cellOptions', value: { type: 'color-background', mode: 'gradient' } },
         { id: 'color', value: { mode: 'continuous-GrYlRd' } },
       ],
@@ -93,7 +93,7 @@ describe('Table: summary row and colour by value', () => {
       [{ name: 'x', kind: 'number', values: [], metricIndex: 0 }],
       [{ ...count, summary: 'avg', colorBy: 'text' }]
     ) as any[];
-    expect(o[0].properties[0].value).toEqual({ reducers: ['mean'] });
+    expect(o[0].properties[0].value).toEqual(['mean']);
     expect(o[0].properties[1].value).toEqual({ type: 'color-text' });
     expect(tableOverrides([{ name: 'x', kind: 'number', values: [], metricIndex: 0 }], [count])).toEqual([]);
   });
@@ -125,7 +125,7 @@ describe('Table: summary row and colour by value', () => {
         gridPos: { x: 0, y: 0, w: 12, h: 8 },
       }
     ) as any;
-    expect(JSON.stringify(panel.fieldConfig.overrides)).toContain('"reducers":["sum"]');
+    expect(JSON.stringify(panel.fieldConfig.overrides)).toContain('{"id":"custom.footer.reducers","value":["sum"]}');
   });
 });
 
