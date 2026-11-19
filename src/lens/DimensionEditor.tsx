@@ -588,10 +588,36 @@ function NumberInput({
 }
 
 const getStyles = (theme: GrafanaTheme2) => ({
+  // The side panel is narrower than some controls (Rank by options, formula toolbar, Decimals): every
+  // child may shrink to the panel's width instead of being clipped, and a checkbox label keeps
+  // its text next to its box.
   panel: css`
     display: flex;
     flex-direction: column;
     gap: ${theme.spacing(1)};
+    width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+    & > * {
+      min-width: 0;
+      max-width: 100%;
+    }
+    & input:not([type='checkbox']):not([type='radio']),
+    & textarea,
+    & select {
+      max-width: 100%;
+      box-sizing: border-box;
+    }
+    & [role='radiogroup'] {
+      max-width: 100%;
+      flex-wrap: wrap;
+    }
+    & label:has(input[type='checkbox']) {
+      justify-content: flex-start;
+      text-align: left;
+      width: auto;
+      max-width: 100%;
+    }
   `,
   header: css`
     display: flex;

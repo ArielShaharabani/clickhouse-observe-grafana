@@ -59,3 +59,20 @@ export function seriesColorKey(s: { name: string; breakdown?: string; synthetic?
 
 /** Valid stored colour (`#rrggbb`). */
 export const isHexColor = (v: unknown): v is string => typeof v === 'string' && /^#[0-9a-fA-F]{6}$/.test(v);
+
+/**
+ * Stable colours for named slices / series (Pie, dashboard export): a legend pick (`picked`) wins,
+ * else the value's hash slot in the palette (the same value → the same colour as in the XY chart).
+ * `keys` are in priority order (biggest first); `synthetic` marks the Other / (missing) buckets.
+ */
+export function stableColors(
+  names: string[],
+  synthetic: boolean[],
+  palette: string[],
+  resolve: (paletteName: string) => string,
+  picked?: (name: string) => string | undefined
+): string[] {
+  const keys = names.map((n, i) => seriesColorKey({ name: n, breakdown: n, synthetic: synthetic[i] }));
+  const slots = assignColorSlots(keys, palette.length);
+  return names.map((n, i) => picked?.(n) ?? resolve(palette[slots[i] % palette.length]));
+}

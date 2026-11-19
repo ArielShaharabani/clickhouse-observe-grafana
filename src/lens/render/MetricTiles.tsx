@@ -5,7 +5,7 @@
  * value shows a dash.
  */
 import React from 'react';
-import { css } from '@emotion/css';
+import { css, cx } from '@emotion/css';
 import { formattedValueToString, getValueFormat, GrafanaTheme2 } from '@grafana/data';
 import { useStyles2 } from '@grafana/ui';
 import { LensResult, uniqueMetricLabels } from '../compile';
@@ -18,6 +18,8 @@ export interface MetricTile {
   /** Breakdown value, or the primary metric's name without a breakdown. */
   title: string;
   value: string;
+  /** The metric's name under the breakdown value (tiles per value only). */
+  subtitle?: string;
   secondary?: { label: string; value: string };
   /** 0–100 when a Maximum value is set and the tile has both values. */
   percent?: number;
@@ -54,6 +56,9 @@ export function metricTiles(state: LensState, result: LensResult): MetricTile[] 
       title: broken ? (result.xLabels[k] ?? String(x)) : primary ? labels[primary.i] : '',
       value: formatMetricValue(primary?.m, pv),
     };
+    if (broken && primary) {
+      tile.subtitle = labels[primary.i];
+    }
     if (secondary) {
       tile.secondary = {
         label: labels[secondary.i],
@@ -75,7 +80,11 @@ export function MetricTiles({ state, result }: { state: LensState; result: LensR
   const tiles = metricTiles(state, result);
   const primary = state.metrics.find((m) => m.role !== 'max');
   return (
-    <div className={styles.grid} role="list" aria-label="Metric tiles">
+    <div
+      className={cx(styles.grid, tiles.length === 1 && styles.single)}
+      role="list"
+      aria-label="Metric tiles"
+    >
       {tiles.map((t, i) => (
         <div
           key={i}
@@ -87,6 +96,11 @@ export function MetricTiles({ state, result }: { state: LensState; result: LensR
           <div className={styles.title} title={t.title}>
             {t.title}
           </div>
+          {t.subtitle && (
+            <div className={styles.subtitle} title={t.subtitle}>
+              {t.subtitle}
+            </div>
+          )}
           {t.secondary && (
             <div className={styles.secondary}>
               {t.secondary.label} <strong>{t.secondary.value}</strong>
@@ -116,14 +130,29 @@ export function MetricTiles({ state, result }: { state: LensState; result: LensR
 }
 
 const getStyles = (theme: GrafanaTheme2) => ({
+  // Three columns of fixed-height tiles; a single tile is centred at a Kibana-like size, not stretched.
   grid: css`
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-    grid-auto-rows: minmax(120px, 1fr);
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-auto-rows: 140px;
+    align-content: start;
     gap: ${theme.spacing(1)};
     width: 100%;
     height: 100%;
     overflow: auto;
+  `,
+  single: css`
+    grid-template-columns: minmax(0, 320px);
+    grid-auto-rows: 160px;
+    justify-content: center;
+    align-content: center;
+  `,
+  subtitle: css`
+    color: ${theme.colors.text.secondary};
+    font-size: ${theme.typography.bodySmall.fontSize};
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   `,
   tile: css`
     position: relative;

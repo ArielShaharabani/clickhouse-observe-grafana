@@ -9,6 +9,7 @@ import {
   createDataFrame,
   DataFrame,
   FieldConfigSource,
+  createTheme,
   FieldType,
   getDefaultTimeRange,
   LoadingState,
@@ -18,6 +19,8 @@ import {
 import { PanelRenderer } from '@grafana/runtime';
 import { LensResult } from '../compile';
 import { LensState } from '../state';
+import { seriesColorOf } from '../style';
+import { stableColors } from './seriesColors';
 import { XyChart, XySelection } from './XyChart';
 import { withMetricAppearance } from './fieldConfig';
 import { MetricTiles } from './MetricTiles';
@@ -107,8 +110,12 @@ function basePanelSpec(state: LensState, result: LensResult): PanelSpec {
         options: { legend, stacking, xField: 'x', showValue: 'never', orientation: 'auto', xTickLabelRotation: 0 },
         fieldConfig: { defaults: { custom: { fillOpacity: 80, lineWidth: 0 } }, overrides: [] },
       };
-    case 'metric':
-    case 'pie': {
+    case 'pie':
+      if (result.xs.length > 0 && result.xs[0] !== '' && result.series.length === 1) {
+        return pieSpec(state, result);
+      }
+    // falls through (no categories: the same panel as the Metric chart)
+    case 'metric': {
       const byCategory = result.xs.length > 0 && result.xs[0] !== '';
       const fields = byCategory
         ? [{ name: 'category', type: FieldType.string, values: result.xLabels }, ...numberFields(result)]
@@ -145,10 +152,50 @@ function basePanelSpec(state: LensState, result: LensResult): PanelSpec {
         pluginId: 'table',
         frames: [createDataFrame({ fields })],
         options: { showHeader: true },
-        fieldConfig: { defaults: {}, overrides: tableOverrides(columns, state.metrics) },
+        // Thousands separators (a metric's own value format overrides) and wrapped, not truncated, headers.
+        fieldConfig: {
+          defaults: { unit: 'locale', custom: { wrapHeaderText: true } },
+          overrides: tableOverrides(columns, state.metrics),
+        },
       };
     }
   }
+}
+
+/**
+ * Pie: one field per slice, so each slice has its own colour — the value's stable colour (the same
+ * as in the XY chart), or a legend pick — and labels read "name NN%"; legend values are grouped.
+ */
+function pieSpec(state: LensState, result: LensResult): PanelSpec {
+  const theme = createTheme();
+  const series = result.series[0];
+  const names = result.xLabels.map((l, i) => l ?? String(result.xs[i]));
+  const colors = stableColors(
+    names,
+    result.xSynthetic,
+    theme.visualization.palette,
+    (n) => theme.visualization.getColorByName(n),
+    (n) => seriesColorOf(state.style, n)
+  );
+  const fields = names.map((name, i) => ({
+    name,
+    type: FieldType.number,
+    values: [series.points.get(result.xs[i]) ?? 0],
+    config: { color: { mode: 'fixed', fixedColor: colors[i] } },
+  }));
+  return {
+    pluginId: 'piechart',
+    frames: [createDataFrame({ fields })],
+    options: {
+      legend: { ...legend, placement: 'right', values: ['value'] },
+      reduceOptions: { values: false, calcs: ['lastNotNull'], fields: '' },
+      pieType: 'pie',
+      displayLabels: ['name', 'percent'],
+      tooltip: { mode: 'single', sort: 'none' },
+    },
+    // Thousands separators unless the metric has its own value format (applied after this).
+    fieldConfig: { defaults: { unit: 'locale' }, overrides: [] },
+  };
 }
 
 interface Props {

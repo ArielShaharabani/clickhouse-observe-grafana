@@ -538,6 +538,11 @@ export function LensPage() {
         gridPos: { x: 0, y: 0, w: 12, h: 8 },
         title,
         description,
+        series: (current?.data ?? stale?.data)?.series.map((x) => ({
+          name: x.name,
+          breakdown: x.breakdown,
+          synthetic: x.synthetic,
+        })),
         source: panelSourceOf({
           lens: encodeLens(lens),
           search,
