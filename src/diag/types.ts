@@ -33,6 +33,8 @@ export type QueryOp =
   | 'wizardTimeSample'
   /** The Visualize (Lens) page's chart query (src/lens/compile.ts). */
   | 'lens'
+  /** Visualize reference line values and annotation events (LENS-LAYER-01, src/lens/useLayerData.ts). */
+  | 'lensLayers'
   /** Surrounding documents (DISC-DOC-02): anchor lookup and the newer / older searches. */
   | 'context'
   /** Discover "Export tab results (CSV)" (DISC-SESSION-01). */

@@ -169,6 +169,10 @@ export function switchChart(state: LensState, target: ChartType, ctx: LensContex
     if (state.style && isXy(state.chartType)) {
       next.style = state.style;
     }
+    // Reference line / annotation layers (LENS-LAYER-01) only draw on XY charts.
+    if (state.layers && isXy(state.chartType)) {
+      next.layers = state.layers;
+    }
   }
   return next;
 }

@@ -38,6 +38,7 @@ import {
 } from './interval';
 import { FieldIndex } from '../sql/fields';
 import { formulaToSql, FormulaSqlContext } from './formula';
+import type { RefComputed } from './layers';
 import {
   BucketDim,
   clampPercentile,
@@ -496,6 +497,99 @@ export function compileLens(
     configSettingsFragments(config)
   );
   return { sql, intervalMs, interval };
+}
+
+/**
+ * Computed reference lines (LENS-LAYER-01): one query, one row, one aggregate per line (`m0`, `m1`,
+ * …, in the order of `computedLines`), over the chart's own conditions (query, filters, time). The
+ * aggregates are the metric compiler's (quoted fields, sanitized by `sanitizeLens` beforehand).
+ */
+export function compileReferenceValues(
+  lines: Array<{ id: string; computed: RefComputed }>,
+  config: SourceConfig,
+  conditions: string[],
+  timeRange: TimeRange
+): { sql: string; ids: string[] } | null {
+  if (lines.length === 0) {
+    return null;
+  }
+  const metrics: MetricDim[] = lines.map((l) => ({
+    kind: 'metric',
+    id: l.id,
+    op: l.computed.op,
+    ...(l.computed.op === 'count' ? {} : { field: l.computed.field, numeric: l.computed.numeric === true }),
+  }));
+  const { sql } = compileLens({ chartType: 'metric', buckets: [], metrics }, config, conditions, timeRange);
+  return { sql, ids: lines.map((l) => l.id) };
+}
+
+/** Alias of the query-annotation index column. */
+export const ANNOTATION_INDEX = 'k';
+/** Alias of the event time column (epoch ms). */
+export const ANNOTATION_TIME = 't';
+
+/**
+ * Query annotations (LENS-LAYER-01): the times of the newest matching documents per query, one
+ * query for all of them. Each KQL query goes through the search bar's compiler (`filterCond`: an
+ * empty query matches everything, an invalid one nothing); `timeConditions` are the standard time
+ * conditions only — like Kibana's default ("ignore global filters"), the chart's own query and
+ * filters do not apply. Needs the view's time field.
+ */
+export function compileAnnotationQuery(
+  queries: Array<{ id: string; query: string }>,
+  config: SourceConfig,
+  timeConditions: string[],
+  index?: FieldIndex,
+  perQuery = 100
+): { sql: string; ids: string[] } | null {
+  if (queries.length === 0 || !config.columns.timestamp) {
+    return null;
+  }
+  const fctx: FormulaSqlContext = { config, index, dashboard: false };
+  const conds = queries.map((q) => filterCond(q.query, fctx));
+  const ts = timeExpr(config);
+  const k = `arrayJoin(arrayFilter(__a -> __a >= 0, [${conds.map((c, i) => `if(${c}, ${i}, -1)`).join(', ')}]))`;
+  const where = [...timeConditions, `(${conds.join(' OR ')})`].join(' AND ');
+  const limit = Math.max(1, Math.min(1000, Math.floor(perQuery)));
+  const sql = withSettings(
+    [
+      `SELECT ${k} AS ${ANNOTATION_INDEX}, toUnixTimestamp64Milli(toDateTime64(${ts}, 3)) AS ${ANNOTATION_TIME}`,
+      `FROM ${tableRef(config, config.logsTable)}`,
+      `WHERE ${where}`,
+      `ORDER BY ${ANNOTATION_INDEX}, ${ANNOTATION_TIME} DESC`,
+      `LIMIT ${limit} BY ${ANNOTATION_INDEX}`,
+      `LIMIT ${limit * queries.length}`,
+    ],
+    configSettingsFragments(config)
+  );
+  return { sql, ids: queries.map((q) => q.id) };
+}
+
+/** Rows of `compileAnnotationQuery` → event times (ms) per annotation id, newest first. */
+export function shapeAnnotationRows(ids: string[], rows: Array<Record<string, unknown>>): Record<string, number[]> {
+  const out: Record<string, number[]> = Object.fromEntries(ids.map((id) => [id, []]));
+  for (const r of rows) {
+    const i = Number(r[ANNOTATION_INDEX]);
+    const t = Number(r[ANNOTATION_TIME]);
+    if (Number.isInteger(i) && i >= 0 && i < ids.length && Number.isFinite(t)) {
+      out[ids[i]].push(t);
+    }
+  }
+  return out;
+}
+
+/** The row of `compileReferenceValues` → value per line id (null when the aggregate had no value). */
+export function shapeReferenceRow(
+  ids: string[],
+  row: Record<string, unknown> | undefined
+): Record<string, number | null> {
+  return Object.fromEntries(
+    ids.map((id, i) => {
+      const v = row?.[metricAlias(i)];
+      const n = v === null || v === undefined || v === '' ? NaN : Number(v);
+      return [id, Number.isFinite(n) ? n : null];
+    })
+  );
 }
 
 /** Metric labels made unique ("Median of x", "Median of x (2)") so series never merge. */
