@@ -4,6 +4,8 @@
  * (src/components/AppConfig/AppConfig.tsx) — no dashboard API was called anywhere before this.
  */
 import { getBackendSrv } from '@grafana/runtime';
+import { isDashboardUid } from '../lens/panelSource';
+import { errMsg } from '../errMsg';
 
 export interface DashboardHit {
   uid: string;
@@ -33,7 +35,17 @@ export async function searchDashboards(query = ''): Promise<DashboardHit[]> {
 
 /** Fetch a dashboard's full JSON model by uid, so panels can be appended to it. */
 export async function getDashboard(uid: string): Promise<DashboardGetResult> {
-  return getBackendSrv().get<DashboardGetResult>(`/api/dashboards/uid/${uid}`);
+  // The uid can come from a URL or dashboard JSON: only Grafana's uid shape reaches the API path.
+  if (!isDashboardUid(uid)) {
+    throw new Error('Invalid dashboard uid');
+  }
+  const res = await getBackendSrv().get<DashboardGetResult>(`/api/dashboards/uid/${uid}`, undefined, undefined, {
+    showErrorAlert: false,
+  });
+  if (!res || typeof res !== 'object' || !res.dashboard || typeof res.dashboard !== 'object') {
+    throw new Error('Unexpected dashboard response');
+  }
+  return { dashboard: res.dashboard, meta: { folderUid: typeof res.meta?.folderUid === 'string' ? res.meta.folderUid : undefined } };
 }
 
 /** Create or update a dashboard. Set overwrite=true when saving an appended-to existing dashboard. */
@@ -41,11 +53,53 @@ export async function saveDashboard(
   dashboard: Record<string, unknown>,
   opts: { folderUid?: string; overwrite?: boolean } = {}
 ): Promise<SaveDashboardResult> {
-  return getBackendSrv().post<SaveDashboardResult>('/api/dashboards/db', {
-    dashboard,
-    folderUid: opts.folderUid,
-    overwrite: opts.overwrite ?? false,
-  });
+  // Errors are shown by the dialogs (dashboardSaveError), not as a second Grafana toast.
+  return getBackendSrv().post<SaveDashboardResult>(
+    '/api/dashboards/db',
+    { dashboard, folderUid: opts.folderUid, overwrite: opts.overwrite ?? false },
+    { showErrorAlert: false }
+  );
+}
+
+/**
+ * A readable message for a failed dashboard save. Grafana answers 412 with `status`
+ * `version-mismatch` (someone saved the dashboard in between: optimistic locking on `version`) or
+ * `name-exists` (a dashboard with that title is already in the folder).
+ */
+export function dashboardSaveError(e: unknown, title?: string): string {
+  const err = e as { status?: number; data?: { status?: unknown; message?: unknown } } | undefined;
+  const status = typeof err?.data?.status === 'string' ? err.data.status : '';
+  if (status === 'version-mismatch') {
+    return 'Someone else changed this dashboard since you opened the panel. Open the dashboard again to get the latest version, or use Save as new.';
+  }
+  if (status === 'name-exists') {
+    return `A dashboard named "${title ?? ''}" already exists in this folder. Choose another title or add to the existing dashboard.`;
+  }
+  if (err?.status === 404 || status === 'not-found') {
+    return 'The dashboard no longer exists.';
+  }
+  if (err?.status === 403) {
+    return 'You do not have permission to save this dashboard.';
+  }
+  const msg = typeof err?.data?.message === 'string' ? err.data.message : '';
+  return msg || errMsg(e);
+}
+
+/** Dashboards whose title is exactly `title` (case-insensitive), for the duplicate-title warning. */
+export async function findDashboardsByTitle(title: string): Promise<DashboardHit[]> {
+  const t = title.trim();
+  if (!t) {
+    return [];
+  }
+  const hits = await getBackendSrv().get<DashboardHit[]>(
+    `/api/search?${new URLSearchParams({ type: 'dash-db', query: t }).toString()}`,
+    undefined,
+    undefined,
+    { showErrorAlert: false }
+  );
+  return (Array.isArray(hits) ? hits : []).filter(
+    (h) => typeof h?.title === 'string' && h.title.toLowerCase() === t.toLowerCase()
+  );
 }
 
 export interface LibraryPanelRef {

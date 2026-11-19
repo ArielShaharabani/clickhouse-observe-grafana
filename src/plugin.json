@@ -70,6 +70,11 @@
         "title": "Edit in Visualize",
         "description": "Open this panel in ClickHouse Observe Visualize to keep editing it",
         "targets": ["grafana/dashboard/panel/menu"]
+      },
+      {
+        "title": "Open in Discover",
+        "description": "Open this panel in ClickHouse Observe Discover with its search, filters and columns",
+        "targets": ["grafana/dashboard/panel/menu"]
       }
     ]
   }

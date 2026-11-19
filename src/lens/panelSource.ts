@@ -9,6 +9,11 @@
  * only the known parameters survive, the size is capped, and Visualize decodes and sanitizes them
  * exactly as it does any shared link (`decodeLens` + `sanitizeLens`, the filter / KQL compilers).
  * Kept free of Lens imports: module.ts loads it at plugin start.
+ *
+ * Save and return (Kibana's "Save and return"): the link also names the dashboard (`dash`), the
+ * panel (`panel`) and the dashboard's time range (`dfrom` / `dto`), so Visualize can replace that
+ * panel in place and go back. These are untrusted too: `readDashboardReturn` keeps them only when
+ * they have the shape Grafana gives them (uid, positive integer id, short time strings).
  */
 import type { DataQuery, RawTimeRange } from '@grafana/data';
 import { PLUGIN_BASE_URL } from '../constants';
@@ -53,8 +58,61 @@ function timeParam(v: RawTimeRange['from'] | undefined): string | undefined {
   return typeof ms === 'number' && Number.isFinite(ms) ? String(ms) : undefined;
 }
 
+/** Grafana dashboard uids: letters, digits, `-` and `_`, at most 40 characters. */
+export function isDashboardUid(v: unknown): v is string {
+  return typeof v === 'string' && /^[A-Za-z0-9_-]{1,40}$/.test(v);
+}
+
+/** Panel ids are positive integers (Grafana stores them as int64; we accept up to 2^31). */
+export function isPanelId(v: unknown): v is number {
+  return typeof v === 'number' && Number.isInteger(v) && v > 0 && v < 2 ** 31;
+}
+
+/** A dashboard time bound as Grafana writes it: dateMath (`now-1h`, `now/d`), epoch ms or ISO. */
+export function isTimeParam(v: unknown): v is string {
+  return typeof v === 'string' && /^[A-Za-z0-9:+\-/._ ]{1,64}$/.test(v);
+}
+
+/** The dashboard panel Visualize was opened from (Save and return). */
+export interface DashboardReturn {
+  uid: string;
+  panelId: number;
+  /** The dashboard's time range when the panel was opened; restored on return. */
+  from?: string;
+  to?: string;
+}
+
+export const RETURN_PARAMS = ['dash', 'panel', 'dfrom', 'dto'] as const;
+
+/** Save-and-return context from Visualize's URL; undefined unless the uid and panel id are valid. */
+export function readDashboardReturn(sp: URLSearchParams): DashboardReturn | undefined {
+  const uid = sp.get('dash');
+  const rawPanel = sp.get('panel');
+  const panelId = rawPanel !== null && /^\d{1,10}$/.test(rawPanel) ? Number(rawPanel) : NaN;
+  if (!isDashboardUid(uid) || !isPanelId(panelId)) {
+    return undefined;
+  }
+  const from = sp.get('dfrom');
+  const to = sp.get('dto');
+  return isTimeParam(from) && isTimeParam(to) ? { uid, panelId, from, to } : { uid, panelId };
+}
+
+/** The dashboard's path (relative to Grafana), with the time range the user had there. */
+export function dashboardReturnPath(ret: DashboardReturn): string {
+  const qs = ret.from && ret.to ? `?${new URLSearchParams({ from: ret.from, to: ret.to }).toString()}` : '';
+  return `/d/${encodeURIComponent(ret.uid)}${qs}`;
+}
+
+type PanelCtx = {
+  targets?: DataQuery[];
+  timeRange?: RawTimeRange;
+  /** Panel id and dashboard (PluginExtensionPanelContext); enable Save and return. */
+  id?: unknown;
+  dashboard?: { uid?: unknown };
+};
+
 /** Visualize path for a panel's menu, or undefined when the panel didn't come from Visualize. */
-export function editInVisualizePath(ctx: { targets?: DataQuery[]; timeRange?: RawTimeRange }): string | undefined {
+export function editInVisualizePath(ctx: PanelCtx): string | undefined {
   const raw = (ctx.targets ?? [])
     .map((t) => (t as unknown as Record<string, unknown>)[VISUALIZE_SOURCE_KEY])
     .find((v): v is string => typeof v === 'string');
@@ -77,6 +135,15 @@ export function editInVisualizePath(ctx: { targets?: DataQuery[]; timeRange?: Ra
   if (from && to) {
     sp.set('from', from);
     sp.set('to', to);
+  }
+  const uid = ctx.dashboard?.uid;
+  if (isDashboardUid(uid) && isPanelId(ctx.id)) {
+    sp.set('dash', uid);
+    sp.set('panel', String(ctx.id));
+    if (from && to && isTimeParam(from) && isTimeParam(to)) {
+      sp.set('dfrom', from);
+      sp.set('dto', to);
+    }
   }
   return `${PLUGIN_BASE_URL}/visualize?${sp.toString()}`;
 }

@@ -6,6 +6,7 @@ import { AppJsonData } from './types';
 import { buildTraceToLogsPath, TraceViewLinkContext } from './data/traceToLogsLink';
 import { PLUGIN_BASE_URL } from './constants';
 import { editInVisualizePath } from './lens/panelSource';
+import { openInDiscoverPath } from './data/discoverSource';
 
 const LazyApp = lazy(() => import('./components/App/App'));
 const LazyAppConfig = lazy(() => import('./components/AppConfig/AppConfig'));
@@ -61,6 +62,19 @@ export const plugin = new AppPlugin<AppJsonData>()
     path: `${PLUGIN_BASE_URL}/visualize`,
     configure: (ctx) => {
       const path = ctx ? editInVisualizePath(ctx) : undefined;
+      return path ? { path } : undefined;
+    },
+  })
+  // Kibana's saved search panel → Discover: logs panels exported from Discover reopen there with
+  // their query, filters, columns and data view, and the dashboard's time (data/discoverSource.ts).
+  .addLink<PluginExtensionPanelContext>({
+    title: 'Open in Discover',
+    description: 'Open this panel in ClickHouse Observe Discover with its search, filters and columns',
+    targets: [PluginExtensionPoints.DashboardPanelMenu],
+    icon: 'compass',
+    path: `${PLUGIN_BASE_URL}/logs`,
+    configure: (ctx) => {
+      const path = ctx ? openInDiscoverPath(ctx) : undefined;
       return path ? { path } : undefined;
     },
   });
