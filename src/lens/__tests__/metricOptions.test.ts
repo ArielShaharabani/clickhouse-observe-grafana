@@ -237,8 +237,9 @@ describe('compileLens with metric options', () => {
       range,
       'dashboard'
     );
-    // The only $__fromTime left is the WHERE clause's own macro.
-    expect(sql.split('$__fromTime').length - 1).toBe(1);
+    // The only $__fromTime left are the WHERE clause's own macro and the empty-bucket fill's start.
+    expect(sql.split('$__fromTime').length - 1).toBe(2);
+    expect(sql).toContain('WITH FILL FROM toStartOfInterval($__fromTime');
     expect(sql).toContain('\\x24');
   });
 });

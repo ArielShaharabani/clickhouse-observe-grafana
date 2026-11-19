@@ -133,12 +133,12 @@ export function SaveLensModal({
 }: Props) {
   const styles = useStyles2(getStyles);
   const ids = useId();
-  const [title, setTitle] = useState(defaultTitle);
-  const [description, setDescription] = useState('');
+  const [title, setTitle] = useState(returnTo?.panelTitle || defaultTitle);
+  const [description, setDescription] = useState(returnTo?.panelDescription ?? '');
   const [destination, setDestination] = useState<SaveDestination>('new');
   const [dashboardUid, setDashboardUid] = useState<string | undefined>();
   const [library, setLibrary] = useState(false);
-  const [dashboardTitle, setDashboardTitle] = useState(defaultTitle);
+  const [dashboardTitle, setDashboardTitle] = useState(returnTo?.panelTitle || defaultTitle);
   const [titleEdited, setTitleEdited] = useState(false);
   const [options, setOptions] = useState<Array<{ label: string; value: string }> | null>(null);
   const [loadError, setLoadError] = useState('');

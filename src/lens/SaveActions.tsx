@@ -100,7 +100,7 @@ export function SaveActions({ paramsKey, disabled, defaultTitle, buildPanel, tim
           <Button
             size="sm"
             icon="save"
-            onClick={() => setSaveOpen('return')}
+            onClick={() => returnTarget && canSave && setSaveOpen('return')}
             disabled={disabled || !returnTarget || !canSave}
             tooltip={
               loaded?.error
