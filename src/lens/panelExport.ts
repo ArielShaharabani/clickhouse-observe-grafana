@@ -5,7 +5,7 @@
  * macros, so it follows the dashboard's time picker) and reshapes the long rows with standard
  * transformations into what the matching core panel draws. Pure: unit-tested on the JSON.
  */
-import { TimeRange } from '@grafana/data';
+import { createTheme, TimeRange } from '@grafana/data';
 import { chDatasourceRef, ExportedPanel, FORMAT_TABLE, GridPos } from '../data/panelExport';
 import { SourceConfig } from '../types';
 import { bucketAlias, compileLens, metricAlias, uniqueMetricLabels } from './compile';
@@ -15,6 +15,8 @@ import { withMetricAppearance } from './render/fieldConfig';
 import { tableOverrides } from './tableChart';
 import { autoAxisTitles, withLensStyle } from './render/styleConfig';
 import { withReferenceThresholds } from './render/layerConfig';
+import { seriesColorOf } from './style';
+import { stableColors } from './render/seriesColors';
 import { VISUALIZE_SOURCE_KEY } from './panelSource';
 
 export interface LensPanelOpts {
@@ -24,6 +26,8 @@ export interface LensPanelOpts {
   description?: string;
   /** `panelSourceOf(...)`: lets the dashboard panel menu reopen the chart in Visualize. */
   source?: string;
+  /** The series the chart currently shows: they get the same stable colours as in Visualize. */
+  series?: Array<{ name: string; breakdown?: string; synthetic?: boolean }>;
 }
 
 export interface LensPanel extends ExportedPanel {
@@ -89,6 +93,38 @@ function rename(names: Record<string, string>): Transformation {
   return { id: 'organize', options: { renameByName: names, excludeByName: {}, indexByName: {} } };
 }
 
+/**
+ * Per-name colour overrides for XY panels: a breakdown value keeps the colour it has in Visualize
+ * (stable by value, or the legend pick) instead of Grafana's by-position palette.
+ */
+export function seriesColorOverrides(state: LensState, series: LensPanelOpts['series']): unknown[] {
+  if (!series || series.length === 0) {
+    return [];
+  }
+  const theme = createTheme();
+  const split = series.some((s) => s.breakdown !== undefined);
+  // The same keys, order and palette as XyChart, so the same slots come out.
+  const colors = stableColors(
+    series.map((s) => s.name),
+    series.map((s) => !!s.synthetic),
+    theme.visualization.palette,
+    (n) => theme.visualization.getColorByName(n),
+    (n) => seriesColorOf(state.style, n)
+  );
+  return series.flatMap((s, i) => {
+    const picked = seriesColorOf(state.style, s.name);
+    if (!split && !picked) {
+      return [];
+    }
+    return [
+      {
+        matcher: { id: 'byName', options: s.name },
+        properties: [{ id: 'color', value: { mode: 'fixed', fixedColor: colors[i] } }],
+      },
+    ];
+  });
+}
+
 export function buildLensPanel(
   state: LensState,
   config: SourceConfig,
@@ -112,8 +148,12 @@ export function buildLensPanel(
   if (!xy || (panel.type !== 'timeseries' && panel.type !== 'barchart')) {
     return { ...panel, fieldConfig };
   }
+  const withColors = {
+    ...fieldConfig,
+    overrides: [...fieldConfig.overrides, ...seriesColorOverrides(state, opts.series)],
+  };
   const styled = withLensStyle(
-    { options: (panel.options ?? {}) as Record<string, unknown>, fieldConfig },
+    { options: (panel.options ?? {}) as Record<string, unknown>, fieldConfig: withColors },
     state,
     panel.type,
     autoAxisTitles(state)
@@ -260,7 +300,7 @@ function baseLensPanel(
         transformations: [rename(names)],
         options: { showHeader: true },
         fieldConfig: {
-          defaults: {},
+          defaults: { unit: 'locale', custom: { wrapHeaderText: true } },
           overrides: tableOverrides(
             state.metrics.map((_, i) => ({
               name: names[metricAlias(i)],

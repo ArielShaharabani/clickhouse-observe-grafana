@@ -150,7 +150,7 @@ export function addBucket(
     const date = state.buckets.find((x) => x.kind === 'date_histogram');
     return { state, id: date?.id ?? '' };
   }
-  const b: BucketDim = { kind: 'terms', id: newId('b'), field: field.sqlExpr, label: field.label, size: 9, ...patch };
+  const b: BucketDim = { kind: 'terms', id: newId('b'), field: field.sqlExpr, label: field.label, size: 9, other: true, ...patch };
   return { state: switchChart({ ...s, buckets: [...s.buckets, b] }, s.chartType, ctx, s.subType), id: b.id };
 }
 

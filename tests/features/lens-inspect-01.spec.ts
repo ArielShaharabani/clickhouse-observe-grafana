@@ -62,7 +62,7 @@ test('Requests view: statistics, request SQL and response', async ({ page }) => 
   await drawer.getByRole('radio', { name: 'Requests' }).click();
   await expect(drawer.getByText(/requests? (was|were) made/)).toBeVisible();
   const stats = drawer.getByRole('table', { name: 'Request statistics' });
-  await expect(stats.getByRole('row', { name: /^Hits 5$/ })).toBeVisible();
+  await expect(stats.getByRole('row', { name: /^Result rows 5$/ })).toBeVisible();
   await expect(stats.getByRole('row', { name: /^Table default\.spec_logs$/ })).toBeVisible();
   await expect(stats.getByRole('row', { name: /^Status ok$/ })).toBeVisible();
   await drawer.getByRole('tab', { name: 'Request' }).click();
