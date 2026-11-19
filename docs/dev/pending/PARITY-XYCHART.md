@@ -7,10 +7,12 @@ Shared code touched: `src/components/a11y/dialog.tsx` `moveMenuFocus` now also w
 ## CHANGELOG
 
 ### Added
+
 - **Visualize XY tooltip (Kibana parity).** Hovering a Bar / Line / Area chart shows a crosshair and a tooltip with every series at that X (time header `Jan 5, 2026 @ 09:00`, colour, name, value with thousands separators), the series under the pointer highlighted; focusing a bar or point with the keyboard shows it too.
 - **Legend colour picker.** The legend ⋮ menu has a colour palette and `Reset color`; the choice is kept in the chart state (URL, draft, saved chart) and does not re-run the query.
 
 ### Changed
+
 - **Stable series colours.** A breakdown value keeps its colour across chart types and click-filters (colour by value, not by position).
 - **Legend and stack order** follow the Top values rank (count descending by default), with Other / (missing) last.
 - **Value axis** ends on a nice tick (a 140 peak → 0–140 by 20 instead of 0–200) and count axes never show fractional ticks.
@@ -21,6 +23,7 @@ Shared code touched: `src/components/a11y/dialog.tsx` `moveMenuFocus` now also w
 - **Chart type switch** keeps the previous chart on screen until the new one is ready (no blank frame).
 
 ### Fixed
+
 - Brushing a time range now also works when the drag starts on a bar; a click without movement still opens the filter chooser.
 - Line charts with a Percentage sub-type kept from Bar / Area no longer draw percentages (chart, `panelSpec` and dashboard export).
 
@@ -30,12 +33,12 @@ PARITY-XYCHART (Kibana 9.5 side-by-side comparison of the Visualize XY chart). (
 
 ## TESTING
 
-| Area | Row |
-| --- | --- |
+| Area       | Row                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | LENS-XY-01 | jest `src/lens/__tests__/parityXy.test.tsx`: tooltip rows / separators / highlight / hide on leave, keyboard focus tooltip, no native titles; line unstacked for stacked + percentage, old URL decode, `chartTitle`, `panelSpec` / export stacking; brush from a bar + swallowed click, click without movement; `assignColorSlots` determinism / distinctness / lone value; colour kept after filter and reorder; `orderSeries` count / alpha / asc, Other last; nice ticks 0–140 by 20, integer ticks; `formatNumber` / `formatAxisNumber`; `timeTicks` hourly / 3-hourly across midnight / days; chart time ticks, no auto title, partial buckets; hidden line points; legend colour menu set / reset; `cleanStyle` colours (invalid, cap, long key, `__proto__`), `queryShape` strips, decode round trip; `toHex` |
-| LENS-XY-01 | jest updated: `style.test.tsx` (domains / ticks), `layers.test.tsx` (`1,000`), `compile.test.ts` (series order), `ChartTypeSwitcher.test.tsx` (no sub-type for Line) |
-| LENS-XY-01 | e2e `tests/features/parity-xychart.spec.ts` (tooltip, keyboard tooltip, legend order across types, Line sub-type + old link, brush from a bar + click, stable colour after filter, value ticks, time axis / partial / plain lines, no blank frame on switch, legend colour picker): not run (coordinator) |
-| IT-LENS | e2e updated for the number format (`9.3K` → `9,264`, `1.6K` → `1,575`): `lens-interact-01`, `lens-interact-02`, `lens-dataview`, `lens-save-01`, `lens-style-01` (bar value, custom bound tick `20,000`), `lens-dim-05` (Filters count): not run (coordinator) |
+| LENS-XY-01 | jest updated: `style.test.tsx` (domains / ticks), `layers.test.tsx` (`1,000`), `compile.test.ts` (series order), `ChartTypeSwitcher.test.tsx` (no sub-type for Line)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| LENS-XY-01 | e2e `tests/features/parity-xychart.spec.ts` (tooltip, keyboard tooltip, legend order across types, Line sub-type + old link, brush from a bar + click, stable colour after filter, value ticks, time axis / partial / plain lines, no blank frame on switch, legend colour picker): not run (coordinator)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| IT-LENS    | e2e updated for the number format (`9.3K` → `9,264`, `1.6K` → `1,575`): `lens-interact-01`, `lens-interact-02`, `lens-dataview`, `lens-save-01`, `lens-style-01` (bar value, custom bound tick `20,000`), `lens-dim-05` (Filters count): not run (coordinator)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
 
 ## Deferred
 
