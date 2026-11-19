@@ -1789,6 +1789,7 @@ export function LogsExplorer({ tabId, tabStrip }: LogsExplorerProps = {}) {
           queryState={{ ...queryState, columns: effectiveColumns }}
           breakdown={breakdown}
           caps={caps}
+          timeRange={timeRange}
         />
       </div>
       </PluginPage>
