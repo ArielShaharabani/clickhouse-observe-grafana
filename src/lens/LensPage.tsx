@@ -262,7 +262,7 @@ export function LensPage() {
         { replace: false }
       );
     },
-    [setSearchParams]
+    [setSearchParams, defaultTime]
   );
   const addFilters = useCallback(
     (pills: FilterPill[]) => setFilters(pills.reduce(addFilterPill, filters)),
