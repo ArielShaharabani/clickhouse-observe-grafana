@@ -117,15 +117,18 @@ test('a drag that starts on a bar brushes the time range; a click on a bar still
 test('a series keeps its colour after a click-filter and across chart types', async ({ page }) => {
   const viz = new VisualizePage(page);
   await viz.open({ lens: serviceBars() });
-  // info is the biggest series, so it always keeps its own hash colour; a smaller series that
-  // collided may move to the next free slot once its neighbours are filtered away (seriesColors.ts).
-  const infoFill = () => viz.chart.getByRole('button', { name: /^payments · info: / }).getAttribute('fill');
-  const before = await infoFill();
-  expect(before).toBeTruthy();
-  await page.getByRole('button', { name: 'Legend actions for info' }).click();
-  await page.getByRole('menuitem', { name: 'Filter for' }).click();
-  await expect(viz.chart.getByRole('button', { name: /· error: / })).toHaveCount(0);
-  await expect.poll(infoFill).toBe(before);
+  // Every series keeps its colour when a filter removes the others, the smaller ones too
+  // (session colour memory in seriesColors.ts).
+  for (const level of ['error', 'warn']) {
+    const fill = () => viz.chart.getByRole('button', { name: new RegExp(`^payments · ${level}: `) }).getAttribute('fill');
+    const before = await fill();
+    expect(before).toBeTruthy();
+    await page.getByRole('button', { name: `Legend actions for ${level}` }).click();
+    await page.getByRole('menuitem', { name: 'Filter for' }).click();
+    await expect(viz.chart.getByRole('button', { name: /· info: / })).toHaveCount(0);
+    await expect.poll(fill).toBe(before);
+    await viz.open({ lens: serviceBars() });
+  }
 });
 
 test('value axis: nice ticks with separators, no K, no fractions on counts', async ({ page }) => {

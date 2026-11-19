@@ -20,7 +20,7 @@ import { PanelRenderer } from '@grafana/runtime';
 import { LensResult } from '../compile';
 import { LensState } from '../state';
 import { seriesColorOf } from '../style';
-import { stableColors } from './seriesColors';
+import { stableColors, SESSION_COLOR_SLOTS } from './seriesColors';
 import { XyChart, XySelection } from './XyChart';
 import { withMetricAppearance } from './fieldConfig';
 import { MetricTiles } from './MetricTiles';
@@ -175,7 +175,8 @@ function pieSpec(state: LensState, result: LensResult): PanelSpec {
     result.xSynthetic,
     theme.visualization.palette,
     (n) => theme.visualization.getColorByName(n),
-    (n) => seriesColorOf(state.style, n)
+    (n) => seriesColorOf(state.style, n),
+    SESSION_COLOR_SLOTS
   );
   const fields = names.map((name, i) => ({
     name,

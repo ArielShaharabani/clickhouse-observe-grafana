@@ -26,13 +26,35 @@ export const PREFERRED_SLOTS = 10;
  * Palette index per key, keys given in priority order. Deterministic: the same keys in the same
  * order always get the same slots, and a key alone always gets its own hash slot.
  */
-export function assignColorSlots(keys: string[], paletteSize: number, preferred = PREFERRED_SLOTS): number[] {
+export function assignColorSlots(
+  keys: string[],
+  paletteSize: number,
+  preferred = PREFERRED_SLOTS,
+  memory?: Map<string, number>
+): number[] {
   const size = Math.max(1, paletteSize);
   const pref = Math.max(1, Math.min(preferred, size));
   const used = new Set<number>();
+  // A value keeps the slot it had earlier in the session while that slot is free here, so
+  // filtering a chart down (fewer collisions) never recolours the series that remain.
+  const kept = new Map<string, number>();
+  if (memory) {
+    for (const k of keys) {
+      const m = memory.get(k);
+      if (m !== undefined && m < size && !used.has(m)) {
+        kept.set(k, m);
+        used.add(m);
+      }
+    }
+  }
   const slots: number[] = [];
   let overflow = pref;
   for (const k of keys) {
+    const remembered = kept.get(k);
+    if (remembered !== undefined) {
+      slots.push(remembered);
+      continue;
+    }
     let slot = -1;
     const h = hashString(k) % pref;
     for (let i = 0; i < pref; i++) {
@@ -49,8 +71,20 @@ export function assignColorSlots(keys: string[], paletteSize: number, preferred 
     used.add(slot);
     slots.push(slot);
   }
+  if (memory) {
+    keys.forEach((k, i) => memory.set(k, slots[i]));
+    // Bounded: oldest entries go first.
+    while (memory.size > MAX_REMEMBERED) {
+      memory.delete(memory.keys().next().value as string);
+    }
+  }
   return slots;
 }
+
+const MAX_REMEMBERED = 500;
+
+/** Slots remembered for this page session (shared by XY charts and pies). */
+export const SESSION_COLOR_SLOTS = new Map<string, number>();
 
 /** The colour key of a series: its breakdown value when it has one (the same value → the same colour). */
 export function seriesColorKey(s: { name: string; breakdown?: string; synthetic?: boolean }): string {
@@ -70,9 +104,10 @@ export function stableColors(
   synthetic: boolean[],
   palette: string[],
   resolve: (paletteName: string) => string,
-  picked?: (name: string) => string | undefined
+  picked?: (name: string) => string | undefined,
+  memory?: Map<string, number>
 ): string[] {
   const keys = names.map((n, i) => seriesColorKey({ name: n, breakdown: n, synthetic: synthetic[i] }));
-  const slots = assignColorSlots(keys, palette.length);
+  const slots = assignColorSlots(keys, palette.length, PREFERRED_SLOTS, memory);
   return names.map((n, i) => picked?.(n) ?? resolve(palette[slots[i] % palette.length]));
 }
