@@ -21,6 +21,8 @@ interface FieldItemProps {
   onAddFilter: (f: FilterPill) => void;
   onSetBreakdown?: (field: FieldModel) => void;
   onVisualize?: (field: FieldModel) => void;
+  /** sqlExpr → display name of the core grid column already showing that expression. */
+  coreShownAs?: Map<string, string>;
 }
 
 export function FieldItem({
@@ -32,7 +34,10 @@ export function FieldItem({
   onAddFilter,
   onSetBreakdown,
   onVisualize,
+  coreShownAs,
 }: FieldItemProps) {
+  // e.g. the Body field while the core "Message" column shows Body: adding it would duplicate it.
+  const shownAs = isSelected ? undefined : coreShownAs?.get(field.sqlExpr);
   const styles = useStyles2(getStyles);
   const theme = useTheme2();
   const [popoverOpen, setPopoverOpen] = useState(false);
@@ -135,14 +140,25 @@ export function FieldItem({
               <Icon name={a.icon} size="xs" />
             </button>
           ))}
-          <button
-            className={`${styles.actionBtn} ${isSelected ? styles.actionBtnActive : ''}`}
-            title={isSelected ? 'Remove from table' : 'Add field as column'}
-            aria-label={isSelected ? `Remove ${field.displayName} column` : `Add ${field.displayName} as column`}
-            onClick={(e) => { e.stopPropagation(); onToggleColumn(field); }}
-          >
-            <Icon name={isSelected ? 'minus' : 'plus'} size="xs" />
-          </button>
+          {shownAs ? (
+            <span
+              className={`${styles.actionBtn} ${styles.actionBtnActive}`}
+              title={`Already shown as the ${shownAs} column`}
+              aria-label={`${field.displayName} is shown as the ${shownAs} column`}
+              role="img"
+            >
+              <Icon name="check" size="xs" />
+            </span>
+          ) : (
+            <button
+              className={`${styles.actionBtn} ${isSelected ? styles.actionBtnActive : ''}`}
+              title={isSelected ? 'Remove from table' : 'Add field as column'}
+              aria-label={isSelected ? `Remove ${field.displayName} column` : `Add ${field.displayName} as column`}
+              onClick={(e) => { e.stopPropagation(); onToggleColumn(field); }}
+            >
+              <Icon name={isSelected ? 'minus' : 'plus'} size="xs" />
+            </button>
+          )}
         </div>
       </div>
 

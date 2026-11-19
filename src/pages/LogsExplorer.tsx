@@ -58,7 +58,7 @@ import { TimeShorthandInput } from '../components/TimeShorthandInput';
 import { shiftTimeRange, zoomOutTimeRange } from '../utils/timeRangeNav';
 import { useAvailableHeight } from '../utils/useAvailableHeight';
 import { lensContextFor, lensFieldOf, lensForField, lensForHistogram, visualizeUrl } from '../lens/handoff';
-import { defaultColumns, sanitizeColumns } from '../data/columns';
+import { defaultColumns, sanitizeColumns, stripColumnWidths } from '../data/columns';
 // Re-exported for existing importers (tests).
 type ResultsTab = 'documents' | 'fieldStats';
 const RESULTS_TABS: Array<{ label: string; value: ResultsTab }> = [
@@ -69,6 +69,7 @@ const RESULTS_TABS: Array<{ label: string; value: ResultsTab }> = [
 export { defaultColumns } from '../data/columns';
 import { logsQueryReducer } from './_logsQueryReducer';
 import { DefaultTimeRangeContext, resolveDefaultTimeRange } from '../utils/defaultTimeRange';
+import { docNavTargets, pageOfIndex } from './_docNav';
 
 const INITIAL_FETCH = 200;
 const PAGE_SIZE_OPTIONS = [10, 25, 50, 100, 250, 500];
@@ -76,7 +77,11 @@ const DEFAULT_PAGE_SIZE = 50;
 const SIDEBAR_SPLIT_KEY = 'clickhouse-observe.logsExplorer.sidebarSplit';
 const DEFAULT_SIDEBAR_SPLIT = 0.18;
 const DETAIL_SPLIT_KEY = 'clickhouse-observe.logsExplorer.detailSplit';
-const DEFAULT_DETAIL_SPLIT = 0.55;
+const DEFAULT_DETAIL_SPLIT = 0.45;
+
+/** Narrowest the field sidebar / document panel can get (drag or a wide grid). */
+const SIDEBAR_MIN_WIDTH = 200;
+const DETAIL_MIN_WIDTH = 400;
 
 function readSidebarSplit(): number {
   const raw = Number(window.localStorage.getItem(SIDEBAR_SPLIT_KEY));
@@ -459,6 +464,17 @@ export function LogsExplorer({ tabId, tabStrip }: LogsExplorerProps = {}) {
   const effectiveColumns = useMemo<SelectedColumn[]>(() => {
     return queryState.columns.length > 0 ? queryState.columns : defaultColumns(config);
   }, [queryState.columns, config]);
+  // Column widths are display-only: queries read a width-free copy whose identity changes only
+  // when the query-relevant columns do, so resizing a column never re-runs a query.
+  const queryColumnsKey = JSON.stringify(stripColumnWidths(effectiveColumns));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const queryColumns = useMemo(() => stripColumnWidths(effectiveColumns), [queryColumnsKey]);
+  const fetchState = useMemo<LogsQueryState>(
+    () => ({ ...queryState, columns: queryColumns }),
+    // Every field of LogsQueryState except `columns` (replaced by queryColumns).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [queryState.search, queryState.filters, queryState.rawSql, queryState.useRawSql, queryState.limit, queryState.sort, queryColumns]
+  );
 
   // What describeGroupChange's diff last compared against — updated only when a NEW group action
   // is created (see joinGroupAction above), not on every render, so the diff reflects "what
@@ -636,17 +652,14 @@ export function LogsExplorer({ tabId, tabStrip }: LogsExplorerProps = {}) {
     hydratingPagesRef.current = new Set();
 
     try {
-      const stateWithCols: LogsQueryState = {
-        ...queryState,
-        columns: effectiveColumns,
-      };
+      const stateWithCols: LogsQueryState = fetchState;
       // Fall back to the builder-generated query if rawSql is empty (e.g. raw mode was just
       // enabled and nothing has been explicitly run yet) — never send a blank query. Builder-mode
       // requests project only the grid's columns (no SELECT *) — the drawer lazily hydrates the
       // full row per page instead (see hydratePage below). Raw-SQL mode is untouched: whatever
       // the user wrote runs as-is, and the drawer reads straight off those rows, same as before.
-      const sql = queryState.useRawSql
-        ? queryState.rawSql || buildLogsQuery(config, stateWithCols, { limit: INITIAL_FETCH, offset: 0 }, undefined, fieldIndexRef.current)
+      const sql = fetchState.useRawSql
+        ? fetchState.rawSql || buildLogsQuery(config, stateWithCols, { limit: INITIAL_FETCH, offset: 0 }, undefined, fieldIndexRef.current)
         : buildLogsQuery(config, stateWithCols, { limit: INITIAL_FETCH, offset: 0 }, { projection: 'grid' }, fieldIndexRef.current);
 
       const logRows = await runQueryRows({
@@ -669,7 +682,7 @@ export function LogsExplorer({ tabId, tabStrip }: LogsExplorerProps = {}) {
       pendingRenderSpanRef.current = action?.child('render', 'render') ?? null;
       setRows(logRows);
       setCurrentPage(0);
-      setHasMore(!queryState.useRawSql && logRows.length === INITIAL_FETCH);
+      setHasMore(!fetchState.useRawSql && logRows.length === INITIAL_FETCH);
       // Any query re-run (auto-refresh, filter/search/time-range change) replaces `rows` with
       // fresh row objects — the open detail panel's `selectedRow` would otherwise keep pointing
       // at a now-detached old object, invisible in the new array, collapsing the panel down to
@@ -694,7 +707,7 @@ export function LogsExplorer({ tabId, tabStrip }: LogsExplorerProps = {}) {
     }
     // fieldIndex intentionally excluded — read via fieldIndexRef instead (see its declaration
     // above): this query must run once immediately on mount, not wait for async field discovery.
-  }, [config, queryState, timeRange, effectiveColumns]);
+  }, [config, fetchState, timeRange]);
 
   // Volume/histogram query only. Deps deliberately narrower than fetchLogs: buildVolumeQuery
   // never reads state.columns, state.sort, or raw-SQL mode (see queryBuilder.ts), so a column
@@ -849,7 +862,7 @@ export function LogsExplorer({ tabId, tabStrip }: LogsExplorerProps = {}) {
   // from "fetched fine" without racing hydratedRowsRef's post-commit sync.
   const hydratePage = useCallback(
     async (pageIndex: number, targetKey?: string): Promise<boolean> => {
-      if (queryState.useRawSql || !config.datasourceUid) {
+      if (fetchState.useRawSql || !config.datasourceUid) {
         return false;
       }
       if (hydratedPagesRef.current.has(pageIndex) || hydratingPagesRef.current.has(pageIndex)) {
@@ -859,10 +872,7 @@ export function LogsExplorer({ tabId, tabStrip }: LogsExplorerProps = {}) {
       const runId = runRef.current;
       setDetailLoading(true);
       try {
-        const stateWithCols: LogsQueryState = {
-          ...queryState,
-          columns: effectiveColumns,
-        };
+        const stateWithCols: LogsQueryState = fetchState;
         const sql = buildLogsQuery(
           config,
           stateWithCols,
@@ -910,7 +920,7 @@ export function LogsExplorer({ tabId, tabStrip }: LogsExplorerProps = {}) {
         }
       }
     },
-    [config, queryState, effectiveColumns, timeRange, pageSize, fieldIndex]
+    [config, fetchState, timeRange, pageSize, fieldIndex]
   );
 
   // Fetches just the single row the detail drawer is open for (see buildLogDetailQuery's doc
@@ -1154,8 +1164,12 @@ export function LogsExplorer({ tabId, tabStrip }: LogsExplorerProps = {}) {
   });
 
   const onToggleColumn = (col: SelectedColumn) => {
-    if (effectiveColumns.some((c) => c.id === col.id)) {
-      dispatch({ type: 'REMOVE_COLUMN', id: col.id, columns: effectiveColumns });
+    // The same field may already be shown under another id (a column restored from a link); a
+    // core column showing it (Message = Body) is never toggled off from here.
+    const existing =
+      effectiveColumns.find((c) => c.id === col.id) ?? effectiveColumns.find((c) => !c.isCore && c.sqlExpr === col.sqlExpr);
+    if (existing) {
+      dispatch({ type: 'REMOVE_COLUMN', id: existing.id, columns: effectiveColumns });
     } else {
       dispatch({ type: 'ADD_COLUMN', col, columns: effectiveColumns });
     }
@@ -1272,7 +1286,7 @@ export function LogsExplorer({ tabId, tabStrip }: LogsExplorerProps = {}) {
   const ensureRows = useCallback(
     async (page: number, currentPageSize: number, currentRows: LogRow[], currentHasMore: boolean) => {
       const needed = (page + 1) * currentPageSize;
-      if (currentRows.length >= needed || !currentHasMore || queryState.useRawSql) {
+      if (currentRows.length >= needed || !currentHasMore || fetchState.useRawSql) {
         return currentRows;
       }
       if (!config.datasourceUid) {
@@ -1282,10 +1296,7 @@ export function LogsExplorer({ tabId, tabStrip }: LogsExplorerProps = {}) {
       setFetchingMore(true);
       const runId = runRef.current;
       try {
-        const stateWithCols: LogsQueryState = {
-          ...queryState,
-          columns: effectiveColumns,
-        };
+        const stateWithCols: LogsQueryState = fetchState;
         const chunkSize = needed - currentRows.length;
         // Load-more chunks are builder-mode only (raw-SQL is excluded above), so narrow the
         // same way the initial fetch in executeQuery does.
@@ -1316,7 +1327,7 @@ export function LogsExplorer({ tabId, tabStrip }: LogsExplorerProps = {}) {
         setFetchingMore(false);
       }
     },
-    [config, queryState, timeRange, effectiveColumns, fieldIndex]
+    [config, fetchState, timeRange, fieldIndex]
   );
 
   const onPageChange = useCallback(
@@ -1388,9 +1399,33 @@ export function LogsExplorer({ tabId, tabStrip }: LogsExplorerProps = {}) {
     },
     [currentPage, rows.length, pageSize, hasMore, onPageChange]
   );
-  // Reference-equality lookup — pageRows are slices of the same row objects, so this holds
-  // even across re-renders as long as selectedRow came from onRowClick(row).
-  const selectedIndex = selectedRow ? pageRows.indexOf(selectedRow) : -1;
+  // Document navigation (DISC-DOC-01) walks every loaded row, not just this grid page, and
+  // fetches the next chunk when stepping past the last loaded one (Kibana pages through the whole
+  // sample). Reference-equality lookup: pageRows are slices of the same row objects.
+  const selectedIndex = selectedRow ? rows.indexOf(selectedRow) : -1;
+  const docNav = docNavTargets(selectedIndex, rows.length, hasMore && !queryState.useRawSql);
+  const docNavBusy = useRef(false);
+  const goToDoc = useCallback(
+    async (index: number) => {
+      if (docNavBusy.current || index < 0) {
+        return;
+      }
+      docNavBusy.current = true;
+      try {
+        const runIdAtStart = runRef.current;
+        const list = index < rows.length ? rows : await ensureRows(pageOfIndex(index, pageSize), pageSize, rows, hasMore);
+        if (runRef.current !== runIdAtStart || !list[index]) {
+          return;
+        }
+        setSelectedRow(list[index]);
+        // The grid follows the open document, so its row stays highlighted.
+        setCurrentPage(pageOfIndex(index, pageSize));
+      } finally {
+        docNavBusy.current = false;
+      }
+    },
+    [rows, ensureRows, pageSize, hasMore]
+  );
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -1681,7 +1716,8 @@ export function LogsExplorer({ tabId, tabStrip }: LogsExplorerProps = {}) {
                         setSelectedRow(row);
                       }
                     }}
-                    onSort={(col) => dispatch({ type: 'SET_SORT', col })}
+                    onSort={(col, dir) => dispatch({ type: 'SET_SORT', col, dir })}
+                    onResizeColumn={(id, width) => dispatch({ type: 'SET_COLUMN_WIDTH', id, width, columns: effectiveColumns })}
                     onRemoveColumn={(col) => dispatch({ type: 'REMOVE_COLUMN', id: col.id, columns: effectiveColumns })}
                     onMoveColumn={(id, direction) => dispatch({ type: 'REORDER_COLUMN', id, direction, columns: effectiveColumns })}
                     onMoveColumnTo={(id, targetId) => dispatch({ type: 'MOVE_COLUMN_TO', id, targetId, columns: effectiveColumns })}
@@ -1745,19 +1781,11 @@ export function LogsExplorer({ tabId, tabStrip }: LogsExplorerProps = {}) {
                       onAddFilter={onAddFilter}
                       onToggleColumn={onToggleColumn}
                       getTraceHref={config.columns.traceId ? getTraceHref : undefined}
-                      onPrev={selectedIndex > 0 ? () => setSelectedRow(pageRows[selectedIndex - 1]) : undefined}
-                      onNext={
-                        selectedIndex >= 0 && selectedIndex < pageRows.length - 1
-                          ? () => setSelectedRow(pageRows[selectedIndex + 1])
-                          : undefined
-                      }
-                      onFirst={selectedIndex > 0 ? () => setSelectedRow(pageRows[0]) : undefined}
-                      onLast={
-                        selectedIndex >= 0 && selectedIndex < pageRows.length - 1
-                          ? () => setSelectedRow(pageRows[pageRows.length - 1])
-                          : undefined
-                      }
-                      navLabel={selectedIndex >= 0 ? `${selectedIndex + 1} of ${pageRows.length}` : undefined}
+                      onPrev={docNav.prev !== null ? () => goToDoc(docNav.prev!) : undefined}
+                      onNext={docNav.next !== null ? () => goToDoc(docNav.next!) : undefined}
+                      onFirst={docNav.first !== null ? () => goToDoc(docNav.first!) : undefined}
+                      onLast={docNav.last !== null ? () => goToDoc(docNav.last!) : undefined}
+                      navLabel={docNav.label}
                       onViewSurrounding={
                         !queryState.useRawSql && config.columns.timestamp && selectedRow
                           ? () => onViewSurrounding(selectedRow)
@@ -1848,9 +1876,10 @@ const getStyles = (theme: GrafanaTheme2) => ({
   sidebarPane: css`
     /* useSplitter sets an inline min-width: min-content on this pane, which floors it at
      * whatever its widest child (e.g. a long field name) needs — effectively locking the drag
-     * handle in place well before the panel looks "small". Override with !important so dragging
-     * can actually shrink it down close to the collapsed rail. */
-    min-width: 60px !important;
+     * handle in place well before the panel looks "small". Override with !important; the floor
+     * is a usable width, so a wide grid (many columns) can never squeeze the field list into
+     * one-letter names (PARITY-GRID) — the grid scrolls sideways instead. */
+    min-width: ${SIDEBAR_MIN_WIDTH}px !important;
     overflow: hidden;
   `,
   splitterHandle: css`
@@ -1859,7 +1888,9 @@ const getStyles = (theme: GrafanaTheme2) => ({
   results: css`
     flex: 1;
     min-height: 0;
-    min-width: 0;
+    /* !important beats useSplitter's inline min-width: min-content, which let the grid's natural
+     * width (every column) push the sidebar to its minimum and clip the grid on the right. */
+    min-width: 0 !important;
     position: relative;
     display: flex;
     flex-direction: column;
@@ -1881,15 +1912,15 @@ const getStyles = (theme: GrafanaTheme2) => ({
   `,
   tablePane: css`
     flex: 1;
-    min-width: 0;
+    min-width: 0 !important;
     display: flex;
     flex-direction: column;
     gap: ${theme.spacing(1)};
   `,
   detailPane: css`
     /* Same min-content override as sidebarPane — otherwise the panel's own content floors how
-     * far it can be dragged. */
-    min-width: 60px !important;
+     * far it can be dragged. Floored at a width where field names and values stay readable. */
+    min-width: ${DETAIL_MIN_WIDTH}px !important;
     overflow: hidden;
   `,
   sidebarRail: css`

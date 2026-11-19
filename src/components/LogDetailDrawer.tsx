@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { css, cx } from '@emotion/css';
 import { GrafanaTheme2 } from '@grafana/data';
 import {
@@ -29,6 +29,43 @@ import { FIELD_TYPE_ICONS } from './FieldSidebar/fieldIcons';
 import { fieldTypeColor } from './FieldSidebar/fieldTypeColors';
 import { JsonTree, allContainerPaths } from './JsonTree';
 import { isConvertedTimestamp } from '../sql/timeExpr';
+import { withIsoTimestamps } from '../utils/isoTime';
+
+/** Field name with a line-break opportunity after every dot, so long dotted names wrap between
+ *  segments ("http." / "method") instead of mid-word. */
+export function breakAtDots(name: string): React.ReactNode {
+  const parts = name.split('.');
+  if (parts.length === 1) {
+    return name;
+  }
+  return parts.map((p, i) => (
+    <React.Fragment key={i}>
+      {p}
+      {i < parts.length - 1 && (
+        <>
+          .<wbr />
+        </>
+      )}
+    </React.Fragment>
+  ));
+}
+
+/** Keys that drive document navigation must not be taken from text inputs or native controls. */
+function isTextEntryTarget(t: EventTarget | null): boolean {
+  const el = t as HTMLElement | null;
+  if (!el || !el.tagName) {
+    return false;
+  }
+  const tag = el.tagName.toLowerCase();
+  if (tag === 'textarea' || tag === 'select' || el.isContentEditable) {
+    return true;
+  }
+  if (tag === 'input') {
+    const type = (el as HTMLInputElement).type;
+    return type !== 'checkbox' && type !== 'radio' && type !== 'button';
+  }
+  return el.getAttribute('role') === 'slider';
+}
 
 interface FlatAttrRow {
   key: string;
@@ -147,14 +184,17 @@ interface LogDetailDrawerProps {
    *  data/traceLinks.ts). Returns undefined while resolving or when the datasource has no
    *  Traces config — the traceId then renders as plain text instead of a link. */
   getTraceHref?: (traceId: string) => string | undefined;
-  /** Step to the previous/next row on the current page. Omit to hide the nav control. */
+  /** Step to the previous/next document (every loaded row; the next one may be fetched on
+   *  demand). Omit to hide the nav control. ←/→ inside the panel do the same (Kibana). */
   onPrev?: () => void;
   onNext?: () => void;
-  /** Jump to the first/last row on the current page (DISC-DOC-01 `|‹` / `›|`). */
+  /** Jump to the first/last loaded document (DISC-DOC-01 `|‹` / `›|`). */
   onFirst?: () => void;
   onLast?: () => void;
-  /** e.g. "3 of 50" */
+  /** e.g. "3 of 200" */
   navLabel?: string;
+  /** "View single document" (permalink to this one document). Omit to hide it. */
+  onViewSingleDocument?: () => void;
   /** DISC-DOC-02 "View surrounding documents" action. Omit to hide it (no timestamp, raw SQL). */
   onViewSurrounding?: () => void;
 }
@@ -196,8 +236,35 @@ export function LogDetailDrawer({
   onLast,
   navLabel,
   onViewSurrounding,
+  onViewSingleDocument,
 }: LogDetailDrawerProps) {
   const styles = useStyles2(getStyles);
+  // Focus moves into the panel when it opens (Escape and ←/→ then work at once); the grid gives
+  // it back to the row when the panel closes (LogsTable).
+  const panelRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    panelRef.current?.focus({ preventScroll: true });
+  }, []);
+  const onPanelKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    // Only keys from the panel's own DOM: popovers rendered in a Portal (type filter) bubble
+    // through React but handle their own Escape / arrows.
+    if (e.defaultPrevented || !e.currentTarget.contains(e.target as Node)) {
+      return;
+    }
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      e.stopPropagation();
+      onClose();
+      return;
+    }
+    if ((e.key === 'ArrowLeft' || e.key === 'ArrowRight') && !e.altKey && !e.ctrlKey && !e.metaKey && !isTextEntryTarget(e.target)) {
+      const step = e.key === 'ArrowLeft' ? onPrev : onNext;
+      if (step) {
+        e.preventDefault();
+        step();
+      }
+    }
+  };
   const theme = useTheme2();
   const [searchAttr, setSearchAttr] = useState('');
   const [activeTab, setActiveTab] = useState<DrawerTab>('table');
@@ -285,6 +352,11 @@ export function LogDetailDrawer({
   // The JSON tab renders fully expanded by default — every object/array node open, not
   // just the root.
   const jsonExpandedPaths = useMemo(() => allContainerPaths(effectiveRow), [effectiveRow]);
+  // The JSON tab shows the time as ISO 8601 like Kibana (the datasource hands it over as epoch ms).
+  const jsonRow = useMemo(
+    () => withIsoTimestamps(effectiveRow, [rawTimeCol, CORE_ALIAS.timestamp]),
+    [effectiveRow, rawTimeCol]
+  );
 
   // Flat Field | Value table — no OTel category grouping. Map/JSON container
   // columns (ResourceAttributes, LogAttributes, …) are excluded in their raw blob form and
@@ -389,7 +461,7 @@ export function LogDetailDrawer({
             size="sm"
             style={{ color: fieldTypeColor(theme, type) }}
           />
-          {field}
+          <span className={styles.attrKeyText}>{breakAtDots(field)}</span>
           {isPinned && <Icon name="gf-pin" size="xs" className={styles.pinMark} aria-label="Pinned" />}
         </span>
         {traceHref ? (
@@ -442,21 +514,31 @@ export function LogDetailDrawer({
   };
 
   return (
-    <div className={styles.panel}>
+    <div
+      ref={panelRef}
+      className={styles.panel}
+      role="region"
+      aria-label="Document detail"
+      tabIndex={-1}
+      onKeyDown={onPanelKeyDown}
+    >
       <div className={styles.panelHeader}>
         <div className={styles.panelTitleRow}>
           <span className={styles.summaryTime}>{timestamp}</span>
           <div className={styles.summarySpacer} />
+          {onViewSingleDocument && (
+            <IconButton name="file-alt" size="sm" tooltip="View single document" onClick={onViewSingleDocument} />
+          )}
           {onViewSurrounding && (
             <IconButton name="list-ul" size="sm" tooltip="View surrounding documents" onClick={onViewSurrounding} />
           )}
           {(onPrev || onNext) && (
             <div className={styles.navGroup}>
-              <IconButton name="angle-double-up" size="sm" tooltip="First log on this page" onClick={onFirst} disabled={!onFirst} />
-              <IconButton name="angle-up" size="sm" tooltip="Previous log" onClick={onPrev} disabled={!onPrev} />
+              <IconButton name="angle-double-left" size="sm" tooltip="First log" onClick={onFirst} disabled={!onFirst} />
+              <IconButton name="angle-left" size="sm" tooltip="Previous log" onClick={onPrev} disabled={!onPrev} />
               {navLabel && <span className={styles.navLabel}>{navLabel}</span>}
-              <IconButton name="angle-down" size="sm" tooltip="Next log" onClick={onNext} disabled={!onNext} />
-              <IconButton name="angle-double-down" size="sm" tooltip="Last log on this page" onClick={onLast} disabled={!onLast} />
+              <IconButton name="angle-right" size="sm" tooltip="Next log" onClick={onNext} disabled={!onNext} />
+              <IconButton name="angle-double-right" size="sm" tooltip="Last log" onClick={onLast} disabled={!onLast} />
             </div>
           )}
           {onToggleExpanded && (
@@ -510,7 +592,7 @@ export function LogDetailDrawer({
         </div>
       ) : activeTab === 'json' ? (
         <div className={styles.jsonWrap}>
-          <JsonTree data={effectiveRow} defaultExpanded={jsonExpandedPaths} />
+          <JsonTree data={jsonRow} defaultExpanded={jsonExpandedPaths} />
         </div>
       ) : (
         <div className={styles.content}>
@@ -601,6 +683,10 @@ const getStyles = (theme: GrafanaTheme2) => ({
     border-radius: ${theme.shape.radius.default};
     overflow: hidden;
     box-sizing: border-box;
+    outline: none;
+    &:focus-visible {
+      box-shadow: inset 0 0 0 2px ${theme.colors.primary.border};
+    }
   `,
   panelHeader: css`
     flex-shrink: 0;
@@ -689,12 +775,15 @@ const getStyles = (theme: GrafanaTheme2) => ({
   `,
   toolbarRow: css`
     display: flex;
+    flex-wrap: wrap;
+    row-gap: ${theme.spacing(0.75)};
     align-items: center;
     gap: ${theme.spacing(1.5)};
     margin-bottom: ${theme.spacing(1)};
   `,
   attrSearch: css`
-    flex: 1;
+    flex: 1 1 260px;
+    min-width: 220px;
   `,
   attrRowPinned: css`
     background: ${theme.colors.primary.transparent};
@@ -722,8 +811,8 @@ const getStyles = (theme: GrafanaTheme2) => ({
     text-transform: uppercase;
     letter-spacing: 0.02em;
     & > span:first-of-type {
-      width: 44%;
-      min-width: 110px;
+      width: 40%;
+      min-width: 140px;
       flex-shrink: 0;
     }
   `,
@@ -751,11 +840,16 @@ const getStyles = (theme: GrafanaTheme2) => ({
     align-items: flex-start;
     gap: ${theme.spacing(0.75)};
     color: ${theme.colors.text.primary};
-    width: 44%;
-    min-width: 110px;
+    width: 40%;
+    min-width: 140px;
     flex-shrink: 0;
-    word-break: break-word;
-    overflow-wrap: anywhere;
+  `,
+  /** Names wrap at the dots (breakAtDots); a single over-long segment still breaks rather than
+   *  overflowing. */
+  attrKeyText: css`
+    min-width: 0;
+    word-break: normal;
+    overflow-wrap: break-word;
   `,
   attrTypeIcon: css`
     flex-shrink: 0;
