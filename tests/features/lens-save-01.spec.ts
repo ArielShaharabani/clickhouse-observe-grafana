@@ -60,7 +60,9 @@ test('save to an existing dashboard appends the panel', async ({ page }) => {
 
   await expect(page).toHaveURL(new RegExp(`/d/${uid}`));
   const saved = await (await page.request.get(`/api/dashboards/uid/${uid}`)).json();
-  expect(saved.dashboard.panels.map((p: { title: string; type: string }) => [p.title, p.type])).toEqual([[title, 'barchart']]);
+  expect(saved.dashboard.panels.map((p: { title: string; type: string }) => [p.title, p.type])).toEqual([
+    [title, 'barchart'],
+  ]);
 });
 
 test('save to the library only: a library panel is created, no navigation', async ({ page }) => {
@@ -88,7 +90,7 @@ test('unsaved chart survives opening Visualize without it (session draft)', asyn
   const viz = new VisualizePage(page);
   await viz.open();
   await viz.addField('ServiceName');
-  await expect(viz.chart.getByRole('button', { name: /^payments · Count of records: 9\.3K$/ })).toBeVisible();
+  await expect(viz.chart.getByRole('button', { name: /^payments · Count of records: 9,264$/ })).toBeVisible();
 
   await viz.open(); // no `lens` in the URL
   await expect(viz.group('Horizontal axis')).toContainText('Top 9 values of ServiceName');

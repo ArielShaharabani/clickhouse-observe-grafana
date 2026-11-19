@@ -17,7 +17,10 @@ async function openBuilder(page: Page) {
 
 async function pick(page: Page, name: string, option: string) {
   await page.getByRole('combobox', { name }).click();
-  await page.getByRole('option', { name: new RegExp(`^${option}( |$)`) }).first().click();
+  await page
+    .getByRole('option', { name: new RegExp(`^${option}( |$)`) })
+    .first()
+    .click();
 }
 
 /** Type into a creatable Select / Combobox and commit with Enter (custom value). A multi select

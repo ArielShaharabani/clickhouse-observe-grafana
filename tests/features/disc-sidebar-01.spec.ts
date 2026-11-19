@@ -12,7 +12,12 @@ test('search field names and filter by type with counts', async ({ page }) => {
 
   await page.getByRole('button', { name: 'Filter by field type' }).click();
   const numberCount = Number(
-    await page.getByRole('group', { name: 'Filter by field type' }).locator('label', { hasText: 'Number' }).locator('span').last().textContent()
+    await page
+      .getByRole('group', { name: 'Filter by field type' })
+      .locator('label', { hasText: 'Number' })
+      .locator('span')
+      .last()
+      .textContent()
   );
   expect(numberCount).toBeGreaterThanOrEqual(2); // TraceFlags, SeverityNumber (+ numeric JSON paths)
   await page.getByRole('checkbox', { name: 'Number fields' }).check({ force: true });
@@ -46,17 +51,25 @@ test('fields used from the list appear under Popular fields, remembered across r
   const popular = page.getByRole('region', { name: 'Popular fields' });
   await expect(popular.getByTitle('ServiceName', { exact: true })).toBeVisible();
   await page.reload();
-  await expect(page.getByRole('region', { name: 'Popular fields' }).getByTitle('ServiceName', { exact: true })).toBeVisible();
+  await expect(
+    page.getByRole('region', { name: 'Popular fields' }).getByTitle('ServiceName', { exact: true })
+  ).toBeVisible();
 });
 
 test('groups collapse and expand', async ({ page }) => {
   const logs = new LogsPage(page);
   await logs.open();
-  const header = page.getByRole('region', { name: 'Available fields' }).getByRole('button', { name: /Available fields/ });
+  const header = page
+    .getByRole('region', { name: 'Available fields' })
+    .getByRole('button', { name: /Available fields/ });
   await expect(header).toHaveAttribute('aria-expanded', 'true');
   await header.click();
   await expect(header).toHaveAttribute('aria-expanded', 'false');
-  await expect(page.getByRole('region', { name: 'Available fields' }).getByTitle('ServiceName', { exact: true })).toBeHidden();
+  await expect(
+    page.getByRole('region', { name: 'Available fields' }).getByTitle('ServiceName', { exact: true })
+  ).toBeHidden();
   await header.click();
-  await expect(page.getByRole('region', { name: 'Available fields' }).getByTitle('ServiceName', { exact: true })).toBeVisible();
+  await expect(
+    page.getByRole('region', { name: 'Available fields' }).getByTitle('ServiceName', { exact: true })
+  ).toBeVisible();
 });

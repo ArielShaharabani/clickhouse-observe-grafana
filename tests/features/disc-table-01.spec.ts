@@ -37,9 +37,15 @@ test('the cell action bar offers Expand, with the full value', async ({ page }) 
   const logs = new LogsPage(page);
   await logs.open({ q: 'ServiceName:payments' });
   await logs.expectRowCount(FIXTURE.counts.byService.payments);
-  const cell = logs.grid.getByRole('cell').filter({ hasText: /payments|checkout|failed|ok/ }).first();
+  const cell = logs.grid
+    .getByRole('cell')
+    .filter({ hasText: /payments|checkout|failed|ok/ })
+    .first();
   await cell.hover();
-  await page.getByRole('button', { name: /^Expand value of / }).first().click();
+  await page
+    .getByRole('button', { name: /^Expand value of / })
+    .first()
+    .click();
   const dialog = page.getByRole('dialog', { name: /^Value of / });
   await expect(dialog.getByTestId('cell-expand-value')).not.toBeEmpty();
   await dialog.getByRole('button', { name: 'Close' }).click();

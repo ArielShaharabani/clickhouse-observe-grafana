@@ -53,7 +53,12 @@ test('break down the histogram by a field from its popover', async ({ page }) =>
   await logs.open();
   await openFieldStats(page, 'ServiceName');
   await page.getByRole('button', { name: 'Break down histogram by ServiceName' }).click();
-  await expect(page.getByRole('button', { name: /ServiceName/ }).filter({ hasText: 'ServiceName' }).first()).toBeVisible();
+  await expect(
+    page
+      .getByRole('button', { name: /ServiceName/ })
+      .filter({ hasText: 'ServiceName' })
+      .first()
+  ).toBeVisible();
   await expect.poll(() => new URL(page.url()).searchParams.get('bd')).toBe('field:col:ServiceName');
   await expect(page.getByText('checkout', { exact: true }).first()).toBeVisible();
 });
