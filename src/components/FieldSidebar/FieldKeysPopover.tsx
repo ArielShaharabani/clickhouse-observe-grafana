@@ -12,6 +12,8 @@ import { LogsQueryState, SourceConfig } from '../../types';
 import { errMsg } from '../../errMsg';
 import { SourceConfigContext } from '../App/App';
 import { useFields } from '../FieldsContext';
+import { sampleCaption } from './FieldStatsPopover';
+import { MAP_KEYS_SAMPLE_SIZE } from '../../sql/introspection';
 
 /**
  * Kibana-style on-demand key browse for a Map *container* column in the sidebar. Fires one bounded,
@@ -33,9 +35,11 @@ interface FieldKeysPopoverProps {
   queryState: LogsQueryState;
   timeRange: TimeRange;
   onSelectKey: (leaf: FieldModel) => void;
+  /** One-click "add this key as a column" on every key row; omit to hide it. */
+  onAddColumn?: (leaf: FieldModel) => void;
 }
 
-export function FieldKeysPopover({ field, queryState, timeRange, onSelectKey }: FieldKeysPopoverProps) {
+export function FieldKeysPopover({ field, queryState, timeRange, onSelectKey, onAddColumn }: FieldKeysPopoverProps) {
   const styles = useStyles2(getStyles);
   const theme = useTheme2();
   const config: SourceConfig = useContext(SourceConfigContext);
@@ -108,7 +112,9 @@ export function FieldKeysPopover({ field, queryState, timeRange, onSelectKey }: 
             className={styles.headerIcon}
             style={{ color: fieldTypeColor(theme, field.type) }}
           />
-          <span className={styles.fieldName}>{field.displayName}</span>
+          <span className={styles.fieldName} title={field.displayName}>
+            {field.displayName}
+          </span>
         </div>
       </div>
 
@@ -124,16 +130,29 @@ export function FieldKeysPopover({ field, queryState, timeRange, onSelectKey }: 
       {!loading && !error && (
         <div className={styles.list}>
           {keys.map((k) => (
-            <button key={k.key} className={styles.row} onClick={() => onSelectKey(buildMapKeyField(field.name, k))}>
-              <span className={styles.keyName}>{k.key}</span>
-              <Icon name="angle-right" size="xs" className={styles.rowChevron} />
-            </button>
+            <div key={k.key} className={styles.keyRow}>
+              <button className={styles.row} onClick={() => onSelectKey(buildMapKeyField(field.name, k))}>
+                <span className={styles.keyName}>{k.key}</span>
+                <Icon name="angle-right" size="xs" className={styles.rowChevron} />
+              </button>
+              {onAddColumn && (
+                <button
+                  type="button"
+                  className={styles.addBtn}
+                  title="Add as column"
+                  aria-label={`Add ${field.displayName}.${k.key} as column`}
+                  onClick={() => onAddColumn(buildMapKeyField(field.name, k))}
+                >
+                  <Icon name="plus" size="xs" />
+                </button>
+              )}
+            </div>
           ))}
         </div>
       )}
 
       {!loading && !error && total > 0 && (
-        <div className={styles.caption}>Discovered from {total.toLocaleString()} sample records.</div>
+        <div className={styles.caption}>{sampleCaption('Discovered', total, MAP_KEYS_SAMPLE_SIZE)}</div>
       )}
     </div>
   );
@@ -141,7 +160,7 @@ export function FieldKeysPopover({ field, queryState, timeRange, onSelectKey }: 
 
 const getStyles = (theme: GrafanaTheme2) => ({
   panel: css`
-    width: 300px;
+    width: 340px;
     max-height: 420px;
     display: flex;
     flex-direction: column;
@@ -171,9 +190,8 @@ const getStyles = (theme: GrafanaTheme2) => ({
   fieldName: css`
     font-weight: ${theme.typography.fontWeightMedium};
     color: ${theme.colors.text.primary};
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    min-width: 0;
+    overflow-wrap: anywhere;
     font-family: ${theme.typography.fontFamilyMonospace};
   `,
   typeLabel: css`
@@ -220,6 +238,27 @@ const getStyles = (theme: GrafanaTheme2) => ({
     text-align: left;
     color: ${theme.colors.text.primary};
     &:hover {
+      background: ${theme.colors.action.hover};
+    }
+  `,
+  keyRow: css`
+    display: flex;
+    align-items: center;
+    gap: 2px;
+  `,
+  addBtn: css`
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    padding: 3px;
+    background: transparent;
+    border: none;
+    border-radius: ${theme.shape.radius.default};
+    cursor: pointer;
+    color: ${theme.colors.text.secondary};
+    &:hover,
+    &:focus-visible {
+      color: ${theme.colors.text.primary};
       background: ${theme.colors.action.hover};
     }
   `,

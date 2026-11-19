@@ -56,6 +56,28 @@ export function buildContextUrl(input: ContextUrlInput): string {
   return `${prefixRoute('context')}/${encodeURIComponent(input.viewId)}/${formatAnchorParam(input.anchor)}?${sp.toString()}`;
 }
 
+export interface SingleDocUrlInput {
+  viewId: string;
+  anchor: ContextAnchor;
+  timeRange: TimeRange;
+  /** Discover query string to return to (the breadcrumb). */
+  ret: string;
+}
+
+/**
+ * "View single document" permalink (PARITY-GRID): `doc/<dataViewId>/<ns>_<id>` — the document's
+ * stable identity is the same ContextAnchor as surrounding documents (epoch-ns timestamp + row-id
+ * hash of the mapped core columns), so the link keeps working regardless of time range, sort or
+ * paging. The query string only carries `from` / `to` and `ret`.
+ */
+export function buildSingleDocUrl(input: SingleDocUrlInput): string {
+  const sp = encodeLogsState({ search: '', filters: [], columns: [], timeRange: input.timeRange });
+  if (input.ret) {
+    sp.set('ret', input.ret);
+  }
+  return `${prefixRoute('doc')}/${encodeURIComponent(input.viewId)}/${formatAnchorParam(input.anchor)}?${sp.toString()}`;
+}
+
 /**
  * Discover URL for the breadcrumb. `ret` is untrusted: it is re-serialized as query parameters
  * only, always under this app's `logs` route, so it can't point anywhere else.

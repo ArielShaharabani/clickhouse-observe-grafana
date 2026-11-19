@@ -964,6 +964,37 @@ export function buildContextAnchorLookupQuery(config: SourceConfig, row: Record<
   );
 }
 
+/**
+ * The full row of one document named by its ContextAnchor ("View single document" permalink,
+ * PARITY-GRID): `SELECT *` (plus the converted time under CORE_ALIAS.timestamp, like a hydrated
+ * Discover row) matched on the anchor's timestamp and row id. Both anchor parts are validated
+ * decimal strings (isContextAnchor), so nothing but digits reaches the SQL. '' when no timestamp is
+ * mapped or the anchor is malformed.
+ */
+export function buildDocumentByAnchorQuery(config: SourceConfig, anchor: ContextAnchor): string {
+  const c = config.columns;
+  if (!c.timestamp || !isContextAnchor(anchor)) {
+    return '';
+  }
+  const ts = timeExpr(config);
+  const at = `fromUnixTimestamp64Nano(${anchor.ns})`;
+  const conditions = [`${ts} = ${at}`, `${contextIdExpr(config)} = ${anchor.id}`];
+  const prune = c.partitionTimestamp && c.partitionTimestamp !== '-' ? c.partitionTimestamp : '';
+  if (prune) {
+    conditions.push(`${prune} >= ${at} - INTERVAL 1 SECOND AND ${prune} <= ${at} + INTERVAL 1 SECOND`);
+  }
+  const convertedTime = isConvertedTimestamp(config) ? [`${ts} AS ${CORE_ALIAS.timestamp}`] : [];
+  return withSettings(
+    [
+      `SELECT ${['*', ...convertedTime].join(', ')}`,
+      `FROM ${tableRef(config, config.logsTable)}`,
+      `WHERE ${conditions.join(' AND ')}`,
+      `LIMIT 1`,
+    ],
+    [...queryTimeoutFragments(config), ...configSettingsFragments(config)]
+  );
+}
+
 export interface SurroundingDocsOpts {
   /** 'anchor' fetches the anchor itself; 'newer' / 'older' its neighbours. */
   direction: 'anchor' | 'newer' | 'older';

@@ -2,7 +2,7 @@ import React, { useCallback, useContext, useEffect, useLayoutEffect, useMemo, us
 import { css, cx } from '@emotion/css';
 import { AppEvents, dateTime, GrafanaTheme2, PageLayoutType, rangeUtil, TimeRange } from '@grafana/data';
 import { getAppEvents, locationService, PluginPage } from '@grafana/runtime';
-import { buildContextUrl, resolveContextAnchor } from '../data/surrounding';
+import { buildContextUrl, buildSingleDocUrl, resolveContextAnchor } from '../data/surrounding';
 import { Button, Icon, LinkButton, RadioButtonGroup, Spinner, useStyles2, TimeRangePicker, RefreshPicker, useSplitter } from '@grafana/ui';
 import { GridDisplay, GridDisplayOptions, loadGridDisplay, saveGridDisplay } from '../components/GridDisplayOptions';
 import { useSearchParams } from 'react-router-dom';
@@ -1142,6 +1142,24 @@ export function LogsExplorer({ tabId, tabStrip }: LogsExplorerProps = {}) {
     },
     [config, timeRange, activeView, queryState.filters, queryState.columns, searchParams]
   );
+  // "View single document" permalink (PARITY-GRID): same anchor identity as surrounding documents.
+  const onViewSingleDocument = useCallback(
+    async (row: LogRow) => {
+      try {
+        const anchor = await resolveContextAnchor(config, row, timeRange);
+        if (!anchor || !activeView) {
+          throw new Error('This document could not be found again.');
+        }
+        locationService.push(buildSingleDocUrl({ viewId: activeView.id, anchor, timeRange, ret: searchParams.toString() }));
+      } catch (e) {
+        getAppEvents().publish({
+          type: AppEvents.alertError.name,
+          payload: [`Could not open the document: ${errMsg(e)}`],
+        });
+      }
+    },
+    [config, timeRange, activeView, searchParams]
+  );
 
   // Matched-term highlighting in the grid (DISC-SEARCH-02): terms from the committed query and
   // the enabled positive filters; bare terms apply to the body column.
@@ -1789,6 +1807,11 @@ export function LogsExplorer({ tabId, tabStrip }: LogsExplorerProps = {}) {
                       onViewSurrounding={
                         !queryState.useRawSql && config.columns.timestamp && selectedRow
                           ? () => onViewSurrounding(selectedRow)
+                          : undefined
+                      }
+                      onViewSingleDocument={
+                        !queryState.useRawSql && config.columns.timestamp && selectedRow
+                          ? () => onViewSingleDocument(selectedRow)
                           : undefined
                       }
                     />

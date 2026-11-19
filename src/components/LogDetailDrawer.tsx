@@ -30,25 +30,7 @@ import { fieldTypeColor } from './FieldSidebar/fieldTypeColors';
 import { JsonTree, allContainerPaths } from './JsonTree';
 import { isConvertedTimestamp } from '../sql/timeExpr';
 import { withIsoTimestamps } from '../utils/isoTime';
-
-/** Field name with a line-break opportunity after every dot, so long dotted names wrap between
- *  segments ("http." / "method") instead of mid-word. */
-export function breakAtDots(name: string): React.ReactNode {
-  const parts = name.split('.');
-  if (parts.length === 1) {
-    return name;
-  }
-  return parts.map((p, i) => (
-    <React.Fragment key={i}>
-      {p}
-      {i < parts.length - 1 && (
-        <>
-          .<wbr />
-        </>
-      )}
-    </React.Fragment>
-  ));
-}
+import { breakAtDots } from '../utils/breakAtDots';
 
 /** Keys that drive document navigation must not be taken from text inputs or native controls. */
 function isTextEntryTarget(t: EventTarget | null): boolean {

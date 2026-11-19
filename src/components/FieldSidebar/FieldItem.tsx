@@ -60,7 +60,7 @@ export function FieldItem({
   const openPopover = () => {
     if (rowRef.current) {
       const rect = rowRef.current.getBoundingClientRect();
-      const POPOVER_W = 308;
+      const POPOVER_W = 348;
       const POPOVER_H = 400; // conservative estimate
 
       // Prefer right of field row; flip left if it would overflow viewport
@@ -184,14 +184,18 @@ export function FieldItem({
                   queryState={queryState}
                   timeRange={timeRange}
                   onSelectKey={setDrillField}
+                  onAddColumn={(leaf) => {
+                    onToggleColumn(leaf);
+                    setPopoverOpen(false);
+                  }}
                 />
               )}
               {isKeyBrowsable && drillField && (
                 <>
-                  <button className={styles.backBtn} onClick={() => setDrillField(null)}>
-                    <Icon name="angle-left" size="xs" /> {field.displayName}
-                  </button>
+                  {/* The back link lives inside the panel (it used to float above it, drawn over
+                      the grid as a stray label). */}
                   <FieldStatsPopover
+                    back={{ label: field.displayName, onBack: () => setDrillField(null) }}
                     field={drillField}
                     queryState={queryState}
                     timeRange={timeRange}
@@ -273,24 +277,6 @@ const getStyles = (theme: GrafanaTheme2) => ({
     min-width: 0;
     text-align: left;
     cursor: pointer;
-  `,
-  backBtn: css`
-    display: flex;
-    align-items: center;
-    gap: 2px;
-    margin-bottom: ${theme.spacing(0.5)};
-    padding: 2px 4px;
-    background: transparent;
-    border: none;
-    border-radius: ${theme.shape.radius.default};
-    cursor: pointer;
-    color: ${theme.colors.text.secondary};
-    font-size: 13px;
-    font-family: ${theme.typography.fontFamilyMonospace};
-    &:hover {
-      color: ${theme.colors.text.primary};
-      background: ${theme.colors.action.hover};
-    }
   `,
   row: css`
     position: relative;
