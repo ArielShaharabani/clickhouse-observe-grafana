@@ -1,8 +1,9 @@
-import React from 'react';
+import React, { useId } from 'react';
 import { css } from '@emotion/css';
 import { GrafanaTheme2 } from '@grafana/data';
 import { Button, Checkbox, Icon, IconName, Toggletip, useStyles2 } from '@grafana/ui';
 import { FieldType } from '../../sql/fieldModel';
+import { DialogHint } from '../a11y/dialog';
 import { FIELD_TYPE_ICONS } from './fieldIcons';
 
 /** Display names for field types in the type filter (spec DISC-SIDEBAR-01). */
@@ -28,6 +29,7 @@ interface Props {
 /** "Filter by field type" button + popover with per-type counts; the button shows the active count. */
 export function FieldTypeFilter({ counts, selected, onChange }: Props) {
   const styles = useStyles2(getStyles);
+  const hintId = useId();
   const types = (Object.keys(FIELD_TYPE_LABELS) as FieldType[]).filter((t) => (counts[t] ?? 0) > 0 || selected.has(t));
   const toggle = (t: FieldType) => {
     const next = new Set(selected);
@@ -38,22 +40,30 @@ export function FieldTypeFilter({ counts, selected, onChange }: Props) {
     }
     onChange(next);
   };
+  // Grafana's Toggletip traps focus and closes on Escape but sets no role: announce it as a dialog.
   const content = (
-    <div className={styles.body} role="group" aria-label="Filter by field type">
-      <div className={styles.title}>Filter by field type</div>
-      {types.map((t) => (
-        <label key={t} className={styles.row}>
-          <Checkbox value={selected.has(t)} onChange={() => toggle(t)} aria-label={`${FIELD_TYPE_LABELS[t]} fields`} />
-          <Icon name={(FIELD_TYPE_ICONS[t] ?? 'question-circle') as IconName} size="sm" />
-          <span className={styles.name}>{FIELD_TYPE_LABELS[t]}</span>
-          <span className={styles.count}>{counts[t] ?? 0}</span>
-        </label>
-      ))}
-      {selected.size > 0 && (
-        <Button size="sm" variant="secondary" fill="text" onClick={() => onChange(new Set())}>
-          Clear type filter
-        </Button>
-      )}
+    <div role="dialog" aria-label="Field type filter" aria-describedby={hintId}>
+      <DialogHint id={hintId} />
+      <div className={styles.body} role="group" aria-label="Filter by field type">
+        <div className={styles.title}>Filter by field type</div>
+        {types.map((t) => (
+          <label key={t} className={styles.row}>
+            <Checkbox
+              value={selected.has(t)}
+              onChange={() => toggle(t)}
+              aria-label={`${FIELD_TYPE_LABELS[t]} fields`}
+            />
+            <Icon name={(FIELD_TYPE_ICONS[t] ?? 'question-circle') as IconName} size="sm" />
+            <span className={styles.name}>{FIELD_TYPE_LABELS[t]}</span>
+            <span className={styles.count}>{counts[t] ?? 0}</span>
+          </label>
+        ))}
+        {selected.size > 0 && (
+          <Button size="sm" variant="secondary" fill="text" onClick={() => onChange(new Set())}>
+            Clear type filter
+          </Button>
+        )}
+      </div>
     </div>
   );
   return (

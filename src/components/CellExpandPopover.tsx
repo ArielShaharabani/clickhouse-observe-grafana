@@ -1,8 +1,9 @@
-import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import React, { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { css } from '@emotion/css';
 import { GrafanaTheme2 } from '@grafana/data';
 import { Button, IconButton, useStyles2 } from '@grafana/ui';
+import { DialogHint } from './a11y/dialog';
 import { ActionHost, fieldLabelFor, ValueContext, valueActions } from '../actions/registry';
 
 /**
@@ -139,6 +140,7 @@ export function CellExpandPopover({ ctx, raw, host, onClose }: Props) {
     document.addEventListener('mousedown', onDocDown);
     return () => document.removeEventListener('mousedown', onDocDown);
   }, []);
+  const hintId = useId();
   const name = ctx.fieldLabel ?? fieldLabelFor(ctx.field);
   const actions = valueActions(ctx, host);
   const dialog = (
@@ -146,6 +148,7 @@ export function CellExpandPopover({ ctx, raw, host, onClose }: Props) {
       ref={ref}
       role="dialog"
       aria-label={`Value of ${name}`}
+      aria-describedby={hintId}
       tabIndex={-1}
       className={styles.popover}
       style={pos ? { top: pos.top, left: pos.left } : { visibility: 'hidden', top: 0, left: 0 }}
@@ -159,6 +162,7 @@ export function CellExpandPopover({ ctx, raw, host, onClose }: Props) {
       }}
       onClick={(e) => e.stopPropagation()}
     >
+      <DialogHint id={hintId} />
       <div className={styles.header}>
         <span className={styles.name}>{name}</span>
         <IconButton name="times" size="sm" tooltip="Close" onClick={() => onClose()} />

@@ -1,7 +1,8 @@
-import React from 'react';
+import React, { useId } from 'react';
 import { css } from '@emotion/css';
 import { GrafanaTheme2 } from '@grafana/data';
 import { Button, RadioButtonGroup, Toggletip, useStyles2 } from '@grafana/ui';
+import { DialogHint } from './a11y/dialog';
 
 /** Results grid display options (spec DISC-TABLE-01 "Display options"). */
 export type GridDensity = 'compact' | 'normal' | 'expanded';
@@ -47,8 +48,11 @@ interface Props {
 
 export function GridDisplayOptions({ value, onChange }: Props) {
   const styles = useStyles2(getStyles);
+  const hintId = useId();
+  // Grafana's Toggletip traps focus and closes on Escape but sets no role: announce it as a dialog.
   const content = (
-    <div className={styles.body}>
+    <div className={styles.body} role="dialog" aria-label="Display options" aria-describedby={hintId}>
+      <DialogHint id={hintId} />
       <div className={styles.label} id="grid-density-label">
         Density
       </div>

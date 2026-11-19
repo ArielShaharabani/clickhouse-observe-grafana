@@ -65,6 +65,7 @@ export function DataViewPicker() {
                 autoFocus
                 prefix={<Icon name="search" />}
                 placeholder="Search data views"
+                aria-label="Search data views"
                 value={search}
                 onChange={(e) => setSearch(e.currentTarget.value)}
               />

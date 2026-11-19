@@ -10,6 +10,7 @@ import { FieldKeysPopover } from './FieldKeysPopover';
 import { FilterPill, LogsQueryState } from '../../types';
 import { copyToClipboard, fieldActions } from '../../actions/registry';
 import { FIELD_DRAG_MIME } from '../../constants';
+import { usePopoverDialog } from '../a11y/dialog';
 
 interface FieldItemProps {
   field: FieldModel;
@@ -42,6 +43,7 @@ export function FieldItem({
   // the key list, not wherever the user last drilled into.
   const [drillField, setDrillField] = useState<FieldModel | null>(null);
   const rowRef = useRef<HTMLDivElement>(null);
+  const previewRef = useRef<HTMLButtonElement>(null);
 
   const icon = FIELD_TYPE_ICONS[field.type] ?? 'question-circle';
   // Map *container* columns get the on-demand key-browse popover instead of top-values — there's
@@ -107,7 +109,17 @@ export function FieldItem({
           className={styles.typeIcon}
           style={{ color: fieldTypeColor(theme, field.type) }}
         />
-        <span className={`${styles.name} field-item-name`}>{field.displayName}</span>
+        {/* SHARED-A11Y-01: the keyboard way into the field popover (a click bubbles to the row). */}
+        <button
+          ref={previewRef}
+          type="button"
+          className={`${styles.name} ${styles.nameBtn} field-item-name`}
+          aria-label={`Preview ${field.displayName}: ${field.type}`}
+          aria-haspopup="dialog"
+          aria-expanded={popoverOpen}
+        >
+          {field.displayName}
+        </button>
         <div className={`${styles.actions} field-item-actions`}>
           {existsActions.map((a) => (
             <button
@@ -144,14 +156,11 @@ export function FieldItem({
             }}
             onClick={() => setPopoverOpen(false)}
           >
-            <div
-              style={{
-                position: 'fixed',
-                top: popoverPos.top,
-                left: popoverPos.left,
-                zIndex: 10000,
-              }}
-              onClick={(e) => e.stopPropagation()}
+            <FieldPopoverDialog
+              label={field.displayName}
+              pos={popoverPos}
+              onClose={() => setPopoverOpen(false)}
+              returnFocus={() => previewRef.current}
             >
               {isKeyBrowsable && !drillField && (
                 <FieldKeysPopover
@@ -202,7 +211,7 @@ export function FieldItem({
                   }}
                 />
               )}
-            </div>
+            </FieldPopoverDialog>
           </div>
         </Portal>
       )}
@@ -210,7 +219,45 @@ export function FieldItem({
   );
 }
 
+/** The positioned field popover as a dialog (SHARED-A11Y-01): hint, Escape, focus in and back. */
+function FieldPopoverDialog({
+  label,
+  pos,
+  onClose,
+  returnFocus,
+  children,
+}: {
+  label: string;
+  pos: { top: number; left: number };
+  onClose: () => void;
+  returnFocus: () => HTMLElement | null;
+  children: React.ReactNode;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  const { dialogProps, hint } = usePopoverDialog(ref, { onClose, returnFocus });
+  return (
+    <div
+      ref={ref}
+      {...dialogProps}
+      aria-label={label}
+      style={{ position: 'fixed', top: pos.top, left: pos.left, zIndex: 10000, outline: 'none' }}
+      onClick={(e) => e.stopPropagation()}
+    >
+      {hint}
+      {children}
+    </div>
+  );
+}
+
 const getStyles = (theme: GrafanaTheme2) => ({
+  nameBtn: css`
+    background: transparent;
+    border: none;
+    padding: 0;
+    min-width: 0;
+    text-align: left;
+    cursor: pointer;
+  `,
   backBtn: css`
     display: flex;
     align-items: center;
@@ -240,7 +287,8 @@ const getStyles = (theme: GrafanaTheme2) => ({
     &:hover {
       background: ${theme.colors.action.hover};
     }
-    &:hover .field-item-actions {
+    &:hover .field-item-actions,
+    &:focus-within .field-item-actions {
       opacity: 1;
       pointer-events: auto;
     }
@@ -248,7 +296,8 @@ const getStyles = (theme: GrafanaTheme2) => ({
      * revealed — the previous fixed-width flex sibling reserved this room on every row, all the
      * time; this claims it only on hover, and via padding (which text-overflow respects) rather
      * than the actions overlapping the text on top of it. */
-    &:hover .field-item-name {
+    &:hover .field-item-name,
+    &:focus-within .field-item-name {
       padding-right: 72px;
     }
   `,
