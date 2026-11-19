@@ -7,7 +7,7 @@
 ### Changed
 - **Discover auto-refresh is off by default** (Kibana: paused). It used to start at 30 s, re-running the search every 30 seconds even on an absolute past window. A chosen interval is kept in the URL (`refresh=1m`) and restored from links.
 - **Histogram starts with "No breakdown"** (Kibana's default; it used to break down by severity). `bd=severity` or a field breakdown in the URL still applies.
-- **Finer auto histogram intervals:** 7 days now buckets at 3 hours (56 bars, as Kibana) instead of 6 hours; 15-minute and 12-hour steps added.
+- **Finer auto histogram intervals:** 7 days now buckets at 3 hours (56 bars, as Kibana) instead of 6 hours; 15-minute and 12-hour steps added. Visualize's automatic date histogram uses the same steps, so it changes the same way.
 - **Too-fine intervals are scaled, not disabled:** Second / Minute / Hour / Day are always selectable. When an interval would make more than 1,000 bars it is scaled to the finest round interval that fits, and the caption shows `(interval: Minute, scaled to 15 minutes)` with a `⚠ Scaled to 15 minutes` notice (Kibana: "scaled to 10 minutes").
 - **Histogram axis:** ticks on round times (every 30 minutes, every hour, midnight …) spaced so labels never collide; 7-day ranges read `1st … 7th` with `January 2026` (Kibana), sub-day ranges `HH:mm` with the date under the first tick and each new day, multi-month ranges `Jan 2026`.
 - **Partial buckets** (only partly inside the time range) are drawn faded on a grey band, with a tooltip note.
@@ -33,6 +33,7 @@ Kibana parity for the Discover histogram and time (comparison against Kibana 9.5
 | Ticks: 7 d → `1st … 8th` + `January 2026`, narrow → every 2 days, 4 h → 30-min ticks with one date line, midnight date line, unround start, multi-year `Jan 2026`, no overlaps (jest `parityHistogram.test.tsx`) | ✅ |
 | URL: `refresh` round-trip, junk / too-fast / injection-shaped values read as paused; `resolveBreakdownField` exact / bare column / unknown; malformed `bd` never decodes (jest `src/data/__tests__/urlState.parity.test.ts`) | ✅ |
 | E2E `tests/features/parity-histogram.spec.ts`: exact brush + re-bucket + partial band; brush inside one bucket has rows; 08:00–12:00 = 2,161 rows with one partial bucket and the field popover agreeing; auto-refresh off by default, `refresh=1m` kept, junk dropped; 7 d = Auto 3 hours with `1st … 7th` / `January 2026` and non-overlapping ticks; Minute on 7 d scaled with notice and Second selectable; axis clear of the caption with 0 rows and with the detail panel open; default `No breakdown`, explicit `bd` wins; `bd=field:ServiceName` normalised, unknown / junk `bd` dropped | not run (coordinator) |
+| Visualize auto interval follows the shared steps: 7 d → 3 h (jest `src/lens/__tests__/compile.test.ts`, `metricOptions.test.ts` Normalize by unit, updated) | ✅ |
 | E2E updated for inclusive end (one-day window 5,760 → 5,761): `disc-chart-01.spec.ts` (Filter by time), `disc-time-01.spec.ts` (ISO range link), `integration/it-c-d-time.spec.ts` (IT-D Filter by time) | not run (coordinator) |
 
 ## Deferred
