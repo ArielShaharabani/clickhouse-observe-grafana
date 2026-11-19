@@ -1,0 +1,265 @@
+  1) [chromium] › tests\features\disc-session-01.spec.ts:15:5 › Share: relative link by default, absolute when toggled, unsaved warning, Copy link 
+
+    Error: expect(locator).toHaveValue(expected) failed
+
+    Locator: getByRole('dialog', { name: 'Share this Discover session' }).getByLabel('Share link')
+    Expected pattern: /\/goto\/[A-Za-z0-9_-]+/
+    Received string:  "http://localhost:3021/a/poortuna-clickhouse-observe-app/logs?q=payments&from=now-2y&to=now&ds=spec-fixture"
+    Timeout: 15000ms
+
+    Call log:
+      - Expect "toHaveValue" with timeout 15000ms
+      - waiting for getByRole('dialog', { name: 'Share this Discover session' }).getByLabel('Share link')
+        33 × locator resolved to <input readonly aria-label="Share link" class="css-r3ryyz-input-input" value="http://localhost:3021/a/poortuna-clickhouse-observe-app/logs?q=payments&from=now-2y&to=now&ds=spec-fixture"/>
+           - unexpected value "http://localhost:3021/a/poortuna-clickhouse-observe-app/logs?q=payments&from=now-2y&to=now&ds=spec-fixture"
+
+
+      23 |   const link = modal.getByLabel('Share link');
+      24 |   // Short link by default (PARITY-DASHBOARDS); turn it off to check the full link's parameters.
+    > 25 |   await expect(link).toHaveValue(/\/goto\/[A-Za-z0-9_-]+/);
+         |                      ^
+      26 |   await modal.locator('#share-short-link').click({ force: true });
+      27 |   await expect(link).toHaveValue(/[?&]q=payments(&|$)/);
+      28 |   await expect(link).toHaveValue(/from=now-2y/);
+        at C:\Users\Ariel\co-wt\batch-4\tests\features\disc-session-01.spec.ts:25:22
+
+    Error Context: test-results\features-disc-session-01-S-2bc4e-d-unsaved-warning-Copy-link-chromium\error-context.md
+
+
+  2) [chromium] › tests\features\disc-sidebar-01.spec.ts:31:5 › fields used from the list appear under Popular fields, remembered across reloads 
+
+    Test timeout of 30000ms exceeded.
+
+    Error: locator.click: Test timeout of 30000ms exceeded.
+    Call log:
+      - waiting for getByRole('button', { name: 'Add ServiceName as column' })
+
+
+      38 |   // Row actions show on hover.
+      39 |   await page.getByRole('region', { name: 'Available fields' }).getByTitle('ServiceName', { exact: true }).hover();
+    > 40 |   await page.getByRole('button', { name: 'Add ServiceName as column' }).click();
+         |                                                                         ^
+      41 |   const selected = page.getByRole('region', { name: 'Selected fields' });
+      42 |   await expect(selected.getByTitle('ServiceName', { exact: true })).toBeVisible();
+      43 |   await selected.getByTitle('ServiceName', { exact: true }).hover();
+        at C:\Users\Ariel\co-wt\batch-4\tests\features\disc-sidebar-01.spec.ts:40:73
+
+    Error Context: test-results\features-disc-sidebar-01-f-8a1fb-s-remembered-across-reloads-chromium\error-context.md
+
+
+  3) [chromium] › tests\features\parity-dashboards.spec.ts:41:5 › Edit in Visualize → Save and return replaces the panel in place and keeps the dashboard time 
+
+    Error: expect(page).toHaveURL(expected) failed
+
+    Expected pattern: /\/d\/08f64de6-7348-4106-90ba-23f1a97911ee.*from=1767603600000/
+    Received string:  "http://localhost:3021/d/08f64de6-7348-4106-90ba-23f1a97911ee/errors-by-service-mwnvhbo8xcit?from=2026-01-05T09:00:00.000Z&to=2026-01-05T11:00:00.000Z&timezone=browser&orgId=1"
+    Timeout: 15000ms
+
+    Call log:
+      - Expect "toHaveURL" with timeout 15000ms
+        2 × unexpected value "http://localhost:3021/a/poortuna-clickhouse-observe-app/visualize?lens=%7B%22chartType%22%3A%22line%22%2C%22buckets%22%3A%5B%7B%22kind%22%3A%22date_histogram%22%2C%22id%22%3A%22bmwnvhexu0%22%2C%22field%22%3A%22Timestamp%22%2C%22label%22%3A%22Timestamp%22%2C%22interval%22%3A%22auto%22%7D%2C%7B%22kind%22%3A%22terms%22%2C%22id%22%3A%22bmwnvhbmf0%22%2C%22field%22%3A%22ServiceName%22%2C%22label%22%3A%22ServiceName%22%2C%22size%22%3A9%7D%5D%2C%22metrics%22%3A%5B%7B%22kind%22%3A%22metric%22%2C%22id%22%3A%22mmwnvhbmf1%22%2C%22op%22%3A%22count%22%7D%5D%2C%22subType%22%3A%22stacked%22%7D&q=SeverityText%3Aerror&ds=spec-fixture&from=2026-01-05T09%3A00%3A00.000Z&to=2026-01-05T11%3A00%3A00.000Z&dash=08f64de6-7348-4106-90ba-23f1a97911ee&panel=1&dfrom=2026-01-05T09%3A00%3A00.000Z&dto=2026-01-05T11%3A00%3A00.000Z&uel_pid=poortuna-clickhouse-observe-app&uel_epid=grafana%2Fdashboard%2Fpanel%2Fmenu"
+        - unexpected value "http://localhost:3021/d/08f64de6-7348-4106-90ba-23f1a97911ee?from=2026-01-05T09%3A00%3A00.000Z&to=2026-01-05T11%3A00%3A00.000Z"
+        30 × unexpected value "http://localhost:3021/d/08f64de6-7348-4106-90ba-23f1a97911ee/errors-by-service-mwnvhbo8xcit?from=2026-01-05T09:00:00.000Z&to=2026-01-05T11:00:00.000Z&timezone=browser&orgId=1"
+
+
+      64 |   await dialog.getByRole('button', { name: 'Save and return' }).click();
+      65 |
+    > 66 |   await expect(page).toHaveURL(new RegExp(`/d/${uid}.*from=${FIXTURE.incident.from}`));
+         |                      ^
+      67 |   const after = await (await page.request.get(`/api/dashboards/uid/${uid}`)).json();
+      68 |   expect(after.dashboard.panels).toHaveLength(before.dashboard.panels.length); // no duplicate
+      69 |   expect(after.dashboard.panels[0]).toMatchObject({ id: original.id, gridPos: original.gridPos, title });
+        at C:\Users\Ariel\co-wt\batch-4\tests\features\parity-dashboards.spec.ts:66:22
+
+    Error Context: test-results\features-parity-dashboards-ca395-nd-keeps-the-dashboard-time-chromium\error-context.md
+
+
+  4) [chromium] › tests\features\parity-dashboards.spec.ts:149:5 › Add to dashboard: a duplicate dashboard title is flagged and refused with a clear message 
+
+    Error: expect(locator).toBeVisible() failed
+
+    Locator: getByRole('dialog', { name: 'Add to dashboard' }).getByText(/already exists in this folder/)
+    Expected: visible
+    Timeout: 15000ms
+    Error: element(s) not found
+
+    Call log:
+      - Expect "toBeVisible" with timeout 15000ms
+      - waiting for getByRole('dialog', { name: 'Add to dashboard' }).getByText(/already exists in this folder/)
+
+
+      162 |   await expect(dialog.getByText(/A dashboard with this title already exists/)).toBeVisible();
+      163 |   await dialog.getByRole('button', { name: 'Add to dashboard' }).click();
+    > 164 |   await expect(dialog.getByText(/already exists in this folder/)).toBeVisible();
+          |                                                                   ^
+      165 |   // Checkbox labels sit next to their boxes.
+      166 |   const box = await dialog.getByText('Logs table', { exact: true }).boundingBox();
+      167 |   const input = await dialog.getByLabel('Logs table panel title').boundingBox();
+        at C:\Users\Ariel\co-wt\batch-4\tests\features\parity-dashboards.spec.ts:164:67
+
+    Error Context: test-results\features-parity-dashboards-08e93-efused-with-a-clear-message-chromium\error-context.md
+
+
+  5) [chromium] › tests\features\parity-dashboards.spec.ts:193:5 › Visualize Share: short link that reopens the chart 
+
+    Error: expect(locator).toHaveValue(expected) failed
+
+    Locator: getByRole('dialog', { name: 'Share this visualization' }).getByLabel('Share link')
+    Expected pattern: /\/goto\/[A-Za-z0-9_-]+/
+    Received string:  "http://localhost:3021/a/poortuna-clickhouse-observe-app/visualize?lens=%7B%22chartType%22%3A%22bar%22%2C%22buckets%22%3A%5B%7B%22kind%22%3A%22terms%22%2C%22id%22%3A%22bmwnvhyce0%22%2C%22field%22%3A%22ServiceName%22%2C%22label%22%3A%22ServiceName%22%2C%22size%22%3A9%7D%5D%2C%22metrics%22%3A%5B%7B%22kind%22%3A%22metric%22%2C%22id%22%3A%22mmwnvhyce1%22%2C%22op%22%3A%22count%22%7D%5D%2C%22subType%22%3A%22stacked%22%7D&q=SeverityText%3Aerror&from=1767225600000&to=1767830400000&ds=spec-fixture"
+    Timeout: 15000ms
+
+    Call log:
+      - Expect "toHaveValue" with timeout 15000ms
+      - waiting for getByRole('dialog', { name: 'Share this visualization' }).getByLabel('Share link')
+        33 × locator resolved to <input readonly aria-label="Share link" class="css-r3ryyz-input-input" value="http://localhost:3021/a/poortuna-clickhouse-observe-app/visualize?lens=%7B%22chartType%22%3A%22bar%22%2C%22buckets%22%3A%5B%7B%22kind%22%3A%22terms%22%2C%22id%22%3A%22bmwnvhyce0%22%2C%22field%22%3A%22ServiceName%22%2C%22label%22%3A%22ServiceName%22%2C%22size%22%3A9%7D%5D%2C%22metrics%22%3A%5B%7B%22kind%22%3A%22metric%22%2C%22id%22%3A%22mmwnvhyce1%22%2C%22op%22%3A%22count%22%7D%5D%2C%22subType%22%3A%22stacked%22%7D&q=Severit…/>
+           - unexpected value "http://localhost:3021/a/poortuna-clickhouse-observe-app/visualize?lens=%7B%22chartType%22%3A%22bar%22%2C%22buckets%22%3A%5B%7B%22kind%22%3A%22terms%22%2C%22id%22%3A%22bmwnvhyce0%22%2C%22field%22%3A%22ServiceName%22%2C%22label%22%3A%22ServiceName%22%2C%22size%22%3A9%7D%5D%2C%22metrics%22%3A%5B%7B%22kind%22%3A%22metric%22%2C%22id%22%3A%22mmwnvhyce1%22%2C%22op%22%3A%22count%22%7D%5D%2C%22subType%22%3A%22stacked%22%7D&q=SeverityText%3Aerror&from=1767225600000&to=1767830400000&ds=spec-fixture"
+
+
+      198 |   const modal = page.getByRole('dialog', { name: 'Share this visualization' });
+      199 |   const link = modal.getByLabel('Share link');
+    > 200 |   await expect(link).toHaveValue(/\/goto\/[A-Za-z0-9_-]+/);
+          |                      ^
+      201 |   await page.goto(await link.inputValue());
+      202 |   await expect(page).toHaveURL(/\/visualize\?/);
+      203 |   await expect(viz.dimensions).toContainText('ServiceName');
+        at C:\Users\Ariel\co-wt\batch-4\tests\features\parity-dashboards.spec.ts:200:22
+
+    Error Context: test-results\features-parity-dashboards-f87b7-link-that-reopens-the-chart-chromium\error-context.md
+
+
+  6) [chromium] › tests\features\parity-grid.spec.ts:55:5 › the field list keeps its width when many columns are added; the grid scrolls sideways 
+
+    Test timeout of 30000ms exceeded.
+
+    Error: locator.hover: Test timeout of 30000ms exceeded.
+    Call log:
+      - waiting for locator('.field-item-row').filter({ has: getByTitle('TraceId', { exact: true }) })
+
+
+      19 | async function addColumnFromSidebar(page: Page, field: string) {
+      20 |   const row = page.locator('.field-item-row').filter({ has: page.getByTitle(field, { exact: true }) });
+    > 21 |   await row.hover();
+         |             ^
+      22 |   await row.getByRole('button', { name: `Add ${field} as column` }).click();
+      23 | }
+      24 |
+        at addColumnFromSidebar (C:\Users\Ariel\co-wt\batch-4\tests\features\parity-grid.spec.ts:21:13)
+        at C:\Users\Ariel\co-wt\batch-4\tests\features\parity-grid.spec.ts:60:11
+
+    Error Context: test-results\features-parity-grid-the-f-2af38-d-the-grid-scrolls-sideways-chromium\error-context.md
+
+
+  7) [chromium] › tests\features\parity-grid.spec.ts:91:5 › header menu: sort with a time tie-break, move, remove, copy name 
+
+    Test timeout of 30000ms exceeded.
+
+    Error: locator.hover: Test timeout of 30000ms exceeded.
+    Call log:
+      - waiting for locator('.field-item-row').filter({ has: getByTitle('TraceId', { exact: true }) })
+
+
+      19 | async function addColumnFromSidebar(page: Page, field: string) {
+      20 |   const row = page.locator('.field-item-row').filter({ has: page.getByTitle(field, { exact: true }) });
+    > 21 |   await row.hover();
+         |             ^
+      22 |   await row.getByRole('button', { name: `Add ${field} as column` }).click();
+      23 | }
+      24 |
+        at addColumnFromSidebar (C:\Users\Ariel\co-wt\batch-4\tests\features\parity-grid.spec.ts:21:13)
+        at C:\Users\Ariel\co-wt\batch-4\tests\features\parity-grid.spec.ts:110:9
+
+    Error Context: test-results\features-parity-grid-heade-cb3ca-break-move-remove-copy-name-chromium\error-context.md
+
+
+  8) [chromium] › tests\features\parity-grid.spec.ts:143:5 › surrounding documents: highlighted anchor, dense rows, Add filter 
+
+    Error: expect(received).not.toBe(expected) // Object.is equality
+
+    Expected: not "rgba(255, 214, 0, 0.18)"
+
+      151 |   const bg = (loc: typeof anchor) => loc.evaluate((el) => getComputedStyle(el).backgroundColor);
+      152 |   const neighbour = page.getByRole('grid').locator('tbody tr').nth(0);
+    > 153 |   expect(await bg(anchor)).not.toBe(await bg(neighbour));
+          |                                ^
+      154 |   expect((await neighbour.boundingBox())!.height).toBeLessThan(45);
+      155 |   await expect(page.getByRole('button', { name: 'Add filter' })).toBeVisible();
+      156 |   await page.getByTestId('load-newer').getByRole('button', { name: 'Load' }).click();
+        at C:\Users\Ariel\co-wt\batch-4\tests\features\parity-grid.spec.ts:153:32
+
+    Error Context: test-results\features-parity-grid-surro-a4e3e-nchor-dense-rows-Add-filter-chromium\error-context.md
+
+
+  9) [chromium] › tests\features\parity-histogram.spec.ts:28:5 › brush uses the exact dragged times, not whole buckets (Kibana 07:43 → 11:48) 
+
+    Error: expect(received).toBeLessThanOrEqual(expected)
+
+    Expected: <= 262818.1818181818
+    Received:    360000
+
+      37 |   // One pixel is 24 h / width; allow two pixels of slack around 04:48 and 14:24.
+      38 |   const px = (24 * H) / box.width;
+    > 39 |   expect(Math.abs(from - (JAN5 + 4.8 * H))).toBeLessThanOrEqual(2 * px + 1000);
+         |                                             ^
+      40 |   expect(Math.abs(to - (JAN5 + 14.4 * H))).toBeLessThanOrEqual(2 * px + 1000);
+      41 |   // Not snapped to the 30-minute buckets (the old bug gave 04:30 / 14:00 style edges).
+      42 |   expect(from % (30 * 60_000) !== 0 || to % (30 * 60_000) !== 0).toBe(true);
+        at C:\Users\Ariel\co-wt\batch-4\tests\features\parity-histogram.spec.ts:39:45
+
+    Error Context: test-results\features-parity-histogram--5bd0e-ckets-Kibana-07-43-→-11-48--chromium\error-context.md
+
+
+  10) [chromium] › tests\features\parity-histogram.spec.ts:96:5 › 7 days: auto 3-hour buckets, day ticks "1st … 7th" with the month, no colliding labels 
+
+    Error: expect(locator).toContainText(expected) failed
+
+    Locator: getByTestId('histogram-x-axis')
+    Expected substring: "1st"
+    Received string:    "2ndJanuary 20263rd4th5th6th7th8th"
+    Timeout: 15000ms
+
+    Call log:
+      - Expect "toContainText" with timeout 15000ms
+      - waiting for getByTestId('histogram-x-axis')
+        33 × locator resolved to <div class="css-n838vf" data-testid="histogram-x-axis">…</div>
+           - unexpected value "2ndJanuary 20263rd4th5th6th7th8th"
+
+
+      100 |   await expect(caption(page)).toContainText('(interval: Auto - 3 hours)');
+      101 |   const axis = page.getByTestId('histogram-x-axis');
+    > 102 |   await expect(axis).toContainText('1st');
+          |                      ^
+      103 |   await expect(axis).toContainText('7th');
+      104 |   await expect(axis).toContainText('January 2026');
+      105 |   // Neighbouring tick labels never overlap.
+        at C:\Users\Ariel\co-wt\batch-4\tests\features\parity-histogram.spec.ts:102:22
+
+    Error Context: test-results\features-parity-histogram--47b96-e-month-no-colliding-labels-chromium\error-context.md
+
+
+  11) [chromium] › tests\features\shared-a11y-01.spec.ts:14:5 › field Preview button: Enter opens the field dialog, Escape closes it and focus returns 
+
+    Error: expect(locator).toBeVisible() failed
+
+    Locator: getByRole('button', { name: 'Add ServiceName as column' })
+    Expected: visible
+    Timeout: 15000ms
+    Error: element(s) not found
+
+    Call log:
+      - Expect "toBeVisible" with timeout 15000ms
+      - waiting for getByRole('button', { name: 'Add ServiceName as column' })
+
+
+      21 |   await preview.focus();
+      22 |   // The row's actions show while the row has keyboard focus, with specific names.
+    > 23 |   await expect(page.getByRole('button', { name: 'Add ServiceName as column' })).toBeVisible();
+         |                                                                                 ^
+      24 |   await page.keyboard.press('Enter');
+      25 |   const dialog = page.getByRole('dialog', { name: 'ServiceName', exact: true });
+      26 |   await expect(dialog).toBeVisible();
+        at C:\Users\Ariel\co-wt\batch-4\tests\features\shared-a11y-01.spec.ts:23:81
+
+    Error Context: test-results\features-shared-a11y-01-fi-d872b-closes-it-and-focus-returns-chromium\error-context.md
+
+
