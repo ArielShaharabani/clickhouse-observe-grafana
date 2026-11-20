@@ -10,7 +10,7 @@ const TOTAL = FIXTURE.counts.total.toLocaleString('en-US');
 // PARITY-GRID: Kibana 9.5 comparison fixes for the Discover grid, document panel, surrounding
 // documents and field popover (docs/dev/pending/PARITY-GRID.md, docs/spec/10-discover.md).
 
-const docLabel = (page: Page) => page.getByText(/^\d+ of \d+$/);
+const docLabel = (page: Page) => page.getByText(/^[\d,]+ of [\d,]+$/);
 const panel = (page: Page) => page.getByRole('region', { name: 'Document detail' });
 const header = (logs: LogsPage, name: string) => logs.grid.getByRole('button', { name: new RegExp(`^${name}`) });
 
