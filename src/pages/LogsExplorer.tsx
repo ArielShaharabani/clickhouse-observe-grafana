@@ -927,7 +927,6 @@ export function LogsExplorer({ tabId, tabStrip }: LogsExplorerProps = {}) {
         nextVolume,
       });
       if (targets.logs) {
-        // eslint-disable-next-line react-hooks/set-state-in-effect
         fetchLogs();
       }
       if (targets.volume) {
