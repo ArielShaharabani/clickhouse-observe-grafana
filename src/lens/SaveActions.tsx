@@ -9,10 +9,10 @@
  *   the dialog and its version is the optimistic lock of the save.
  * - Otherwise a single Save opening the usual dialog.
  */
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { TimeRange } from '@grafana/data';
 import { locationService } from '@grafana/runtime';
-import { Button } from '@grafana/ui';
+import { Button, ConfirmModal } from '@grafana/ui';
 import { getDashboard } from '../data/dashboards';
 import { findDashboardPanel } from '../data/panelExport';
 import { buildShareUrl, isRelativeRange, VISUALIZE_SHAREABLE_PARAMS } from '../data/shareLink';
@@ -21,7 +21,7 @@ import { ShareLinkModal } from '../components/SessionActions/ShareLinkModal';
 import { canCreateDashboards } from '../utils/permissions';
 import { LensPanel } from './panelExport';
 import { dashboardReturnPath, DashboardReturn, readDashboardReturn } from './panelSource';
-import { ReturnTarget, SaveLensModal } from './SaveLensModal';
+import { returnSaveError, ReturnTarget, saveAndReturn, SaveLensModal } from './SaveLensModal';
 
 interface Props {
   /** Visualize's URL parameters (string form). */
@@ -31,6 +31,13 @@ interface Props {
   buildPanel: (title: string, description: string) => LensPanel;
   timeRange: TimeRange;
 }
+
+/** The chart's own state in Visualize's URL (the keys a dashboard panel stores; time is not part of it). */
+const CHART_KEYS = ['lens', 'q', 'filters', 'ds'];
+export const chartStateKey = (paramsKey: string): string => {
+  const sp = new URLSearchParams(paramsKey);
+  return CHART_KEYS.map((k) => `${k}=${sp.get(k) ?? ''}`).join('&');
+};
 
 const text = (v: unknown, max = 500) => (typeof v === 'string' ? v.slice(0, max) : '');
 
@@ -57,7 +64,16 @@ export function SaveActions({ paramsKey, disabled, defaultTitle, buildPanel, tim
   const [target, setTarget] = useState<{ key: string; value?: ReturnTarget; error?: string } | null>(null);
   const [saveOpen, setSaveOpen] = useState<null | 'return' | 'new'>(null);
   const [shareOpen, setShareOpen] = useState(false);
+  const [returning, setReturning] = useState(false);
+  const [returnError, setReturnError] = useState('');
+  const [confirmCancel, setConfirmCancel] = useState(false);
   const canSave = useMemo(() => canCreateDashboards(), []);
+  // The chart as it was when the panel opened: Cancel only asks when it has changed since.
+  const baseline = useRef<{ key: string; chart: string } | null>(null);
+  const paramsRef = useRef(paramsKey);
+  useEffect(() => {
+    paramsRef.current = paramsKey;
+  }, [paramsKey]);
 
   useEffect(() => {
     if (!ret) {
@@ -65,7 +81,12 @@ export function SaveActions({ paramsKey, disabled, defaultTitle, buildPanel, tim
     }
     let cancelled = false;
     loadReturnTarget(ret).then(
-      (value) => !cancelled && setTarget({ key: retKey, value }),
+      (value) => {
+        if (!cancelled) {
+          baseline.current = { key: retKey, chart: chartStateKey(paramsRef.current) };
+          setTarget({ key: retKey, value });
+        }
+      },
       (e) => !cancelled && setTarget({ key: retKey, error: errMsg(e) })
     );
     return () => {
@@ -78,6 +99,39 @@ export function SaveActions({ paramsKey, disabled, defaultTitle, buildPanel, tim
   const loaded = target?.key === retKey ? target : null;
   const returnTarget = loaded?.value;
 
+  const onCancel = () => {
+    if (!ret) {
+      return;
+    }
+    const base = baseline.current?.key === retKey ? baseline.current.chart : undefined;
+    if (base !== undefined && base !== chartStateKey(paramsKey)) {
+      setConfirmCancel(true);
+    } else {
+      locationService.push(dashboardReturnPath(ret));
+    }
+  };
+
+  // Save and return in one click: the panel keeps its title and description. A failure (someone
+  // else saved the dashboard meanwhile, the panel is gone) opens the dialog with the reason.
+  const onSaveAndReturn = async () => {
+    if (!returnTarget || !canSave || returning) {
+      return;
+    }
+    setReturning(true);
+    try {
+      const path = await saveAndReturn(
+        returnTarget,
+        buildPanel(returnTarget.panelTitle.trim() || defaultTitle, returnTarget.panelDescription)
+      );
+      locationService.push(path);
+    } catch (e) {
+      setReturnError(returnSaveError(e));
+      setSaveOpen('return');
+    } finally {
+      setReturning(false);
+    }
+  };
+
   return (
     <>
       <Button size="sm" variant="secondary" icon="share-alt" onClick={() => setShareOpen(true)} disabled={disabled}>
@@ -89,7 +143,7 @@ export function SaveActions({ paramsKey, disabled, defaultTitle, buildPanel, tim
             size="sm"
             variant="secondary"
             fill="outline"
-            onClick={() => locationService.push(dashboardReturnPath(ret))}
+            onClick={onCancel}
             tooltip="Back to the dashboard without saving"
           >
             Cancel
@@ -100,8 +154,8 @@ export function SaveActions({ paramsKey, disabled, defaultTitle, buildPanel, tim
           <Button
             size="sm"
             icon="save"
-            onClick={() => returnTarget && canSave && setSaveOpen('return')}
-            disabled={disabled || !returnTarget || !canSave}
+            onClick={onSaveAndReturn}
+            disabled={disabled || !returnTarget || !canSave || returning}
             tooltip={
               loaded?.error
                 ? `Can't save back to the dashboard: ${loaded.error}`
@@ -127,6 +181,20 @@ export function SaveActions({ paramsKey, disabled, defaultTitle, buildPanel, tim
         canSaveDashboards={canSave}
         returnTo={returnTarget}
         startAsNew={saveOpen === 'new'}
+        initialError={saveOpen === 'return' ? returnError : ''}
+      />
+      <ConfirmModal
+        isOpen={confirmCancel}
+        title="Leave with unsaved changes?"
+        body="Your changes to this visualization will be lost."
+        confirmText="Discard changes"
+        onConfirm={() => {
+          setConfirmCancel(false);
+          if (ret) {
+            locationService.push(dashboardReturnPath(ret));
+          }
+        }}
+        onDismiss={() => setConfirmCancel(false)}
       />
       <ShareLinkModal
         title="Share this visualization"
