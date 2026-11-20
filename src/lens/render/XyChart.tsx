@@ -30,7 +30,7 @@ import {
 } from '../style';
 import { dashArray, ResolvedEvent, ResolvedLine } from '../layers';
 import { assignColorSlots, SESSION_COLOR_SLOTS, seriesColorKey } from './seriesColors';
-import { timeTicks, tooltipTime } from './timeTicks';
+import { fitTimeTicks, timeTicks, tooltipTime } from './timeTicks';
 import { formatAxisNumber, formatNumber } from '../../utils/axisNumber';
 
 export { formatAxisNumber, formatNumber };
@@ -647,7 +647,12 @@ export function XyChart({
   // Round-time ticks over the drawn time span (bucket starts sit on the band's left edge).
   const tEnd = result.xs.length > 0 ? Number(result.xs[result.xs.length - 1]) + (step > 0 ? step : 0) : 0;
   const timeTickVals = timeAxis
-    ? timeTicks(Number(result.xs[0]), tEnd, Math.max(2, Math.floor(plotW / (catRot === 0 ? 80 : 28))))
+    ? fitTimeTicks(
+        timeTicks(Number(result.xs[0]), tEnd, Math.max(2, Math.floor(plotW / (catRot === 0 ? 80 : 28)))),
+        (t) => m.left + (step > 0 ? ((t - Number(result.xs[0])) / step) * band : band / 2),
+        // Labels start at the tick (left-anchored): a tick too close to the right edge would be clipped.
+        catRot === 0 ? Math.max(0, W - 4) : Infinity
+      )
     : [];
   // Partial edge buckets: the time range starts after the first bucket's start / ends before the last one's end.
   const partial: Array<{ xi: number; x: number; w: number }> = [];
@@ -660,6 +665,15 @@ export function XyChart({
       partial.push({ xi: last, x: m.left + band * last, w: band });
     }
   }
+
+  // Partial edge buckets in which every plotted series is 0 (Line / Area only).
+  const partialEmpty = new Set<number>(
+    chartType === 'bar'
+      ? []
+      : partial
+          .map((p) => p.xi)
+          .filter((xi) => spans.every((sp, si) => !visible[si] || !sp[xi] || sp[xi]![0] === sp[xi]![1]))
+  );
 
   /** The crosshair tooltip: the X value, then every visible series' value there, the hovered one highlighted. */
   const MAX_TOOLTIP_ROWS = 20;
@@ -1150,6 +1164,11 @@ export function XyChart({
                   // Gaps (no data) break the line; each unbroken run is its own path segment.
                   const pts = result.xs.map((_x, xi) => {
                     const sp = spans[si][xi];
+                    // A partial edge bucket with nothing in it (a zero-filled sliver) is not drawn as a drop
+                    // to 0 (Kibana); one with data is plotted at its real value (shaded as partial).
+                    if (sp && partialEmpty.has(xi)) {
+                      return null;
+                    }
                     return sp ? ([cx0(xi), ys(si)(sp[1]), ys(si)(sp[0])] as const) : null;
                   });
                   const runs: Array<Array<readonly [number, number, number]>> = [];
