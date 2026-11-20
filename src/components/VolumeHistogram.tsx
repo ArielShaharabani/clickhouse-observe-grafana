@@ -2,7 +2,7 @@ import React, { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } f
 import { DialogHint } from './a11y/dialog';
 import { copyToClipboard, valueActions } from '../actions/registry';
 import { css, cx } from '@emotion/css';
-import { dateTime, formattedValueToString, getValueFormat, GrafanaTheme2, TimeRange } from '@grafana/data';
+import { dateTime, GrafanaTheme2, TimeRange } from '@grafana/data';
 import { Button, Icon, IconButton, Portal, Spinner, useStyles2 } from '@grafana/ui';
 import { FilterPill, VolumeDataPoint } from '../types';
 import { BucketActionsPopover, bucketEnd } from './BucketActionsPopover';
@@ -96,9 +96,9 @@ interface BreakdownClickPopover {
   clientY: number;
 }
 
-/** Compact large numbers (1,234,567 → "1.23 M") for the y-axis and tooltip. */
-function formatCompact(n: number): string {
-  return formattedValueToString(getValueFormat('short')(n));
+/** Exact counts with thousands separators for the tooltip ("1,920", like Kibana; was "1.92 K"). */
+function formatCount(n: number): string {
+  return n.toLocaleString('en-US');
 }
 
 /** Classic "nice number" rounding (Heckbert) — rounds to 1/2/5 × 10^n so axis ticks read like
@@ -866,7 +866,7 @@ export function VolumeHistogram({
             <div className={styles.tooltipHint}>Partial bucket: only part of it is in the time range</div>
           )}
           <div className={styles.tooltipTotal}>
-            Total: {formatCompact(Object.values(hoveredBar.levels).reduce((a, b) => a + b, 0))}
+            Total: {formatCount(Object.values(hoveredBar.levels).reduce((a, b) => a + b, 0))}
           </div>
           {colorMode !== 'single' &&
             visibleLevels
@@ -879,7 +879,7 @@ export function VolumeHistogram({
                   />
                   <span className={styles.tooltipLevel}>{level || '(empty)'}</span>
                   <span className={styles.tooltipCount}>
-                    {formatCompact(hoveredBar.levels[level])}
+                    {formatCount(hoveredBar.levels[level])}
                   </span>
                 </div>
               ))}
@@ -1008,7 +1008,7 @@ const getStyles = (theme: GrafanaTheme2) => ({
     align-items: stretch;
   `,
   // Fixed width (not content-sized: children below are position:absolute, out of flow, so an
-  // "auto" width here would just collapse to 0). Sized for the widest label formatCompact can
+  // "auto" width here would just collapse to 0). Sized for the widest y-axis label it can
   // realistically produce ("999.9 K", "1.5 M", …) plus a deliberate gap before the plot area —
   // labels sitting nearly flush against the axis line reads as cramped, so this pads it out.
   // yAxisSpacer must match exactly so the axis row below stays aligned with the bars above it.
