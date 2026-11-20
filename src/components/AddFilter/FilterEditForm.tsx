@@ -11,9 +11,21 @@ import React, { useEffect, useId, useState } from 'react';
 import { css, cx } from '@emotion/css';
 import { GrafanaTheme2, SelectableValue } from '@grafana/data';
 import { Button, Combobox, Select, Input, useStyles2 } from '@grafana/ui';
-import { FilterPill, FilterOp } from '../../types';
+import { FilterPill, FilterOp, FilterCondition, FilterCondGroup } from '../../types';
 import { FieldModel } from '../../sql/fieldModel';
-import { filterLabel, isDateBound, isNumericBound, nextId } from '../../sql/filters';
+import {
+  TreeGroup,
+  addCondition,
+  canAddCondition,
+  filterLabel,
+  isCondGroup,
+  isDateBound,
+  isNumericBound,
+  isTreeGroup,
+  nextId,
+  removeCondition,
+  soleCondition,
+} from '../../sql/filters';
 import { FieldValue } from '../../sql/kql/_values';
 import { useFields } from '../FieldsContext';
 
@@ -134,33 +146,129 @@ export function isFilterComplete(
   return true;
 }
 
-interface FilterEditFormProps {
-  /** Existing pill to prefill (edit); omit for a blank "Add filter" form. */
-  initial?: FilterPill;
-  loadValues: (sqlExpr: string) => Promise<FieldValue[]>;
-  onSubmit: (pill: FilterPill) => void;
-  onCancel: () => void;
+/** A condition as drafted in the form (before it becomes a FilterCondition). */
+export interface DraftCondition {
+  key: string;
+  field: string | null;
+  op: FilterOp | null;
+  single: string;
+  multi: string[];
+  pair: [string, string];
 }
 
-export function FilterEditForm({ initial, loadValues, onSubmit, onCancel }: FilterEditFormProps) {
+type DraftGroup = TreeGroup<DraftCondition>;
+
+let draftKey = 0;
+const blankDraft = (): DraftCondition => ({
+  key: `c${draftKey++}`,
+  field: null,
+  op: null,
+  single: '',
+  multi: [],
+  pair: ['', ''],
+});
+
+const draftFromCondition = (c: FilterCondition): DraftCondition => {
+  const def = opDef(c.op);
+  return {
+    key: `c${draftKey++}`,
+    field: c.field,
+    op: c.op,
+    single: def.hasValue && !def.isMulti && !def.isPair ? c.value : '',
+    multi: def.isMulti ? (c.values ?? []) : [],
+    pair: def.isPair ? [c.values?.[0] ?? '', c.values?.[1] ?? ''] : ['', ''],
+  };
+};
+
+const draftFromGroup = (g: FilterCondGroup): DraftGroup => ({
+  join: g.join,
+  items: g.items.map((it) => (isCondGroup(it) ? draftFromGroup(it) : draftFromCondition(it))),
+});
+
+/** The stored condition for a drafted condition (range bounds trimmed); null while no field / op. */
+export function conditionFromDraft(d: DraftCondition): FilterCondition | null {
+  if (!d.field || !d.op) {
+    return null;
+  }
+  const def = opDef(d.op);
+  if (!def.hasValue) {
+    return { field: d.field, op: d.op, value: '' };
+  }
+  if (def.isPair) {
+    return { field: d.field, op: d.op, value: '', values: [d.pair[0].trim(), d.pair[1].trim()] };
+  }
+  if (def.isMulti) {
+    return { field: d.field, op: d.op, value: '', values: d.multi };
+  }
+  return { field: d.field, op: d.op, value: d.single };
+}
+
+/** The pill fields for a drafted tree: a plain single-condition pill when it holds one condition,
+ *  a compound pill otherwise; null while any condition is incomplete or invalid. */
+export function pillFromDraftTree(
+  root: DraftGroup,
+  fieldFor: (expr: string) => Pick<FieldModel, 'type' | 'source'> | undefined
+): Omit<FilterPill, 'id'> | null {
+  const complete = (d: DraftCondition) =>
+    isFilterComplete(d.field, d.op, d.single, d.multi, d.pair) &&
+    !validateRange(fieldFor(d.field ?? ''), d.op, d.single, d.pair);
+  const convert = (g: DraftGroup): FilterCondGroup | null => {
+    const items: FilterCondGroup['items'] = [];
+    for (const it of g.items) {
+      const node = isTreeGroup(it) ? convert(it) : complete(it) ? conditionFromDraft(it) : null;
+      if (!node) {
+        return null;
+      }
+      items.push(node);
+    }
+    return { join: g.join, items };
+  };
+  const cond = convert(root);
+  if (!cond) {
+    return null;
+  }
+  const sole = soleCondition(cond as TreeGroup<FilterCondition>);
+  if (sole) {
+    return sole;
+  }
+  return { field: '', op: '=', value: '', cond };
+}
+
+interface ConditionRowProps {
+  draft: DraftCondition;
+  fields: FieldModel[];
+  loadValues: (sqlExpr: string) => Promise<FieldValue[]>;
+  onChange: (d: DraftCondition) => void;
+  /** An edited single pill's own operator stays selectable. */
+  keepOp?: FilterOp;
+  /** Row number suffix for accessible names ('' while there is a single condition). */
+  label: string;
+  canRemove: boolean;
+  onRemove: () => void;
+  canOr: boolean;
+  canAnd: boolean;
+  onAdd: (join: 'or' | 'and') => void;
+}
+
+function ConditionRow({
+  draft,
+  fields,
+  loadValues,
+  onChange,
+  keepOp,
+  label,
+  canRemove,
+  onRemove,
+  canOr,
+  canAnd,
+  onAdd,
+}: ConditionRowProps) {
   const styles = useStyles2(getStyles);
-  const { fields } = useFields();
-
-  const [selectedFieldExpr, setSelectedFieldExpr] = useState<string | null>(initial?.field ?? null);
-  const [selectedOp, setSelectedOp] = useState<FilterOp | null>(initial?.op ?? null);
-  const [singleValue, setSingleValue] = useState(initial?.value ?? '');
-  const [multiValues, setMultiValues] = useState<string[]>(
-    initial && opDef(initial.op).isMulti ? (initial.values ?? []) : []
-  );
-  const [pairValues, setPairValues] = useState<[string, string]>([
-    initial && opDef(initial.op).isPair ? (initial.values?.[0] ?? '') : '',
-    initial && opDef(initial.op).isPair ? (initial.values?.[1] ?? '') : '',
-  ]);
-  const [customLabel, setCustomLabel] = useState(initial?.label ?? '');
-
   const rangeId = useId();
   const [valueOptions, setValueOptions] = useState<Array<SelectableValue<string>>>([]);
   const [loadingValues, setLoadingValues] = useState(false);
+  const { field: selectedFieldExpr, op: selectedOp } = draft;
+  const name = (base: string) => (label ? `${base} ${label}` : base);
 
   const fieldOptions: Array<SelectableValue<string>> = fields.map((f) => ({
     label: f.displayName,
@@ -169,9 +277,8 @@ export function FilterEditForm({ initial, loadValues, onSubmit, onCancel }: Filt
   }));
   const selectedField = fields.find((f) => f.sqlExpr === selectedFieldExpr);
   const availableOps = operatorsFor(selectedField);
-  // An edited pill's own operator stays selectable even if its field type wouldn't normally offer it.
   const opOptions: Array<SelectableValue<FilterOp>> = (
-    initial && !availableOps.some((o) => o.value === initial.op) ? [...availableOps, opDef(initial.op)] : availableOps
+    keepOp && !availableOps.some((o) => o.value === keepOp) ? [...availableOps, opDef(keepOp)] : availableOps
   ).map((o) => ({ label: o.label, value: o.value }));
 
   // Load distinct values when field or op changes (shared autocomplete service, scoped to the
@@ -197,68 +304,25 @@ export function FilterEditForm({ initial, loadValues, onSubmit, onCancel }: Filt
     };
   }, [selectedFieldExpr, selectedOp, loadValues]);
 
-  const rangeError = validateRange(selectedField, selectedOp, singleValue, pairValues);
-  const isValid = isFilterComplete(selectedFieldExpr, selectedOp, singleValue, multiValues, pairValues) && !rangeError;
+  const rangeError = validateRange(selectedField, selectedOp, draft.single, draft.pair);
   const currentOp = selectedOp ? opDef(selectedOp) : null;
-
-  /** The pill as drafted, without an id (building the preview must not consume ids). */
-  const buildDraft = (): Omit<FilterPill, 'id'> | null => {
-    if (!selectedFieldExpr || !selectedOp || !currentOp) {
-      return null;
-    }
-    const label = customLabel.trim() || undefined;
-    const base = { field: selectedFieldExpr, op: selectedOp, ...(label ? { label } : {}) };
-    if (!currentOp.hasValue) {
-      return { ...base, value: '' };
-    }
-    if (currentOp.isPair) {
-      return { ...base, value: '', values: [pairValues[0].trim(), pairValues[1].trim()] };
-    }
-    if (currentOp.isMulti) {
-      return { ...base, value: '', values: multiValues };
-    }
-    return { ...base, value: singleValue };
-  };
-
-  const handleSubmit = () => {
-    const draft = isValid ? buildDraft() : null;
-    if (!draft) {
-      return;
-    }
-    onSubmit(
-      initial
-        ? { ...draft, id: initial.id, disabled: initial.disabled, pinned: initial.pinned, group: initial.group, groupOp: initial.groupOp }
-        : { ...draft, id: nextId() }
-    );
-  };
-
-  const previewDraft = isValid ? buildDraft() : null;
-  const preview = previewDraft ? { ...previewDraft, id: 'preview', label: undefined } : null;
-
-  const resetValues = () => {
-    setSingleValue('');
-    setMultiValues([]);
-    setPairValues(['', '']);
-  };
+  const resetValues = { single: '', multi: [] as string[], pair: ['', ''] as [string, string] };
 
   return (
-    <>
+    <div className={styles.conditionRow} data-testid="filter-condition">
       {/* Field / Operator / Value — one row, wide enough that none of the three obscures
-          the others (they used to stack full-width in a much narrower panel). */}
+          the others. */}
       <div className={styles.fieldOpValueRow}>
         <div className={cx(styles.row, styles.rowInline)}>
           <label className={styles.label}>Field</label>
           <Select
-            aria-label="Field"
+            aria-label={name('Field')}
             options={fieldOptions}
             value={selectedFieldExpr}
             onChange={(opt) => {
-              setSelectedFieldExpr(opt.value ?? null);
-              resetValues();
               const nextField = fields.find((f) => f.sqlExpr === opt.value);
-              if (selectedOp && !operatorsFor(nextField).some((o) => o.value === selectedOp)) {
-                setSelectedOp(null);
-              }
+              const keepOpNow = selectedOp && operatorsFor(nextField).some((o) => o.value === selectedOp);
+              onChange({ ...draft, ...resetValues, field: opt.value ?? null, op: keepOpNow ? selectedOp : null });
             }}
             placeholder="Select field"
             isClearable={false}
@@ -270,14 +334,11 @@ export function FilterEditForm({ initial, loadValues, onSubmit, onCancel }: Filt
         <div className={cx(styles.row, styles.rowInline)}>
           <label className={styles.label}>Operator</label>
           <Select
-            aria-label="Operator"
+            aria-label={name('Operator')}
             options={opOptions}
             value={selectedOp}
             placeholder="Select operator"
-            onChange={(opt) => {
-              setSelectedOp((opt.value as FilterOp) ?? null);
-              resetValues();
-            }}
+            onChange={(opt) => onChange({ ...draft, ...resetValues, op: (opt.value as FilterOp) ?? null })}
             isClearable={false}
             menuShouldPortal
           />
@@ -287,7 +348,7 @@ export function FilterEditForm({ initial, loadValues, onSubmit, onCancel }: Filt
         {!currentOp && (
           <div className={cx(styles.row, styles.rowInline, styles.rowValue)}>
             <label className={styles.label}>Value</label>
-            <Input disabled placeholder="Please select operator first..." aria-label="Value" />
+            <Input disabled placeholder="Please select operator first..." aria-label={name('Value')} />
           </div>
         )}
         {currentOp?.hasValue && (
@@ -305,10 +366,10 @@ export function FilterEditForm({ initial, loadValues, onSubmit, onCancel }: Filt
                       createCustomValue
                       options={valueOptions.map((o) => ({ label: o.label, value: o.value ?? '' }))}
                       loading={loadingValues}
-                      value={pairValues[i] || null}
+                      value={draft.pair[i] || null}
                       onChange={(opt) => {
                         const v = opt?.value ?? '';
-                        setPairValues((p) => (i === 0 ? [v, p[1]] : [p[0], v]));
+                        onChange({ ...draft, pair: i === 0 ? [v, draft.pair[1]] : [draft.pair[0], v] });
                       }}
                       placeholder={i === 0 ? 'From…' : 'To…'}
                       disabled={!selectedFieldExpr}
@@ -319,27 +380,27 @@ export function FilterEditForm({ initial, loadValues, onSubmit, onCancel }: Filt
               </div>
             ) : currentOp.isMulti ? (
               <Select
-                aria-label="Value"
+                aria-label={name('Value')}
                 isMulti
                 allowCustomValue
                 options={valueOptions}
                 isLoading={loadingValues}
-                value={multiValues.map((v) => ({ label: v, value: v }))}
-                onChange={(opts) => {
-                  setMultiValues((opts as Array<SelectableValue<string>>).map((o) => o.value ?? ''));
-                }}
+                value={draft.multi.map((v) => ({ label: v, value: v }))}
+                onChange={(opts) =>
+                  onChange({ ...draft, multi: (opts as Array<SelectableValue<string>>).map((o) => o.value ?? '') })
+                }
                 placeholder={selectedFieldExpr ? 'Select or type values…' : 'Select a field first'}
                 disabled={!selectedFieldExpr}
                 menuShouldPortal
               />
             ) : (
               <Select
-                aria-label="Value"
+                aria-label={name('Value')}
                 allowCustomValue
                 options={valueOptions}
                 isLoading={loadingValues}
-                value={singleValue ? { label: singleValue, value: singleValue } : null}
-                onChange={(opt) => setSingleValue((opt as SelectableValue<string>).value ?? '')}
+                value={draft.single ? { label: draft.single, value: draft.single } : null}
+                onChange={(opt) => onChange({ ...draft, single: (opt as SelectableValue<string>).value ?? '' })}
                 placeholder={selectedFieldExpr ? 'Select or type a value…' : 'Select a field first'}
                 disabled={!selectedFieldExpr}
                 menuShouldPortal
@@ -347,7 +408,149 @@ export function FilterEditForm({ initial, loadValues, onSubmit, onCancel }: Filt
             )}
           </div>
         )}
+        <div className={styles.rowButtons}>
+          <Button
+            variant="secondary"
+            size="sm"
+            fill="text"
+            icon="trash-alt"
+            aria-label={name('Delete condition')}
+            disabled={!canRemove}
+            onClick={onRemove}
+          />
+          <Button
+            variant="secondary"
+            size="sm"
+            fill="text"
+            icon="plus"
+            aria-label={name('Add OR condition')}
+            disabled={!canOr}
+            onClick={() => onAdd('or')}
+          >
+            OR
+          </Button>
+          <Button
+            variant="secondary"
+            size="sm"
+            fill="text"
+            icon="plus"
+            aria-label={name('Add AND condition')}
+            disabled={!canAnd}
+            onClick={() => onAdd('and')}
+          >
+            AND
+          </Button>
+        </div>
       </div>
+      {rangeError && (
+        <div className={styles.error} role="alert" data-testid="filter-error">
+          {rangeError}
+        </div>
+      )}
+    </div>
+  );
+}
+
+interface FilterEditFormProps {
+  /** Existing pill to prefill (edit); omit for a blank "Add filter" form. */
+  initial?: FilterPill;
+  loadValues: (sqlExpr: string) => Promise<FieldValue[]>;
+  onSubmit: (pill: FilterPill) => void;
+  onCancel: () => void;
+}
+
+export function FilterEditForm({ initial, loadValues, onSubmit, onCancel }: FilterEditFormProps) {
+  const styles = useStyles2(getStyles);
+  const { fields } = useFields();
+
+  const [root, setRoot] = useState<DraftGroup>(() =>
+    initial?.cond
+      ? draftFromGroup(initial.cond)
+      : { join: 'and', items: [initial ? draftFromCondition(initial) : blankDraft()] }
+  );
+  const [customLabel, setCustomLabel] = useState(initial?.label ?? '');
+
+  const fieldFor = (expr: string) => fields.find((f) => f.sqlExpr === expr);
+  const draft = pillFromDraftTree(root, fieldFor);
+  const isValid = draft !== null;
+  const total = countLeaves(root);
+
+  const handleSubmit = () => {
+    if (!draft) {
+      return;
+    }
+    const label = customLabel.trim() || undefined;
+    const pill = { ...draft, ...(label ? { label } : {}) };
+    onSubmit(
+      initial
+        ? {
+            ...pill,
+            id: initial.id,
+            disabled: initial.disabled,
+            pinned: initial.pinned,
+            group: initial.group,
+            groupOp: initial.groupOp,
+            ...(pill.cond && initial.negate ? { negate: true } : {}),
+          }
+        : { ...pill, id: nextId() }
+    );
+  };
+
+  // The preview shows the combined filter without the custom label.
+  const preview = draft ? { ...draft, id: 'preview', label: undefined } : null;
+
+  const setAt = (path: number[], d: DraftCondition) => {
+    const next = JSON.parse(JSON.stringify(root)) as DraftGroup;
+    let g = next;
+    for (const i of path.slice(0, -1)) {
+      g = g.items[i] as DraftGroup;
+    }
+    g.items[path[path.length - 1]] = d;
+    setRoot(next);
+  };
+
+  const renderGroup = (g: DraftGroup, path: number[]): React.ReactNode =>
+    g.items.map((it, i) => {
+      const p = [...path, i];
+      const sep =
+        i > 0 ? (
+          <div className={styles.joinBadge} data-testid="filter-join">
+            {g.join === 'or' ? 'OR' : 'AND'}
+          </div>
+        ) : null;
+      if (isTreeGroup(it)) {
+        return (
+          <React.Fragment key={`g${p.join('.')}`}>
+            {sep}
+            <div className={styles.nested} data-testid="filter-condition-group">
+              {renderGroup(it, p)}
+            </div>
+          </React.Fragment>
+        );
+      }
+      return (
+        <React.Fragment key={it.key}>
+          {sep}
+          <ConditionRow
+            draft={it}
+            fields={fields}
+            loadValues={loadValues}
+            onChange={(d) => setAt(p, d)}
+            keepOp={initial && !initial.cond ? initial.op : undefined}
+            label={total > 1 ? `#${p.map((x) => x + 1).join('.')}` : ''}
+            canRemove={total > 1}
+            onRemove={() => setRoot(removeCondition(root, p))}
+            canOr={canAddCondition(root, p, 'or')}
+            canAnd={canAddCondition(root, p, 'and')}
+            onAdd={(join) => setRoot(addCondition(root, p, join, blankDraft()))}
+          />
+        </React.Fragment>
+      );
+    });
+
+  return (
+    <>
+      {renderGroup(root, [])}
 
       {/* Custom label */}
       <div className={styles.row}>
@@ -361,12 +564,6 @@ export function FilterEditForm({ initial, loadValues, onSubmit, onCancel }: Filt
           placeholder="Add a custom label here"
         />
       </div>
-
-      {rangeError && (
-        <div className={styles.error} role="alert" data-testid="filter-error">
-          {rangeError}
-        </div>
-      )}
 
       {preview && (
         <div className={styles.preview} data-testid="filter-preview">
@@ -386,6 +583,10 @@ export function FilterEditForm({ initial, loadValues, onSubmit, onCancel }: Filt
   );
 }
 
+function countLeaves<L>(g: TreeGroup<L>): number {
+  return g.items.reduce((n: number, it) => n + (isTreeGroup(it) ? countLeaves(it) : 1), 0);
+}
+
 const getStyles = (theme: GrafanaTheme2) => ({
   fieldOpValueRow: css`
     display: flex;
@@ -398,6 +599,28 @@ const getStyles = (theme: GrafanaTheme2) => ({
     flex-direction: column;
     gap: ${theme.spacing(0.5)};
     margin-bottom: ${theme.spacing(1.5)};
+  `,
+  conditionRow: css`
+    margin-bottom: ${theme.spacing(1)};
+  `,
+  rowButtons: css`
+    display: flex;
+    align-items: flex-end;
+    align-self: flex-end;
+    gap: ${theme.spacing(0.25)};
+  `,
+  joinBadge: css`
+    margin: ${theme.spacing(0.5)} 0;
+    font-size: ${theme.typography.bodySmall.fontSize};
+    font-weight: ${theme.typography.fontWeightBold};
+    color: ${theme.colors.primary.text};
+  `,
+  nested: css`
+    margin: ${theme.spacing(0.5)} 0;
+    padding: ${theme.spacing(1)} ${theme.spacing(1)} 0 ${theme.spacing(1.5)};
+    border-left: 2px solid ${theme.colors.primary.border};
+    background: ${theme.colors.background.secondary};
+    border-radius: ${theme.shape.radius.default};
   `,
   rowInline: css`
     flex: 1;
