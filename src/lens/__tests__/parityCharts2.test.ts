@@ -26,7 +26,7 @@ describe('PARITY-CHARTS2', () => {
     expect(new Set(colors).size).toBe(3);
     // Slices under 5% (checkout, cart) are too small to label: labels off, legend has value + percent.
     expect(spec.options.displayLabels).toEqual([]);
-    expect(spec.options.legend.values).toEqual(['value', 'percent']);
+    expect((spec.options.legend as { values?: string[] }).values).toEqual(['value', 'percent']);
     expect(spec.fieldConfig.defaults.unit).toBe('locale');
   });
 

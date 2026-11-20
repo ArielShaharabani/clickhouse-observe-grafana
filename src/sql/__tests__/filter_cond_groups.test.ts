@@ -18,6 +18,7 @@ import {
 } from '../filters';
 import { encodeLogsState, decodeLogsState } from '../../data/urlState';
 import { FilterPill, OTEL_COLUMN_MAPPING, DEFAULT_LOGS_QUERY_STATE, SourceConfig } from '../../types';
+import { editedPill } from '../../components/FilterPills';
 
 const config: SourceConfig = {
   datasourceUid: 'test',
@@ -108,7 +109,13 @@ describe('compound pill SQL', () => {
           items: [
             { field: 'ServiceName', op: '=', value: evil },
             { field: 'ServiceName', op: 'one_of', value: '', values: [evil] },
-            { join: 'and', items: [{ field: 'ServiceName', op: 'contains', value: evil }, { field: 'x', op: '=', value: '1' }] },
+            {
+              join: 'and',
+              items: [
+                { field: 'ServiceName', op: 'contains', value: evil },
+                { field: 'x', op: '=', value: '1' },
+              ],
+            },
           ],
         },
       })
@@ -269,5 +276,39 @@ describe('condition tree operations', () => {
     expect(removeCondition(one, [0])).toBe(one);
     expect(soleCondition(one)).toEqual(leaf('a'));
     expect(soleCondition(t)).toBeNull();
+  });
+});
+
+describe('editing a compound pill down to one condition (e2e: collapses to a plain pill)', () => {
+  it('drops the old condition tree and negate instead of merging them back in', () => {
+    const compound: FilterPill = {
+      id: 'p1',
+      field: '',
+      op: '=',
+      value: '',
+      negate: true,
+      cond: {
+        join: 'or',
+        items: [
+          { field: 'ServiceName', op: '=', value: 'payments' },
+          { field: 'ServiceName', op: '=', value: 'auth' },
+        ],
+      },
+    };
+    const next = editedPill(compound, { field: 'ServiceName', op: '=', value: 'payments' });
+    expect(next).toEqual({ id: 'p1', field: 'ServiceName', op: '=', value: 'payments' });
+  });
+
+  it('keeps a condition tree the edit still has', () => {
+    const cond = {
+      join: 'and' as const,
+      items: [
+        { field: 'a', op: '=' as const, value: '1' },
+        { field: 'b', op: '=' as const, value: '2' },
+      ],
+    };
+    expect(
+      editedPill({ id: 'p', field: '', op: '=', value: '' }, { field: '', op: '=', value: '', cond }).cond
+    ).toEqual(cond);
   });
 });
