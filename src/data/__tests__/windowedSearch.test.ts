@@ -50,7 +50,7 @@ describe('fetchNewestFirst', () => {
   });
 
   it('widens until full and returns the same rows as the full query', async () => {
-    const f = fakeRunner(60_000, 30); // one match per 30 min
+    const f = fakeRunner(60_000, 10); // one match per 10 min
     const res = await fetchNewestFirst({ fromMs: from, toMs: to, limit: 200, run: f.makeRun(200) });
     expect(res.steps).toBe(3);
     expect(f.calls.map((c) => to - c.fromMs)).toEqual([H, 6 * H, 36 * H]);
