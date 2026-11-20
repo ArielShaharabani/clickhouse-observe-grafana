@@ -3,7 +3,7 @@
 **Current item:** none in flight. The Kibana-parity round is DONE (all 45 comparison items, doc https://claude.ai/artifact/Fttf2EfgSpSPZhwCqNLpvM has a status note).
 **Last completed step:** PR 49 (batch 6, 0.48.0-0.51.0) and PR 51 (batch 7, 0.52.0-0.54.0) merged; :3000 runs v0.54.0; the Kibana comparison stack (:5601) is running again.
 **Next step:** wait for the user (re-compare with Kibana). Deferred follow-ups: pie percent decimals (Grafana pie has no decimals option), migrate browser-only saved searches to shared, edit/rename shared searches, pie per-slice colours in dashboard export, Kibana "now" line on the histogram, Save and return without dialog.
-**Open issues:** the Kibana comparison stack (`C:/Users/Ariel/kibana-compare`, `docker compose up -d`) is stopped to free memory during the round; restart it at the end. Comparison test dashboards remain on :3000 ("Logs Explorer export" x2, `cmp-o-*`) and in Kibana (`cmp-k-*`); delete only if the user asks.
+**Open issues:** none. Kibana comparison stack runs at :5601 (`C:/Users/Ariel/kibana-compare`; stop it with `docker compose stop` if e2e needs memory). Comparison test objects remain (dashboards "Logs Explorer export" x2 and `cmp-o-*` on :3000, `cmp-k-*` in Kibana; e2e-created `observe-saved-search` dashboards); delete only if the user asks. Remote `autosave/*` branches can be deleted.
 **Batch status:** none open.
 
 ## Environment notes
