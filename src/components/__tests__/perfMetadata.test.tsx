@@ -71,7 +71,8 @@ describe('page bootstrap query counts', () => {
     expect(count('system.columns')).toBe(1);
     expect(count('distinctJSONPaths')).toBe(1);
     expect(count('mapKeys')).toBe(3); // one per map column
-    expect(mockRunQueryRows).toHaveBeenCalledTimes(5);
+    expect(count('data_skipping_indices')).toBe(1); // text-index lookup (PERF-SEARCH), page only
+    expect(mockRunQueryRows).toHaveBeenCalledTimes(6);
   });
 
   it('two full discoveries of the same table still share every query', async () => {
