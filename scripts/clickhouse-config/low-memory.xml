@@ -3,9 +3,20 @@
   for a production server (5 GiB each) and the fixture tables are tiny, so cap them and the server so
   the host has room for more Playwright workers. system.query_log stays on (Diagnostics reads it);
   the background profiling logs nothing here uses are turned off.
+
+  The cap sits well ABOVE the steady-state RSS (~1 GB, up to ~2.3 GiB seen after a reaped run) and
+  BELOW the container limit (docker-compose.yaml mem_limit: 4g). ClickHouse compares the cap with the
+  larger of its own tracked allocations and the process RSS, and jemalloc keeps freed pages resident
+  for a while, so RSS can drift above the tracked amount while idle. With a 2 GiB cap that drift
+  crossed the cap and every query (the healthcheck too) failed with MEMORY_LIMIT_EXCEEDED until a
+  restart. 3.5 GiB leaves ~0.5 GiB for what the cap does not count (thread stacks, jemalloc
+  metadata) before the kernel OOM-kills at 4 GiB. Keep: steady RSS < cap < mem_limit.
+  The ratio guard (max_server_memory_usage_to_ram_ratio, default 0.9) only matters when the cap is 0
+  or above ratio * RAM; it is pinned explicitly so a small docker VM does not lower the cap silently.
 -->
 <clickhouse>
-    <max_server_memory_usage>2147483648</max_server_memory_usage>
+    <max_server_memory_usage>3758096384</max_server_memory_usage>
+    <max_server_memory_usage_to_ram_ratio>0.9</max_server_memory_usage_to_ram_ratio>
     <mark_cache_size>268435456</mark_cache_size>
     <index_mark_cache_size>67108864</index_mark_cache_size>
     <primary_index_cache_size>134217728</primary_index_cache_size>

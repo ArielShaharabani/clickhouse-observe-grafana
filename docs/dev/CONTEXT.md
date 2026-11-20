@@ -1,7 +1,7 @@
 # Context snapshot — read this to restart
 
 Saved after every feature (and every review-fix round). A new session can resume from this file plus `PROGRESS.md` alone.
-Last saved: 2026-11-20, #- PARITY-MINORS merged (PR 51, v0.54.0).
+Last saved: 2026-11-20, #- PERF-SEARCH merged (PR 58, v0.57.0).
 
 ## Goal
 Bring Kibana Discover + Lens style exploration to Grafana on ClickHouse by extending the **ClickHouse Observe** app plugin.
@@ -62,6 +62,9 @@ Bring Kibana Discover + Lens style exploration to Grafana on ClickHouse by exten
 | - | PARITY-FIELDS: Kibana parity: map keys as fields, empty and invalid states, filter groups, field statistics, unknown-field warning | 51 | src/components/FieldsContext.tsx, src/components/NoResults.tsx, src/sql/timeBounds.ts, src/sql/filters.ts, src/components/FilterPills.tsx |
 | - | PARITY-CHARTS2: Kibana parity: pie, metric and table polish, Other by default, editor layout, export colours, Inspector | 51 | src/lens/render/LensChart.tsx, src/lens/render/MetricTiles.tsx, src/lens/Inspector.tsx, src/lens/panelExport.ts |
 | - | PARITY-MINORS: Kibana parity: shared saved searches, breakdown back to Discover, Copy column | 51 | src/data/savedSearches.ts, src/components/SavedSearches/SavedSearchMenu.tsx, src/lens/handoff.ts |
+| - | PERF-METADATA: Performance: shared metadata cache, no duplicate or default-view schema queries, time-bounded map-key samples, lazy trace probe | 58 | src/sql/metadataCache.ts, src/components/FieldsContext.tsx, src/components/App/App.tsx, src/sql/introspection.ts |
+| - | PERF-QUERIES: Performance: ClickHouse dev memory config that recovers, chart result reuse, windowed surrounding documents, histogram axis numbers | 58 | scripts/clickhouse-config/low-memory.xml, docker-compose.yaml, src/lens/resultCache.ts, src/pages/ContextView.tsx, src/utils/axisNumber.ts |
+| - | PERF-SEARCH: Performance: newest-first windowed document search, n-gram text index for wildcards | 58 | src/data/windowedSearch.ts, src/sql/textIndex.ts, src/pages/LogsExplorer.tsx, src/sql/kql/toSql.ts |
 
 ## Key decisions (details in DECISIONS.md)
 - Frontend-only; queries via grafana-clickhouse-datasource (`src/data/runQuery.ts`). Plain React + @grafana/ui, no Scenes.

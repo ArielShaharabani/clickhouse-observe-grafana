@@ -1,7 +1,7 @@
 import { SourceConfig } from '../types';
 import { configSettingsFragments, queryTimeoutFragments, withSettings } from './settings';
 import { timeExpr } from './timeExpr';
-import { quoteString } from './queryBuilder';
+import { coarsePrunePredicate, quoteString } from './queryBuilder';
 
 /**
  * Execution guardrail for field-discovery scans (Map keys / JSON paths) — these queries scan
@@ -54,6 +54,37 @@ export function buildColumnsQuery(config: SourceConfig, table: string): string {
     ],
     configSettingsFragments(config)
   );
+}
+
+/** Days the sparse-key fallback widens the discovery window to (see buildDiscoveryWindowConditions). */
+export const DISCOVERY_FALLBACK_DAYS = 7;
+
+/**
+ * Time bound for the unfiltered Map-key sample that feeds the field list (FieldsContext Phase D).
+ * Without one, `ORDER BY ts DESC LIMIT n` reads the whole table when the sort key doesn't start
+ * with time (measured: 0.5-0.9 s per column on 50M rows, 3.9 s under load). The default window is
+ * the page's current time range (plus the coarse partition predicate, so parts outside it are
+ * pruned); `widen` is the sparse-key fallback, the last DISCOVERY_FALLBACK_DAYS days before the
+ * range's end, used only when the first window found no keys. Views with no mapped time field get
+ * no bound (nothing to bound by).
+ */
+export function buildDiscoveryWindowConditions(config: SourceConfig, widen = false): string[] {
+  if (!config.columns.timestamp) {
+    return [];
+  }
+  const ts = timeExpr(config);
+  if (!widen) {
+    const coarse = coarsePrunePredicate(config);
+    return [`${ts} >= $__fromTime AND ${ts} <= $__toTime`, ...(coarse ? [coarse] : [])];
+  }
+  const p = config.columns.partitionTimestamp;
+  // The coarse column can truncate below the fine one by up to a day, so give it one extra day.
+  return [
+    `${ts} >= $__toTime - INTERVAL ${DISCOVERY_FALLBACK_DAYS} DAY AND ${ts} <= $__toTime`,
+    ...(p && p !== '-'
+      ? [`${p} >= $__toTime - INTERVAL ${DISCOVERY_FALLBACK_DAYS + 1} DAY AND ${p} <= $__toTime + INTERVAL 1 SECOND`]
+      : []),
+  ];
 }
 
 export interface KeyDiscoveryOpts {

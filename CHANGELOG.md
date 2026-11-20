@@ -10,6 +10,32 @@ Versions track the plugin's release history. `Unreleased` collects commits not y
 
 ---
 
+## [0.57.0] — 2026-11-20
+
+### Changed
+- **Faster document list on long ranges (PERF-SEARCH).** With the default newest-first sort the list searches the most recent hour first and widens (6 h, 36 h, full range) only until the page is full, so a selective filter over 7+ days no longer scans the whole range before showing rows. Same rows, order and paging; the histogram and total still cover the whole range. Other sorts are unchanged.
+- **Indexed wildcard search.** If the message column has an `ngrambf_v1` index on `lower(Body)`, `*term*` searches use it (`lower(Body) LIKE '%term%'`). Setup and DDL in `docs/data-view-setup.md`. Without the index nothing changes.
+
+---
+
+## [0.56.0] — 2026-11-20
+
+### Changed
+- **Dev ClickHouse no longer locks itself out (#1).** Server cap 2 GiB to 3.5 GiB, container limit 3 GiB to 4 GiB, `restart: unless-stopped`, jemalloc returns freed pages after 1 s, and the healthcheck restarts the container when the server answers MEMORY_LIMIT_EXCEEDED.
+- **Chart-type switches reuse the last result (#5).** Bar to Line to Area no longer re-runs identical SQL: the rows of the last 8 distinct queries are kept for 60 s (keyed by datasource, compiled SQL and time range). A new Refresh button next to the time picker always re-runs.
+- **Surrounding documents search a narrow window first (#6).** Neighbours are looked up within 1 min of the anchor and the window widens (1 h, 1 d, 30 d, unbounded) only while fewer rows than requested come back, so large tables read a few granules instead of every part.
+- **Discover histogram value axis uses the Visualize number format (#9).** `1,000`, `25,000`, `50M`, `1.5B` instead of `1 Mil`.
+
+---
+
+## [0.55.0] — 2026-11-20
+
+### Fixed
+- **Faster page load.** Discover and Visualize no longer repeat schema queries: `system.columns`, JSON-path discovery and Map-key samples run once per table and are shared by every part of the page (cached for the session, cleared by the field list's refresh). The default view's schema is not read when the link names another view. The Map-key samples that fill the field list read only the current time range (widened to 7 days only when nothing is found) instead of the whole table.
+- The trace-link probe (`SELECT '' AS traceID`) now runs only when a trace link is first needed (opening a document with a trace id), not on every page load.
+
+---
+
 ## [0.54.0] — 2026-11-20
 
 ### Added
