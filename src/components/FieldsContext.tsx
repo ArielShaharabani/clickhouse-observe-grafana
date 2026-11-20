@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { TimeRange } from '@grafana/data';
 import { FieldModel, inferFieldType, parseJsonTypedPaths, parseTupleElements } from '../sql/fieldModel';
-import { buildColumnsQuery, buildDiscoveryWindowConditions, buildJsonPathsQuery } from '../sql/introspection';
+import { buildColumnsQuery, buildDiscoveryWindows, buildJsonPathsQuery } from '../sql/introspection';
 import { hasFreshMetadata, invalidateMetadata, loadMetadata } from '../sql/metadataCache';
 import { quoteDottedPath } from '../sql/queryBuilder';
 import { buildSkipIndicesQuery, parseTextIndexes, TextIndexInfo } from '../sql/textIndex';
@@ -419,14 +419,15 @@ export function useFieldDiscovery(
     if (mapCols.length === 0) {
       return;
     }
+    const windows = buildDiscoveryWindows(config, timeRange.to.valueOf() - timeRange.from.valueOf());
     const perMap = await runWithConcurrencyLimit(mapCols, DISCOVERY_CONCURRENCY, async (name) => {
       try {
         const res = await loadColumnKeys(config, name, {
           table: resolvedTable,
-          // Time-bounded (current range, widened once if the sample finds nothing) — never a
-          // whole-table read; see buildDiscoveryWindowConditions.
-          conditions: buildDiscoveryWindowConditions(config),
-          fallbackConditions: buildDiscoveryWindowConditions(config, true),
+          // Time-bounded (latest hour of the range first, widened while the sample finds nothing) — never a
+          // whole-table read; see buildDiscoveryWindows.
+          conditions: windows[0],
+          fallbackWindows: windows.slice(1),
           timeRange,
           cacheKey: 'fields',
         });
