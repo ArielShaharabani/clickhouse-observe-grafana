@@ -663,5 +663,12 @@ const getStyles = (theme: GrafanaTheme2) => ({
     display: flex;
     justify-content: space-between;
     margin-top: ${theme.spacing(1)};
+    /* Pinned to the bottom of the scrolling dimensions column so Remove / Close stay visible. */
+    position: sticky;
+    bottom: 0;
+    z-index: 1;
+    padding: ${theme.spacing(1, 0)};
+    background: ${theme.colors.background.primary};
+    border-top: 1px solid ${theme.colors.border.weak};
   `,
 });

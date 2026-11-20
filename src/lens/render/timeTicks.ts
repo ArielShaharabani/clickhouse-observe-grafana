@@ -144,6 +144,24 @@ export function timeTicks(t0: number, t1: number, maxTicks: number): TimeTick[] 
   return out;
 }
 
+/** Rough width (px) of a tick label at the axis font size (left-anchored at the tick, 3 px inset). */
+function labelWidth(tk: TimeTick): number {
+  return 3 + Math.max(tk.label.length, tk.sub?.length ?? 0) * 6.5;
+}
+
+/**
+ * Drops ticks whose label would run past `limit` (px, the chart's right edge) so the last label is
+ * never clipped ("14:" for "14:00"): Kibana ends on 13:00 over an 8 h range. `posOf` maps a time to x.
+ */
+export function fitTimeTicks(ticks: TimeTick[], posOf: (t: number) => number, limit: number): TimeTick[] {
+  const kept = ticks.filter((tk) => posOf(tk.t) + labelWidth(tk) <= limit);
+  // A dropped first tick would take the date row with it; hand its sub-label to the next tick.
+  if (kept.length > 0 && kept[0] !== ticks[0] && ticks[0].sub && !kept[0].sub) {
+    kept[0] = { ...kept[0], sub: ticks[0].sub };
+  }
+  return kept;
+}
+
 /** Tooltip header for a time bucket (Kibana: the full date and time). */
 export function tooltipTime(t: number, stepMs: number): string {
   return dateTime(t).format(stepMs > 0 && stepMs < MIN ? 'MMM D, YYYY @ HH:mm:ss' : 'MMM D, YYYY @ HH:mm');

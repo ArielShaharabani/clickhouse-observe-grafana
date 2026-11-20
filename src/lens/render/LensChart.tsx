@@ -126,7 +126,7 @@ function basePanelSpec(state: LensState, result: LensResult): PanelSpec {
         options:
           state.chartType === 'pie'
             ? {
-                legend: { ...legend, placement: 'right', values: ['value'] },
+                legend: { ...legend, placement: 'right', values: ['value', 'percent'] },
                 reduceOptions: { values: true, calcs: [], fields: '' },
                 pieType: 'pie',
               }
@@ -162,6 +162,21 @@ function basePanelSpec(state: LensState, result: LensResult): PanelSpec {
   }
 }
 
+/** Slices under this share of the total are too narrow for an on-slice label (they overlap). */
+export const PIE_LABEL_MIN_SHARE = 0.05;
+
+/**
+ * On-slice labels for a pie. Grafana's piechart has one panel-wide `displayLabels` list, no per-slice
+ * switch, no rotation and no decimals for the percent, so when any slice is too small for its label
+ * ("warn 8%" over "debug 6%") the labels are dropped for the whole pie and the legend (value and percent)
+ * carries the numbers instead.
+ */
+export function pieDisplayLabels(values: number[]): Array<'name' | 'percent'> {
+  const total = values.reduce((a, v) => a + Math.max(0, v), 0);
+  const crowded = values.some((v) => total > 0 && v > 0 && v / total < PIE_LABEL_MIN_SHARE);
+  return crowded ? [] : ['name', 'percent'];
+}
+
 /**
  * Pie: one field per slice, so each slice has its own colour — the value's stable colour (the same
  * as in the XY chart), or a legend pick — and labels read "name NN%"; legend values are grouped.
@@ -188,10 +203,10 @@ function pieSpec(state: LensState, result: LensResult): PanelSpec {
     pluginId: 'piechart',
     frames: [createDataFrame({ fields })],
     options: {
-      legend: { ...legend, placement: 'right', values: ['value'] },
+      legend: { ...legend, placement: 'right', values: ['value', 'percent'] },
       reduceOptions: { values: false, calcs: ['lastNotNull'], fields: '' },
       pieType: 'pie',
-      displayLabels: ['name', 'percent'],
+      displayLabels: pieDisplayLabels(fields.map((f) => f.values[0])),
       tooltip: { mode: 'single', sort: 'none' },
     },
     // Thousands separators unless the metric has its own value format (applied after this).
