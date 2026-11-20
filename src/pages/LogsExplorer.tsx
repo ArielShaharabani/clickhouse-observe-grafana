@@ -71,6 +71,7 @@ const RESULTS_TABS: Array<{ label: string; value: ResultsTab }> = [
 
 export { defaultColumns } from '../data/columns';
 import { logsQueryReducer } from './_logsQueryReducer';
+import { discoveryReconcileTargets } from './_discoveryReconcile';
 import { DefaultTimeRangeContext, resolveDefaultTimeRange } from '../utils/defaultTimeRange';
 import { docNavTargets, pageOfIndex } from './_docNav';
 
@@ -640,6 +641,10 @@ export function LogsExplorer({ tabId, tabStrip }: LogsExplorerProps = {}) {
   // windowed search; everything else (non-time sort, raw SQL, no time field) is the single query.
   // The last window width that filled a page seeds the next call (load-more starts there).
   const windowHintRef = useRef<number | undefined>(undefined);
+  // SQL of the list / histogram query as last issued (PERF-URLQ: the post-discovery reconcile
+  // below re-runs only a query whose SQL would now differ).
+  const lastLogsSqlRef = useRef<string | null>(null);
+  const lastVolSqlRef = useRef<string | null>(null);
   const runListQuery = useCallback(
     async (
       sql: string,
@@ -714,6 +719,7 @@ export function LogsExplorer({ tabId, tabStrip }: LogsExplorerProps = {}) {
 
       // Newest-first sort on a builder query: search the most recent window first and widen only
       // until the page is full (same rows as the single query; see data/windowedSearch.ts).
+      lastLogsSqlRef.current = sql;
       const logRows = await runListQuery(sql, INITIAL_FETCH, fetchState, {
         refId: 'logs',
         signal: abortController.signal,
@@ -787,6 +793,7 @@ export function LogsExplorer({ tabId, tabStrip }: LogsExplorerProps = {}) {
         breakdown: resolveVolumeBreakdown(breakdown, config),
       }, fieldIndexRef.current);
 
+      lastVolSqlRef.current = volSql;
       const volRows = await runQueryRows({
         datasourceUid: config.datasourceUid,
         sql: volSql,
@@ -901,9 +908,31 @@ export function LogsExplorer({ tabId, tabStrip }: LogsExplorerProps = {}) {
     }
     didReconcileForDiscoveryRef.current = true;
     if (queryState.filters.length > 0 || queryState.search.trim()) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      fetchLogs();
-      fetchVolume();
+      // PERF-URLQ: compile what each query would be with the discovered index and re-run only
+      // those whose SQL differs from what already ran (a config-column search compiles the same).
+      const nextLogs = fetchState.useRawSql
+        ? fetchState.rawSql || buildLogsQuery(config, fetchState, { limit: INITIAL_FETCH, offset: 0 }, undefined, fieldIndex)
+        : buildLogsQuery(config, fetchState, { limit: INITIAL_FETCH, offset: 0 }, { projection: 'grid' }, fieldIndex);
+      const resolved = resolveInterval(intervalMode, timeRange);
+      const nextVolume = buildVolumeQuery(
+        config,
+        queryState,
+        { interval: { unit: resolved.unit, value: resolved.value }, breakdown: resolveVolumeBreakdown(breakdown, config) },
+        fieldIndex
+      );
+      const targets = discoveryReconcileTargets({
+        prevLogs: lastLogsSqlRef.current,
+        nextLogs,
+        prevVolume: caps.hasTime ? lastVolSqlRef.current : nextVolume,
+        nextVolume,
+      });
+      if (targets.logs) {
+        // eslint-disable-next-line react-hooks/set-state-in-effect
+        fetchLogs();
+      }
+      if (targets.volume) {
+        fetchVolume();
+      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fieldsState.loading]);
