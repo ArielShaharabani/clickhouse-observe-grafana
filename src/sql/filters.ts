@@ -420,7 +420,7 @@ export function addCondition<L>(root: TreeGroup<L>, path: number[], join: 'or' |
   if (!canAddCondition(root, path, join)) {
     return root;
   }
-  const clone = structuredClone(root) as TreeGroup<L>;
+  const clone = JSON.parse(JSON.stringify(root)) as TreeGroup<L>;
   const parent = groupAt(clone, path.slice(0, -1));
   const idx = path[path.length - 1];
   if (parent.join === join || parent.items.length === 1) {
@@ -435,7 +435,7 @@ export function addCondition<L>(root: TreeGroup<L>, path: number[], join: 'or' |
 /** Removes the item at `path`; a nested group left with one item is replaced by it. The root
  *  always keeps at least one item. */
 export function removeCondition<L>(root: TreeGroup<L>, path: number[]): TreeGroup<L> {
-  const clone = structuredClone(root) as TreeGroup<L>;
+  const clone = JSON.parse(JSON.stringify(root)) as TreeGroup<L>;
   const parent = groupAt(clone, path.slice(0, -1));
   if (path.length === 1 && parent.items.length === 1) {
     return root;
