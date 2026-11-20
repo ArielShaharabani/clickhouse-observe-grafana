@@ -39,6 +39,9 @@ function pillText(f: FilterPill): { notPrefix: boolean; fieldPart: string | null
   if (f.label) {
     return { notPrefix: false, fieldPart: null, rest: f.label };
   }
+  if (f.cond) {
+    return { notPrefix: false, fieldPart: null, rest: filterLabel(f) };
+  }
   if (f.op === 'not_exists') {
     return { notPrefix: true, fieldPart: f.field, rest: ' exists' };
   }
@@ -109,7 +112,7 @@ export function FilterPills({ filters, onChange, loadValues, pinTable }: FilterP
   const groupSize = (g: string | undefined) => (g ? filters.filter((x) => x.group === g).length : 0);
   const pillNodes = filters.map((f, idx) => {
         const { notPrefix, fieldPart, rest } = pillText(f);
-        const negated = NEGATED_OPS.has(f.op);
+        const negated = f.cond ? !!f.negate : NEGATED_OPS.has(f.op);
         const grouped = groupSize(f.group) > 1;
         const firstInGroup = grouped && filters[idx - 1]?.group !== f.group;
         const lastOfGroup = f.group ? filters.map((x) => x.group).lastIndexOf(f.group) : idx;
@@ -385,7 +388,7 @@ function FilterPillMenu({
   onRemoveFromGroup,
 }: FilterPillMenuProps) {
   const styles = useStyles2(getStyles);
-  const negated = NEGATED_OPS.has(pill.op);
+  const negated = pill.cond ? !!pill.negate : NEGATED_OPS.has(pill.op);
   const flipUp = anchorRect.bottom + 6 + MENU_HEIGHT_ESTIMATE > window.innerHeight;
   const pos = {
     top: flipUp ? Math.max(8, anchorRect.top - 6 - MENU_HEIGHT_ESTIMATE) : anchorRect.bottom + 6,
