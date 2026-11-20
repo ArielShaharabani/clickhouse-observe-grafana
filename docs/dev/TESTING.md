@@ -384,3 +384,22 @@ LENS-DATAVIEW acceptance:
 | --- | --- |
 | Jest | `src/data/__tests__/savedSearchesShared.test.ts`, `src/lens/__tests__/handoff.test.ts` (breakdown), `a11y.test.tsx` (header menu lists Copy column) |
 | E2E | `tests/features/feat-parity-minors.spec.ts` — not run (coordinator) |
+
+### PERF-METADATA (PR 58)
+| Case | Status |
+| --- | --- |
+| Jest | `src/components/__tests__/perfMetadata.test.tsx` (query counts per bootstrap with two concurrent consumers, metadata cache sharing / invalidation / no cached rejection, map-key samples time-bounded, sparse-key fallback) |
+| E2E | `tests/features/perf-metadata.spec.ts` (query count per Discover / Visualize load) — not run (coordinator) |
+
+### PERF-QUERIES (PR 58)
+| Case | Status |
+| --- | --- |
+| Jest | `src/lens/__tests__/resultCache.test.ts` (key, TTL, LRU, overwrite), `src/sql/__tests__/surrounding.test.ts` (windows, invalid windows ignored, anchor ignores window, ladder), `src/utils/__tests__/axisNumber.test.ts`, `VolumeHistogram.legend.test.tsx` (axis now `1,000`) |
+| E2E | `tests/features/perf-queries.spec.ts` (Bar to Line to Area sends no `/api/ds/query`; Refresh does; Discover histogram axis format) — not run (coordinator) |
+| Manual | Recreate the ClickHouse container (`docker compose up -d clickhouse`), confirm the 4 GiB limit and that it survives a long idle; optionally force a lock-out and confirm the restart — not run (coordinator) |
+
+### PERF-SEARCH (PR 58)
+| Case | Status |
+| --- | --- |
+| Jest | `src/data/__tests__/windowedSearch.test.ts` (window sequence, stop when full, fallback, rows equal full query incl. OFFSET, cancel, sort detection), `src/sql/__tests__/text_index.test.ts` (index parsing, indexed compile, escaping, fallbacks) |
+| E2E | `tests/features/perf-search.spec.ts` — not run (coordinator) |
