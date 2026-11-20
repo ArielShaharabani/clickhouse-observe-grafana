@@ -10,6 +10,74 @@ Versions track the plugin's release history. `Unreleased` collects commits not y
 
 ---
 
+## [0.65.0] — 2026-11-20
+
+- Changed: opening or saving a saved search names the Discover tab after it (was "Untitled") and puts its id in the URL (`ss=<id>`). The id is cleared when the query, filters, columns or sort are changed, or the data view switched, and a link carrying only `ss` reopens the saved search in a fresh browser. The Share link keeps `ss`.
+- Added: a "Store time range" checkbox in the Save search dialog (default on, as before); a search saved without it leaves the current time range alone when opened.
+- Fixed: the delete (trash) button in the Saved searches menu has the accessible name "Delete saved search <title>".
+- Changed: new shared saved searches are stored in a Grafana folder "Observe saved searches" (created on first save through the Grafana 12+ folder API); when the user cannot read, create or write it they go to General as before. Existing ones stay where they are and are still listed by tag across folders.
+
+---
+
+## [0.64.0] — 2026-11-20
+
+- Discover grid: the default row is now one line of message with an ellipsis (about 40 px instead of 83 px; "Body cell lines" default 3 -> 1). A saved Display options choice still wins. The histogram is 104 px tall (was 128) with a tighter header, so more rows fit above the fold.
+- Discover pager: shows the number of matching documents (the histogram's count, no extra query): "200 of 1,207 loaded", and the document panel reads "1 of 1,207". Paging past the loaded rows fetches at least 200 rows per request (was exactly the missing page, 50). A "Load all N" button appears when at most 5,000 documents match. Raw SQL and views without a time field keep "200 rows loaded+".
+
+---
+
+## [0.63.0] — 2026-11-20
+
+- Filter builder: one pill can now hold several conditions combined with OR and AND, with nesting (AND of ORs, OR of ANDs, up to three levels like Kibana). Each condition row has "Add OR condition" / "Add AND condition" and a delete button; the Preview line shows the combined filter (for example `ServiceName = payments OR (ServiceName = auth AND SeverityNumber = 17)`).
+- Compound pills negate, disable, pin, edit and delete as a whole, appear in the URL and saved searches, and read as one pill (`NOT (...)` when excluded). Single-condition pills and existing links are unchanged.
+
+---
+
+## [0.62.0] — 2026-11-20
+
+- Visualize opened from a dashboard panel: "Save and return" is now one click (no confirm dialog); the panel keeps its title and description. A concurrent dashboard change is still reported (the dialog opens with the reason) and nothing is overwritten.
+- "Cancel" asks "Leave with unsaved changes? / Discard changes" only when the chart differs from the panel it was opened from; no prompt when nothing changed.
+- Visualize "Explore in Discover" opens in the same tab (browser Back returns to the chart); Ctrl/middle-click still opens a new tab.
+- Share dialog short-link hint: "anyone who can open this Grafana can use it" (links work anonymously when anonymous access is on).
+
+---
+
+## [0.61.0] — 2026-11-20
+
+- Visualize: the dimension editor's footer (Remove dimension / Close) is pinned to the bottom of the side panel, so it stays visible when the editor (for example Top values) is taller than the viewport; only the body scrolls.
+- Visualize pie: when a slice is under 5% of the total the on-slice labels are dropped (they overlapped, "warn 8%" over "debug 6%") and the legend shows value and percent for every slice.
+- Visualize time axis: the last tick label is no longer clipped at the right edge (a tick whose label would not fit is dropped, so an 8 h range ends on 13:00), and Line / Area no longer slope down to 0 over an empty partial edge bucket.
+
+---
+
+## [0.60.0] — 2026-11-20
+
+- Fix: the ClickHouse dev healthcheck never passed (compose interpolated `$rc` away), so the MEMORY_LIMIT_EXCEEDED self-restart could not run; `$$rc` now (finding 1).
+- Fix: Discover → Add to dashboard table panel no longer shows "COUNT 200" for 1,207 matches: it holds the newest 1,000 documents, pages, and says so in its description (finding 3).
+- Fix: the dashboard Log volume panel uses about 60 buckets like Discover (`maxDataPoints: 60`), not one per pixel of panel width (finding 10).
+
+- Fix: after an invalid search, Discover's histogram no longer keeps the previous search's bars and row count; it says "No chart: the search has an error", as Kibana clears its chart (finding 2).
+- Fix: the Discover histogram tooltip shows exact counts with separators ("Total: 1,920"), not "1.92 K" (finding 6).
+- Fix: the Field statistics tab says "Calculated from 2,161 records" when every matching document was used; "sample" only when the 5,000-row cap is reached (finding 20).
+- Fix: the document JSON view shows every DateTime column as ISO 8601, including the partition column `TimestampTime` (finding 18; the single-document link length is unchanged).
+- Discover histogram: Millisecond interval (Kibana has it); scaled through 2/5/10/…/500 ms and then seconds with the usual notice when it would exceed 1,000 bars; buckets use `toDateTime64(ts, 3)`; maps to Visualize's `1ms` both ways (finding 21).
+- Fix: a `bd` link parameter that can't be applied (junk, or a field this data view lacks) shows a dismissible notice above the histogram instead of being dropped silently (finding 17 / round-1 #45).
+
+---
+
+## [0.59.0] — 2026-11-20
+
+- Fixed: opening Discover with a query (`q=`) or filters in the URL no longer runs the document list and the histogram twice. The re-run after field discovery now happens only when the SQL built with the discovered fields differs from the SQL that already ran (a Map key or JSON path unknown at first); a config-column search such as `SeverityText : error` compiles the same and is not repeated or cancelled.
+
+---
+
+## [0.58.0] — 2026-11-20
+
+- Faster field discovery on big tables: the Map-key sample now reads the latest hour of the range first (cost no longer grows with table size or range), and only widens to the full range, then 7 days, when a window has too few rows to hold any keys.
+- A Map column that is simply empty in the range (e.g. ScopeAttributes) is no longer sampled a second time on every load.
+
+---
+
 ## [0.57.0] — 2026-11-20
 
 ### Changed

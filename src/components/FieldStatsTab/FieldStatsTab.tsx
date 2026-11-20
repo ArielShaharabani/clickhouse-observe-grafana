@@ -15,7 +15,7 @@ import { SourceConfigContext } from '../App/App';
 import { useFields } from '../FieldsContext';
 import { FIELD_TYPE_ICONS } from '../FieldSidebar/fieldIcons';
 import { fieldTypeColor } from '../FieldSidebar/fieldTypeColors';
-import { STATS_SAMPLE_SIZE } from '../FieldSidebar/FieldStatsPopover';
+import { sampleCaption, STATS_SAMPLE_SIZE } from '../FieldSidebar/FieldStatsPopover';
 
 /** Fields profiled per query (one table page = one batch). */
 export const FIELD_STATS_PAGE_SIZE = 25;
@@ -229,7 +229,9 @@ export function FieldStatsTab({ queryState, timeRange, onAddFilter, onVisualize 
       <div className={styles.footer}>
         {sampled > 0 && (
           <span className={styles.muted}>
-            Calculated from {sampled.toLocaleString()} sample records (the most recent documents matching the query).
+            {/* "sample" only when the cap was hit; fewer rows means every matching document was used. */}
+            {sampleCaption('Calculated', sampled, STATS_SAMPLE_SIZE)}
+            {sampled >= STATS_SAMPLE_SIZE && ' (the most recent documents matching the query)'}
           </span>
         )}
         <div className={styles.spacer} />

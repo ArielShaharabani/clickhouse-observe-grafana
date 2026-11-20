@@ -1,7 +1,7 @@
 # Context snapshot — read this to restart
 
 Saved after every feature (and every review-fix round). A new session can resume from this file plus `PROGRESS.md` alone.
-Last saved: 2026-11-20, #- PERF-SEARCH merged (PR 58, v0.57.0).
+Last saved: 2026-11-20, #- R2-SAVED merged (PR 67, v0.65.0).
 
 ## Goal
 Bring Kibana Discover + Lens style exploration to Grafana on ClickHouse by extending the **ClickHouse Observe** app plugin.
@@ -65,6 +65,14 @@ Bring Kibana Discover + Lens style exploration to Grafana on ClickHouse by exten
 | - | PERF-METADATA: Performance: shared metadata cache, no duplicate or default-view schema queries, time-bounded map-key samples, lazy trace probe | 58 | src/sql/metadataCache.ts, src/components/FieldsContext.tsx, src/components/App/App.tsx, src/sql/introspection.ts |
 | - | PERF-QUERIES: Performance: ClickHouse dev memory config that recovers, chart result reuse, windowed surrounding documents, histogram axis numbers | 58 | scripts/clickhouse-config/low-memory.xml, docker-compose.yaml, src/lens/resultCache.ts, src/pages/ContextView.tsx, src/utils/axisNumber.ts |
 | - | PERF-SEARCH: Performance: newest-first windowed document search, n-gram text index for wildcards | 58 | src/data/windowedSearch.ts, src/sql/textIndex.ts, src/pages/LogsExplorer.tsx, src/sql/kql/toSql.ts |
+| - | PERF-SAMPLES: Performance: map-key samples from the latest hour | 61 | src/sql/keys.ts, src/sql/introspection.ts |
+| - | PERF-URLQ: Performance: no repeated queries for links with q= | 62 | src/pages/_discoveryReconcile.ts, src/pages/LogsExplorer.tsx |
+| - | R2-FIXES: Round 2 fixes: healthcheck, stale histogram, dashboard panels, tooltip, intervals, JSON times | 68 | docker-compose.yaml, src/data/panelExport.ts, src/components/LogsHistogramPanel.tsx |
+| - | R2-VIZ-POLISH: Visualize polish: pinned editor footer, pie labels, time axis | 63 | src/lens/DimensionEditor.tsx, src/lens/timeTicks.ts |
+| - | R2-DASH-FLOW: Dashboard flow: one-click Save and return, guarded Cancel, Explore in same tab | 64 | src/lens/SaveActions.tsx, src/lens/LensPage.tsx |
+| - | R2-FILTER-GROUPS: Filter builder: OR / AND condition groups | 65 | src/components/AddFilter/FilterEditForm.tsx, src/sql/filters.ts |
+| - | R2-GRID: Discover grid: compact rows, totals in the pager | 66 | src/components/GridDisplayOptions.tsx, src/pages/_docNav.ts |
+| - | R2-SAVED: Saved searches: tab title, id in the URL, optional time, own folder | 67 | src/data/savedSearches.ts, src/pages/DiscoverTabsHost.tsx |
 
 ## Key decisions (details in DECISIONS.md)
 - Frontend-only; queries via grafana-clickhouse-datasource (`src/data/runQuery.ts`). Plain React + @grafana/ui, no Scenes.

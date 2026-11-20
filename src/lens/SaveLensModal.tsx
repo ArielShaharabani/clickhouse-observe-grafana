@@ -77,6 +77,11 @@ export async function saveAndReturn(target: ReturnTarget, panel: LensPanel): Pro
   return dashboardReturnPath(target);
 }
 
+/** The message for a failed Save and return. */
+export function returnSaveError(e: unknown): string {
+  return e instanceof Error && e.name === 'PanelNotFoundError' ? e.message : dashboardSaveError(e);
+}
+
 /**
  * Saves the panel: to the library first (when asked), then onto the dashboard — as a reference
  * to the library panel when one was created. If the dashboard save fails, the library panel just
@@ -119,6 +124,8 @@ interface Props {
   returnTo?: ReturnTarget;
   /** Start on Save as new (the toolbar's "Save as new") instead of Save and return. */
   startAsNew?: boolean;
+  /** Shown when the dialog opens (the toolbar's one-click Save and return failed). */
+  initialError?: string;
 }
 
 export function SaveLensModal({
@@ -130,6 +137,7 @@ export function SaveLensModal({
   canSaveDashboards,
   returnTo,
   startAsNew,
+  initialError,
 }: Props) {
   const styles = useStyles2(getStyles);
   const ids = useId();
@@ -163,7 +171,7 @@ export function SaveLensModal({
       setTitleEdited(false);
       setOptions(null);
       setLoadError('');
-      setError('');
+      setError(initialError ?? '');
     }
   }
 
@@ -206,7 +214,7 @@ export function SaveLensModal({
       onDismiss();
       locationService.push(path);
     } catch (e) {
-      setError(e instanceof Error && e.name === 'PanelNotFoundError' ? e.message : dashboardSaveError(e));
+      setError(returnSaveError(e));
     } finally {
       setSaving(false);
     }

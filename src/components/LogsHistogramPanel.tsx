@@ -39,6 +39,12 @@ interface LogsHistogramPanelProps {
   onToggleCollapsed: () => void;
   /** "Edit visualization" link to the Visualize page (DISC-CHART-03); absent = no button. */
   editVisualizationUrl?: string;
+  /** The search does not parse: the bars and count belong to the previous search, so hide them
+   *  (Kibana clears the chart too) instead of showing a stale answer under the error. */
+  invalidQuery?: boolean;
+  /** Why a breakdown from the link was not applied (round 2 #17); shown until dismissed. */
+  breakdownNotice?: string;
+  onDismissBreakdownNotice?: () => void;
 }
 
 function colorModeFor(breakdown: BreakdownSel): HistogramColorMode {
@@ -74,6 +80,9 @@ export function LogsHistogramPanel({
   breakdownTarget,
   onAddFilter,
   collapsed,
+  invalidQuery = false,
+  breakdownNotice,
+  onDismissBreakdownNotice,
   onToggleCollapsed,
   editVisualizationUrl,
 }: LogsHistogramPanelProps) {
@@ -107,13 +116,32 @@ export function LogsHistogramPanel({
           />
         )}
       </div>
-      {!collapsed &&
+      {breakdownNotice && (
+        <div className={styles.breakdownNotice} role="status" data-testid="breakdown-notice">
+          <Icon name="exclamation-triangle" size="sm" />
+          <span>{breakdownNotice}</span>
+          {onDismissBreakdownNotice && (
+            <IconButton
+              name="times"
+              size="sm"
+              aria-label="Dismiss breakdown notice"
+              onClick={onDismissBreakdownNotice}
+            />
+          )}
+        </div>
+      )}
+      {!collapsed && invalidQuery ? (
+        <div className={styles.histogramEmpty} role="status" data-testid="histogram-invalid-query">
+          No chart: the search has an error
+        </div>
+      ) : (
+        !collapsed &&
         (volumeData.length > 0 && (totalEvents > 0 || volLoading) ? (
           <>
             <VolumeHistogram
               data={volumeData}
               timeRange={timeRange}
-              height={128}
+              height={104}
               loading={volLoading}
               onSelectRange={onSelectRange}
               breakdownTarget={breakdownTarget}
@@ -124,7 +152,8 @@ export function LogsHistogramPanel({
             />
             {/* SHARED-A11Y-01: the new hit count is spoken after each search. */}
             <span className={styles.histogramMeta} role="status">
-              {totalEvents.toLocaleString()} rows (count) &middot; {formatRangeCaption(timeRange)} (interval: {resolvedInterval.label})
+              {totalEvents.toLocaleString()} rows (count) &middot; {formatRangeCaption(timeRange)} (interval:{' '}
+              {resolvedInterval.label})
               {resolvedInterval.scaledTo && (
                 // Kibana's warning when a chosen interval is too fine for the range.
                 <span
@@ -139,7 +168,8 @@ export function LogsHistogramPanel({
           </>
         ) : (
           <div className={styles.histogramEmpty}>{volLoading ? 'Loading…' : 'No events in selected time range'}</div>
-        ))}
+        ))
+      )}
     </div>
   );
 }
@@ -164,7 +194,14 @@ const getStyles = (theme: GrafanaTheme2) => ({
     display: flex;
     align-items: center;
     gap: ${theme.spacing(1)};
-    padding-bottom: ${theme.spacing(1)};
+    padding-bottom: ${theme.spacing(0.5)};
+  `,
+  breakdownNotice: css`
+    display: flex;
+    align-items: center;
+    gap: ${theme.spacing(0.5)};
+    color: ${theme.colors.warning.text};
+    font-size: ${theme.typography.bodySmall.fontSize};
   `,
   scaledNotice: css`
     display: inline-flex;

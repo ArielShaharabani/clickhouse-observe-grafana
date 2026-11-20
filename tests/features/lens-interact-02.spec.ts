@@ -47,9 +47,8 @@ test('DISC-CHART-03: histogram Edit visualization opens Bar over time with the b
   await expect(page.getByRole('button', { name: 'Chart type: Bar' })).toBeVisible();
 });
 
-test('IT-H: Explore in Discover opens a new tab with the bucket fields as columns and the same count', async ({
+test('IT-H: Explore in Discover opens in the same tab with the bucket fields as columns and the same count', async ({
   page,
-  context,
 }) => {
   const viz = new VisualizePage(page);
   await viz.open({ q: 'SeverityText:error' });
@@ -57,20 +56,11 @@ test('IT-H: Explore in Discover opens a new tab with the bucket fields as column
   await expect(viz.chart).toHaveAttribute('data-chart-type', 'bar');
   await expect(viz.group('Horizontal axis')).toContainText('Top 9 values of TraceId');
 
-  const [tab] = await Promise.all([
-    context.waitForEvent('page'),
-    page.getByRole('link', { name: 'Explore in Discover' }).click(),
-  ]);
-  await tab.waitForLoadState();
-  await expect(tab).toHaveURL(/\/logs\?/);
+  await page.getByRole('link', { name: 'Explore in Discover' }).click();
+  await expect(page).toHaveURL(/\/logs\?/);
+  const tab = page;
   const logs = new LogsPage(tab);
   await logs.expectRowCount(FIXTURE.counts.byLevel.error);
-  // A fresh tab may open Grafana's "What's new" dialog, which hides the page from a11y queries.
-  const whatsNew = tab.getByRole('dialog', { name: "What's new in Grafana" });
-  await expect(whatsNew.or(logs.grid)).toBeVisible();
-  if (await whatsNew.isVisible()) {
-    await whatsNew.getByRole('button', { name: 'Close' }).click();
-  }
   // The view's default columns stay; the chart's bucket field is added.
   for (const name of ['Drag to reorder Time', 'Drag to reorder Message', 'Drag to reorder TraceId']) {
     await expect(logs.grid.getByRole('columnheader', { name })).toBeVisible();
@@ -81,4 +71,8 @@ test('IT-H: Explore in Discover opens a new tab with the bucket fields as column
   const cols: Array<{ displayName: string }> = JSON.parse(sp.get('cols') ?? '[]');
   expect(cols[0].displayName).toBe('Time');
   expect(cols[cols.length - 1].displayName).toBe('TraceId');
+  // Back returns to the chart.
+  await page.goBack();
+  await expect(page).toHaveURL(/\/visualize\?/);
+  await expect(new VisualizePage(page).chart).toHaveAttribute('data-chart-type', 'bar');
 });

@@ -21,7 +21,7 @@
  */
 
 import { TimeRange } from '@grafana/data';
-import { buildMapKeysQuery, KeyDiscoveryOpts } from './introspection';
+import { buildMapKeysQuery, KeyDiscoveryOpts, MAP_KEYS_SAMPLE_SIZE } from './introspection';
 import { runQueryRows } from '../data/runQuery';
 import { coarseTimeBucket } from './timeBucket';
 import { quoteString } from './queryBuilder';
@@ -51,9 +51,10 @@ export interface LoadKeysOpts extends KeyDiscoveryOpts {
   timeRange: TimeRange;
   /** Caller-supplied hash of current filter state, so the cache key stays scoped per-page. */
   cacheKey: string;
-  /** Wider conditions to retry with when the first sample finds no keys at all (a sparse key set
-   *  that the narrow window missed). Skipped when absent. */
-  fallbackConditions?: string[];
+  /** Wider condition sets to retry with, in order, while the sample finds no keys and is not full
+   *  (the window simply had too few rows, e.g. a sparse key set). A full sample with no keys is an
+   *  empty column and is never retried. Skipped when absent. */
+  fallbackWindows?: string[][];
 }
 
 // Module-level cache, same lifetime/scoping approach as kql/_values.ts's valuesCache — plus a TTL
@@ -99,9 +100,11 @@ export async function fetchMapKeys(config: SourceConfig, mapColumn: string, opts
   const rows = await runQueryRows({ datasourceUid: config.datasourceUid, sql, timeRange: opts.timeRange, op: 'mapKeys' });
   const keys: KeyEntry[] = rows.map((r) => ({ key: String(r['k'] ?? '') })).filter((k) => k.key.length > 0);
   const total = rows.length > 0 ? Number(rows[0]['total'] ?? 0) : 0;
-  if (keys.length === 0 && opts.fallbackConditions && opts.fallbackConditions.length > 0) {
-    // Nothing in the narrow window: widen once (still time-bounded) so sparse keys aren't lost.
-    return fetchMapKeys(config, mapColumn, { ...opts, conditions: opts.fallbackConditions, fallbackConditions: undefined });
+  const sampleSize = opts.sampleSize ?? MAP_KEYS_SAMPLE_SIZE;
+  if (keys.length === 0 && total < sampleSize && opts.fallbackWindows && opts.fallbackWindows.length > 0) {
+    // Nothing in a window that was not even full: widen (still time-bounded) so sparse keys aren't lost.
+    const [next, ...rest] = opts.fallbackWindows;
+    return fetchMapKeys(config, mapColumn, { ...opts, conditions: next, fallbackWindows: rest });
   }
   return { keys, total };
 }

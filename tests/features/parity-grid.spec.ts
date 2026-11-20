@@ -4,10 +4,13 @@ import { test } from '../fixtures';
 import { LogsPage } from '../pages/LogsPage';
 import { FIXTURE } from '../fixture';
 
+// The document panel shows the histogram's total, not just the loaded rows.
+const TOTAL = FIXTURE.counts.total.toLocaleString('en-US');
+
 // PARITY-GRID: Kibana 9.5 comparison fixes for the Discover grid, document panel, surrounding
 // documents and field popover (docs/dev/pending/PARITY-GRID.md, docs/spec/10-discover.md).
 
-const docLabel = (page: Page) => page.getByText(/^\d+ of \d+$/);
+const docLabel = (page: Page) => page.getByText(/^[\d,]+ of [\d,]+$/);
 const panel = (page: Page) => page.getByRole('region', { name: 'Document detail' });
 const header = (logs: LogsPage, name: string) => logs.grid.getByRole('button', { name: new RegExp(`^${name}`) });
 
@@ -28,23 +31,23 @@ test('document panel pages through every loaded row, with ←/→ and Escape', a
   await logs.expectRowCount(FIXTURE.counts.total);
   // The last row of grid page 1 (50 rows a page, 200 loaded).
   await logs.grid.getByRole('button', { name: 'Open detail' }).last().click();
-  await expect(docLabel(page)).toHaveText('50 of 200');
+  await expect(docLabel(page)).toHaveText(`50 of ${TOTAL}`);
   await expect(panel(page)).toBeFocused();
   await page.getByRole('button', { name: 'Next log' }).click();
-  await expect(docLabel(page)).toHaveText('51 of 200');
+  await expect(docLabel(page)).toHaveText(`51 of ${TOTAL}`);
   // The grid followed the document to page 2 and highlights its row.
   await expect(logs.grid.locator('tbody tr[aria-selected="true"]')).toHaveCount(1);
   await expect(logs.grid.getByRole('button', { name: 'Close detail' })).toBeVisible();
   await panel(page).focus();
   await page.keyboard.press('ArrowRight');
-  await expect(docLabel(page)).toHaveText('52 of 200');
+  await expect(docLabel(page)).toHaveText(`52 of ${TOTAL}`);
   await page.keyboard.press('ArrowLeft');
-  await expect(docLabel(page)).toHaveText('51 of 200');
+  await expect(docLabel(page)).toHaveText(`51 of ${TOTAL}`);
   await page.getByRole('button', { name: 'Last log' }).click();
-  await expect(docLabel(page)).toHaveText('200 of 200');
+  await expect(docLabel(page)).toHaveText(`200 of ${TOTAL}`);
   // More rows exist: Next fetches them.
   await page.getByRole('button', { name: 'Next log' }).click();
-  await expect(docLabel(page)).toHaveText(/^201 of \d+$/);
+  await expect(docLabel(page)).toHaveText(`201 of ${TOTAL}`);
   await panel(page).focus();
   await page.keyboard.press('Escape');
   await expect(panel(page)).toBeHidden();
@@ -65,7 +68,7 @@ test('the field list keeps its width when many columns are added; the grid scrol
   const overflow = await grid.evaluate((el) => el.scrollWidth > el.clientWidth);
   expect(overflow).toBe(true);
   // The pager stays inside the viewport.
-  const pager = page.getByText(/rows loaded/);
+  const pager = page.getByText(/ loaded/);
   const box = (await pager.boundingBox())!;
   expect(box.x + box.width).toBeLessThanOrEqual(page.viewportSize()!.width);
 });

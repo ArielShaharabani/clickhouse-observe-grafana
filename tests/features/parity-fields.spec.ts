@@ -33,6 +33,9 @@ test('an invalid query replaces the results with the error', async ({ page }) =>
   await logs.searchInput.fill('ServiceName : (');
   await logs.searchInput.press('Enter');
   await expect(page.getByTestId('results-error')).toBeVisible();
+  // Round 2 #2: the previous search's bars and count are not left above the error.
+  await expect(page.getByTestId('histogram-invalid-query')).toBeVisible();
+  await expect(page.getByText(/rows \(count\)/)).toHaveCount(0);
 });
 
 test('unknown KQL field shows a warning', async ({ page }) => {

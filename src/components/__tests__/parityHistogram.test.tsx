@@ -63,6 +63,21 @@ describe('fixed interval too fine for the range is scaled, not disabled', () => 
     });
   });
 
+  it('Millisecond (round 2 #21): exact under 1,000 buckets, scaled through ms steps, then seconds', () => {
+    expect(resolveInterval('millisecond', range(0, 500))).toEqual({
+      unit: 'MILLISECOND',
+      value: 1,
+      label: 'Millisecond',
+      intervalMs: 1,
+    });
+    const tenSec = resolveInterval('millisecond', range(0, 10 * SEC));
+    expect(tenSec).toMatchObject({ unit: 'MILLISECOND', value: 10, intervalMs: 10, scaledTo: '10 milliseconds' });
+    const hour = resolveInterval('millisecond', range(0, H));
+    expect(hour.unit).toBe('SECOND');
+    expect(hour.scaledTo).toBe('10 seconds');
+    expect(hour.label).toBe('Millisecond, scaled to 10 seconds');
+  });
+
   it('Hour over 7 days (168 bars) is not scaled; the scaled step is a multiple of the unit', () => {
     expect(resolveInterval('hour', range(JAN1, JAN1 + 7 * DAY)).scaledTo).toBeUndefined();
     const r = resolveInterval('hour', range(JAN1, JAN1 + 90 * DAY)); // 2,160 hours
@@ -132,7 +147,13 @@ describe('brushRange: exact dragged times, never empty', () => {
   it('a zero-width brush still spans at least one pixel of time (90 s here) and one second', () => {
     const r = brushRange(50, 50, bars, H, 960)!;
     expect(r.to - r.from).toBe(90 * SEC);
-    const tiny = brushRange(50, 50, Array.from({ length: 60 }, (_, i) => ({ time: i * SEC })), SEC, 6000)!;
+    const tiny = brushRange(
+      50,
+      50,
+      Array.from({ length: 60 }, (_, i) => ({ time: i * SEC })),
+      SEC,
+      6000
+    )!;
     expect(tiny.to - tiny.from).toBe(SEC);
   });
 
@@ -209,7 +230,15 @@ describe('VolumeHistogram: brush, click, partial buckets, axis', () => {
   let rectSpy: jest.SpyInstance;
   beforeEach(() => {
     rectSpy = jest.spyOn(Element.prototype, 'getBoundingClientRect').mockReturnValue({
-      left: 0, top: 0, right: 960, bottom: 100, width: 960, height: 100, x: 0, y: 0, toJSON: () => ({}),
+      left: 0,
+      top: 0,
+      right: 960,
+      bottom: 100,
+      width: 960,
+      height: 100,
+      x: 0,
+      y: 0,
+      toJSON: () => ({}),
     } as DOMRect);
   });
   afterEach(() => rectSpy.mockRestore());
@@ -217,7 +246,13 @@ describe('VolumeHistogram: brush, click, partial buckets, axis', () => {
   function renderChart(timeRange = range(T0, T0 + 24 * H)) {
     const onSelectRange = jest.fn();
     const utils = render(
-      <VolumeHistogram data={data} timeRange={timeRange} colorMode="single" bucketMs={H} onSelectRange={onSelectRange} />
+      <VolumeHistogram
+        data={data}
+        timeRange={timeRange}
+        colorMode="single"
+        bucketMs={H}
+        onSelectRange={onSelectRange}
+      />
     );
     const svg = utils.container.querySelector('svg')!;
     return { ...utils, svg, onSelectRange };

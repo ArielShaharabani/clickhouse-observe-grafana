@@ -334,11 +334,15 @@ export function LogDetailDrawer({
   // The JSON tab renders fully expanded by default — every object/array node open, not
   // just the root.
   const jsonExpandedPaths = useMemo(() => allContainerPaths(effectiveRow), [effectiveRow]);
-  // The JSON tab shows the time as ISO 8601 like Kibana (the datasource hands it over as epoch ms).
-  const jsonRow = useMemo(
-    () => withIsoTimestamps(effectiveRow, [rawTimeCol, CORE_ALIAS.timestamp]),
-    [effectiveRow, rawTimeCol]
-  );
+  // The JSON tab shows times as ISO 8601 like Kibana (the datasource hands them over as epoch ms):
+  // the view's time column and every other DateTime column, e.g. the partition column
+  // `TimestampTime` (round 2 #18). A numeric column converted to time (rawTimeCol '') stays a number.
+  const jsonRow = useMemo(() => {
+    const dateTimeCols = (fields ?? [])
+      .filter((f) => f.source === 'column' && f.type === 'time' && f.name !== c.timestamp)
+      .map((f) => f.name);
+    return withIsoTimestamps(effectiveRow, [rawTimeCol, CORE_ALIAS.timestamp, ...dateTimeCols]);
+  }, [effectiveRow, rawTimeCol, fields, c.timestamp]);
 
   // Flat Field | Value table — no OTel category grouping. Map/JSON container
   // columns (ResourceAttributes, LogAttributes, …) are excluded in their raw blob form and

@@ -54,6 +54,7 @@ import { BreakdownUrl, decodeLogsState, encodeLogsState, resolveBreakdownField }
 import { loadPinnedFilters, mergePinnedFilters, normalizePinnedFlags, tableKey } from '../state/sharedSearch';
 import { rememberSearchContext } from '../state/lastSearch';
 import { TAB_PARAM } from '../state/discoverTabs';
+import { findSavedSearch, savedSearchTimeRange } from '../data/savedSearches';
 import { useAutocompleteSources } from '../autocomplete/service';
 import { compileColumnHighlighter, extractHighlightTerms } from '../sql/kql/highlight';
 import { errMsg } from '../errMsg';
@@ -71,8 +72,9 @@ const RESULTS_TABS: Array<{ label: string; value: ResultsTab }> = [
 
 export { defaultColumns } from '../data/columns';
 import { logsQueryReducer } from './_logsQueryReducer';
+import { discoveryReconcileTargets } from './_discoveryReconcile';
 import { DefaultTimeRangeContext, resolveDefaultTimeRange } from '../utils/defaultTimeRange';
-import { docNavTargets, pageOfIndex } from './_docNav';
+import { docNavTargets, knownTotal, LOAD_ALL_MAX, LOAD_MORE_CHUNK, pageOfIndex } from './_docNav';
 
 const INITIAL_FETCH = 200;
 const PAGE_SIZE_OPTIONS = [10, 25, 50, 100, 250, 500];
@@ -103,9 +105,11 @@ export interface LogsExplorerProps {
   tabId?: string;
   /** Session tab strip, rendered above the toolbar. */
   tabStrip?: React.ReactNode;
+  /** Names the session tab (a saved search was opened or saved: Kibana shows its title). */
+  onTitle?: (title: string) => void;
 }
 
-export function LogsExplorer({ tabId, tabStrip }: LogsExplorerProps = {}) {
+export function LogsExplorer({ tabId, tabStrip, onTitle }: LogsExplorerProps = {}) {
   const styles = useStyles2(getStyles);
   const config = useContext(SourceConfigContext);
   const defaultTime = useContext(DefaultTimeRangeContext);
@@ -120,6 +124,17 @@ export function LogsExplorer({ tabId, tabStrip }: LogsExplorerProps = {}) {
   // the URL bar directly isn't a goal here — this state has no canonical non-URL source of truth
   // to resync from.
   const [initialUrlState] = useState(() => decodeLogsState(searchParams));
+
+  // The saved search this view is (`ss` in the URL). Cleared as soon as the query, filters, columns
+  // or sort stop matching what it was when opened; the baseline is taken from the first state seen
+  // after it was set (undefined = take it next).
+  const [savedSearchId, setSavedSearchId] = useState(initialUrlState.savedSearchId);
+  const savedBaselineRef = useRef<string | undefined>(undefined);
+  const openSavedSearch = (s: SavedSearch) => {
+    savedBaselineRef.current = undefined;
+    setSavedSearchId(s.id);
+    onTitle?.(s.name);
+  };
 
   const [queryState, dispatch] = useReducer(
     logsQueryReducer,
@@ -280,8 +295,19 @@ export function LogsExplorer({ tabId, tabStrip }: LogsExplorerProps = {}) {
   // dropped, so the URL stops claiming a breakdown the chart doesn't show.
   const discoverySettled =
     urlViewActive && !fieldsState.loading && fieldsState.fields.length > 0 && fieldsState.fieldsFor === discoveryKey(config);
+  // Round 2 #17: a breakdown the link asked for but that can't be applied is said, not dropped
+  // silently: an unknown field once discovery settles, or a `bd` value that doesn't parse.
+  const [breakdownNotice, setBreakdownNotice] = useState<string | undefined>(() => {
+    const raw = searchParams.get('bd');
+    return raw && !initialUrlState.breakdown
+      ? `The link's breakdown "${raw.slice(0, 80)}" wasn't understood, so the chart has no breakdown.`
+      : undefined;
+  });
   if (pendingBreakdownFieldId && discoverySettled && !pendingBreakdownField) {
     setPendingBreakdownFieldId(undefined);
+    setBreakdownNotice(
+      `The link's breakdown field "${pendingBreakdownFieldId.replace(/^col:/, '').slice(0, 80)}" isn't in this data view, so the chart has no breakdown.`
+    );
   }
   // Memoized: when breakdownChoice is null this falls back to a freshly-built object literal —
   // without useMemo that's a new reference every render, which churns executeQuery's identity
@@ -353,6 +379,25 @@ export function LogsExplorer({ tabId, tabStrip }: LogsExplorerProps = {}) {
     prevViewId.current = viewId;
      
   }, [activeView?.id, views]);
+
+  useEffect(() => {
+    if (!savedSearchId) {
+      savedBaselineRef.current = undefined;
+      return;
+    }
+    const snap = JSON.stringify([
+      queryState.search,
+      queryState.filters.map((f) => ({ ...f, id: undefined })),
+      queryState.columns.map((c) => c.id),
+      queryState.sort ?? null,
+    ]);
+    if (savedBaselineRef.current === undefined) {
+      savedBaselineRef.current = snap;
+    } else if (savedBaselineRef.current !== snap) {
+      savedBaselineRef.current = undefined;
+      setSavedSearchId(undefined);
+    }
+  }, [queryState.search, queryState.filters, queryState.columns, queryState.sort, savedSearchId]);
 
   // Sidebar collapse + resizable width, persisted across sessions
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -614,6 +659,7 @@ export function LogsExplorer({ tabId, tabStrip }: LogsExplorerProps = {}) {
       // or switches view, so a link copied mid-load still carries it.
       breakdown: breakdownToUrl(breakdownChoice, pendingBreakdownField?.id ?? pendingBreakdownFieldId),
       refresh: refreshInterval,
+      savedSearchId,
     });
     if (tabId) {
       next.set(TAB_PARAM, tabId);
@@ -623,7 +669,7 @@ export function LogsExplorer({ tabId, tabStrip }: LogsExplorerProps = {}) {
       setSearchParams(next, { replace: true });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [queryState.search, queryState.filters, queryState.sort, queryState.columns, effectiveColumns, timeRange, activeView?.id, intervalMode, breakdownChoice, pendingBreakdownFieldId, pendingBreakdownField?.id, refreshInterval]);
+  }, [queryState.search, queryState.filters, queryState.sort, queryState.columns, effectiveColumns, timeRange, activeView?.id, intervalMode, breakdownChoice, pendingBreakdownFieldId, pendingBreakdownField?.id, refreshInterval, savedSearchId]);
 
 
   const resolvedInterval = useMemo<ResolvedInterval>(
@@ -640,6 +686,10 @@ export function LogsExplorer({ tabId, tabStrip }: LogsExplorerProps = {}) {
   // windowed search; everything else (non-time sort, raw SQL, no time field) is the single query.
   // The last window width that filled a page seeds the next call (load-more starts there).
   const windowHintRef = useRef<number | undefined>(undefined);
+  // SQL of the list / histogram query as last issued (PERF-URLQ: the post-discovery reconcile
+  // below re-runs only a query whose SQL would now differ).
+  const lastLogsSqlRef = useRef<string | null>(null);
+  const lastVolSqlRef = useRef<string | null>(null);
   const runListQuery = useCallback(
     async (
       sql: string,
@@ -714,6 +764,7 @@ export function LogsExplorer({ tabId, tabStrip }: LogsExplorerProps = {}) {
 
       // Newest-first sort on a builder query: search the most recent window first and widen only
       // until the page is full (same rows as the single query; see data/windowedSearch.ts).
+      lastLogsSqlRef.current = sql;
       const logRows = await runListQuery(sql, INITIAL_FETCH, fetchState, {
         refId: 'logs',
         signal: abortController.signal,
@@ -787,6 +838,7 @@ export function LogsExplorer({ tabId, tabStrip }: LogsExplorerProps = {}) {
         breakdown: resolveVolumeBreakdown(breakdown, config),
       }, fieldIndexRef.current);
 
+      lastVolSqlRef.current = volSql;
       const volRows = await runQueryRows({
         datasourceUid: config.datasourceUid,
         sql: volSql,
@@ -901,9 +953,30 @@ export function LogsExplorer({ tabId, tabStrip }: LogsExplorerProps = {}) {
     }
     didReconcileForDiscoveryRef.current = true;
     if (queryState.filters.length > 0 || queryState.search.trim()) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      fetchLogs();
-      fetchVolume();
+      // PERF-URLQ: compile what each query would be with the discovered index and re-run only
+      // those whose SQL differs from what already ran (a config-column search compiles the same).
+      const nextLogs = fetchState.useRawSql
+        ? fetchState.rawSql || buildLogsQuery(config, fetchState, { limit: INITIAL_FETCH, offset: 0 }, undefined, fieldIndex)
+        : buildLogsQuery(config, fetchState, { limit: INITIAL_FETCH, offset: 0 }, { projection: 'grid' }, fieldIndex);
+      const resolved = resolveInterval(intervalMode, timeRange);
+      const nextVolume = buildVolumeQuery(
+        config,
+        queryState,
+        { interval: { unit: resolved.unit, value: resolved.value }, breakdown: resolveVolumeBreakdown(breakdown, config) },
+        fieldIndex
+      );
+      const targets = discoveryReconcileTargets({
+        prevLogs: lastLogsSqlRef.current,
+        nextLogs,
+        prevVolume: caps.hasTime ? lastVolSqlRef.current : nextVolume,
+        nextVolume,
+      });
+      if (targets.logs) {
+        fetchLogs();
+      }
+      if (targets.volume) {
+        fetchVolume();
+      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fieldsState.loading]);
@@ -1161,6 +1234,7 @@ export function LogsExplorer({ tabId, tabStrip }: LogsExplorerProps = {}) {
   // replaces any not-yet-resolved breakdown from the URL.
   const chooseBreakdown = useCallback((b: BreakdownSel) => {
     setPendingBreakdownFieldId(undefined);
+    setBreakdownNotice(undefined);
     setBreakdown(b);
   }, []);
   const onSetFieldBreakdown = useCallback((field: FieldModel) => chooseBreakdown({ kind: 'field', field }), [chooseBreakdown]);
@@ -1258,6 +1332,7 @@ export function LogsExplorer({ tabId, tabStrip }: LogsExplorerProps = {}) {
   };
 
   const onLoadSaved = (search: SavedSearch, newTimeRange?: TimeRange) => {
+    openSavedSearch(search);
     dispatch({
       type: 'LOAD_SAVED',
       state: {
@@ -1283,6 +1358,38 @@ export function LogsExplorer({ tabId, tabStrip }: LogsExplorerProps = {}) {
     // the ref holds the fresh closure — guaranteeing results load without a manual click.
     queueMicrotask(() => latestExecuteQuery.current('Load saved search'));
   };
+
+  // Opened from the URL (`ss`) in a fresh browser: a link that carries no query of its own reopens
+  // the saved search; one that does is trusted as is (its `ss` was only cleared if it was edited).
+  useEffect(() => {
+    const id = initialUrlState.savedSearchId;
+    if (!id) {
+      return;
+    }
+    let cancelled = false;
+    findSavedSearch(id).then((s) => {
+      if (cancelled) {
+        return;
+      }
+      if (!s) {
+        setSavedSearchId(undefined);
+        return;
+      }
+      onTitle?.(s.name);
+      const hasQuery =
+        initialUrlState.search !== undefined ||
+        !!initialUrlState.filters?.length ||
+        !!initialUrlState.columns?.length ||
+        !!initialUrlState.sort;
+      if (!hasQuery) {
+        onLoadSaved(s, initialUrlState.timeRange ? undefined : savedSearchTimeRange(s));
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // DISC-SEARCH-03: a saved query is stored data — its filters are re-sanitized, pins stay on top.
   const onLoadQuery = ({ query, filters, timeRange: tr }: LoadedQuery) => {
@@ -1367,6 +1474,15 @@ export function LogsExplorer({ tabId, tabStrip }: LogsExplorerProps = {}) {
     rememberSearchContext(new URLSearchParams(searchParamsKey));
   }, [searchParamsKey]);
 
+  // Matching documents, from the histogram's count (no extra query); unknown for raw SQL / no time field.
+  const totalDocs = knownTotal({
+    hasHistogram: caps.hasTime,
+    rawSql: queryState.useRawSql,
+    volLoading,
+    histogramCount: totalEvents,
+    loaded: rows.length,
+  });
+
   // Lazy-fetch rows beyond the initial buffer when the user pages past it.
   const ensureRows = useCallback(
     async (page: number, currentPageSize: number, currentRows: LogRow[], currentHasMore: boolean) => {
@@ -1382,7 +1498,8 @@ export function LogsExplorer({ tabId, tabStrip }: LogsExplorerProps = {}) {
       const runId = runRef.current;
       try {
         const stateWithCols: LogsQueryState = fetchState;
-        const chunkSize = needed - currentRows.length;
+        // Fetch at least LOAD_MORE_CHUNK rows so paging does not cost one round trip per page.
+        const chunkSize = Math.max(needed - currentRows.length, LOAD_MORE_CHUNK);
         // Load-more chunks are builder-mode only (raw-SQL is excluded above), so narrow the
         // same way the initial fetch in executeQuery does.
         const sql = buildLogsQuery(
@@ -1428,6 +1545,13 @@ export function LogsExplorer({ tabId, tabStrip }: LogsExplorerProps = {}) {
     },
     [ensureRows, pageSize, rows, hasMore]
   );
+
+  const onLoadAll = useCallback(() => {
+    if (totalDocs === undefined || pageSize <= 0) {
+      return;
+    }
+    void ensureRows(Math.ceil(totalDocs / pageSize) - 1, pageSize, rows, hasMore);
+  }, [totalDocs, pageSize, ensureRows, rows, hasMore]);
 
   const onPageSizeChange = useCallback((size: number) => {
     setPageSize(size);
@@ -1485,7 +1609,7 @@ export function LogsExplorer({ tabId, tabStrip }: LogsExplorerProps = {}) {
   // fetches the next chunk when stepping past the last loaded one (Kibana pages through the whole
   // sample). Reference-equality lookup: pageRows are slices of the same row objects.
   const selectedIndex = selectedRow ? rows.indexOf(selectedRow) : -1;
-  const docNav = docNavTargets(selectedIndex, rows.length, hasMore && !queryState.useRawSql);
+  const docNav = docNavTargets(selectedIndex, rows.length, hasMore && !queryState.useRawSql, totalDocs);
   const docNavBusy = useRef(false);
   const goToDoc = useCallback(
     async (index: number) => {
@@ -1639,6 +1763,7 @@ export function LogsExplorer({ tabId, tabStrip }: LogsExplorerProps = {}) {
           timeRange={timeRange}
           activeViewId={activeView?.id}
           onLoadSaved={onLoadSaved}
+          onSavedSearchSaved={openSavedSearch}
           canAddToDashboard={canAddToDashboard}
           onOpenAddToDashboard={() => setAddToDashboardOpen(true)}
           onToggleRawSql={onToggleRawSql}
@@ -1742,6 +1867,9 @@ export function LogsExplorer({ tabId, tabStrip }: LogsExplorerProps = {}) {
                   onAddFilter={onAddFilter}
                   collapsed={histogramCollapsed}
                   onToggleCollapsed={() => setHistogramCollapsed((v) => !v)}
+                  invalidQuery={!!invalidQuery}
+                  breakdownNotice={breakdownNotice}
+                  onDismissBreakdownNotice={() => setBreakdownNotice(undefined)}
                 />
                 <div className={styles.tableToolbar}>
                   <RadioButtonGroup<ResultsTab>
@@ -1827,6 +1955,12 @@ export function LogsExplorer({ tabId, tabStrip }: LogsExplorerProps = {}) {
                     pageSize={pageSize}
                     pageSizeOptions={PAGE_SIZE_OPTIONS}
                     totalLoaded={rows.length}
+                    total={totalDocs}
+                    onLoadAll={
+                      totalDocs !== undefined && totalDocs <= LOAD_ALL_MAX && hasMore && !queryState.useRawSql
+                        ? onLoadAll
+                        : undefined
+                    }
                     hasMore={hasMore}
                     fetchingMore={fetchingMore}
                     onPageChange={onPageChange}

@@ -9,6 +9,7 @@ import {
   buildTablePanel,
   dashboardTime,
   escapeDollarInLiterals,
+  EXPORT_TABLE_LIMIT,
 } from '../panelExport';
 import { DISCOVER_SOURCE_KEY, discoverSourceOf, MAX_DISCOVER_SOURCE_LEN, openInDiscoverPath } from '../discoverSource';
 import { dashboardSaveError } from '../dashboards';
@@ -65,8 +66,12 @@ describe('Discover logs panel', () => {
     // Core values Discover doesn't show are hidden.
     expect(o.excludeByName.__traceId).toBe(true);
     expect(o.excludeByName.__body).toBeUndefined();
-    // Row count in the footer; the message wraps.
-    expect(p.options?.footer).toMatchObject({ show: true, countRows: true });
+    // Round 2 #3: no row-count footer (a capped query read as the total); pagination; the cap is
+    // stated in the description and the query holds EXPORT_TABLE_LIMIT rows. The message wraps.
+    expect(p.options?.footer).toBeUndefined();
+    expect(p.options?.enablePagination).toBe(true);
+    expect(p.description).toContain('1,000');
+    expect(p.targets[0].rawSql).toContain(`LIMIT ${EXPORT_TABLE_LIMIT}`);
     expect(JSON.stringify(p.fieldConfig?.overrides)).toContain('"wrapText":true');
   });
 

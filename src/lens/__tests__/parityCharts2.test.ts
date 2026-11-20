@@ -17,14 +17,16 @@ const rows = [
 ];
 
 describe('PARITY-CHARTS2', () => {
-  it('pie: one coloured field per slice, name + percent labels, grouped values', () => {
+  it('pie: one coloured field per slice, labels only when every slice is wide, legend value + percent', () => {
     const state: LensState = { chartType: 'pie', buckets: [svc], metrics: [count] };
     const spec = panelSpec(state, shapeLensRows(state, rows));
     const fields = spec.frames[0].fields;
     expect(fields.map((f) => f.name)).toEqual(['auth', 'checkout', 'cart']);
     const colors = fields.map((f) => (f.config.color as any).fixedColor);
     expect(new Set(colors).size).toBe(3);
-    expect(spec.options.displayLabels).toEqual(['name', 'percent']);
+    // Slices under 5% (checkout, cart) are too small to label: labels off, legend has value + percent.
+    expect(spec.options.displayLabels).toEqual([]);
+    expect((spec.options.legend as { values?: string[] }).values).toEqual(['value', 'percent']);
     expect(spec.fieldConfig.defaults.unit).toBe('locale');
   });
 

@@ -103,7 +103,13 @@ describe('column resize handles', () => {
   it('arrow keys on a handle resize by a step; double-click resets', () => {
     const onResizeColumn = jest.fn();
     render(
-      <LogsTable rows={rows} loading={false} columns={[col('A', { width: 200 }), col('B')]} onRowClick={jest.fn()} onResizeColumn={onResizeColumn} />
+      <LogsTable
+        rows={rows}
+        loading={false}
+        columns={[col('A', { width: 200 }), col('B')]}
+        onRowClick={jest.fn()}
+        onResizeColumn={onResizeColumn}
+      />
     );
     const handle = screen.getByRole('separator', { name: 'Resize column A' });
     // jsdom has no layout: the header measures 0 wide, so the step clamps at the minimum.
@@ -114,7 +120,9 @@ describe('column resize handles', () => {
   });
 
   it('a set width is applied to the header and its cells', () => {
-    render(<LogsTable rows={rows} loading={false} columns={[col('A', { width: 240 }), col('B')]} onRowClick={jest.fn()} />);
+    render(
+      <LogsTable rows={rows} loading={false} columns={[col('A', { width: 240 }), col('B')]} onRowClick={jest.fn()} />
+    );
     const th = screen.getAllByRole('columnheader').find((h) => h.textContent?.includes('A'))!;
     expect(th.style.width).toBe('240px');
     expect((document.querySelector('[data-cell="0:0"]') as HTMLElement).style.maxWidth).toBe('240px');
@@ -122,7 +130,15 @@ describe('column resize handles', () => {
 
   it('pointer drag commits the new width once, on release', () => {
     const onResizeColumn = jest.fn();
-    render(<LogsTable rows={rows} loading={false} columns={[col('A'), col('B')]} onRowClick={jest.fn()} onResizeColumn={onResizeColumn} />);
+    render(
+      <LogsTable
+        rows={rows}
+        loading={false}
+        columns={[col('A'), col('B')]}
+        onRowClick={jest.fn()}
+        onResizeColumn={onResizeColumn}
+      />
+    );
     const handle = screen.getByRole('separator', { name: 'Resize column A' });
     fireEvent.pointerDown(handle, { button: 0, clientX: 100, pointerId: 1 });
     fireEvent.pointerMove(handle, { clientX: 400, pointerId: 1 });
@@ -140,7 +156,9 @@ describe('grid rows', () => {
   });
 
   it('gives focus back to the row button when the detail panel closes', () => {
-    const { rerender } = render(<LogsTable rows={rows} loading={false} columns={columns} onRowClick={jest.fn()} selectedRow={rows[1]} />);
+    const { rerender } = render(
+      <LogsTable rows={rows} loading={false} columns={columns} onRowClick={jest.fn()} selectedRow={rows[1]} />
+    );
     (document.activeElement as HTMLElement | null)?.blur();
     rerender(<LogsTable rows={rows} loading={false} columns={columns} onRowClick={jest.fn()} selectedRow={null} />);
     expect(document.activeElement).toBe(document.querySelector('[data-expand-row="1"]'));
@@ -159,7 +177,15 @@ describe('document panel', () => {
   const renderDrawer = (extra: Partial<React.ComponentProps<typeof LogDetailDrawer>> = {}) => {
     const props = { onClose: jest.fn(), onPrev: jest.fn(), onNext: jest.fn() };
     render(
-      <LogDetailDrawer row={docRow} detailRow={docRow} config={config} columns={[]} onAddFilter={jest.fn()} {...props} {...extra} />
+      <LogDetailDrawer
+        row={docRow}
+        detailRow={docRow}
+        config={config}
+        columns={[]}
+        onAddFilter={jest.fn()}
+        {...props}
+        {...extra}
+      />
     );
     return { ...props, panel: screen.getByRole('region', { name: 'Document detail' }) };
   };
@@ -195,6 +221,33 @@ describe('document panel', () => {
     expect(screen.queryByText('1767603630123')).toBeNull();
   });
 
+  it('JSON tab also shows other DateTime columns (TimestampTime) as ISO 8601 (round 2 #18)', () => {
+    const row = { ...docRow, TimestampTime: 1767603630000 };
+    render(
+      <LogDetailDrawer
+        row={row}
+        detailRow={row}
+        config={config}
+        columns={[]}
+        onAddFilter={jest.fn()}
+        onClose={jest.fn()}
+        fields={[
+          {
+            id: 'c:TimestampTime',
+            name: 'TimestampTime',
+            displayName: 'TimestampTime',
+            sqlExpr: 'TimestampTime',
+            type: 'time',
+            source: 'column',
+          },
+        ]}
+      />
+    );
+    fireEvent.click(screen.getByText('JSON'));
+    expect(screen.getAllByText(/2026-01-05T09:00:30\.000Z/).length).toBeGreaterThan(0);
+    expect(screen.queryByText('1767603630000')).toBeNull();
+  });
+
   it('offers "View single document"', () => {
     const onViewSingleDocument = jest.fn();
     renderDrawer({ onViewSingleDocument });
@@ -215,12 +268,21 @@ const timeRange: TimeRange = {
   to: dateTime('2026-01-01T01:00:00Z'),
   raw: { from: 'now-1h', to: 'now' },
 };
-const strField: FieldModel = { id: 'col:ServiceName', name: 'ServiceName', displayName: 'ServiceName', sqlExpr: 'ServiceName', type: 'string', source: 'column' };
+const strField: FieldModel = {
+  id: 'col:ServiceName',
+  name: 'ServiceName',
+  displayName: 'ServiceName',
+  sqlExpr: 'ServiceName',
+  type: 'string',
+  source: 'column',
+};
 
 function withProviders(node: React.ReactNode) {
   return (
     <SourceConfigContext.Provider value={config}>
-      <FieldsContext.Provider value={{ fields: [], loading: false, error: null, refresh: () => {} }}>{node}</FieldsContext.Provider>
+      <FieldsContext.Provider value={{ fields: [], loading: false, error: null, refresh: () => {} }}>
+        {node}
+      </FieldsContext.Provider>
     </SourceConfigContext.Provider>
   );
 }
@@ -269,7 +331,14 @@ describe('field popover', () => {
 
 describe('field list entry for a field a core column already shows', () => {
   it('says so instead of offering a duplicate column', () => {
-    const body: FieldModel = { id: 'col:Body', name: 'Body', displayName: 'Body', sqlExpr: 'Body', type: 'string', source: 'column' };
+    const body: FieldModel = {
+      id: 'col:Body',
+      name: 'Body',
+      displayName: 'Body',
+      sqlExpr: 'Body',
+      type: 'string',
+      source: 'column',
+    };
     const onToggleColumn = jest.fn();
     render(
       withProviders(

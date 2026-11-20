@@ -1,17 +1,29 @@
 import React from 'react';
 import { css } from '@emotion/css';
 import { GrafanaTheme2, SelectableValue } from '@grafana/data';
-import { Pagination, Select, Spinner, useStyles2 } from '@grafana/ui';
+import { Button, Pagination, Select, Spinner, useStyles2 } from '@grafana/ui';
 
 interface PaginationBarProps {
   page: number; // 0-based
   pageSize: number;
   pageSizeOptions: number[];
   totalLoaded: number;
+  /** Matching documents (the histogram's count); undefined when unknown (raw SQL, no time field). */
+  total?: number;
+  /** Fetch every remaining row; offered only when provided. */
+  onLoadAll?: () => void;
   hasMore: boolean;
   fetchingMore: boolean;
   onPageChange: (page: number) => void;
   onPageSizeChange: (size: number) => void;
+}
+
+/** "200 of 1,207 loaded" when the total is known and not all loaded; "200 rows loaded+" when unknown. */
+export function loadedLabel(loaded: number, hasMore: boolean, total?: number): string {
+  if (total !== undefined && total > loaded) {
+    return `${loaded.toLocaleString()} of ${total.toLocaleString()} loaded`;
+  }
+  return `${loaded.toLocaleString()} rows loaded${total === undefined && hasMore ? '+' : ''}`;
 }
 
 export function PaginationBar({
@@ -19,6 +31,8 @@ export function PaginationBar({
   pageSize,
   pageSizeOptions,
   totalLoaded,
+  total,
+  onLoadAll,
   hasMore,
   fetchingMore,
   onPageChange,
@@ -51,9 +65,13 @@ export function PaginationBar({
       </div>
       <div className={styles.right}>
         <span className={styles.info}>
-          {totalLoaded.toLocaleString()} rows loaded
-          {hasMore ? '+' : ''}
+          {loadedLabel(totalLoaded, hasMore, total)}
         </span>
+        {onLoadAll && total !== undefined && total > totalLoaded && (
+          <Button size="sm" variant="secondary" fill="text" onClick={onLoadAll} disabled={fetchingMore}>
+            Load all {total.toLocaleString()}
+          </Button>
+        )}
         <Pagination
           currentPage={page + 1}
           numberOfPages={numberOfPages}

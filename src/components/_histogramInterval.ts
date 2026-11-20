@@ -9,6 +9,7 @@ import { VolumeDataPoint, IntervalMode } from '../types';
 import { CHIntervalUnit } from '../sql/queryBuilder';
 
 const UNIT_SECONDS: Record<Exclude<IntervalMode, 'auto'>, number> = {
+  millisecond: 0.001,
   second: 1,
   minute: 60,
   hour:   3_600,
@@ -19,6 +20,7 @@ const UNIT_SECONDS: Record<Exclude<IntervalMode, 'auto'>, number> = {
 };
 
 const UNIT_CH: Record<Exclude<IntervalMode, 'auto'>, CHIntervalUnit> = {
+  millisecond: 'MILLISECOND',
   second: 'SECOND',
   minute: 'MINUTE',
   hour:   'HOUR',
@@ -53,7 +55,14 @@ const AUTO_STEPS = [
   2 * DAY_SEC, 5 * DAY_SEC, 10 * DAY_SEC, 30 * DAY_SEC, 90 * DAY_SEC, 180 * DAY_SEC, 365 * DAY_SEC,
 ];
 
+/** Sub-second widths (ms) a too-fine Millisecond interval scales through before whole seconds. */
+const MS_STEPS = [1, 2, 5, 10, 20, 50, 100, 200, 500];
+
 function formatDuration(sec: number): string {
+  if (sec < 1) {
+    const ms = Math.round(sec * 1000);
+    return `${ms} millisecond${ms !== 1 ? 's' : ''}`;
+  }
   if (sec < 60)    {return `${sec} second${sec !== 1 ? 's' : ''}`;}
   if (sec < 3_600) {return `${sec / 60} minute${sec / 60 !== 1 ? 's' : ''}`;}
   if (sec < DAY_SEC) {return `${sec / 3_600} hour${sec / 3_600 !== 1 ? 's' : ''}`;}
@@ -92,6 +101,9 @@ export function resolveInterval(mode: IntervalMode, timeRange: TimeRange): Resol
   const sec = UNIT_SECONDS[mode];
   const label = mode.charAt(0).toUpperCase() + mode.slice(1);
   const spanSec = Math.max(0, timeRange.to.valueOf() - timeRange.from.valueOf()) / 1000;
+  if (mode === 'millisecond') {
+    return resolveMillisecond(label, spanSec);
+  }
   const fixedWidth = mode === 'second' || mode === 'minute' || mode === 'hour' || mode === 'day';
   if (fixedWidth && Math.ceil(spanSec / sec) > MAX_BUCKETS) {
     const scaled =
@@ -107,6 +119,23 @@ export function resolveInterval(mode: IntervalMode, timeRange: TimeRange): Resol
     };
   }
   return { unit: UNIT_CH[mode], value: 1, label, intervalMs: sec * 1000 };
+}
+
+/** Millisecond buckets, scaled like the other fixed units when they would exceed MAX_BUCKETS:
+ *  through sub-second steps (in whole ms, so the modulo stays exact), then whole seconds. */
+function resolveMillisecond(label: string, spanSec: number): ResolvedInterval {
+  const spanMs = spanSec * 1000;
+  if (Math.ceil(spanMs) <= MAX_BUCKETS) {
+    return { unit: 'MILLISECOND', value: 1, label, intervalMs: 1 };
+  }
+  const ms = MS_STEPS.find((s) => Math.ceil(spanMs / s) <= MAX_BUCKETS);
+  if (ms !== undefined) {
+    const scaledTo = formatDuration(ms / 1000);
+    return { unit: 'MILLISECOND', value: ms, label: `${label}, scaled to ${scaledTo}`, intervalMs: ms, scaledTo };
+  }
+  const sec = resolveInterval('second', { from: { valueOf: () => 0 }, to: { valueOf: () => spanMs } } as TimeRange);
+  const scaledTo = sec.scaledTo ?? formatDuration(1);
+  return { ...sec, label: `${label}, scaled to ${scaledTo}`, scaledTo };
 }
 
 /** Estimate how many bars a given mode would produce before any scaling. */

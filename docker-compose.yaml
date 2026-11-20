@@ -44,7 +44,7 @@ services:
       # Exit code 241 = MEMORY_LIMIT_EXCEEDED: the server is up but refuses every query. Docker never
       # restarts an unhealthy container by itself, so end PID 1 and let `restart: unless-stopped`
       # bring it back (data is on the volume). Other failures (starting up, refused) just report.
-      test: ["CMD-SHELL", "clickhouse-client --query 'SELECT 1' >/dev/null; rc=$?; [ $rc -eq 241 ] && kill 1; exit $rc"]
+      test: ["CMD-SHELL", "clickhouse-client --query 'SELECT 1' >/dev/null; rc=$$?; [ $$rc -eq 241 ] && kill 1; exit $$rc"]
       interval: 5s
       timeout: 3s
       retries: 10

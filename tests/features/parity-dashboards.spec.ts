@@ -58,10 +58,7 @@ test('Edit in Visualize → Save and return replaces the panel in place and keep
   await expect(page.getByRole('button', { name: 'Save as new' })).toBeVisible();
   await page.getByRole('button', { name: /^Chart type: / }).click();
   await page.getByRole('option', { name: /^Line/ }).click();
-  await page.getByRole('button', { name: 'Save and return' }).click();
-  const dialog = page.getByRole('dialog', { name: 'Save Lens visualization' });
-  await expect(dialog.getByLabel(/^Title/)).toHaveValue(title); // the panel's title, not a generated one
-  await dialog.getByRole('button', { name: 'Save and return' }).click();
+  await page.getByRole('button', { name: 'Save and return' }).click(); // one click, no dialog
 
   // Grafana may rewrite the epoch range to ISO strings, so accept either form.
   await expect(page).toHaveURL(
@@ -69,7 +66,7 @@ test('Edit in Visualize → Save and return replaces the panel in place and keep
   );
   const after = await (await page.request.get(`/api/dashboards/uid/${uid}`)).json();
   expect(after.dashboard.panels).toHaveLength(before.dashboard.panels.length); // no duplicate
-  expect(after.dashboard.panels[0]).toMatchObject({ id: original.id, gridPos: original.gridPos, title });
+  expect(after.dashboard.panels[0]).toMatchObject({ id: original.id, gridPos: original.gridPos, title }); // the panel's own title
   expect(after.dashboard.panels[0].type).toBe('timeseries');
 });
 
@@ -78,7 +75,26 @@ test('Edit in Visualize → Cancel goes back to the dashboard unchanged', async 
   const before = await (await page.request.get(`/api/dashboards/uid/${uid}`)).json();
   await page.goto(`/d/${uid}?from=now-30d&to=now`);
   await panelMenu(page, title, 'Edit in Visualize');
+  await page.getByRole('button', { name: 'Cancel' }).click(); // nothing changed: no prompt
+  await expect(page).toHaveURL(new RegExp(`/d/${uid}.*from=now-30d`));
+  const after = await (await page.request.get(`/api/dashboards/uid/${uid}`)).json();
+  expect(after.dashboard.version).toBe(before.dashboard.version);
+});
+
+test('Edit in Visualize → Cancel after a change asks before discarding', async ({ page }) => {
+  const { uid, title } = await dashboardWithVisualizePanel(page);
+  const before = await (await page.request.get(`/api/dashboards/uid/${uid}`)).json();
+  await page.goto(`/d/${uid}?from=now-30d&to=now`);
+  await panelMenu(page, title, 'Edit in Visualize');
+  await expect(page.getByRole('button', { name: 'Save and return' })).toBeEnabled();
+  await page.getByRole('button', { name: /^Chart type: / }).click();
+  await page.getByRole('option', { name: /^Line/ }).click();
   await page.getByRole('button', { name: 'Cancel' }).click();
+  const confirm = page.getByRole('dialog', { name: 'Leave with unsaved changes?' });
+  await confirm.getByRole('button', { name: 'Cancel' }).click(); // stay
+  await expect(page).toHaveURL(/\/visualize\?/);
+  await page.getByRole('button', { name: 'Cancel' }).click();
+  await confirm.getByRole('button', { name: 'Discard changes' }).click();
   await expect(page).toHaveURL(new RegExp(`/d/${uid}.*from=now-30d`));
   const after = await (await page.request.get(`/api/dashboards/uid/${uid}`)).json();
   expect(after.dashboard.version).toBe(before.dashboard.version);
@@ -96,7 +112,6 @@ test('Save and return reports a concurrent change instead of overwriting it', as
   });
   await page.getByRole('button', { name: 'Save and return' }).click();
   const dialog = page.getByRole('dialog', { name: 'Save Lens visualization' });
-  await dialog.getByRole('button', { name: 'Save and return' }).click();
   await expect(dialog.getByText(/Someone else changed this dashboard/)).toBeVisible();
   await expect(page).toHaveURL(/\/visualize\?/);
 });

@@ -6,8 +6,8 @@
  * from the query request's time range automatically.
  */
 
-import { isDateBound, isNumericBound } from './filters';
-import { BreakdownSel, FilterPill, FilterOp, LogsQueryState, SelectedColumn, SourceConfig } from '../types';
+import { isCondGroup, isDateBound, isNumericBound } from './filters';
+import { BreakdownSel, FilterCondGroup, FilterPill, FilterOp, LogsQueryState, SelectedColumn, SourceConfig } from '../types';
 import { resolveField, FieldIndex } from './fields';
 import { parseKql, kqlToSql } from './kql';
 import { configSettingsFragments, queryTimeoutFragments, withSettings } from './settings';
@@ -248,7 +248,25 @@ function filterOpToSql(op: FilterOp): string {
   }
 }
 
+/** Compiles a compound pill: each leaf through buildFilterClause (values / identifiers quoted
+ *  there), every item and group parenthesised so precedence never leaks. */
+function buildCondGroupClause(g: FilterCondGroup, config: SourceConfig, index?: FieldIndex): string {
+  const parts = g.items.map((it) =>
+    isCondGroup(it)
+      ? buildCondGroupClause(it, config, index)
+      : buildFilterClause({ id: '', field: it.field, op: it.op, value: it.value, values: it.values }, config, index)
+  );
+  if (parts.length === 0) {
+    return '1=1';
+  }
+  return parts.length === 1 ? parts[0] : `(${parts.map((c) => `(${c})`).join(g.join === 'or' ? ' OR ' : ' AND ')})`;
+}
+
 function buildFilterClause(filter: FilterPill, config: SourceConfig, index?: FieldIndex): string {
+  if (filter.cond) {
+    const clause = buildCondGroupClause(filter.cond, config, index);
+    return filter.negate ? `NOT (${clause})` : clause;
+  }
   const value = filter.value.trim();
   const resolved = resolveField(filter.field, config, index);
   const sqlExprRaw = resolved ? resolved.sqlExpr : filter.field;
@@ -689,7 +707,7 @@ export function buildLogDetailQuery(
   );
 }
 
-export type CHIntervalUnit = 'SECOND' | 'MINUTE' | 'HOUR' | 'DAY' | 'WEEK' | 'MONTH' | 'YEAR';
+export type CHIntervalUnit = 'MILLISECOND' | 'SECOND' | 'MINUTE' | 'HOUR' | 'DAY' | 'WEEK' | 'MONTH' | 'YEAR';
 
 export type VolumeBreakdown =
   /** One bar per bucket, no per-series coloring. */
@@ -756,7 +774,10 @@ export function buildVolumeQuery(
     ? /[(),]/.test(ts)
       ? `toStartOfInterval(toDateTime(${ts}), INTERVAL $__interval_s second)`
       : `$__timeInterval(${ts})`
-    : `toStartOfInterval(${ts}, INTERVAL ${interval.value} ${interval.unit})`;
+    : interval.unit === 'MILLISECOND'
+      ? // Sub-second buckets need DateTime64 (a DateTime column has whole seconds only).
+        `toStartOfInterval(toDateTime64(${ts}, 3), INTERVAL ${interval.value} MILLISECOND)`
+      : `toStartOfInterval(${ts}, INTERVAL ${interval.value} ${interval.unit})`;
   const conditions = buildWhereConditions(config, state, index);
   const condSql = conditions.join(' AND ');
 

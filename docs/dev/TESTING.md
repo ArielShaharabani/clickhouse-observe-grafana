@@ -403,3 +403,72 @@ LENS-DATAVIEW acceptance:
 | --- | --- |
 | Jest | `src/data/__tests__/windowedSearch.test.ts` (window sequence, stop when full, fallback, rows equal full query incl. OFFSET, cancel, sort detection), `src/sql/__tests__/text_index.test.ts` (index parsing, indexed compile, escaping, fallbacks) |
 | E2E | `tests/features/perf-search.spec.ts` — not run (coordinator) |
+
+### PERF-SAMPLES (PR 61)
+| Case | Status |
+| --- | --- |
+| Unit | recent/range/wide window SQL, window list skips covered windows | perfMetadata.test.tsx |
+| Unit | full sample with no keys is not retried (one sample for an empty column) | perfMetadata.test.tsx |
+| Unit | sparse sample (no rows) widens range -> 7 d | perfMetadata.test.tsx |
+| E2E | perf-metadata.spec.ts: map-key samples still time-bounded (now matched on `mapKeys(m)`) | playwright (coordinator) |
+
+### PERF-URLQ (PR 62)
+| Case | Status |
+| --- | --- |
+| Reconcile only when compiled SQL differs (config column: none; Map key: both; never-run: both) | jest | `src/pages/__tests__/discovery_reconcile.test.ts` |
+| Discover `q=` / `filters=`: no repeated list window, one histogram query | e2e | `tests/features/perf-urlq.spec.ts` |
+| Visualize `q=` + lens: one chart query | e2e | `tests/features/perf-urlq.spec.ts` |
+
+### R2-FIXES (PR 68)
+| Case | Status |
+| --- | --- |
+| Add to dashboard table | no footer, pagination, description states 1,000, `LIMIT 1000` (`parityDashboards.test.ts`) | unit |
+| Add to dashboard volume | `maxDataPoints` 60 (`panelExport.test.ts`) | unit |
+| Discover histogram | invalid search hides bars and count (`LogsHistogramPanel.test.tsx`; `parity-fields.spec.ts` invalid query) | unit + e2e |
+| Field statistics tab | "sample" only at the cap (`sampleCaption`, `FieldStatsTab.test.tsx`) | unit |
+| Document JSON | TimestampTime as ISO (`parityGrid.test.tsx`) | unit |
+| Histogram interval | Millisecond exact / scaled to ms steps / to seconds (`parityHistogram.test.tsx`); DateTime64 bucket SQL (`build_volume_query.test.ts`) | unit |
+| Breakdown from the link | notice for junk / unknown field, dismiss (`LogsHistogramPanel.test.tsx`; `parity-histogram.spec.ts` malformed bd) | unit + e2e |
+
+### R2-VIZ-POLISH (PR 63)
+| Case | Status |
+| --- | --- |
+| fitTimeTicks drops the clipped last tick (14:00 to 13:00), keeps date row | `src/lens/__tests__/vizPolish.test.ts` |
+| pieDisplayLabels hides labels for slices under 5% | `src/lens/__tests__/vizPolish.test.ts` |
+| e2e: no time tick label past the chart's right edge | `tests/features/parity-xychart.spec.ts` (time axis) |
+| e2e: pie legend shows percent | `tests/features/parity-charts2.spec.ts` (pie) |
+| Manual (not automated): at 1440x860 the Top values editor keeps Remove / Close visible | Visualize, click a Top values bucket |
+
+### R2-DASH-FLOW (PR 64)
+| Case | Status |
+| --- | --- |
+| Save and return one click | one click saves, no dialog, panel title kept | ParityDashboards.test.tsx (jest) |
+| Save and return conflict | version-mismatch shown in the dialog, no navigation | ParityDashboards.test.tsx; parity-dashboards.spec.ts "reports a concurrent change" |
+| Cancel | no prompt unchanged / time-only change; prompt after a chart change | ParityDashboards.test.tsx; parity-dashboards.spec.ts (two Cancel tests) |
+| Explore in Discover | same tab, bucket columns, Back returns to chart | lens-interact-02.spec.ts IT-H |
+
+### R2-FILTER-GROUPS (PR 65)
+| Case | Status |
+| --- | --- |
+| Compound pill compiles to parenthesised OR / AND (nested), NOT for negate, disabled adds nothing, works inside a pill-level OR group | unit `src/sql/__tests__/filter_cond_groups.test.ts` "compound pill SQL" |
+| Injection in values and field names inside groups is escaped | unit "escapes injection attempts...", "quotes hostile field names..."; e2e "hostile values inside a group are data, not SQL" |
+| URL round trip, old single-condition URLs unchanged, malformed / over-deep / oversized trees dropped, unknown keys stripped | unit "compound pill sanitize and URL"; e2e "hand-written link ..." (2 tests) |
+| Pill label and Preview text (OR / AND, nested parentheses, NOT, custom label wins) | unit "compound pill labels and identity"; e2e "OR of two conditions...", "OR of ANDs..." |
+| Add / remove / nest conditions, depth cap | unit "condition tree operations" |
+| Compound pill counts rows correctly (OR 17,328; OR of AND 9,648) | e2e `tests/features/r2-filter-groups.spec.ts` |
+| Negate, disable, delete on the whole pill; survives reload; edit and collapse to a plain pill | e2e same spec |
+
+### R2-GRID (PR 66)
+| Case | Status |
+| --- | --- |
+| Grid default | default display is normal/1 line, saved choice wins | `LogsTable.grid.test.tsx` |
+| Pager | loaded label with/without total, Load all button | `PaginationBar.test.tsx` |
+| Doc panel | label uses known total; `knownTotal` guards; chunk 200 | `parity_grid.test.ts` |
+| e2e | document panel "50 of 41,520" etc.; pager text `/ loaded/` | `tests/features/parity-grid.spec.ts` |
+
+### R2-SAVED (PR 67)
+| Case | Status |
+| --- | --- |
+| Folder found / created once / General fallback (create denied, folder not writable); find by id; no stored time keeps range | jest | `src/data/__tests__/savedSearchesShared.test.ts` |
+| `ss` encode/decode, malformed dropped; counts as tab state | jest | `src/data/__tests__/urlState.test.ts`, `src/state/__tests__/discoverTabs.test.ts` |
+| Save: checkbox default on, tab named, `ss` in URL, folder, fresh load by id, edit clears `ss`, delete button name | e2e | `tests/features/feat-parity-minors.spec.ts` |

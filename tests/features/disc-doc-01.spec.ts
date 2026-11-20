@@ -33,10 +33,12 @@ test('first / last navigation and Hide null fields', async ({ page }) => {
   const logs = new LogsPage(page);
   await logs.open();
   await openFirstDocument(page, logs);
-  const label = page.getByText(/^\d+ of \d+$/);
+  // "1 of 41,520": the total of matching documents (round 2 #19); Last goes to the last loaded one.
+  const label = page.getByText(/^[\d,]+ of [\d,]+$/);
   const total = (await label.textContent())!.split(' of ')[1];
   await page.getByRole('button', { name: 'Last log' }).click();
-  await expect(label).toHaveText(`${total} of ${total}`);
+  await expect(label).not.toHaveText(`1 of ${total}`);
+  await expect(label).toContainText(` of ${total}`);
   await page.getByRole('button', { name: 'First log' }).click();
   await expect(label).toHaveText(`1 of ${total}`);
 

@@ -116,6 +116,21 @@ export type FilterOp =
   | 'between'      // is between (values: [low, high], inclusive)
   | 'not_between'; // is not between (values: [low, high])
 
+/** One leaf condition inside a compound pill (same shape as the single-condition pill fields). */
+export interface FilterCondition {
+  field: string;
+  op: FilterOp;
+  value: string;
+  values?: string[];
+}
+
+/** Conditions combined with OR / AND; items may be leaves or nested groups (depth limited by
+ *  MAX_COND_DEPTH in sql/filters.ts). Validated by sanitizeFilterPills. */
+export interface FilterCondGroup {
+  join: 'or' | 'and';
+  items: Array<FilterCondition | FilterCondGroup>;
+}
+
 export interface FilterPill {
   id: string;
   field: string;
@@ -132,6 +147,11 @@ export interface FilterPill {
    *  Sanitized by sanitizeFilterPills (id charset + operator enum). */
   group?: string;
   groupOp?: 'or' | 'and';
+  /** Compound pill: one pill built from several conditions combined with OR / AND, with `field` ''
+   *  and `op` '=' as placeholders. Absent on every single-condition pill (backward compatible). */
+  cond?: FilterCondGroup;
+  /** Negates a compound pill as a whole (`NOT (...)`); single-condition pills negate via `op`. */
+  negate?: boolean;
 }
 
 export type ColumnType = 'time' | 'level' | 'text' | 'number' | 'string' | 'exact' | 'map' | 'json' | 'tuple' | 'array' | 'unknown';
@@ -159,7 +179,7 @@ export interface LogsQueryState {
 }
 
 /** Histogram time bucket granularity. 'auto' derives the best interval from the time range. */
-export type IntervalMode = 'auto' | 'second' | 'minute' | 'hour' | 'day' | 'week' | 'month' | 'year';
+export type IntervalMode = 'auto' | 'millisecond' | 'second' | 'minute' | 'hour' | 'day' | 'week' | 'month' | 'year';
 
 /**
  * Histogram breakdown selection.

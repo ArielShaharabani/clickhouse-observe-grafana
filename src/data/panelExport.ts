@@ -43,6 +43,9 @@ export interface ExportedPanel {
     observeDiscover?: string;
   }>;
   transformations?: Array<{ id: string; options: Record<string, unknown> }>;
+  description?: string;
+  /** Drives the panel's $__interval / $__timeInterval (Grafana default: the panel width in pixels). */
+  maxDataPoints?: number;
   options?: Record<string, unknown>;
   fieldConfig?: { defaults: Record<string, unknown>; overrides: unknown[] };
 }
@@ -141,6 +144,12 @@ function columnLayout(columns: SelectedColumn[]): {
   return { organize: { id: 'organize', options: { indexByName, renameByName, excludeByName } }, overrides };
 }
 
+/** Rows the exported Discover table holds (Discover's grid pages 200 at a time; a dashboard has no "load more"). */
+export const EXPORT_TABLE_LIMIT = 1000;
+
+/** Buckets the exported volume panel aims for, like Discover's auto interval (about 50-60 bars). */
+export const EXPORT_VOLUME_POINTS = 60;
+
 /**
  * Build a "table" panel showing Discover's documents: Discover's columns in Discover's order with
  * readable names, the message wrapping in the remaining width, a row count in the footer, and the
@@ -158,7 +167,13 @@ export function buildTablePanel(
   // Grid projection only when there are columns to lay out (raw SQL mode keeps the user's SQL).
   const grid = state.columns.length > 0 && !state.useRawSql;
   const rawSql = escapeDollarInLiterals(
-    buildLogsQuery(config, state, undefined, grid ? { projection: 'grid' } : undefined, index)
+    buildLogsQuery(
+      config,
+      { ...state, limit: EXPORT_TABLE_LIMIT },
+      undefined,
+      grid ? { projection: 'grid' } : undefined,
+      index
+    )
   );
   const layout = grid ? columnLayout(state.columns) : undefined;
   const message = grid ? state.columns.find((c) => c.key === CORE_ALIAS.body) : undefined;
@@ -166,6 +181,8 @@ export function buildTablePanel(
     id: opts.id,
     type: 'table',
     title: opts.title?.trim() || 'Logs',
+    // The query is capped, so the panel says so instead of a row count that reads like a total.
+    description: `The newest ${EXPORT_TABLE_LIMIT.toLocaleString('en-US')} documents matching the search. Open in Discover for all of them.`,
     gridPos: opts.gridPos,
     datasource,
     targets: [
@@ -182,8 +199,9 @@ export function buildTablePanel(
     options: {
       showHeader: true,
       cellHeight: 'sm',
-      // "Count: N" under the table (the documents shown; the query keeps Discover's row limit).
-      footer: { show: true, reducer: ['count'], countRows: true, fields: '' },
+      // Pages instead of one long inner scroll. No "Count" footer: with a capped query it read as
+      // the number of matching documents ("COUNT 200" for 1,207 matches).
+      enablePagination: true,
     },
     fieldConfig: {
       defaults: { custom: { align: 'auto', inspect: true } },
@@ -238,6 +256,9 @@ export function buildHistogramPanel(
     title: opts.title?.trim() || 'Log volume',
     gridPos: opts.gridPos,
     datasource,
+    // $__timeInterval follows the panel's max data points; Grafana's default (the panel width in
+    // pixels) gave 1-4 events per bucket. About 60 buckets matches Discover's auto interval.
+    maxDataPoints: EXPORT_VOLUME_POINTS,
     targets: [{ refId: 'A', datasource, editorType: 'sql', format: FORMAT_TABLE, rawSql }],
     // Pivot long rows (time, level, count) into one series per level, then into per-series
     // time-series frames — the shape a timeseries panel consumes — same grouping the app already

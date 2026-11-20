@@ -98,9 +98,9 @@ describe('DISC-TABLE-02 Expand popover', () => {
 describe('DISC-TABLE-01 display options', () => {
   beforeEach(() => localStorage.clear());
 
-  it('defaults to Normal density and 3 body lines, and remembers the choice', () => {
+  it('defaults to Normal density and 1 body line (one compact line per row), and remembers the choice', () => {
     expect(loadGridDisplay()).toEqual(DEFAULT_GRID_DISPLAY);
-    expect(DEFAULT_GRID_DISPLAY).toEqual({ density: 'normal', bodyLines: 3 });
+    expect(DEFAULT_GRID_DISPLAY).toEqual({ density: 'normal', bodyLines: 1 });
     saveGridDisplay({ density: 'compact', bodyLines: 'auto' });
     expect(loadGridDisplay()).toEqual({ density: 'compact', bodyLines: 'auto' });
     localStorage.setItem('clickhouse-observe.gridDisplay', '{"density":"huge"}');
