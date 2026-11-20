@@ -39,6 +39,9 @@ interface LogsHistogramPanelProps {
   onToggleCollapsed: () => void;
   /** "Edit visualization" link to the Visualize page (DISC-CHART-03); absent = no button. */
   editVisualizationUrl?: string;
+  /** The search does not parse: the bars and count belong to the previous search, so hide them
+   *  (Kibana clears the chart too) instead of showing a stale answer under the error. */
+  invalidQuery?: boolean;
 }
 
 function colorModeFor(breakdown: BreakdownSel): HistogramColorMode {
@@ -74,6 +77,7 @@ export function LogsHistogramPanel({
   breakdownTarget,
   onAddFilter,
   collapsed,
+  invalidQuery = false,
   onToggleCollapsed,
   editVisualizationUrl,
 }: LogsHistogramPanelProps) {
@@ -107,7 +111,12 @@ export function LogsHistogramPanel({
           />
         )}
       </div>
-      {!collapsed &&
+      {!collapsed && invalidQuery ? (
+        <div className={styles.histogramEmpty} role="status" data-testid="histogram-invalid-query">
+          No chart: the search has an error
+        </div>
+      ) : (
+        !collapsed &&
         (volumeData.length > 0 && (totalEvents > 0 || volLoading) ? (
           <>
             <VolumeHistogram
@@ -124,7 +133,8 @@ export function LogsHistogramPanel({
             />
             {/* SHARED-A11Y-01: the new hit count is spoken after each search. */}
             <span className={styles.histogramMeta} role="status">
-              {totalEvents.toLocaleString()} rows (count) &middot; {formatRangeCaption(timeRange)} (interval: {resolvedInterval.label})
+              {totalEvents.toLocaleString()} rows (count) &middot; {formatRangeCaption(timeRange)} (interval:{' '}
+              {resolvedInterval.label})
               {resolvedInterval.scaledTo && (
                 // Kibana's warning when a chosen interval is too fine for the range.
                 <span
@@ -139,7 +149,8 @@ export function LogsHistogramPanel({
           </>
         ) : (
           <div className={styles.histogramEmpty}>{volLoading ? 'Loading…' : 'No events in selected time range'}</div>
-        ))}
+        ))
+      )}
     </div>
   );
 }

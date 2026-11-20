@@ -1742,6 +1742,7 @@ export function LogsExplorer({ tabId, tabStrip }: LogsExplorerProps = {}) {
                   onAddFilter={onAddFilter}
                   collapsed={histogramCollapsed}
                   onToggleCollapsed={() => setHistogramCollapsed((v) => !v)}
+                  invalidQuery={!!invalidQuery}
                 />
                 <div className={styles.tableToolbar}>
                   <RadioButtonGroup<ResultsTab>
