@@ -81,7 +81,7 @@ export function ShareLinkModal({
             onChange={(e) => setAbsolute(e.currentTarget.checked)}
           />
         </Field>
-        <Field label="Short link" description="A short /goto/ link from Grafana (signed-in users of this Grafana only)">
+        <Field label="Short link" description="A short /goto/ link from Grafana (anyone who can open this Grafana can use it)">
           <Switch id="share-short-link" value={short} onChange={(e) => setShort(e.currentTarget.checked)} />
         </Field>
         {notice}
