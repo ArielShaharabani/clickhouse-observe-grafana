@@ -88,7 +88,7 @@ export function addField(state: LensState, field: LensField, ctx: LensContext): 
     });
   } else {
     if (!buckets.some((b) => b.kind === 'terms' && b.field === field.sqlExpr)) {
-      buckets.push({ kind: 'terms', id: newId('b'), field: field.sqlExpr, label: field.label, size: TERMS_SIZE });
+      buckets.push({ kind: 'terms', id: newId('b'), field: field.sqlExpr, label: field.label, size: TERMS_SIZE, other: true });
     }
   }
 

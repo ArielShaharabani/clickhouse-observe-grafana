@@ -1,7 +1,7 @@
 # Context snapshot — read this to restart
 
 Saved after every feature (and every review-fix round). A new session can resume from this file plus `PROGRESS.md` alone.
-Last saved: 2026-11-19, #- PARITY-XYCHART merged (PR 49, v0.51.0).
+Last saved: 2026-11-20, #- PARITY-MINORS merged (PR 51, v0.54.0).
 
 ## Goal
 Bring Kibana Discover + Lens style exploration to Grafana on ClickHouse by extending the **ClickHouse Observe** app plugin.
@@ -59,6 +59,9 @@ Bring Kibana Discover + Lens style exploration to Grafana on ClickHouse by exten
 | - | PARITY-GRID: Kibana parity: document paging, column resize and menu, sidebar, sort tie-break, context view, single-document link | 49 | src/components/LogsTable.tsx, src/components/LogDetailDrawer.tsx, src/components/ColumnHeaderMenu.tsx, src/pages/ContextView.tsx, src/pages/SingleDocView.tsx, src/sql/queryBuilder.ts |
 | - | PARITY-DASHBOARDS: Kibana parity: Save and return, Discover dashboard export, Share in Visualize, short links | 49 | src/lens/SaveActions.tsx, src/lens/panelSource.ts, src/data/panelExport.ts, src/data/shortUrl.ts, src/components/SessionActions/ShareLinkModal.tsx |
 | - | PARITY-XYCHART: Kibana parity: Visualize tooltip, Line unstacked, brush across bars, stable colours, axes, number format, legend colours | 49 | src/lens/render/XyChart.tsx, src/lens/render/seriesColors.ts, src/lens/render/timeTicks.ts, src/lens/style.ts, src/lens/compile.ts |
+| - | PARITY-FIELDS: Kibana parity: map keys as fields, empty and invalid states, filter groups, field statistics, unknown-field warning | 51 | src/components/FieldsContext.tsx, src/components/NoResults.tsx, src/sql/timeBounds.ts, src/sql/filters.ts, src/components/FilterPills.tsx |
+| - | PARITY-CHARTS2: Kibana parity: pie, metric and table polish, Other by default, editor layout, export colours, Inspector | 51 | src/lens/render/LensChart.tsx, src/lens/render/MetricTiles.tsx, src/lens/Inspector.tsx, src/lens/panelExport.ts |
+| - | PARITY-MINORS: Kibana parity: shared saved searches, breakdown back to Discover, Copy column | 51 | src/data/savedSearches.ts, src/components/SavedSearches/SavedSearchMenu.tsx, src/lens/handoff.ts |
 
 ## Key decisions (details in DECISIONS.md)
 - Frontend-only; queries via grafana-clickhouse-datasource (`src/data/runQuery.ts`). Plain React + @grafana/ui, no Scenes.

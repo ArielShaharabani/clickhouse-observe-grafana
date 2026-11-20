@@ -127,6 +127,11 @@ export interface FilterPill {
   /** Pinned across app pages (SHARED-STATE-01): kept in per-tab session storage and re-applied on
    *  every page that opens without it, like Kibana's global `_g` filters. */
   pinned?: boolean;
+  /** Filter group (one level): pills sharing a `group` id and `groupOp: 'or'` are combined with OR
+   *  into one condition; 'and' (or no groupOp) is the plain top-level AND, shown as a group.
+   *  Sanitized by sanitizeFilterPills (id charset + operator enum). */
+  group?: string;
+  groupOp?: 'or' | 'and';
 }
 
 export type ColumnType = 'time' | 'level' | 'text' | 'number' | 'string' | 'exact' | 'map' | 'json' | 'tuple' | 'array' | 'unknown';
@@ -232,4 +237,9 @@ export interface SavedSearch {
   createdAt: string;
   /** Scope this saved search to a specific data view; undefined = legacy (all views). */
   dataViewId?: string;
+  /** Free text shown in the list (Kibana's saved-object description). */
+  description?: string;
+  tags?: string[];
+  /** Dashboard uid when stored as a shared Grafana saved object; absent = browser-only. */
+  sharedUid?: string;
 }

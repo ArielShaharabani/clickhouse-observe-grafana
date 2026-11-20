@@ -227,7 +227,7 @@ export function FilterEditForm({ initial, loadValues, onSubmit, onCancel }: Filt
     }
     onSubmit(
       initial
-        ? { ...draft, id: initial.id, disabled: initial.disabled, pinned: initial.pinned }
+        ? { ...draft, id: initial.id, disabled: initial.disabled, pinned: initial.pinned, group: initial.group, groupOp: initial.groupOp }
         : { ...draft, id: nextId() }
     );
   };

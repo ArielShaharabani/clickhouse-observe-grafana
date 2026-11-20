@@ -6,7 +6,8 @@
 import { dateTime } from '@grafana/data';
 import { Span } from '../diag/types';
 import { LensResult } from './compile';
-import { BucketDim, LensState, MISSING_VALUE, OTHER_VALUE } from './state';
+import { formatMetricValue } from './render/MetricTiles';
+import { BucketDim, LensState, MetricDim, MISSING_VALUE, OTHER_VALUE } from './state';
 
 export type InspectorCell = string | number | null;
 
@@ -17,6 +18,8 @@ export interface InspectorColumn {
   /** Bucket columns: the dimension (filter actions, time formatting). */
   bucket?: BucketDim;
   isTime: boolean;
+  /** Metric columns: the metric, for its Value format (Percent, Bytes, …). */
+  metric?: MetricDim;
 }
 
 export interface InspectorTable {
@@ -33,7 +36,7 @@ export function inspectorTable(state: LensState, data: LensResult | undefined): 
     const bucket = state.buckets[i];
     return bucket
       ? { label, role: 'bucket', bucket, isTime: bucket.kind === 'date_histogram' }
-      : { label, role: 'metric', isTime: false };
+      : { label, role: 'metric', isTime: false, metric: state.metrics[i - state.buckets.length] };
   });
   return { columns, rows: data.table.rows };
 }
@@ -70,6 +73,9 @@ export function formatCell(col: InspectorColumn, cell: InspectorCell): string {
     return dateTime(cell).format('YYYY-MM-DD HH:mm:ss');
   }
   if (typeof cell === 'number') {
+    if (col.metric) {
+      return formatMetricValue(col.metric, cell);
+    }
     return cell.toLocaleString(undefined, { maximumFractionDigits: 3 });
   }
   return String(cell);
@@ -160,4 +166,41 @@ export function lensRequests(roots: readonly Span[]): Span[] {
 export function spanWallTime(ms: number): Date {
   const origin = typeof performance !== 'undefined' && performance.timeOrigin ? performance.timeOrigin : 0;
   return new Date(origin + ms);
+}
+
+const BREAK_BEFORE = /^(SELECT|FROM|WHERE|GROUP BY|ORDER BY|HAVING|LIMIT|UNION ALL|ARRAY JOIN|LEFT ARRAY JOIN|LEFT JOIN|INNER JOIN|JOIN|PREWHERE|SETTINGS|WITH)\b/i;
+
+/**
+ * A readable layout of generated SQL: a line break before each clause keyword (indented by the
+ * parenthesis depth), strings and quoted identifiers left alone. Text only, never executed.
+ */
+export function prettySql(sql: string): string {
+  let out = '';
+  let depth = 0;
+  let i = 0;
+  const flat = sql.replace(/\s+/g, ' ').trim();
+  while (i < flat.length) {
+    const c = flat[i];
+    if (c === "'" || c === '"' || c === '`') {
+      let j = i + 1;
+      while (j < flat.length && flat[j] !== c) {
+        j += flat[j] === '\\' ? 2 : 1;
+      }
+      out += flat.slice(i, j + 1);
+      i = j + 1;
+      continue;
+    }
+    if (c === '(') {
+      depth++;
+    } else if (c === ')') {
+      depth = Math.max(0, depth - 1);
+    }
+    const prev = flat[i - 1];
+    if (i > 0 && (prev === ' ' || prev === '(') && BREAK_BEFORE.test(flat.slice(i)) && /[A-Za-z]/.test(c)) {
+      out = out.replace(/ $/, '') + '\n' + '  '.repeat(depth);
+    }
+    out += c;
+    i++;
+  }
+  return out;
 }

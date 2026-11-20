@@ -8,6 +8,8 @@ import { GridDisplay, GridDisplayOptions, loadGridDisplay, saveGridDisplay } fro
 import { useSearchParams } from 'react-router-dom';
 import { QueryProgress } from '../components/QueryProgress/QueryProgress';
 import { SearchBar } from '../components/SearchBar';
+import { NoResults } from '../components/NoResults';
+import { fetchTimeBounds } from '../sql/timeBounds';
 import { FilterPills } from '../components/FilterPills';
 import { LogsTable } from '../components/LogsTable';
 import { LogDetailDrawer } from '../components/LogDetailDrawer';
@@ -192,6 +194,12 @@ export function LogsExplorer({ tabId, tabStrip }: LogsExplorerProps = {}) {
   // instead of silently keeping old bars during an actual volume refetch.
   const [volLoading, setVolLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // The list query itself failed: the grid shows the error instead of the previous (now stale)
+  // rows. A histogram-only failure leaves the valid rows alone.
+  const [logsError, setLogsError] = useState<string | null>(null);
+  // The typed KQL was refused by the parser on commit (nothing ran): the rows on screen belong to
+  // the previous query, so the grid shows the syntax error instead until a valid query is run.
+  const [invalidQuery, setInvalidQuery] = useState<string | null>(null);
   const [selectedRow, setSelectedRow] = useState<LogRow | null>(null);
   // Mirrors selectedRow for fetchLogs's hydratedRows-pruning below — read from a callback whose
   // deps deliberately don't include selectedRow (see fetchLogs), same pattern as hydratedRowsRef.
@@ -643,6 +651,7 @@ export function LogsExplorer({ tabId, tabStrip }: LogsExplorerProps = {}) {
     const action = actionRef.current ?? undefined;
     setLoading(true);
     setError(null);
+    setLogsError(null);
     // A new list query invalidates any previously hydrated detail rows/pages — they were
     // fetched under the old filters/time range/sort and would otherwise mismatch the new rows.
     // Exception: the currently-open drawer's row. With the drawer now blocking on hydration
@@ -706,7 +715,13 @@ export function LogsExplorer({ tabId, tabStrip }: LogsExplorerProps = {}) {
       });
     } catch (err) {
       if (runRef.current === runId) {
-        setError(errMsg(err));
+        const msg = errMsg(err);
+        setError(msg);
+        // Stale rows must not look like the answer to the failed query.
+        setLogsError(msg);
+        setRows([]);
+        setHasMore(false);
+        setSelectedRow(null);
       }
     } finally {
       if (runRef.current === runId) {
@@ -1227,6 +1242,7 @@ export function LogsExplorer({ tabId, tabStrip }: LogsExplorerProps = {}) {
         useRawSql: false, // always exit raw SQL mode when loading a saved search
       },
     });
+    setInvalidQuery(null);
     if (newTimeRange) {
       setTimeRange(newTimeRange);
     }
@@ -1238,6 +1254,7 @@ export function LogsExplorer({ tabId, tabStrip }: LogsExplorerProps = {}) {
 
   // DISC-SEARCH-03: a saved query is stored data — its filters are re-sanitized, pins stay on top.
   const onLoadQuery = ({ query, filters, timeRange: tr }: LoadedQuery) => {
+    setInvalidQuery(null);
     dispatch({ type: 'SET_SEARCH', value: query });
     if (filters) {
       const table = tableKey(config.database, config.logsTable);
@@ -1246,6 +1263,17 @@ export function LogsExplorer({ tabId, tabStrip }: LogsExplorerProps = {}) {
     if (tr) {
       setTimeRange(tr);
     }
+  };
+
+  // Empty-results help: widen the range to everything the data view holds (one min / max query).
+  const searchEntireTimeRange = async (): Promise<boolean> => {
+    const bounds = await fetchTimeBounds(config, timeRange);
+    if (!bounds) {
+      return false;
+    }
+    // End is exclusive-ish (second precision of the picker): include the last event.
+    onHistogramSelectRange(bounds.fromMs, bounds.toMs + 1000);
+    return true;
   };
 
   const onHistogramSelectRange = (fromMs: number, toMs: number) => {
@@ -1524,6 +1552,7 @@ export function LogsExplorer({ tabId, tabStrip }: LogsExplorerProps = {}) {
               value={queryState.search}
               onChange={(v) => dispatch({ type: 'SET_SEARCH', value: v })}
               onSearch={() => {}}
+              onInvalidQuery={setInvalidQuery}
               loadValues={logsLoadValues}
               loadMapKeys={logsLoadMapKeys}
             />
@@ -1729,8 +1758,15 @@ export function LogsExplorer({ tabId, tabStrip }: LogsExplorerProps = {}) {
                 {resultsTab === 'documents' && (
                   <>
                   <LogsTable
-                    rows={pageRows}
-                    loading={loading && rows.length === 0}
+                    rows={invalidQuery ? [] : pageRows}
+                    loading={loading && rows.length === 0 && !invalidQuery}
+                    emptyState={
+                      <NoResults
+                        error={invalidQuery ?? logsError}
+                        onSearchEntireRange={caps.hasTime ? searchEntireTimeRange : undefined}
+                        onRetry={invalidQuery ? undefined : () => latestExecuteQuery.current('Retry')}
+                      />
+                    }
                     columns={effectiveColumns}
                     sort={queryState.sort}
                     onRowClick={(row) => {
@@ -1756,6 +1792,7 @@ export function LogsExplorer({ tabId, tabStrip }: LogsExplorerProps = {}) {
                     timeFilterable={!isConvertedTimestamp(config)}
                     onDropField={onDropField}
                   />
+                  {!invalidQuery && (
                   <PaginationBar
                     page={currentPage}
                     pageSize={pageSize}
@@ -1766,6 +1803,7 @@ export function LogsExplorer({ tabId, tabStrip }: LogsExplorerProps = {}) {
                     onPageChange={onPageChange}
                     onPageSizeChange={onPageSizeChange}
                   />
+                  )}
                   </>
                 )}
               </div>

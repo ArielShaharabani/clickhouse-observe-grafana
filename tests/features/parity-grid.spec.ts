@@ -93,7 +93,7 @@ test('header menu: sort with a time tie-break, move, remove, copy name', async (
   await logs.open();
   await logs.expectRowCount(FIXTURE.counts.total);
   let menu = await openHeaderMenu(page, logs, 'Level');
-  await expect(menu.getByRole('menuitem')).toHaveText(['Sort ascending', 'Sort descending', 'Move left', 'Move right', 'Copy name']);
+  await expect(menu.getByRole('menuitem')).toHaveText(['Sort ascending', 'Sort descending', 'Move left', 'Move right', 'Copy name', 'Copy column']);
   await menu.getByRole('menuitem', { name: 'Sort ascending' }).click();
   await expect(logs.grid.getByRole('columnheader', { name: /Level/ })).toHaveAttribute('aria-sort', 'ascending');
   // Ties on Level keep time order, newest first.
@@ -169,7 +169,9 @@ test('field popover: filter buttons on every value, exact caption, one-click map
   await expect(page.getByText(`Calculated from ${FIXTURE.counts.errorsByService.auth} records.`)).toBeVisible();
   await page.keyboard.press('Escape');
 
-  await page.getByTitle('ResourceAttributes', { exact: true }).click();
-  await page.getByRole('button', { name: 'Add ResourceAttributes.host.name as column' }).click();
+  // Map keys are sidebar fields now (D48): add one from its own row, one click.
+  const keyRow = page.locator('.field-item-row').filter({ has: page.getByRole('button', { name: /^Preview ResourceAttributes.host.name: / }) });
+  await keyRow.hover();
+  await keyRow.getByRole('button', { name: 'Add ResourceAttributes.host.name as column' }).click();
   await expect(logs.grid.getByRole('columnheader', { name: /host\.name/ })).toBeVisible();
 });

@@ -33,6 +33,7 @@ import {
   cellFilterValue,
   csvFileName,
   formatCell,
+  prettySql,
   inspectorTable,
   InspectorSort,
   lensRequests,
@@ -193,6 +194,8 @@ function DataView({ lens, data, title, addFilter }: LensInspectorProps) {
 
 type RequestTab = 'stats' | 'request' | 'response';
 
+// ClickHouse's own statistics are listed only when the response has them.
+const SERVER_STATS = new Set(['Rows read', 'Bytes read', 'Query time (ClickHouse)', 'Memory usage']);
 const num = (v: unknown): number | undefined => (typeof v === 'number' && Number.isFinite(v) ? v : undefined);
 const str = (v: unknown): string | undefined => (typeof v === 'string' && v ? v : undefined);
 
@@ -210,8 +213,9 @@ function RequestsView({ data, dataView, tableName }: LensInspectorProps) {
   const durationMs = latest.endMs !== null ? latest.endMs - latest.startMs : undefined;
   const sql = str(a.sql) ?? '';
   const executedSql = str(a.executedSql);
-  const stats: Array<[string, string]> = [
-    ['Hits', num(a.rowCount) !== undefined ? formatCount(a.rowCount) : '-'],
+  const stats = [
+    // Rows the query returned (ClickHouse has no "matching documents" count in the response).
+    ['Result rows', num(a.rowCount) !== undefined ? formatCount(a.rowCount) : '-'],
     ['Rows read', num(a.serverReadRows) !== undefined ? formatCount(a.serverReadRows) : '-'],
     ['Bytes read', num(a.serverReadBytes) !== undefined ? formatBytes(a.serverReadBytes) : '-'],
     ['Data view', dataView?.name ?? '-'],
@@ -225,12 +229,13 @@ function RequestsView({ data, dataView, tableName }: LensInspectorProps) {
     ['Memory usage', num(a.serverMemoryUsage) !== undefined ? formatBytes(a.serverMemoryUsage) : '-'],
     ['Request timestamp', spanWallTime(latest.startMs).toISOString()],
     ['Status', latest.status],
-  ];
-  const requestJson = JSON.stringify(
-    { rawSql: sql, ...(executedSql && executedSql !== sql ? { executedSql } : {}), format: 'table' },
-    null,
-    2
-  );
+  ].filter(([k, v]) => v !== '-' || !SERVER_STATS.has(k));
+  // The SQL laid out as text (not a JSON string with escaped quotes and newlines).
+  const requestText = [
+    '-- rawSql',
+    prettySql(sql),
+    ...(executedSql && executedSql !== sql ? ['', '-- executedSql', prettySql(executedSql)] : []),
+  ].join('\n');
   const responseJson = JSON.stringify(
     data
       ? {
@@ -276,7 +281,7 @@ function RequestsView({ data, dataView, tableName }: LensInspectorProps) {
             </tbody>
           </table>
         )}
-        {tab === 'request' && <JsonBlock text={requestJson} label="request" />}
+        {tab === 'request' && <JsonBlock text={requestText} label="request" />}
         {tab === 'response' && <JsonBlock text={responseJson} label="response" />}
       </div>
     </div>

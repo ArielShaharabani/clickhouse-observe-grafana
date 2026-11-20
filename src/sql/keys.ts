@@ -14,10 +14,10 @@
  * such metadata — its keys live in row data — so it keeps this bounded, filter-scoped sample, paid
  * for only when the user actually opens the column (from either surface).
  *
- * Fetched keys are deliberately NOT published into FieldsContext's `fields`: they're sample-scoped
- * (a LIMIT-bounded read under the *current* filters/time range), so treating them as schema would
- * make transient, filter-dependent data look permanent — the opposite of what makes JSON paths safe
- * to publish. They live only in this module's cache, which both UI surfaces read through.
+ * Filter-scoped key lists (the popover / search bar) stay in this module's cache only. In addition,
+ * FieldsContext Phase D publishes an *unfiltered* sample of the latest rows' keys (capped at
+ * MAX_MAP_KEY_FIELDS per column) as ordinary fields so Map keys behave like Kibana's flattened
+ * `Col.key` fields; that list is cached here too (cacheKey 'fields').
  */
 
 import { TimeRange } from '@grafana/data';
@@ -27,6 +27,10 @@ import { coarseTimeBucket } from './timeBucket';
 import { quoteString } from './queryBuilder';
 import { FieldModel } from './fieldModel';
 import { SourceConfig } from '../types';
+
+/** Keys per Map column published as first-class fields (FieldsContext Phase D) and listed in the
+ *  sidebar / filter builder / field statistics. */
+export const MAX_MAP_KEY_FIELDS = 100;
 
 export interface KeyEntry {
   key: string;

@@ -83,8 +83,8 @@ it('profiles all listed fields in one batch query, sorted by name, containers ex
   expect(mockRun).toHaveBeenCalledTimes(1);
   const { sql, op } = mockRun.mock.calls[0][0];
   expect(op).toBe('fieldStats');
-  expect(sql).toContain("ifNull(toString(SeverityNumber), '') AS v0");
-  expect(sql).toContain("ifNull(toString(SeverityText), '') AS v1");
+  expect(sql).toContain('toString(SeverityNumber) AS v0');
+  expect(sql).toContain('toString(SeverityText) AS v1');
   expect(sql).not.toContain('LogAttributes');
   expect(sql).toContain('LIMIT 5000');
   expect(screen.getByText('4 categories')).toBeInTheDocument();

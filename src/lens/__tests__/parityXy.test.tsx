@@ -437,3 +437,20 @@ describe('legend colour picker (item 10)', () => {
     expect(toHex('nonsense')).toBe('#000000');
   });
 });
+
+describe('session colour memory', () => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { assignColorSlots } = require('../render/seriesColors');
+  it('a value keeps its slot after a filter removes the series it collided with', () => {
+    const memory = new Map<string, number>();
+    const all = ['info', 'error', 'warn', 'debug'];
+    const before = assignColorSlots(all, 10, 10, memory);
+    for (const k of all) {
+      const after = assignColorSlots([k], 10, 10, memory);
+      expect(after[0]).toBe(before[all.indexOf(k)]);
+    }
+  });
+  it('without memory, assignment stays deterministic', () => {
+    expect(assignColorSlots(['a', 'b'], 10)).toEqual(assignColorSlots(['a', 'b'], 10));
+  });
+});

@@ -164,7 +164,7 @@ describe('LensInspector', () => {
     fireEvent.click(screen.getByRole('radio', { name: 'Requests' }));
     expect(screen.getByText('1 request was made')).toBeInTheDocument();
     const stats = screen.getByRole('table', { name: 'Request statistics' });
-    expect(within(stats).getByRole('row', { name: /Hits 3/ })).toBeInTheDocument();
+    expect(within(stats).getByRole('row', { name: /Result rows 3/ })).toBeInTheDocument();
     expect(within(stats).getByRole('row', { name: /Rows read 41,520|Rows read 41.5K/ })).toBeInTheDocument();
     expect(within(stats).getByRole('row', { name: /Data view Spec fixture logs/ })).toBeInTheDocument();
     fireEvent.click(screen.getByRole('tab', { name: 'Request' }));

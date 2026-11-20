@@ -28,25 +28,25 @@ test('a formula from the URL runs: errors per service via count(kql=…)', async
       formulaFields: {},
     }),
   });
-  await expect(viz.chart.getByText(String(FIXTURE.counts.errorsByService.payments), { exact: true })).toBeVisible();
-  await expect(viz.chart.getByText(String(FIXTURE.counts.errorsByService.checkout), { exact: true })).toBeVisible();
+  await expect(viz.chart.getByText(FIXTURE.counts.errorsByService.payments.toLocaleString('en-US'), { exact: true })).toBeVisible();
+  await expect(viz.chart.getByText(FIXTURE.counts.errorsByService.checkout.toLocaleString('en-US'), { exact: true })).toBeVisible();
 });
 
 test('switching a metric to Formula converts it, and an edited formula re-runs the chart', async ({ page }) => {
   const viz = new VisualizePage(page);
   await viz.open({ lens: byService({ kind: 'metric', id: 'm0', op: 'count' }) });
-  await expect(viz.chart.getByText(String(FIXTURE.counts.payments), { exact: true })).toBeVisible();
+  await expect(viz.chart.getByText(FIXTURE.counts.payments.toLocaleString('en-US'), { exact: true })).toBeVisible();
   await viz.dimensions.getByRole('button', { name: 'Edit Count of records' }).click();
   await editor(page).getByRole('radio', { name: 'Formula' }).check({ force: true });
   await expect(formulaBox(page)).toHaveValue('count()');
 
   await formulaBox(page).fill("count(kql='SeverityText : error') * 2");
   await formulaBox(page).blur();
-  await expect(viz.chart.getByText(String(2 * FIXTURE.counts.errorsByService.payments), { exact: true })).toBeVisible();
+  await expect(viz.chart.getByText((2 * FIXTURE.counts.errorsByService.payments).toLocaleString('en-US'), { exact: true })).toBeVisible();
   // The formula rides in the URL: a reload keeps it.
   await expect(page).toHaveURL(/formula/);
   await page.reload();
-  await expect(viz.chart.getByText(String(2 * FIXTURE.counts.errorsByService.payments), { exact: true })).toBeVisible();
+  await expect(viz.chart.getByText((2 * FIXTURE.counts.errorsByService.payments).toLocaleString('en-US'), { exact: true })).toBeVisible();
 });
 
 test('autocomplete lists functions with signatures; errors show a badge and are not applied', async ({ page }) => {
@@ -65,7 +65,7 @@ test('autocomplete lists functions with signatures; errors show a badge and are 
   await expect(editor(page).getByRole('status')).toHaveText('⚠ 1 error');
   await formulaBox(page).blur();
   // Still the last valid formula (count()).
-  await expect(viz.chart.getByText(String(FIXTURE.counts.payments), { exact: true })).toBeVisible();
+  await expect(viz.chart.getByText(FIXTURE.counts.payments.toLocaleString('en-US'), { exact: true })).toBeVisible();
 });
 
 test('a shared link whose formula names a field outside the data view is dropped (no SQL from the URL)', async ({
@@ -94,7 +94,7 @@ test('a shared link whose formula names a field outside the data view is dropped
       ],
     }),
   });
-  await expect(viz.chart.getByText(String(FIXTURE.counts.payments), { exact: true })).toBeVisible();
+  await expect(viz.chart.getByText(FIXTURE.counts.payments.toLocaleString('en-US'), { exact: true })).toBeVisible();
   await expect(viz.dimensions).not.toContainText('sum(x)');
   expect(queries.some((q) => q.includes('SELECT 1'))).toBe(false);
 });

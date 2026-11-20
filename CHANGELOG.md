@@ -10,6 +10,46 @@ Versions track the plugin's release history. `Unreleased` collects commits not y
 
 ---
 
+## [0.54.0] — 2026-11-20
+
+### Added
+- **Shared saved searches (comparison #5).** "Save current" now stores the search as a panel-less Grafana dashboard tagged `observe-saved-search`, so every user who can see dashboards sees it in the Saved searches menu (like Kibana saved objects). Browser-only searches stay listed (marked "(this browser)"); if the viewer cannot create dashboards the search is saved in the browser and the menu says so.
+- **Description and tags** in the save dialog; the description shows as the item's tooltip, tags as #tags.
+- **Copy column** in the column header menu: copies every loaded value of the column, one per line.
+
+### Fixed
+- **Explore in Discover from Visualize keeps the chart's breakdown** (`bd=field:col:<expr>`) when the chart's top-values field is a known column (#38).
+
+---
+
+## [0.53.0] — 2026-11-20
+
+- Pie: distinct stable colour per slice (as in XY), "name NN%" labels, grouped legend values.
+- Metric: a single tile is centred at a Kibana-like size; per-value tiles in a 3-column grid with the metric name as subtitle.
+- Table: thousands separators and wrapped headers.
+- Top values: "Group remaining values as Other" on by default for new breakdowns.
+- Dimension editor no longer clips at 1440 px.
+- Dashboard export: XY series keep their Visualize colours.
+- Inspector: SQL shown as text, "Result rows" instead of "Hits", ClickHouse stats only when present, metric value format in the Data view.
+
+---
+
+## [0.52.0] — 2026-11-20
+
+### Added
+
+- **Map keys as fields (Kibana parity).** Keys of `ResourceAttributes`, `LogAttributes`, `ScopeAttributes` (and any Map column) are ordinary fields (`ResourceAttributes.host.name`) in the field sidebar, the Add filter field picker and the Field statistics tab; capped at 100 keys per column.
+- **Empty results help.** "No results match your search criteria" with tips and a "Search entire time range" button; the empty histogram is hidden.
+- **Filter groups and bulk menu.** Pills can be grouped with OR (or AND); a ⋮ menu next to the pills offers Enable all, Disable all, Pin / Unpin all, Invert inclusion and Remove all.
+- **Unknown field warning.** `nosuchfield : x` warns that the field is not in the data view.
+
+### Changed
+
+- **After a failed or invalid query the previous rows are no longer shown**; the error replaces them.
+- **Field statistics:** empty strings count as "(blank)" values; time fields show an earliest / latest range.
+
+---
+
 ## [0.51.0] — 2026-11-19
 
 ### Added

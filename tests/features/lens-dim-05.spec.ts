@@ -127,11 +127,11 @@ test('Filters: one bucket per KQL query, counted on ClickHouse', async ({ page }
     }),
   });
   await expect(viz.chart.getByText('Errors', { exact: true })).toBeVisible();
-  await expect(viz.chart.getByText(String(FIXTURE.counts.byLevel.error), { exact: true })).toBeVisible();
+  await expect(viz.chart.getByText(FIXTURE.counts.byLevel.error.toLocaleString('en-US'), { exact: true })).toBeVisible();
   await expect(viz.chart.getByText('ServiceName : payments', { exact: true })).toBeVisible();
-  await expect(viz.chart.getByText(String(FIXTURE.counts.payments), { exact: true })).toBeVisible();
+  await expect(viz.chart.getByText(FIXTURE.counts.payments.toLocaleString('en-US'), { exact: true })).toBeVisible();
   await expect(viz.chart.getByText('All records', { exact: true })).toBeVisible();
-  await expect(viz.chart.getByText(String(FIXTURE.counts.total), { exact: true })).toBeVisible();
+  await expect(viz.chart.getByText(FIXTURE.counts.total.toLocaleString('en-US'), { exact: true })).toBeVisible();
 });
 
 test('Intervals: automatic buckets are labelled by their range; custom ranges by their label', async ({ page }) => {
@@ -141,7 +141,7 @@ test('Intervals: automatic buckets are labelled by their range; custom ranges by
   await expect(viz.chart.getByText(/^\d+ – \d+$/).first()).toBeVisible();
   await viz.open({ lens: tableLens({ kind: 'range', ...field, ranges: [{ label: 'Everything' }] }) });
   await expect(viz.chart.getByText('Everything', { exact: true })).toBeVisible();
-  await expect(viz.chart.getByText(String(FIXTURE.counts.total), { exact: true })).toBeVisible();
+  await expect(viz.chart.getByText(FIXTURE.counts.total.toLocaleString('en-US'), { exact: true })).toBeVisible();
 });
 
 test('Functions grid: Date histogram → Intervals with custom ranges; Filters with an invalid query', async ({

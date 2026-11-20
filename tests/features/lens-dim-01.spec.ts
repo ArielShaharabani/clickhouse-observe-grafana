@@ -78,7 +78,7 @@ test('top values: number of values, and "+ Add" slots open the editor', async ({
   await expect(viz.group('Horizontal axis')).toContainText('Top 1 values of ServiceName');
   await page.getByRole('button', { name: 'Chart type: Bar' }).click();
   await page.getByRole('option', { name: /^Table/ }).click();
-  await expect(viz.chart.getByText(String(FIXTURE.counts.payments), { exact: true })).toBeVisible();
+  await expect(viz.chart.getByText(FIXTURE.counts.payments.toLocaleString('en-US'), { exact: true })).toBeVisible();
   await expect(viz.chart.getByText('checkout', { exact: true })).toHaveCount(0);
 
   await viz.dimensions.getByRole('button', { name: 'Add to Metrics' }).click();

@@ -14,7 +14,9 @@
 
 import React, {
   useCallback,
+  useContext,
   useEffect,
+  useMemo,
   useRef,
   useState,
   KeyboardEvent,
@@ -27,6 +29,9 @@ import { getSuggestions, resolveValueContext, Suggestion } from '../sql/kql/sugg
 import { FieldValue } from '../sql/kql/_values';
 import { KeysResult } from '../sql/keys';
 import { parseKql, KqlSyntaxError } from '../sql/kql';
+import { unknownKqlFields } from '../sql/kql/unknownFields';
+import { buildFieldIndex } from '../sql/fields';
+import { SourceConfigContext } from './App/App';
 import { errMsg } from '../errMsg';
 
 interface SearchBarProps {
@@ -40,6 +45,9 @@ interface SearchBarProps {
    *  either surface warms the other. */
   loadMapKeys: (mapColumn: string) => Promise<KeysResult>;
   placeholder?: string;
+  /** Called with the syntax error when a commit is refused, and with null once a valid query is
+   *  committed — lets the page stop showing results of the previous query as if current. */
+  onInvalidQuery?: (message: string | null) => void;
 }
 
 /** Readable short labels for the autocomplete badge — replaces the old single-letter badge. */
@@ -57,12 +65,21 @@ export function SearchBar({
   onSearch,
   loadValues,
   loadMapKeys,
+  onInvalidQuery,
   placeholder = 'Filter logs with KQL  ·  level:error and service:payment*  ·  responseTime > 500',
 }: SearchBarProps) {
   const styles = useStyles2(getStyles);
   const { fields } = useFields();
+  const sourceConfig = useContext(SourceConfigContext);
 
   const [inputValue, setInputValue] = useState(value);
+  // Names the query uses that the data view doesn't have (Kibana's "field doesn't exist" hint) —
+  // such a term runs as a body text search, so say so instead of silently returning nothing.
+  const fieldIndex = useMemo(() => buildFieldIndex(fields), [fields]);
+  const unknownFields = useMemo(
+    () => unknownKqlFields(inputValue, sourceConfig, fieldIndex),
+    [inputValue, sourceConfig, fieldIndex]
+  );
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [highlightIdx, setHighlightIdx] = useState(-1);
   const [open, setOpen] = useState(false);
@@ -264,17 +281,20 @@ export function SearchBar({
         setSuggestions([]);
         setOpen(false);
         setMapKeyState(null);
-        setParseError(e instanceof KqlSyntaxError ? e.message : String(e));
+        const message = e instanceof KqlSyntaxError ? e.message : String(e);
+        setParseError(message);
+        onInvalidQuery?.(message);
         return;
       }
     }
     setParseError(null);
+    onInvalidQuery?.(null);
     setSuggestions([]);
     setOpen(false);
     setMapKeyState(null);
     onChange(inputValue);
     onSearch();
-  }, [inputValue, onChange, onSearch]);
+  }, [inputValue, onChange, onSearch, onInvalidQuery]);
 
   const onKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
     if (!open || suggestions.length === 0) {
@@ -419,6 +439,22 @@ export function SearchBar({
             <pre className={styles.errorText}>{parseError}</pre>
           </div>
         )}
+        {!open && !parseError && unknownFields.length > 0 && (
+          <div className={styles.warnBox} role="status" data-testid="kql-unknown-field">
+            <Icon name="exclamation-triangle" size="sm" />
+            <span>
+              {unknownFields.length === 1 ? 'Field ' : 'Fields '}
+              {unknownFields.map((f, i) => (
+                <React.Fragment key={f}>
+                  {i > 0 ? ', ' : ''}
+                  <code>{f}</code>
+                </React.Fragment>
+              ))}{' '}
+              {unknownFields.length === 1 ? "doesn't" : "don't"} exist in the data view; the term is searched as text in the message
+              instead.
+            </span>
+          </div>
+        )}
       </div>
 
       {/* Icon-only while the query is current — condensed to fit the merged single-line toolbar
@@ -502,6 +538,23 @@ const getStyles = (theme: GrafanaTheme2) => ({
     border-radius: ${theme.shape.radius.default};
     box-shadow: ${theme.shadows.z2};
     padding: ${theme.spacing(1)};
+  `,
+  warnBox: css`
+    position: absolute;
+    top: calc(100% + 2px);
+    left: 0;
+    right: 0;
+    z-index: 1000;
+    display: flex;
+    align-items: flex-start;
+    gap: ${theme.spacing(0.75)};
+    padding: ${theme.spacing(0.75, 1)};
+    border: 1px solid ${theme.colors.warning.border};
+    border-radius: ${theme.shape.radius.default};
+    background: ${theme.colors.background.primary};
+    box-shadow: ${theme.shadows.z2};
+    color: ${theme.colors.warning.text};
+    font-size: ${theme.typography.bodySmall.fontSize};
   `,
   errorText: css`
     margin: 0;

@@ -368,3 +368,19 @@ LENS-DATAVIEW acceptance:
 | LENS-XY-01 | jest updated: `style.test.tsx` (domains / ticks), `layers.test.tsx` (`1,000`), `compile.test.ts` (series order), `ChartTypeSwitcher.test.tsx` (no sub-type for Line)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 | LENS-XY-01 | e2e `tests/features/parity-xychart.spec.ts` (tooltip, keyboard tooltip, legend order across types, Line sub-type + old link, brush from a bar + click, stable colour after filter, value ticks, time axis / partial / plain lines, no blank frame on switch, legend colour picker): not run (coordinator)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 | IT-LENS    | e2e updated for the number format (`9.3K` → `9,264`, `1.6K` → `1,575`): `lens-interact-01`, `lens-interact-02`, `lens-dataview`, `lens-save-01`, `lens-style-01` (bar value, custom bound tick `20,000`), `lens-dim-05` (Filters count): not run (coordinator)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+
+### PARITY-FIELDS (PR 51)
+| Case | Status |
+| --- | --- |
+| PARITY-FIELDS | jest `src/sql/__tests__/parityFields.test.ts` (blank / time-range stats SQL + parse, unknown KQL fields, time bounds SQL, filter group SQL, helpers, sanitize) and `src/components/__tests__/parityFields.test.tsx` (SearchBar warning + invalid callback, NoResults, pill groups, bulk menu); `FieldsContext.test.tsx` (Map keys published, sorted, capped, failures ignored) |
+| PARITY-FIELDS | e2e `tests/features/parity-fields.spec.ts`: not run (coordinator) |
+
+### PARITY-CHARTS2 (PR 51)
+| Case | Status |
+| --- | --- |
+
+### PARITY-MINORS (PR 51)
+| Case | Status |
+| --- | --- |
+| Jest | `src/data/__tests__/savedSearchesShared.test.ts`, `src/lens/__tests__/handoff.test.ts` (breakdown), `a11y.test.tsx` (header menu lists Copy column) |
+| E2E | `tests/features/feat-parity-minors.spec.ts` — not run (coordinator) |
