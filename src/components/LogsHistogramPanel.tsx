@@ -141,7 +141,7 @@ export function LogsHistogramPanel({
             <VolumeHistogram
               data={volumeData}
               timeRange={timeRange}
-              height={128}
+              height={104}
               loading={volLoading}
               onSelectRange={onSelectRange}
               breakdownTarget={breakdownTarget}
@@ -194,7 +194,7 @@ const getStyles = (theme: GrafanaTheme2) => ({
     display: flex;
     align-items: center;
     gap: ${theme.spacing(1)};
-    padding-bottom: ${theme.spacing(1)};
+    padding-bottom: ${theme.spacing(0.5)};
   `,
   breakdownNotice: css`
     display: flex;
