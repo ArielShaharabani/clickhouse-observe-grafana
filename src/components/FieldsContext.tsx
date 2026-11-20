@@ -4,6 +4,7 @@ import { FieldModel, inferFieldType, parseJsonTypedPaths, parseTupleElements } f
 import { buildColumnsQuery, buildDiscoveryWindowConditions, buildJsonPathsQuery } from '../sql/introspection';
 import { hasFreshMetadata, invalidateMetadata, loadMetadata } from '../sql/metadataCache';
 import { quoteDottedPath } from '../sql/queryBuilder';
+import { buildSkipIndicesQuery, parseTextIndexes, TextIndexInfo } from '../sql/textIndex';
 import { detectPruneColumn, PruneCandidateColumn } from '../sql/pruneColumn';
 import { runQueryRows } from '../data/runQuery';
 import { SourceConfig } from '../types';
@@ -144,8 +145,13 @@ function fetchJsonPaths(config: SourceConfig, table: string, jsonColumn: string,
   );
 }
 
+// Text skip indexes per table (PERF-SEARCH), same lifetime as the metadata cache.
+const textIndexCache = new Map<string, TextIndexInfo[]>();
+
 interface FieldsContextValue {
   fields: FieldModel[];
+  /** Text skip indexes on the table (read-only discovery; empty when none / unreadable). */
+  textIndexes?: TextIndexInfo[];
   loading: boolean;
   error: string | null;
   refresh: () => void;
@@ -224,6 +230,7 @@ export function useFieldDiscovery(
   const [error, setError] = useState<string | null>(null);
   const [detectedPartitionTimestamp, setDetectedPartitionTimestamp] = useState('');
   const [fieldsFor, setFieldsFor] = useState('');
+  const [textIndexes, setTextIndexes] = useState<TextIndexInfo[]>([]);
   const runRef = useRef(0);
 
   const bucket = useMemo(() => (columnsOnly ? '' : coarseTimeBucket(timeRange)), [timeRange, columnsOnly]);
@@ -242,6 +249,7 @@ export function useFieldDiscovery(
 
     if (invalidateColumns) {
       invalidateMetadata(config.datasourceUid, config.database, resolvedTable);
+      textIndexCache.delete(cKey);
       // Map-key and value-suggestion caches are sample-scoped (a LIMIT-bounded read of row data,
       // not metadata), so an explicit "reload fields" gesture should drop them too — otherwise a
       // key/value added after the last sample stays invisible even though the user just asked for
@@ -308,6 +316,28 @@ export function useFieldDiscovery(
       setLoading(false);
       return;
     }
+
+    // Text skip indexes (cached per table). Best effort: an unreadable system table just means
+    // the plain ILIKE forms are used.
+    let textIdx = textIndexCache.get(cKey);
+    if (!textIdx) {
+      try {
+        const idxRows = await runQueryRows({
+          datasourceUid: config.datasourceUid,
+          sql: buildSkipIndicesQuery(config, resolvedTable),
+          timeRange,
+          op: 'columns',
+        });
+        textIdx = parseTextIndexes(idxRows);
+        textIndexCache.set(cKey, textIdx);
+      } catch {
+        textIdx = [];
+      }
+      if (runRef.current !== runId) {
+        return;
+      }
+    }
+    setTextIndexes(textIdx);
 
     // Phase C — paths inside native JSON columns, one query per column, cached per column for the
     // session (the query is time- and filter-independent). Each path becomes a first-class field,
@@ -428,5 +458,5 @@ export function useFieldDiscovery(
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [config.datasourceUid, config.database, resolvedTable, bucket, config.columns.timestamp]);
 
-  return { fields, loading, error, refresh, detectedPartitionTimestamp, fieldsFor };
+  return { fields, textIndexes, loading, error, refresh, detectedPartitionTimestamp, fieldsFor };
 }

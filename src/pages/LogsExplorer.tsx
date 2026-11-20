@@ -27,6 +27,7 @@ import { SqlInspectorBar } from '../components/SqlInspectorBar';
 import { DiagnosticsDrawer } from '../components/Diagnostics/DiagnosticsDrawer';
 import { canCreateDashboards } from '../utils/permissions';
 import { runQueryRows } from '../data/runQuery';
+import { fetchNewestFirst, isNewestFirstSort, narrowTimeRange } from '../data/windowedSearch';
 import { startAction } from '../diag/tracer';
 import { SpanHandle } from '../diag/types';
 import { buildLogsQuery, buildLogDetailQuery, buildVolumeQuery, resolveVolumeBreakdown, logRowKey } from '../sql/queryBuilder';
@@ -167,7 +168,10 @@ export function LogsExplorer({ tabId, tabStrip }: LogsExplorerProps = {}) {
   // sqlExpr), never a bare name needing lookup. Keeping this stable across hydration also avoids
   // recreating hydratePage/hydrateRow/ensureRows (all keyed off it) every time a page finishes
   // hydrating.
-  const fieldIndex = useMemo(() => buildFieldIndex(fieldsState.fields), [fieldsState.fields]);
+  const fieldIndex = useMemo(
+    () => buildFieldIndex(fieldsState.fields, fieldsState.textIndexes),
+    [fieldsState.fields, fieldsState.textIndexes]
+  );
   // Mount-query queries (fetchLogs/fetchVolume) read the field index through this ref instead of
   // closing over `fieldIndex` directly — see the comment on their useCallback deps below for why:
   // depending on `fieldIndex` there made both queries re-fire the moment async field discovery
@@ -632,6 +636,35 @@ export function LogsExplorer({ tabId, tabStrip }: LogsExplorerProps = {}) {
     [volumeData]
   );
 
+  // Runs a document-list query. For the default newest-first time sort it goes through the
+  // windowed search; everything else (non-time sort, raw SQL, no time field) is the single query.
+  // The last window width that filled a page seeds the next call (load-more starts there).
+  const windowHintRef = useRef<number | undefined>(undefined);
+  const runListQuery = useCallback(
+    async (
+      sql: string,
+      limit: number,
+      state: LogsQueryState,
+      opts: { refId?: string; signal?: AbortSignal; op: 'logs' | 'loadMore'; trace?: SpanHandle }
+    ) => {
+      const base = { datasourceUid: config.datasourceUid, sql, ...opts };
+      if (!isNewestFirstSort(config, state)) {
+        return runQueryRows({ ...base, timeRange });
+      }
+      const res = await fetchNewestFirst({
+        fromMs: timeRange.from.valueOf(),
+        toMs: timeRange.to.valueOf(),
+        limit,
+        signal: opts.signal,
+        plan: opts.op === 'loadMore' && windowHintRef.current ? { firstMs: windowHintRef.current } : undefined,
+        run: (r) => runQueryRows({ ...base, timeRange: narrowTimeRange(timeRange, r.fromMs) }),
+      });
+      windowHintRef.current = res.windowMs;
+      return res.rows;
+    },
+    [config, timeRange]
+  );
+
   // Logs/grid query only. Deps intentionally include effectiveColumns (a column add/remove does
   // need to re-run this — the grid projection's SELECT list is exactly the displayed columns) but
   // NOT the volume-only inputs (intervalMode/breakdown) — see fetchVolume below for why those are
@@ -679,10 +712,9 @@ export function LogsExplorer({ tabId, tabStrip }: LogsExplorerProps = {}) {
         ? fetchState.rawSql || buildLogsQuery(config, stateWithCols, { limit: INITIAL_FETCH, offset: 0 }, undefined, fieldIndexRef.current)
         : buildLogsQuery(config, stateWithCols, { limit: INITIAL_FETCH, offset: 0 }, { projection: 'grid' }, fieldIndexRef.current);
 
-      const logRows = await runQueryRows({
-        datasourceUid: config.datasourceUid,
-        sql,
-        timeRange,
+      // Newest-first sort on a builder query: search the most recent window first and widen only
+      // until the page is full (same rows as the single query; see data/windowedSearch.ts).
+      const logRows = await runListQuery(sql, INITIAL_FETCH, fetchState, {
         refId: 'logs',
         signal: abortController.signal,
         op: 'logs',
@@ -730,7 +762,7 @@ export function LogsExplorer({ tabId, tabStrip }: LogsExplorerProps = {}) {
     }
     // fieldIndex intentionally excluded — read via fieldIndexRef instead (see its declaration
     // above): this query must run once immediately on mount, not wait for async field discovery.
-  }, [config, fetchState, timeRange]);
+  }, [config, fetchState, runListQuery]);
 
   // Volume/histogram query only. Deps deliberately narrower than fetchLogs: buildVolumeQuery
   // never reads state.columns, state.sort, or raw-SQL mode (see queryBuilder.ts), so a column
@@ -1360,10 +1392,7 @@ export function LogsExplorer({ tabId, tabStrip }: LogsExplorerProps = {}) {
           { projection: 'grid' },
           fieldIndex
         );
-        const chunk = await runQueryRows({
-          datasourceUid: config.datasourceUid,
-          sql,
-          timeRange,
+        const chunk = await runListQuery(sql, chunkSize, fetchState, {
           signal: runAbortRef.current?.signal,
           op: 'loadMore',
         });
@@ -1380,7 +1409,7 @@ export function LogsExplorer({ tabId, tabStrip }: LogsExplorerProps = {}) {
         setFetchingMore(false);
       }
     },
-    [config, fetchState, timeRange, fieldIndex]
+    [config, fetchState, fieldIndex, runListQuery]
   );
 
   const onPageChange = useCallback(

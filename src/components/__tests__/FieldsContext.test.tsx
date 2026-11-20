@@ -55,8 +55,8 @@ describe('useFieldDiscovery — columns (Phase A)', () => {
     expect(result.current.fields.map((f) => f.name).sort()).toEqual(['Body', 'LogAttributes', 'Timestamp']);
     // No keys came back from the Map sample: a Map column is published only as itself.
     expect(result.current.fields.every((f) => f.source === 'column')).toBe(true);
-    // system.columns + one Map key sample.
-    expect(mockRunQueryRows).toHaveBeenCalledTimes(2);
+    // system.columns + the skip-index lookup + one Map key sample.
+    expect(mockRunQueryRows).toHaveBeenCalledTimes(3);
   });
 
   it('publishes Map keys as first-class fields, sorted and capped, and survives a failed sample', async () => {
@@ -237,8 +237,8 @@ describe('useFieldDiscovery — tuple elements still derived synchronously', () 
 
     const tupleFields = result.current.fields.filter((f) => f.source === 'tuple');
     expect(tupleFields.map((f) => f.name).sort()).toEqual(['a', 'b']);
-    // Exactly one query fired (system.columns) — no per-tuple scan.
-    expect(mockRunQueryRows).toHaveBeenCalledTimes(1);
+    // Only system.columns and the skip-index lookup fired — no per-tuple scan.
+    expect(mockRunQueryRows).toHaveBeenCalledTimes(2);
   });
 });
 
