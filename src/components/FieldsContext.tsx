@@ -1,7 +1,8 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { TimeRange } from '@grafana/data';
 import { FieldModel, inferFieldType, parseJsonTypedPaths, parseTupleElements } from '../sql/fieldModel';
-import { buildColumnsQuery, buildJsonPathsQuery } from '../sql/introspection';
+import { buildColumnsQuery, buildDiscoveryWindowConditions, buildJsonPathsQuery } from '../sql/introspection';
+import { hasFreshMetadata, invalidateMetadata, loadMetadata } from '../sql/metadataCache';
 import { quoteDottedPath } from '../sql/queryBuilder';
 import { detectPruneColumn, PruneCandidateColumn } from '../sql/pruneColumn';
 import { runQueryRows } from '../data/runQuery';
@@ -16,17 +17,14 @@ import { clearValuesCacheForTable } from '../sql/kql/_values';
 // also depends on, to avoid a cycle with sql/keys.ts (see that module's cache-clear helpers below).
 export { coarseTimeBucket };
 
-// Module-level cache survives re-renders; cleared on explicit refresh(). Keyed by table only —
-// Map *keys* stay on-demand (FieldKeysPopover, backed by sql/keys.ts): reading them costs a scan of
-// real row data no matter how the query is written, so they're only paid for when the user clicks
-// that column. JSON *paths* are back here at mount (Phase C below) because ClickHouse can answer
-// `distinctJSONPaths` from part metadata — see buildJsonPathsQuery's doc comment.
-const columnCache = new Map<string, FieldModel[]>();
-// Raw system.columns rows backing columnCache's entry, kept alongside it (same key, same
-// lifetime/invalidation) purely so detectPruneColumn can re-run against the widened columns
-// (default_kind/default_expression/is_in_*_key/position — see introspection.ts's buildColumnsQuery)
-// on a cache hit too, without a second round-trip.
-const rawColumnCache = new Map<string, PruneCandidateColumn[]>();
+// Schema queries (system.columns, JSON paths) go through the shared metadata layer
+// (sql/metadataCache.ts): one in-flight request per datasource+database+table+kind, reused for the
+// session and cleared on explicit refresh(). Map *keys* stay a separate, time-scoped sample
+// (sql/keys.ts) — reading them costs real row data, so they're bounded to the current time window.
+interface ColumnsResult {
+  columns: FieldModel[];
+  rawColumns: PruneCandidateColumn[];
+}
 
 function columnCacheKey(config: SourceConfig, table: string): string {
   return `${config.datasourceUid}:${config.database}:${table}`;
@@ -38,18 +36,6 @@ export function discoveryKey(
   table?: string
 ): string {
   return `${config.datasourceUid}:${config.database}:${table ?? config.logsTable}`;
-}
-
-/**
- * Discovered path list per native-JSON column. Deliberately *not* time-bucket-scoped, unlike the
- * old Phase B/C caches: buildJsonPathsQuery carries no time or filter predicate (a predicate would
- * cost it the metadata fast path), so its answer can't change with the dashboard's time range —
- * re-running it on every coarse-bucket change would be pure waste.
- */
-const jsonPathCache = new Map<string, string[]>();
-
-function jsonPathCacheKey(config: SourceConfig, table: string, jsonColumn: string): string {
-  return `${columnCacheKey(config, table)}:${jsonColumn}`;
 }
 
 /** Max JSON-path discovery queries in flight at once — one per JSON column, so a wide schema
@@ -88,7 +74,7 @@ export async function runWithConcurrencyLimit<T, R>(
  * doesn't depend on how the datasource marshals array columns into a DataFrame — hence the parse
  * here. A malformed/absent cell throws, and the caller turns that into a per-column error.
  */
-async function fetchJsonPaths(
+async function fetchJsonPathsUncached(
   config: SourceConfig,
   table: string,
   jsonColumn: string,
@@ -109,6 +95,53 @@ async function fetchJsonPaths(
     return [];
   }
   return parsed.map((p) => String(p)).filter((p) => p.length > 0);
+}
+
+/** Fetches (shared, cached) the column list + prune-candidate rows of a table. */
+async function fetchColumns(config: SourceConfig, table: string, timeRange: TimeRange): Promise<ColumnsResult> {
+  return loadMetadata(
+    { datasourceUid: config.datasourceUid, database: config.database, table, kind: 'columns' },
+    async () => {
+      const rows = await runQueryRows({
+        datasourceUid: config.datasourceUid,
+        sql: buildColumnsQuery(config, table),
+        timeRange,
+        op: 'columns',
+      });
+      const named = rows.filter((r) => String(r['name'] ?? '').length > 0);
+      const columns: FieldModel[] = named.map((r) => {
+        const name = String(r['name']);
+        const chType = String(r['type']);
+        return {
+          id: `col:${name}`,
+          name,
+          displayName: name,
+          sqlExpr: name,
+          type: inferFieldType(chType),
+          source: 'column' as const,
+          rawType: chType,
+        };
+      });
+      const rawColumns: PruneCandidateColumn[] = named.map((r) => ({
+        name: String(r['name']),
+        type: String(r['type']),
+        defaultKind: String(r['default_kind'] ?? ''),
+        defaultExpression: String(r['default_expression'] ?? ''),
+        isInPartitionKey: Number(r['is_in_partition_key'] ?? 0) === 1,
+        isInPrimaryKey: Number(r['is_in_primary_key'] ?? 0) === 1,
+        position: Number(r['position'] ?? 0),
+      }));
+      return { columns, rawColumns };
+    }
+  );
+}
+
+/** Fetches (shared, cached) one JSON column's path list. */
+function fetchJsonPaths(config: SourceConfig, table: string, jsonColumn: string, timeRange: TimeRange): Promise<string[]> {
+  return loadMetadata(
+    { datasourceUid: config.datasourceUid, database: config.database, table, kind: 'jsonPaths', detail: jsonColumn },
+    () => fetchJsonPathsUncached(config, table, jsonColumn, timeRange)
+  );
 }
 
 interface FieldsContextValue {
@@ -137,6 +170,13 @@ export function useFields(): FieldsContextValue {
 export interface FieldDiscoveryOpts {
   /** Table to introspect. Defaults to config.logsTable (existing Logs behavior). */
   table?: string;
+  /**
+   * Phase A + B only (columns and the prune-column detection): no JSON-path or Map-key discovery,
+   * no re-run on time range changes. For App.tsx's bootstrap, which only needs
+   * `detectedPartitionTimestamp` — the page's own discovery shares the same `system.columns`
+   * request through the metadata layer and owns the field lists.
+   */
+  columnsOnly?: boolean;
 }
 
 export interface FieldDiscoveryResult extends FieldsContextValue {
@@ -173,7 +213,7 @@ export function useFieldDiscovery(
   timeRange: TimeRange,
   opts: FieldDiscoveryOpts = {}
 ): FieldDiscoveryResult {
-  const { table } = opts;
+  const { table, columnsOnly = false } = opts;
   const resolvedTable = table ?? config.logsTable;
   const [fields, setFields] = useState<FieldModel[]>([]);
   // Starts true (not false): discovery always kicks off on mount once datasourceUid is known, so
@@ -186,7 +226,7 @@ export function useFieldDiscovery(
   const [fieldsFor, setFieldsFor] = useState('');
   const runRef = useRef(0);
 
-  const bucket = useMemo(() => coarseTimeBucket(timeRange), [timeRange]);
+  const bucket = useMemo(() => (columnsOnly ? '' : coarseTimeBucket(timeRange)), [timeRange, columnsOnly]);
 
   async function loadFields(invalidateColumns = false) {
     if (!config.datasourceUid) {
@@ -201,16 +241,7 @@ export function useFieldDiscovery(
     const cKey = columnCacheKey(config, resolvedTable);
 
     if (invalidateColumns) {
-      columnCache.delete(cKey);
-      rawColumnCache.delete(cKey);
-      // Phase C's cache is keyed per column (`<cKey>:<column>`), so an explicit refresh has to drop
-      // every entry under this table — otherwise a schema change that adds a JSON path would keep
-      // serving the stale list for the rest of the session.
-      for (const key of [...jsonPathCache.keys()]) {
-        if (key.startsWith(`${cKey}:`)) {
-          jsonPathCache.delete(key);
-        }
-      }
+      invalidateMetadata(config.datasourceUid, config.database, resolvedTable);
       // Map-key and value-suggestion caches are sample-scoped (a LIMIT-bounded read of row data,
       // not metadata), so an explicit "reload fields" gesture should drop them too — otherwise a
       // key/value added after the last sample stays invisible even though the user just asked for
@@ -219,57 +250,20 @@ export function useFieldDiscovery(
       clearValuesCacheForTable(config.datasourceUid, resolvedTable);
     }
 
-    // Top-level columns (time-independent, cached per table).
+    // Top-level columns (time-independent, shared + cached per table by the metadata layer).
     let columns: FieldModel[];
     let rawColumns: PruneCandidateColumn[];
-    if (columnCache.has(cKey)) {
-      columns = columnCache.get(cKey)!;
-      rawColumns = rawColumnCache.get(cKey) ?? [];
-    } else {
+    if (!hasFreshMetadata({ datasourceUid: config.datasourceUid, database: config.database, table: resolvedTable, kind: 'columns' })) {
       setLoading(true);
-      try {
-        const rows = await runQueryRows({
-          datasourceUid: config.datasourceUid,
-          sql: buildColumnsQuery(config, resolvedTable),
-          timeRange,
-          op: 'columns',
-        });
-        columns = rows
-          .filter((r) => String(r['name'] ?? '').length > 0)
-          .map((r) => {
-            const name = String(r['name']);
-            const chType = String(r['type']);
-            const type = inferFieldType(chType);
-            return {
-              id: `col:${name}`,
-              name,
-              displayName: name,
-              sqlExpr: name,
-              type,
-              source: 'column' as const,
-              rawType: chType,
-            };
-          });
-        rawColumns = rows
-          .filter((r) => String(r['name'] ?? '').length > 0)
-          .map((r) => ({
-            name: String(r['name']),
-            type: String(r['type']),
-            defaultKind: String(r['default_kind'] ?? ''),
-            defaultExpression: String(r['default_expression'] ?? ''),
-            isInPartitionKey: Number(r['is_in_partition_key'] ?? 0) === 1,
-            isInPrimaryKey: Number(r['is_in_primary_key'] ?? 0) === 1,
-            position: Number(r['position'] ?? 0),
-          }));
-        columnCache.set(cKey, columns);
-        rawColumnCache.set(cKey, rawColumns);
-      } catch (e) {
-        if (runRef.current === runId) {
-          setError(errMsg(e));
-          setLoading(false);
-        }
-        return;
+    }
+    try {
+      ({ columns, rawColumns } = await fetchColumns(config, resolvedTable, timeRange));
+    } catch (e) {
+      if (runRef.current === runId) {
+        setError(errMsg(e));
+        setLoading(false);
       }
+      return;
     }
 
     if (runRef.current !== runId) {
@@ -310,6 +304,10 @@ export function useFieldDiscovery(
     setFieldsFor(cKey);
     setError(null);
     setDetectedPartitionTimestamp(detected);
+    if (columnsOnly) {
+      setLoading(false);
+      return;
+    }
 
     // Phase C — paths inside native JSON columns, one query per column, cached per column for the
     // session (the query is time- and filter-independent). Each path becomes a first-class field,
@@ -325,14 +323,8 @@ export function useFieldDiscovery(
     }
 
     const perCol = await runWithConcurrencyLimit(jsonCols, DISCOVERY_CONCURRENCY, async (col) => {
-      const jKey = jsonPathCacheKey(config, resolvedTable, col.name);
-      const cached = jsonPathCache.get(jKey);
-      if (cached) {
-        return { col, paths: cached, error: null as string | null };
-      }
       try {
         const paths = await fetchJsonPaths(config, resolvedTable, col.name, timeRange);
-        jsonPathCache.set(jKey, paths);
         return { col, paths, error: null as string | null };
       } catch (e) {
         // One unreadable JSON column must not cost the user every other field — record it and
@@ -401,7 +393,10 @@ export function useFieldDiscovery(
       try {
         const res = await loadColumnKeys(config, name, {
           table: resolvedTable,
-          conditions: [],
+          // Time-bounded (current range, widened once if the sample finds nothing) — never a
+          // whole-table read; see buildDiscoveryWindowConditions.
+          conditions: buildDiscoveryWindowConditions(config),
+          fallbackConditions: buildDiscoveryWindowConditions(config, true),
           timeRange,
           cacheKey: 'fields',
         });

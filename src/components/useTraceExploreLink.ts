@@ -20,28 +20,41 @@ export function useTraceExploreLink(
   // Guards against a stale resolution (from a previous datasourceUid) landing after the uid
   // has already changed again.
   const requestId = useRef(0);
+  // The probe (`SELECT '' AS traceID`, to read the datasource's "View trace" link template) is
+  // lazy: it only runs once something asks for a link (the detail drawer on a trace id), not on
+  // every page load. Reset when the datasource changes.
+  const [wanted, setWanted] = useState<string | null>(null);
+  const timeRangeRef = useRef(timeRange);
+  useEffect(() => {
+    timeRangeRef.current = timeRange;
+  });
 
   useEffect(() => {
-    if (!datasourceUid) {
+    if (!datasourceUid || wanted !== datasourceUid) {
       return;
     }
     const thisRequest = ++requestId.current;
-    getTraceLinkTemplate(datasourceUid, timeRange).then((template) => {
+    getTraceLinkTemplate(datasourceUid, timeRangeRef.current).then((template) => {
       if (requestId.current === thisRequest) {
         setResolved({ datasourceUid, template });
       }
     });
     // Only re-probe when the datasource changes — the template has no time-range dependency
-    // (see traceLinks.ts), so timeRange isn't a dependency here.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [datasourceUid]);
+    // (see traceLinks.ts).
+  }, [datasourceUid, wanted]);
 
   // Derived during render (not stored) so a template resolved for a since-replaced datasourceUid
   // is never used — no dedicated "reset on prop change" effect/ref needed.
   const template = resolved && resolved.datasourceUid === datasourceUid ? resolved.template : null;
 
   return useCallback(
-    (traceId: string) => (template ? buildTraceExploreHref(template, traceId, timeRange) : undefined),
-    [template, timeRange]
+    (traceId: string) => {
+      if (!template && datasourceUid && wanted !== datasourceUid) {
+        // Called during render: schedule the state update instead of making it inline.
+        queueMicrotask(() => setWanted(datasourceUid));
+      }
+      return template ? buildTraceExploreHref(template, traceId, timeRange) : undefined;
+    },
+    [template, timeRange, datasourceUid, wanted]
   );
 }
