@@ -9,7 +9,7 @@ import { useFieldDiscovery } from '../FieldsContext';
 import { runQueryRows } from '../../data/runQuery';
 import { __resetKeysCacheForTests } from '../../sql/keys';
 import { __resetMetadataCacheForTests, invalidateMetadata, loadMetadata } from '../../sql/metadataCache';
-import { buildDiscoveryWindowConditions, buildMapKeysQuery } from '../../sql/introspection';
+import { buildDiscoveryWindowConditions, buildDiscoveryWindows, buildMapKeysQuery } from '../../sql/introspection';
 import { DEFAULT_SOURCE_CONFIG, OTEL_COLUMN_MAPPING, SourceConfig } from '../../types';
 
 jest.mock('../../data/runQuery');
@@ -134,8 +134,46 @@ describe('time-bounded map-key samples', () => {
   });
 
   it('the sparse-key fallback is a wider but still bounded window', () => {
-    const wide = buildDiscoveryWindowConditions(config, true).join(' ');
+    const wide = buildDiscoveryWindowConditions(config, 'wide').join(' ');
     expect(wide).toContain('$__toTime - INTERVAL 7 DAY');
+  });
+
+  it('the recent window is the last hour of the range with a day-padded partition bound', () => {
+    const recent = buildDiscoveryWindowConditions(config, 'recent').join(' ');
+    expect(recent).toContain('$__toTime - INTERVAL 1 HOUR');
+    expect(recent).not.toContain('$__fromTime');
+    expect(recent).toContain('$__toTime - INTERVAL 25 HOUR');
+  });
+
+  it('windows run recent -> range -> wide, skipping the ones the range already covers', () => {
+    const day = 86_400_000;
+    expect(buildDiscoveryWindows(config, 15 * 60_000)).toHaveLength(2); // range, wide
+    expect(buildDiscoveryWindows(config, 2 * 3_600_000)).toHaveLength(3); // recent, range, wide
+    const long = buildDiscoveryWindows(config, 7 * day); // recent, range
+    expect(long).toHaveLength(2);
+    expect(long[0].join(' ')).toContain('INTERVAL 1 HOUR');
+    expect(long[1].join(' ')).toContain('$__fromTime');
+  });
+
+  it('a full sample with no keys (an empty column) is not retried wider', async () => {
+    mockRunQueryRows.mockReset();
+    __resetMetadataCacheForTests();
+    __resetKeysCacheForTests();
+    mockRunQueryRows.mockImplementation(async ({ sql }) => {
+      if (sql.includes('system.columns')) {
+        return [
+          { name: 'Timestamp', type: 'DateTime64(9)' },
+          { name: 'ScopeAttributes', type: 'Map(LowCardinality(String), String)' },
+        ];
+      }
+      return [{ k: '', total: 500 }];
+    });
+    const cfg = { ...config, logsTable: 'empty_map_tbl' };
+    renderHook(() => useFieldDiscovery(cfg, timeRange));
+    await waitFor(() => expect(mockRunQueryRows.mock.calls.some(([a]) => a.sql.includes('mapKeys'))).toBe(true));
+    await new Promise((r) => setTimeout(r, 50));
+    const samples = mockRunQueryRows.mock.calls.map(([a]) => a.sql).filter((q) => q.includes('mapKeys'));
+    expect(samples).toHaveLength(1);
   });
 
   it('the field-list sample sends the window, and retries wider only when it finds nothing', async () => {

@@ -59,32 +59,61 @@ export function buildColumnsQuery(config: SourceConfig, table: string): string {
 /** Days the sparse-key fallback widens the discovery window to (see buildDiscoveryWindowConditions). */
 export const DISCOVERY_FALLBACK_DAYS = 7;
 
+/** Hours of the most recent slice sampled first (see buildDiscoveryWindowConditions). */
+export const DISCOVERY_RECENT_HOURS = 1;
+
 /**
  * Time bound for the unfiltered Map-key sample that feeds the field list (FieldsContext Phase D).
  * Without one, `ORDER BY ts DESC LIMIT n` reads the whole table when the sort key doesn't start
- * with time (measured: 0.5-0.9 s per column on 50M rows, 3.9 s under load). The default window is
- * the page's current time range (plus the coarse partition predicate, so parts outside it are
- * pruned); `widen` is the sparse-key fallback, the last DISCOVERY_FALLBACK_DAYS days before the
- * range's end, used only when the first window found no keys. Views with no mapped time field get
- * no bound (nothing to bound by).
+ * with time (measured on 50M rows: 0.35-0.45 s per column over 7 days, 1.7 s under load). Windows,
+ * tried narrowest first and widened only while a sample finds no keys and is not full:
+ *   - `recent`: the last DISCOVERY_RECENT_HOURS of the range (any 500 recent rows are enough to
+ *     discover keys, and the cost no longer grows with the range or the table; ~25 ms on 50M rows),
+ *   - `range`: the page's current time range (plus the coarse partition predicate),
+ *   - `wide`: the sparse-key fallback, the last DISCOVERY_FALLBACK_DAYS days before the range's end.
+ * Every window carries the coarse partition predicate so parts outside it are pruned. Views with
+ * no mapped time field get no bound (nothing to bound by).
  */
-export function buildDiscoveryWindowConditions(config: SourceConfig, widen = false): string[] {
+export type DiscoveryWindow = 'recent' | 'range' | 'wide';
+
+export function buildDiscoveryWindowConditions(config: SourceConfig, window: DiscoveryWindow = 'range'): string[] {
   if (!config.columns.timestamp) {
     return [];
   }
   const ts = timeExpr(config);
-  if (!widen) {
+  const p = config.columns.partitionTimestamp;
+  const hasP = !!p && p !== '-';
+  if (window === 'range') {
     const coarse = coarsePrunePredicate(config);
     return [`${ts} >= $__fromTime AND ${ts} <= $__toTime`, ...(coarse ? [coarse] : [])];
   }
-  const p = config.columns.partitionTimestamp;
   // The coarse column can truncate below the fine one by up to a day, so give it one extra day.
+  const interval = window === 'recent' ? `${DISCOVERY_RECENT_HOURS} HOUR` : `${DISCOVERY_FALLBACK_DAYS} DAY`;
+  const coarseInterval =
+    window === 'recent' ? `${DISCOVERY_RECENT_HOURS + 24} HOUR` : `${DISCOVERY_FALLBACK_DAYS + 1} DAY`;
   return [
-    `${ts} >= $__toTime - INTERVAL ${DISCOVERY_FALLBACK_DAYS} DAY AND ${ts} <= $__toTime`,
-    ...(p && p !== '-'
-      ? [`${p} >= $__toTime - INTERVAL ${DISCOVERY_FALLBACK_DAYS + 1} DAY AND ${p} <= $__toTime + INTERVAL 1 SECOND`]
-      : []),
+    `${ts} >= $__toTime - INTERVAL ${interval} AND ${ts} <= $__toTime`,
+    ...(hasP ? [`${p} >= $__toTime - INTERVAL ${coarseInterval} AND ${p} <= $__toTime + INTERVAL 1 SECOND`] : []),
   ];
+}
+
+/**
+ * Ordered windows for the field-list key sample: the recent slice (when the range is longer than
+ * it), the range itself, then the 7-day fallback (when the range is shorter than that).
+ */
+export function buildDiscoveryWindows(config: SourceConfig, rangeMs: number): string[][] {
+  if (!config.columns.timestamp) {
+    return [[]];
+  }
+  const windows: DiscoveryWindow[] = [];
+  if (rangeMs > DISCOVERY_RECENT_HOURS * 3_600_000) {
+    windows.push('recent');
+  }
+  windows.push('range');
+  if (rangeMs < DISCOVERY_FALLBACK_DAYS * 86_400_000) {
+    windows.push('wide');
+  }
+  return windows.map((w) => buildDiscoveryWindowConditions(config, w));
 }
 
 export interface KeyDiscoveryOpts {
@@ -128,7 +157,9 @@ export function buildMapKeysQuery(
       tsCol ? `  ORDER BY ${tsCol} DESC` : null,
       `  LIMIT ${sampleSize}`,
       `)`,
-      `SELECT DISTINCT arrayJoin(mapKeys(m)) AS k, (SELECT count() FROM sample) AS total`,
+      // The '' sentinel keeps `total` visible when the sample has rows but no keys (a simply empty
+      // column), so callers can tell that apart from an empty window; consumers drop empty keys.
+      `SELECT DISTINCT arrayJoin(arrayConcat(mapKeys(m), [''])) AS k, (SELECT count() FROM sample) AS total`,
       `FROM sample`,
     ],
     [...discoverySettings(config), ...configSettingsFragments(config)]
