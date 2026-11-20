@@ -8,7 +8,7 @@ import { VisualizePage } from '../pages/VisualizePage';
 const lens = (chartType: string) =>
   JSON.stringify({
     chartType,
-    buckets: [{ kind: 'date_histogram', id: 'b0', field: 'Timestamp', label: 'Timestamp' }],
+    buckets: [{ kind: 'date_histogram', id: 'b0', field: 'Timestamp', label: 'Timestamp', interval: 'auto' }],
     metrics: [{ kind: 'metric', id: 'm0', op: 'count' }],
   });
 
@@ -16,6 +16,9 @@ test('switching Bar -> Line -> Area sends no new query; Refresh does', async ({ 
   const viz = new VisualizePage(page);
   await viz.open({ lens: lens('bar') });
   await expect(viz.chart).toBeVisible();
+  // The chart frame shows before its first query is sent: count only once the bars are drawn.
+  await expect(page.getByRole('button', { name: /Count of records: \d/ }).first()).toBeVisible();
+  await page.waitForLoadState('networkidle');
   let queries = 0;
   page.on('request', (r) => {
     if (r.url().includes('/api/ds/query')) {
@@ -24,7 +27,7 @@ test('switching Bar -> Line -> Area sends no new query; Refresh does', async ({ 
   });
   for (const type of ['Line', 'Area']) {
     await page.getByRole('button', { name: /^Chart type:/ }).click();
-    await page.getByRole('option', { name: type, exact: true }).click();
+    await page.getByRole('option', { name: new RegExp(`^${type} `) }).click();
     await expect(viz.chart).toBeVisible();
   }
   await page.waitForTimeout(500);

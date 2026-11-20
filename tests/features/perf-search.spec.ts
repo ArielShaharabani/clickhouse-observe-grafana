@@ -24,11 +24,9 @@ test('map-key filter over 7 days lists the newest rows first and the count stays
   const rows = logs.grid.getByRole('row');
   await expect(rows.nth(1)).toBeVisible();
   const times = await rows.evaluateAll((els) =>
-    els
-      .slice(1, 51)
-      .map((el) => el.querySelector('[role="gridcell"]')?.textContent ?? '')
+    els.slice(1, 51).map((el) => el.querySelector('[data-cell]')?.textContent ?? '')
   );
-  const parsed = times.map((t) => Date.parse(t.replace(' @ ', ' ')));
+  const parsed = times.map((t) => Date.parse(`${t.replace(' @ ', ' ').trim().replace(' ', 'T')}Z`)); // grid shows UTC; parse in the runner as UTC
   expect(parsed.length).toBeGreaterThan(10);
   expect(parsed.every((t) => Number.isFinite(t))).toBe(true);
   // Newest first.

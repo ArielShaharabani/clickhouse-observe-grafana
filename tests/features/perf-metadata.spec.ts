@@ -43,7 +43,8 @@ test('Discover load: each metadata query runs once, none is unbounded or a trace
   expect(countOf(sqls, 'distinctJSONPaths')).toBeLessThanOrEqual(1);
   expect(countOf(sqls, "SELECT '' AS traceID")).toBe(0);
   for (const s of sqls.filter((q) => q.includes('arrayJoin(mapKeys'))) {
-    expect(s).toContain('$__fromTime');
+    // Time-bounded: the range itself, or the sparse-key fallback anchored on the range end.
+    expect(s).toMatch(/\$__(fromTime|toTime)/);
   }
   expect(sqls.length).toBeLessThanOrEqual(MAX_QUERIES_PER_LOAD);
 });
