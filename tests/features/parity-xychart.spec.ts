@@ -154,6 +154,12 @@ test('time axis: round-time ticks, the date under the first one, no automatic ti
   await expect(viz.chart.getByTestId('lens-axis-title-bottom')).toHaveCount(0);
   await expect(viz.chart.getByTestId('lens-axis-title-left')).toHaveText('Count of records');
   await expect(viz.chart.getByTestId('lens-partial-bucket').first()).toBeVisible();
+  // No tick label is clipped by the right edge (last tick dropped when it would not fit).
+  const box = await viz.chart.locator('svg').first().boundingBox();
+  for (const tk of await viz.chart.getByTestId('lens-category-tick').all()) {
+    const b = await tk.boundingBox();
+    expect(b!.x + b!.width).toBeLessThanOrEqual(box!.x + box!.width);
+  }
   // Plain lines: no dot on every point.
   await expect(viz.chart.locator('circle[data-point-visible="true"]')).toHaveCount(0);
 });
