@@ -150,6 +150,73 @@ describe('Save and return (Visualize opened from a dashboard panel)', () => {
     expect(api.saveDashboard).not.toHaveBeenCalled();
   });
 
+  const renderToolbar = (paramsKey: string) =>
+    render(
+      <SaveActions paramsKey={paramsKey} disabled={false} defaultTitle="x" buildPanel={buildPanel} timeRange={tr} />
+    );
+  const loadedBar = async (paramsKey: string) => {
+    api.getDashboard.mockResolvedValue({ dashboard, meta: { folderUid: 'f' } });
+    const view = renderToolbar(paramsKey);
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Save and return' })).not.toHaveAttribute('aria-disabled', 'true')
+    );
+    return view;
+  };
+
+  it('toolbar: Save and return is one click (no dialog), keeps the panel title and goes back', async () => {
+    api.saveDashboard.mockResolvedValue({ uid: 'u1', url: '/d/u1/ops' });
+    await loadedBar('lens=x&dash=u1&panel=5&dfrom=now-6h&dto=now');
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Save and return' }));
+    });
+    expect(screen.queryByRole('dialog')).toBeNull();
+    const [saved, opts] = api.saveDashboard.mock.calls[0];
+    expect(opts).toEqual({ folderUid: 'f', overwrite: false });
+    expect((saved as { panels: unknown[] }).panels[0]).toEqual(expect.objectContaining({ id: 5, title: 'Errors by service' }));
+    expect(mockPush).toHaveBeenCalledWith('/d/u1?from=now-6h&to=now');
+  });
+
+  it('toolbar: a concurrent change is reported in the dialog, nothing is overwritten or navigated', async () => {
+    api.saveDashboard.mockRejectedValue({ status: 412, data: { status: 'version-mismatch' } });
+    await loadedBar('lens=x&dash=u1&panel=5&dfrom=now-6h&dto=now');
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Save and return' }));
+    });
+    expect(screen.getByText(/Someone else changed this dashboard/)).toBeInTheDocument();
+    expect(mockPush).not.toHaveBeenCalled();
+  });
+
+  it('toolbar: Cancel asks to discard only when the chart changed since the panel opened', async () => {
+    const { rerender } = await loadedBar('lens=x&q=a&dash=u1&panel=5&dfrom=now-6h&dto=now');
+    // A time-range change is not a chart change.
+    rerender(
+      <SaveActions
+        paramsKey="lens=x&q=a&from=now-1h&to=now&dash=u1&panel=5&dfrom=now-6h&dto=now"
+        disabled={false}
+        defaultTitle="x"
+        buildPanel={buildPanel}
+        timeRange={tr}
+      />
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(mockPush).toHaveBeenCalledWith('/d/u1?from=now-6h&to=now');
+    mockPush.mockClear();
+    rerender(
+      <SaveActions
+        paramsKey="lens=y&q=a&dash=u1&panel=5&dfrom=now-6h&dto=now"
+        disabled={false}
+        defaultTitle="x"
+        buildPanel={buildPanel}
+        timeRange={tr}
+      />
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(screen.getByText('Leave with unsaved changes?')).toBeInTheDocument();
+    expect(mockPush).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Discard changes' }));
+    await waitFor(() => expect(mockPush).toHaveBeenCalledWith('/d/u1?from=now-6h&to=now'));
+  });
+
   it('toolbar: a missing panel disables Save and return; Save as new and Share stay', async () => {
     api.getDashboard.mockResolvedValue({ dashboard: { panels: [] }, meta: {} });
     render(

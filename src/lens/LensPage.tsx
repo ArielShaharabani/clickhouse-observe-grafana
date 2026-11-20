@@ -9,6 +9,7 @@ import React, { useCallback, useContext, useEffect, useId, useLayoutEffect, useM
 import { useSearchParams } from 'react-router-dom';
 import { css, cx } from '@emotion/css';
 import { dateTime, GrafanaTheme2, IconName, locationUtil, TimeRange } from '@grafana/data';
+import { locationService } from '@grafana/runtime';
 import { Alert, Button, Icon, IconButton, Input, LinkButton, Spinner, TimeRangePicker, useStyles2 } from '@grafana/ui';
 import { DataViewContext, SourceConfigContext } from '../components/App/App';
 import { discoveryKey, useFieldDiscovery } from '../components/FieldsContext';
@@ -673,21 +674,28 @@ export function LensPage() {
       (el) => el.dataset.dimEdit === id
     );
 
-  // LENS-INTERACT-02: Discover in a new tab, same context and data view (the one this page queries),
-  // default columns plus the chart's top-values fields. A new tab bypasses Grafana's router, so the
-  // href needs the server's sub-path.
-  const exploreUrl = useMemo(
+  // LENS-INTERACT-02: Discover in this tab, same context and data view (the one this page queries),
+  // default columns plus the chart's top-values fields. A plain click navigates in this tab (the
+  // browser Back button returns to the chart); the href carries the server's sub-path so a
+  // modified click (Ctrl / middle button) still opens a new tab.
+  const explorePath = useMemo(
     () =>
-      locationUtil.assureBaseUrl(
-        discoverUrl(
-          { search, filters, timeRange, viewId: activeView?.id },
-          discoverColumns(lens, fields, config),
-          discoverIntervalOf(lens),
-          discoverBreakdownOf(lens, fields)
-        )
+      discoverUrl(
+        { search, filters, timeRange, viewId: activeView?.id },
+        discoverColumns(lens, fields, config),
+        discoverIntervalOf(lens),
+        discoverBreakdownOf(lens, fields)
       ),
     [search, filters, timeRange, activeView?.id, lens, fields, config]
   );
+  const exploreUrl = useMemo(() => locationUtil.assureBaseUrl(explorePath), [explorePath]);
+  const onExplore = (e: React.MouseEvent) => {
+    if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) {
+      return;
+    }
+    e.preventDefault();
+    locationService.push(explorePath);
+  };
 
   return (
     <div className={styles.page}>
@@ -703,7 +711,7 @@ export function LensPage() {
           </span>
         )}
         <div className={styles.spacer} />
-        <LinkButton href={exploreUrl} target="_blank" variant="secondary" size="sm" icon="compass" fill="outline">
+        <LinkButton href={exploreUrl} onClick={onExplore} variant="secondary" size="sm" icon="compass" fill="outline">
           Explore in Discover
         </LinkButton>
         <Button
