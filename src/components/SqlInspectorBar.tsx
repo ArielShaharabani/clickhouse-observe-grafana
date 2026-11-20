@@ -21,6 +21,7 @@ interface SqlInspectorBarProps {
   timeRange: TimeRange;
   activeViewId?: string;
   onLoadSaved: (search: SavedSearch, newTimeRange?: TimeRange) => void;
+  onSavedSearchSaved?: (search: SavedSearch) => void;
   canAddToDashboard: boolean;
   onOpenAddToDashboard: () => void;
 
@@ -49,6 +50,7 @@ export function SqlInspectorBar({
   timeRange,
   activeViewId,
   onLoadSaved,
+  onSavedSearchSaved,
   canAddToDashboard,
   onOpenAddToDashboard,
   onToggleRawSql,
@@ -118,6 +120,7 @@ export function SqlInspectorBar({
             queryState={queryState}
             timeRange={timeRange}
             onLoad={onLoadSaved}
+            onSaved={onSavedSearchSaved}
             activeDataViewId={activeViewId}
           />
           <Button

@@ -11,7 +11,7 @@ import { TimeRange } from '@grafana/data';
 import { LogsQueryState, SavedSearch, SelectedColumn } from '../types';
 
 /** Parameters encodeLogsState writes; the only ones a shared link carries. */
-export const SHAREABLE_PARAMS = ['q', 'filters', 'cols', 'sort', 'from', 'to', 'ds', 'interval', 'bd'] as const;
+export const SHAREABLE_PARAMS = ['q', 'filters', 'cols', 'sort', 'from', 'to', 'ds', 'interval', 'bd', 'ss'] as const;
 
 export function isRelativeRange(timeRange: TimeRange): boolean {
   const { from, to } = timeRange.raw;
