@@ -55,6 +55,8 @@ describe('buildHistogramPanel', () => {
     expect(panel.type).toBe('timeseries');
     expect(panel.targets[0].rawSql).toContain('$__timeInterval(');
     expect(panel.targets[0].rawSql).not.toMatch(/toStartOfInterval/);
+    // Round 2 #10: ~60 buckets like Discover, not one per pixel of panel width.
+    expect(panel.maxDataPoints).toBe(60);
     // Long time/level/count rows are pivoted into series client-side.
     expect(panel.transformations?.map((t) => t.id)).toEqual(['partitionByValues', 'prepareTimeSeries']);
     // Bars + stacked, reproducing the barchart look on a panel type with a real time axis.
