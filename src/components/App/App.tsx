@@ -87,6 +87,9 @@ function App(props: AppRootProps<AppJsonData>) {
   const [dsUid] = useState<string | undefined>(
     () => decodeLogsState(new URLSearchParams(window.location.search)).dsUid
   );
+  const [urlViewId] = useState<string | undefined>(
+    () => new URLSearchParams(window.location.search).get('ds') ?? undefined
+  );
   // Once a view is picked (automatically, or via the picker modal below) for this dsUid, later
   // manual view switches during this mount refine the remembered preference for it — see
   // setActiveViewId below. Doesn't persist across an unrelated future visit without its own
@@ -108,8 +111,15 @@ function App(props: AppRootProps<AppJsonData>) {
     if (traceLanding.status === 'resolved') {
       return traceLanding.viewId;
     }
-    const stored = getActiveViewId();
     const available = [...sharedViews, ...loadPersonalViews()];
+    // A link's `ds` that names a known view wins over the stored/default one: the page would
+    // switch to it right after mount anyway (LogsExplorer / LensPage), and mounting on the
+    // default view first made App discover that view's schema for nothing (PERF-METADATA).
+    const urlView = urlViewId ? available.find((v) => v.id === urlViewId) : undefined;
+    if (urlView) {
+      return urlView.id;
+    }
+    const stored = getActiveViewId();
     if (stored && available.some((v) => v.id === stored)) {
       return stored;
     }
@@ -178,7 +188,7 @@ function App(props: AppRootProps<AppJsonData>) {
   // '-' (off) or a literal column name from the persisted view always wins over detection.
   // Every query-building consumer reads SourceConfig through SourceConfigContext below, so this is
   // the one place this fallback needs to be applied.
-  const { detectedPartitionTimestamp } = useFieldDiscovery(rawSourceConfig, discoveryTimeRange);
+  const { detectedPartitionTimestamp } = useFieldDiscovery(rawSourceConfig, discoveryTimeRange, { columnsOnly: true });
   const sourceConfig: SourceConfig = useMemo(() => {
     if (rawSourceConfig.columns.partitionTimestamp) {
       // Already explicit (a real column name, or '-' for off) — never overridden by detection.

@@ -51,6 +51,9 @@ export interface LoadKeysOpts extends KeyDiscoveryOpts {
   timeRange: TimeRange;
   /** Caller-supplied hash of current filter state, so the cache key stays scoped per-page. */
   cacheKey: string;
+  /** Wider conditions to retry with when the first sample finds no keys at all (a sparse key set
+   *  that the narrow window missed). Skipped when absent. */
+  fallbackConditions?: string[];
 }
 
 // Module-level cache, same lifetime/scoping approach as kql/_values.ts's valuesCache — plus a TTL
@@ -96,6 +99,10 @@ export async function fetchMapKeys(config: SourceConfig, mapColumn: string, opts
   const rows = await runQueryRows({ datasourceUid: config.datasourceUid, sql, timeRange: opts.timeRange, op: 'mapKeys' });
   const keys: KeyEntry[] = rows.map((r) => ({ key: String(r['k'] ?? '') })).filter((k) => k.key.length > 0);
   const total = rows.length > 0 ? Number(rows[0]['total'] ?? 0) : 0;
+  if (keys.length === 0 && opts.fallbackConditions && opts.fallbackConditions.length > 0) {
+    // Nothing in the narrow window: widen once (still time-bounded) so sparse keys aren't lost.
+    return fetchMapKeys(config, mapColumn, { ...opts, conditions: opts.fallbackConditions, fallbackConditions: undefined });
+  }
   return { keys, total };
 }
 
