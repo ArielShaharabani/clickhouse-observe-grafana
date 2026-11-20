@@ -10,6 +10,7 @@
 import { dateMath, dateTime, rangeUtil, TimeRange } from '@grafana/data';
 import { FilterPill, IntervalMode, SelectedColumn } from '../types';
 import { sanitizeFilterPills } from '../sql/filters';
+import { isSavedSearchId } from './savedSearches';
 import type { FieldModel } from '../sql/fieldModel';
 
 /** Breakdown as stored in the URL: a field is referenced by its stable FieldModel id and
@@ -29,6 +30,8 @@ export interface DecodedLogsUrlState {
   breakdown?: BreakdownUrl;
   /** Auto-refresh interval ('30s', '1m', …); absent = paused (the default, as in Kibana). */
   refresh?: string;
+  /** Id of the saved search this view was opened from (`ss`); absent once the query is changed. */
+  savedSearchId?: string;
   // traceId/dsUid: inbound-only fields carried by a trace->logs deep link from Grafana Explore's
   // ClickHouse trace view (see data/traceToLogsLink.ts) — a `traceId`/`dsUid` filter pill isn't
   // something a colleague reproduces by copying a Logs Explorer URL, so unlike every other field
@@ -51,6 +54,8 @@ export interface EncodeLogsUrlStateInput {
   breakdown?: BreakdownUrl;
   /** Auto-refresh interval; omitted when paused (the default). */
   refresh?: string;
+  /** The open saved search, if any. */
+  savedSearchId?: string;
 }
 
 /** A Grafana-style refresh interval ('5s', '1m', '2h', '1d'), at least 5 seconds. URL input is
@@ -102,6 +107,9 @@ export function encodeLogsState(state: EncodeLogsUrlStateInput): URLSearchParams
   const refresh = cleanRefreshInterval(state.refresh);
   if (refresh) {
     sp.set('refresh', refresh);
+  }
+  if (isSavedSearchId(state.savedSearchId)) {
+    sp.set('ss', state.savedSearchId);
   }
   return sp;
 }
@@ -209,6 +217,11 @@ export function decodeLogsState(searchParams: URLSearchParams): DecodedLogsUrlSt
   const refresh = cleanRefreshInterval(searchParams.get('refresh'));
   if (refresh) {
     result.refresh = refresh;
+  }
+
+  const ss = searchParams.get('ss');
+  if (isSavedSearchId(ss)) {
+    result.savedSearchId = ss;
   }
 
   const traceId = searchParams.get('traceId');

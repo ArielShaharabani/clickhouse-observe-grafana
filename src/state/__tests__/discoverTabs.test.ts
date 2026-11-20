@@ -179,3 +179,11 @@ describe('relativeTime', () => {
     expect(relativeTime(0, 86_400_000)).toBe('1 day ago');
   });
 });
+
+describe('saved search id in tab params', () => {
+  it('counts as Discover state and survives sanitizing', () => {
+    const out = sanitizeTabParams(params({ ss: 'ss_1700000000000_ab3cd' }));
+    expect(new URLSearchParams(out).get('ss')).toBe('ss_1700000000000_ab3cd');
+    expect(sanitizeTabParams(params({ ss: 'nope' }))).toBe(new URLSearchParams(sanitizeTabParams(params({ ss: 'nope' }))).toString());
+  });
+});

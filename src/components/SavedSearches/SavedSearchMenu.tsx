@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { css } from '@emotion/css';
-import { GrafanaTheme2, TimeRange, dateTime, rangeUtil } from '@grafana/data';
-import { Button, ConfirmModal, Field, Icon, Input, Modal, useStyles2 } from '@grafana/ui';
+import { GrafanaTheme2, TimeRange } from '@grafana/data';
+import { Button, Checkbox, ConfirmModal, Field, Icon, Input, Modal, useStyles2 } from '@grafana/ui';
 import { SavedSearch, LogsQueryState } from '../../types';
 import {
   deleteSearch,
@@ -9,6 +9,7 @@ import {
   loadLocalSearches,
   loadSharedSearches,
   parseTags,
+  savedSearchTimeRange,
   saveSearch,
   saveSharedSearch,
 } from '../../data/savedSearches';
@@ -17,11 +18,13 @@ interface SavedSearchMenuProps {
   queryState: LogsQueryState;
   timeRange: TimeRange;
   onLoad: (search: SavedSearch, newTimeRange?: TimeRange) => void;
+  /** A search was just saved (shared or browser-only): it becomes the open saved search. */
+  onSaved?: (search: SavedSearch) => void;
   /** Active data view ID; used to scope saved searches. Undefined = show all (legacy). */
   activeDataViewId?: string;
 }
 
-export function SavedSearchMenu({ queryState, timeRange, onLoad, activeDataViewId }: SavedSearchMenuProps) {
+export function SavedSearchMenu({ queryState, timeRange, onLoad, onSaved, activeDataViewId }: SavedSearchMenuProps) {
   const styles = useStyles2(getStyles);
   const [open, setOpen] = useState(false);
   const [searches, setSearches] = useState<SavedSearch[]>([]);
@@ -30,6 +33,8 @@ export function SavedSearchMenu({ queryState, timeRange, onLoad, activeDataViewI
   const [saveDescription, setSaveDescription] = useState('');
   const [saveTags, setSaveTags] = useState('');
   const [saveNote, setSaveNote] = useState('');
+  // Default on: a saved search has always carried its time range (Kibana defaults to off).
+  const [storeTime, setStoreTime] = useState(true);
   const [saving, setSaving] = useState(false);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState('');
@@ -82,19 +87,24 @@ export function SavedSearchMenu({ queryState, timeRange, onLoad, activeDataViewI
       filters: queryState.filters,
       columns: queryState.columns,
       sort: queryState.sort,
-      timeRange: {
-        from: typeof timeRange.raw.from === 'string' ? timeRange.raw.from : String(timeRange.from.valueOf()),
-        to: typeof timeRange.raw.to === 'string' ? timeRange.raw.to : String(timeRange.to.valueOf()),
-      },
+      ...(storeTime
+        ? {
+            timeRange: {
+              from: typeof timeRange.raw.from === 'string' ? timeRange.raw.from : String(timeRange.from.valueOf()),
+              to: typeof timeRange.raw.to === 'string' ? timeRange.raw.to : String(timeRange.to.valueOf()),
+            },
+          }
+        : {}),
     };
     setSaving(true);
     try {
-      await saveSharedSearch(entry, activeDataViewId);
+      const saved = await saveSharedSearch(entry, activeDataViewId);
+      onSaved?.(saved);
       setSaveNote('');
       closeSave();
     } catch {
       // The viewer cannot create dashboards: keep it in this browser and say so.
-      saveSearch(entry, activeDataViewId);
+      onSaved?.(saveSearch(entry, activeDataViewId));
       setSaveNote('You cannot create dashboards, so the search was saved in this browser only.');
       closeSave(true);
     } finally {
@@ -106,6 +116,7 @@ export function SavedSearchMenu({ queryState, timeRange, onLoad, activeDataViewI
     setSaveName('');
     setSaveDescription('');
     setSaveTags('');
+    setStoreTime(true);
     if (!keepNote) {
       setSaveNote('');
     }
@@ -113,18 +124,7 @@ export function SavedSearchMenu({ queryState, timeRange, onLoad, activeDataViewI
   }
 
   function handleLoad(s: SavedSearch) {
-    let tr: TimeRange | undefined;
-    if (s.timeRange) {
-      try {
-        // Preserve relative strings (e.g. 'now-1h') so dateMath can resolve them;
-        // convert absolute epoch-ms strings to DateTime objects.
-        const toRaw = (v: string) => (v.startsWith('now') ? v : dateTime(Number(v)));
-        tr = rangeUtil.convertRawToRange({ from: toRaw(s.timeRange.from), to: toRaw(s.timeRange.to) });
-      } catch {
-        tr = undefined;
-      }
-    }
-    onLoad(s, tr);
+    onLoad(s, savedSearchTimeRange(s));
     setOpen(false);
   }
 
@@ -193,6 +193,7 @@ export function SavedSearchMenu({ queryState, timeRange, onLoad, activeDataViewI
               <button
                 className={styles.deleteBtn}
                 title="Delete"
+                aria-label={`Delete saved search ${s.name}`}
                 onClick={() => setDeleteId(s.id)}
               >
                 <Icon name="trash-alt" size="xs" />
@@ -230,6 +231,12 @@ export function SavedSearchMenu({ queryState, timeRange, onLoad, activeDataViewI
           <Field label="Tags" description="Comma separated">
             <Input value={saveTags} onChange={(e) => setSaveTags(e.currentTarget.value)} aria-label="Search tags" />
           </Field>
+          <Checkbox
+            label="Store time range"
+            description="Opening the search then sets this time range; otherwise it keeps the current one."
+            value={storeTime}
+            onChange={(e) => setStoreTime(e.currentTarget.checked)}
+          />
           <div className={styles.saveActions}>
             <Button variant="secondary" onClick={() => closeSave()}>Cancel</Button>
             <Button variant="primary" disabled={!saveName.trim() || saving} onClick={handleSave}>Save</Button>

@@ -54,6 +54,7 @@ import { BreakdownUrl, decodeLogsState, encodeLogsState, resolveBreakdownField }
 import { loadPinnedFilters, mergePinnedFilters, normalizePinnedFlags, tableKey } from '../state/sharedSearch';
 import { rememberSearchContext } from '../state/lastSearch';
 import { TAB_PARAM } from '../state/discoverTabs';
+import { findSavedSearch, savedSearchTimeRange } from '../data/savedSearches';
 import { useAutocompleteSources } from '../autocomplete/service';
 import { compileColumnHighlighter, extractHighlightTerms } from '../sql/kql/highlight';
 import { errMsg } from '../errMsg';
@@ -104,9 +105,11 @@ export interface LogsExplorerProps {
   tabId?: string;
   /** Session tab strip, rendered above the toolbar. */
   tabStrip?: React.ReactNode;
+  /** Names the session tab (a saved search was opened or saved: Kibana shows its title). */
+  onTitle?: (title: string) => void;
 }
 
-export function LogsExplorer({ tabId, tabStrip }: LogsExplorerProps = {}) {
+export function LogsExplorer({ tabId, tabStrip, onTitle }: LogsExplorerProps = {}) {
   const styles = useStyles2(getStyles);
   const config = useContext(SourceConfigContext);
   const defaultTime = useContext(DefaultTimeRangeContext);
@@ -121,6 +124,17 @@ export function LogsExplorer({ tabId, tabStrip }: LogsExplorerProps = {}) {
   // the URL bar directly isn't a goal here — this state has no canonical non-URL source of truth
   // to resync from.
   const [initialUrlState] = useState(() => decodeLogsState(searchParams));
+
+  // The saved search this view is (`ss` in the URL). Cleared as soon as the query, filters, columns
+  // or sort stop matching what it was when opened; the baseline is taken from the first state seen
+  // after it was set (undefined = take it next).
+  const [savedSearchId, setSavedSearchId] = useState(initialUrlState.savedSearchId);
+  const savedBaselineRef = useRef<string | undefined>(undefined);
+  const openSavedSearch = (s: SavedSearch) => {
+    savedBaselineRef.current = undefined;
+    setSavedSearchId(s.id);
+    onTitle?.(s.name);
+  };
 
   const [queryState, dispatch] = useReducer(
     logsQueryReducer,
@@ -354,6 +368,25 @@ export function LogsExplorer({ tabId, tabStrip }: LogsExplorerProps = {}) {
     prevViewId.current = viewId;
      
   }, [activeView?.id, views]);
+
+  useEffect(() => {
+    if (!savedSearchId) {
+      savedBaselineRef.current = undefined;
+      return;
+    }
+    const snap = JSON.stringify([
+      queryState.search,
+      queryState.filters.map((f) => ({ ...f, id: undefined })),
+      queryState.columns.map((c) => c.id),
+      queryState.sort ?? null,
+    ]);
+    if (savedBaselineRef.current === undefined) {
+      savedBaselineRef.current = snap;
+    } else if (savedBaselineRef.current !== snap) {
+      savedBaselineRef.current = undefined;
+      setSavedSearchId(undefined);
+    }
+  }, [queryState.search, queryState.filters, queryState.columns, queryState.sort, savedSearchId]);
 
   // Sidebar collapse + resizable width, persisted across sessions
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -615,6 +648,7 @@ export function LogsExplorer({ tabId, tabStrip }: LogsExplorerProps = {}) {
       // or switches view, so a link copied mid-load still carries it.
       breakdown: breakdownToUrl(breakdownChoice, pendingBreakdownField?.id ?? pendingBreakdownFieldId),
       refresh: refreshInterval,
+      savedSearchId,
     });
     if (tabId) {
       next.set(TAB_PARAM, tabId);
@@ -624,7 +658,7 @@ export function LogsExplorer({ tabId, tabStrip }: LogsExplorerProps = {}) {
       setSearchParams(next, { replace: true });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [queryState.search, queryState.filters, queryState.sort, queryState.columns, effectiveColumns, timeRange, activeView?.id, intervalMode, breakdownChoice, pendingBreakdownFieldId, pendingBreakdownField?.id, refreshInterval]);
+  }, [queryState.search, queryState.filters, queryState.sort, queryState.columns, effectiveColumns, timeRange, activeView?.id, intervalMode, breakdownChoice, pendingBreakdownFieldId, pendingBreakdownField?.id, refreshInterval, savedSearchId]);
 
 
   const resolvedInterval = useMemo<ResolvedInterval>(
@@ -1286,6 +1320,7 @@ export function LogsExplorer({ tabId, tabStrip }: LogsExplorerProps = {}) {
   };
 
   const onLoadSaved = (search: SavedSearch, newTimeRange?: TimeRange) => {
+    openSavedSearch(search);
     dispatch({
       type: 'LOAD_SAVED',
       state: {
@@ -1311,6 +1346,38 @@ export function LogsExplorer({ tabId, tabStrip }: LogsExplorerProps = {}) {
     // the ref holds the fresh closure — guaranteeing results load without a manual click.
     queueMicrotask(() => latestExecuteQuery.current('Load saved search'));
   };
+
+  // Opened from the URL (`ss`) in a fresh browser: a link that carries no query of its own reopens
+  // the saved search; one that does is trusted as is (its `ss` was only cleared if it was edited).
+  useEffect(() => {
+    const id = initialUrlState.savedSearchId;
+    if (!id) {
+      return;
+    }
+    let cancelled = false;
+    findSavedSearch(id).then((s) => {
+      if (cancelled) {
+        return;
+      }
+      if (!s) {
+        setSavedSearchId(undefined);
+        return;
+      }
+      onTitle?.(s.name);
+      const hasQuery =
+        initialUrlState.search !== undefined ||
+        !!initialUrlState.filters?.length ||
+        !!initialUrlState.columns?.length ||
+        !!initialUrlState.sort;
+      if (!hasQuery) {
+        onLoadSaved(s, initialUrlState.timeRange ? undefined : savedSearchTimeRange(s));
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // DISC-SEARCH-03: a saved query is stored data — its filters are re-sanitized, pins stay on top.
   const onLoadQuery = ({ query, filters, timeRange: tr }: LoadedQuery) => {
@@ -1667,6 +1734,7 @@ export function LogsExplorer({ tabId, tabStrip }: LogsExplorerProps = {}) {
           timeRange={timeRange}
           activeViewId={activeView?.id}
           onLoadSaved={onLoadSaved}
+          onSavedSearchSaved={openSavedSearch}
           canAddToDashboard={canAddToDashboard}
           onOpenAddToDashboard={() => setAddToDashboardOpen(true)}
           onToggleRawSql={onToggleRawSql}

@@ -125,5 +125,12 @@ export function DiscoverTabsHost() {
   if (!known || !urlTab) {
     return null;
   }
-  return <LogsExplorer key={urlTab} tabId={urlTab} tabStrip={strip} />;
+  return (
+    <LogsExplorer
+      key={urlTab}
+      tabId={urlTab}
+      tabStrip={strip}
+      onTitle={(title) => setState((s) => renameTab(s, urlTab, title))}
+    />
+  );
 }

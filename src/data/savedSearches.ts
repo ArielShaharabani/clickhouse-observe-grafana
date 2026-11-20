@@ -7,7 +7,8 @@
  *    dashboards).
  * Everything read back (either store) is untrusted and goes through sanitizeSavedSearch.
  */
-import { getBackendSrv } from '@grafana/runtime';
+import { TimeRange, dateTime, rangeUtil } from '@grafana/data';
+import { config, getBackendSrv } from '@grafana/runtime';
 import { SavedSearch } from '../types';
 import { sanitizeFilterPills } from '../sql/filters';
 import { isDashboardUid } from '../lens/panelSource';
@@ -22,6 +23,14 @@ const MAX_TAGS = 20;
 const MAX_TAG = 50;
 const MAX_COLUMNS = 200;
 const MAX_SHARED = 100;
+
+/** Fixed uid of the folder new shared searches go to (found by uid, so no folder listing rights). */
+export const SAVED_SEARCH_FOLDER_UID = 'observe-saved-searches';
+export const SAVED_SEARCH_FOLDER_TITLE = 'Observe saved searches';
+
+/** Shape of an id this plugin generates (`ss_<epoch ms>_<random>`); the `ss` URL param is untrusted. */
+const SAVED_SEARCH_ID_RE = /^ss_\d{1,16}_[a-z0-9]{1,8}$/;
+export const isSavedSearchId = (v: unknown): v is string => typeof v === 'string' && SAVED_SEARCH_ID_RE.test(v);
 
 const isStr = (v: unknown): v is string => typeof v === 'string';
 
@@ -69,6 +78,20 @@ export function sanitizeSavedSearch(raw: unknown): SavedSearch | null {
     }
   }
   return out;
+}
+
+/** The stored time range of a saved search as a TimeRange, or undefined when none was stored (the
+ *  current range then stays). Relative strings ('now-1h') are kept so dateMath resolves them. */
+export function savedSearchTimeRange(s: SavedSearch): TimeRange | undefined {
+  if (!s.timeRange) {
+    return undefined;
+  }
+  try {
+    const toRaw = (v: string) => (v.startsWith('now') ? v : dateTime(Number(v)));
+    return rangeUtil.convertRawToRange({ from: toRaw(s.timeRange.from), to: toRaw(s.timeRange.to) });
+  } catch {
+    return undefined;
+  }
 }
 
 /** Splits user input "a, b" into clean unique tags. */
@@ -160,29 +183,136 @@ export function saveSearch(search: NewSearch, dataViewId?: string): SavedSearch 
   return entry;
 }
 
-/** Saves as a shared dashboard; rejects when the viewer may not create dashboards. */
+const folderUrl = (uid = '') =>
+  `/apis/folder.grafana.app/v1/namespaces/${encodeURIComponent(config.namespace || 'default')}/folders${uid ? `/${uid}` : ''}`;
+
+const isFolder = (r: unknown): boolean =>
+  typeof r === 'object' &&
+  r !== null &&
+  (r as { metadata?: { name?: unknown } }).metadata?.name === SAVED_SEARCH_FOLDER_UID;
+
+let folderPromise: Promise<string | undefined> | undefined;
+
+/** Test hook: forget the cached folder lookup. */
+export function resetSavedSearchFolderCache(): void {
+  folderPromise = undefined;
+}
+
+/**
+ * The uid of the "Observe saved searches" folder: found by its fixed uid, else created (Grafana
+ * 12+ folder API, folder.grafana.app/v1). Undefined when the viewer may neither read nor create it
+ * (the caller then saves into General). Only a success is cached.
+ */
+export function ensureSavedSearchFolder(): Promise<string | undefined> {
+  if (!folderPromise) {
+    const srv = getBackendSrv();
+    const attempt = (async (): Promise<string | undefined> => {
+      try {
+        const found = await srv.get(folderUrl(SAVED_SEARCH_FOLDER_UID), undefined, undefined, {
+          showErrorAlert: false,
+        });
+        if (isFolder(found)) {
+          return SAVED_SEARCH_FOLDER_UID;
+        }
+      } catch {
+        // Missing or not readable: try to create it.
+      }
+      try {
+        const created = await srv.post(
+          folderUrl(),
+          { metadata: { name: SAVED_SEARCH_FOLDER_UID }, spec: { title: SAVED_SEARCH_FOLDER_TITLE } },
+          { showErrorAlert: false }
+        );
+        return isFolder(created) ? SAVED_SEARCH_FOLDER_UID : undefined;
+      } catch (e) {
+        // 409: someone created it between our read and create.
+        return (e as { status?: number })?.status === 409 ? SAVED_SEARCH_FOLDER_UID : undefined;
+      }
+    })();
+    folderPromise = attempt.then((uid) => {
+      if (!uid) {
+        folderPromise = undefined;
+      }
+      return uid;
+    });
+  }
+  return folderPromise;
+}
+
+/**
+ * Saves as a shared dashboard in the "Observe saved searches" folder, or in General when that
+ * folder cannot be found, created or written to; rejects when the viewer may not create dashboards.
+ */
 export async function saveSharedSearch(search: NewSearch, dataViewId?: string): Promise<SavedSearch> {
   const entry = newEntry(search, dataViewId);
-  const res = await getBackendSrv().post<{ uid?: unknown }>(
-    '/api/dashboards/db',
-    {
-      dashboard: {
-        id: null,
-        uid: null,
-        title: `Saved search: ${entry.name} (${entry.id})`.slice(0, 200),
-        description: entry.description ?? '',
-        tags: [SAVED_SEARCH_TAG, ...(entry.tags ?? [])].slice(0, MAX_TAGS + 1),
-        panels: [],
-        schemaVersion: 39,
-        [PAYLOAD_KEY]: entry,
-      },
-      overwrite: false,
+  const body = (folderUid?: string) => ({
+    dashboard: {
+      id: null,
+      uid: null,
+      title: `Saved search: ${entry.name} (${entry.id})`.slice(0, 200),
+      description: entry.description ?? '',
+      tags: [SAVED_SEARCH_TAG, ...(entry.tags ?? [])].slice(0, MAX_TAGS + 1),
+      panels: [],
+      schemaVersion: 39,
+      [PAYLOAD_KEY]: entry,
     },
-    { showErrorAlert: false }
-  );
+    ...(folderUid ? { folderUid } : {}),
+    overwrite: false,
+  });
+  const folderUid = await ensureSavedSearchFolder();
+  const post = (b: ReturnType<typeof body>) =>
+    getBackendSrv().post<{ uid?: unknown }>('/api/dashboards/db', b, { showErrorAlert: false });
+  let res: { uid?: unknown };
+  try {
+    res = await post(body(folderUid));
+  } catch (e) {
+    if (!folderUid) {
+      throw e;
+    }
+    // No write access in the folder: General, as before.
+    res = await post(body());
+  }
   const saved = isDashboardUid(res?.uid) ? { ...entry, sharedUid: res.uid } : entry;
   sharedCache = [...sharedCache, saved];
   return saved;
+}
+
+/** A saved search by id: local, cached, else one tag+title search and one dashboard read. */
+export async function findSavedSearch(id: string): Promise<SavedSearch | undefined> {
+  if (!isSavedSearchId(id)) {
+    return undefined;
+  }
+  const known = loadSavedSearches().find((s) => s.id === id);
+  if (known) {
+    return known;
+  }
+  try {
+    const srv = getBackendSrv();
+    // The dashboard title carries the id, so the search narrows to one hit.
+    const hits = await srv.get<Array<{ uid?: unknown }>>(
+      `/api/search?${new URLSearchParams({ type: 'dash-db', tag: SAVED_SEARCH_TAG, query: id, limit: '5' })}`,
+      undefined,
+      undefined,
+      { showErrorAlert: false }
+    );
+    for (const uid of (Array.isArray(hits) ? hits : []).map((h) => h?.uid).filter(isDashboardUid)) {
+      const res = await srv.get<{ dashboard?: Record<string, unknown> }>(
+        `/api/dashboards/uid/${uid}`,
+        undefined,
+        undefined,
+        { showErrorAlert: false }
+      );
+      const s = sanitizeSavedSearch(res?.dashboard?.[PAYLOAD_KEY]);
+      if (s && s.id === id) {
+        const found = { ...s, sharedUid: uid };
+        sharedCache = [...sharedCache.filter((c) => c.id !== id), found];
+        return found;
+      }
+    }
+  } catch {
+    // not found
+  }
+  return undefined;
 }
 
 export function updateSearch(id: string, patch: Partial<Omit<SavedSearch, 'id' | 'createdAt'>>): void {

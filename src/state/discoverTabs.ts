@@ -43,7 +43,7 @@ export interface DiscoverTabsState {
 }
 
 /** URL params that are Discover state (anything else, like `_tab`, is not part of a tab). */
-const STATE_PARAMS = ['q', 'filters', 'cols', 'sort', 'from', 'to', 'ds', 'interval', 'bd', 'traceId', 'dsUid'];
+const STATE_PARAMS = ['q', 'filters', 'cols', 'sort', 'from', 'to', 'ds', 'interval', 'bd', 'ss', 'traceId', 'dsUid'];
 
 export function hasDiscoverState(sp: URLSearchParams): boolean {
   return STATE_PARAMS.some((k) => sp.has(k));
@@ -88,6 +88,7 @@ export function sanitizeTabParams(raw: unknown, viewIds?: string[]): string {
     viewId,
     interval: d.interval,
     breakdown: d.breakdown,
+    savedSearchId: d.savedSearchId,
   }).toString();
 }
 

@@ -187,3 +187,20 @@ describe('decodeLogsState drops untrusted filter pills', () => {
     expect(decode([null, 'x', 3, between])).toEqual([between]);
   });
 });
+
+describe('saved search id (ss)', () => {
+  const timeRange = { from: dateTime(0), to: dateTime(1000), raw: { from: 'now-1h', to: 'now' } };
+  const base = { search: '', filters: [], columns: [], timeRange };
+
+  it('round-trips a well-formed id', () => {
+    const sp = encodeLogsState({ ...base, savedSearchId: 'ss_1700000000000_ab3cd' });
+    expect(sp.get('ss')).toBe('ss_1700000000000_ab3cd');
+    expect(decodeLogsState(sp).savedSearchId).toBe('ss_1700000000000_ab3cd');
+  });
+
+  it('is omitted when absent and dropped when malformed', () => {
+    expect(encodeLogsState(base).has('ss')).toBe(false);
+    expect(encodeLogsState({ ...base, savedSearchId: '<script>' }).has('ss')).toBe(false);
+    expect(decodeLogsState(new URLSearchParams({ ss: '../../x' })).savedSearchId).toBeUndefined();
+  });
+});
