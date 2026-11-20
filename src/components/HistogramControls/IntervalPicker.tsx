@@ -18,6 +18,7 @@ interface Option {
 
 const OPTIONS: Option[] = [
   { mode: 'auto',   label: 'Auto' },
+  { mode: 'millisecond', label: 'Millisecond' },
   { mode: 'second', label: 'Second' },
   { mode: 'minute', label: 'Minute' },
   { mode: 'hour',   label: 'Hour' },

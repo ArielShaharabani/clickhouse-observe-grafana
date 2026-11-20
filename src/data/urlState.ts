@@ -16,7 +16,7 @@ import type { FieldModel } from '../sql/fieldModel';
  *  resolved against discovered fields once they load (SHARED-STATE-02). */
 export type BreakdownUrl = { kind: 'none' } | { kind: 'severity' } | { kind: 'field'; fieldId: string };
 
-const INTERVAL_MODES: readonly IntervalMode[] = ['auto', 'second', 'minute', 'hour', 'day', 'week', 'month', 'year'];
+const INTERVAL_MODES: readonly IntervalMode[] = ['auto', 'millisecond', 'second', 'minute', 'hour', 'day', 'week', 'month', 'year'];
 
 export interface DecodedLogsUrlState {
   search?: string;

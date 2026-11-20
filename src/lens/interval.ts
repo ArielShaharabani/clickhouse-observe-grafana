@@ -167,7 +167,8 @@ export function dashboardFillSql(iv: LensInterval | null, bound = true): string 
       : iv
         ? `INTERVAL greatest(${Math.max(1, Math.ceil(intervalMs(iv) / 1000))}, $__interval_s) second`
         : 'INTERVAL $__interval_s second';
-  const step = iv && (isCalendarUnit(iv.unit) || iv.unit === 'w') ? interval : interval.replace(/^INTERVAL (.*) second$/, '$1');
+  const step =
+    iv && (isCalendarUnit(iv.unit) || iv.unit === 'w') ? interval : interval.replace(/^INTERVAL (.*) second$/, '$1');
   return bound
     ? `WITH FILL FROM toStartOfInterval($__fromTime, ${interval}) TO $__toTime STEP ${step}`
     : `WITH FILL STEP ${step}`;
@@ -187,6 +188,7 @@ export function stepBucket(t: number, iv: LensInterval, k: number): number {
 /** Discover histogram interval → Visualize interval (Edit visualization hand-off). */
 export function intervalFromDiscover(mode: IntervalMode | undefined): string {
   const map: Partial<Record<IntervalMode, string>> = {
+    millisecond: '1ms',
     second: '1s',
     minute: '1m',
     hour: '1h',
@@ -201,8 +203,11 @@ export function intervalFromDiscover(mode: IntervalMode | undefined): string {
 /** Visualize interval → Discover histogram interval, when Discover has an equivalent (Explore in Discover). */
 export function intervalToDiscover(value: string | undefined): IntervalMode | undefined {
   const iv = parseInterval(value);
-  if (!iv || iv.n !== 1 || iv.unit === 'ms') {
+  if (!iv || iv.n !== 1) {
     return value === 'auto' ? 'auto' : undefined;
+  }
+  if (iv.unit === 'ms') {
+    return 'millisecond';
   }
   const map: Record<Exclude<LensIntervalUnit, 'ms'>, IntervalMode> = {
     s: 'second',

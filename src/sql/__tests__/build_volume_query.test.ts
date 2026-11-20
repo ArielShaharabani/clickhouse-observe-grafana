@@ -24,6 +24,16 @@ const config: SourceConfig = {
 
 const state: LogsQueryState = { search: '', filters: [], rawSql: '', useRawSql: false, limit: 200, columns: [] };
 
+describe('buildVolumeQuery millisecond buckets (round 2 #21)', () => {
+  it('casts to DateTime64(3) so sub-second buckets exist', () => {
+    const sql = buildVolumeQuery(config, state, {
+      interval: { unit: 'MILLISECOND', value: 10 },
+      breakdown: { kind: 'none' },
+    });
+    expect(sql).toContain('toStartOfInterval(toDateTime64(ts, 3), INTERVAL 10 MILLISECOND) AS time');
+  });
+});
+
 describe('buildVolumeQuery execution guardrail', () => {
   it('throws on timeout instead of silently truncating the aggregation', () => {
     const sql = buildVolumeQuery(config, state, {
@@ -54,7 +64,7 @@ describe('buildVolumeQuery execution guardrail', () => {
     expect(sql).toContain('max_execution_time = 5');
   });
 
-  it('carries no rows-read cap — counting rows is this query\'s job, so a cap only truncates the count', () => {
+  it("carries no rows-read cap — counting rows is this query's job, so a cap only truncates the count", () => {
     const sql = buildVolumeQuery(config, state, {
       interval: { unit: 'MINUTE', value: 1 },
       breakdown: { kind: 'none' },

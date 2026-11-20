@@ -159,7 +159,7 @@ export interface LogsQueryState {
 }
 
 /** Histogram time bucket granularity. 'auto' derives the best interval from the time range. */
-export type IntervalMode = 'auto' | 'second' | 'minute' | 'hour' | 'day' | 'week' | 'month' | 'year';
+export type IntervalMode = 'auto' | 'millisecond' | 'second' | 'minute' | 'hour' | 'day' | 'week' | 'month' | 'year';
 
 /**
  * Histogram breakdown selection.
