@@ -3,6 +3,7 @@ import { TimeRange } from '@grafana/data';
 import { FieldModel, inferFieldType, parseJsonTypedPaths, parseTupleElements } from '../sql/fieldModel';
 import { buildColumnsQuery, buildJsonPathsQuery } from '../sql/introspection';
 import { quoteDottedPath } from '../sql/queryBuilder';
+import { buildSkipIndicesQuery, parseTextIndexes, TextIndexInfo } from '../sql/textIndex';
 import { detectPruneColumn, PruneCandidateColumn } from '../sql/pruneColumn';
 import { runQueryRows } from '../data/runQuery';
 import { SourceConfig } from '../types';
@@ -22,6 +23,7 @@ export { coarseTimeBucket };
 // that column. JSON *paths* are back here at mount (Phase C below) because ClickHouse can answer
 // `distinctJSONPaths` from part metadata — see buildJsonPathsQuery's doc comment.
 const columnCache = new Map<string, FieldModel[]>();
+const textIndexCache = new Map<string, TextIndexInfo[]>();
 // Raw system.columns rows backing columnCache's entry, kept alongside it (same key, same
 // lifetime/invalidation) purely so detectPruneColumn can re-run against the widened columns
 // (default_kind/default_expression/is_in_*_key/position — see introspection.ts's buildColumnsQuery)
@@ -113,6 +115,8 @@ async function fetchJsonPaths(
 
 interface FieldsContextValue {
   fields: FieldModel[];
+  /** Text skip indexes on the table (read-only discovery; empty when none / unreadable). */
+  textIndexes?: TextIndexInfo[];
   loading: boolean;
   error: string | null;
   refresh: () => void;
@@ -184,6 +188,7 @@ export function useFieldDiscovery(
   const [error, setError] = useState<string | null>(null);
   const [detectedPartitionTimestamp, setDetectedPartitionTimestamp] = useState('');
   const [fieldsFor, setFieldsFor] = useState('');
+  const [textIndexes, setTextIndexes] = useState<TextIndexInfo[]>([]);
   const runRef = useRef(0);
 
   const bucket = useMemo(() => coarseTimeBucket(timeRange), [timeRange]);
@@ -202,6 +207,7 @@ export function useFieldDiscovery(
 
     if (invalidateColumns) {
       columnCache.delete(cKey);
+      textIndexCache.delete(cKey);
       rawColumnCache.delete(cKey);
       // Phase C's cache is keyed per column (`<cKey>:<column>`), so an explicit refresh has to drop
       // every entry under this table — otherwise a schema change that adds a JSON path would keep
@@ -299,6 +305,28 @@ export function useFieldDiscovery(
     }
 
     const detected = detectPruneColumn(rawColumns, config.columns.timestamp) ?? '';
+
+    // Text skip indexes (cached per table). Best effort: an unreadable system table just means
+    // the plain ILIKE forms are used.
+    let textIdx = textIndexCache.get(cKey);
+    if (!textIdx) {
+      try {
+        const idxRows = await runQueryRows({
+          datasourceUid: config.datasourceUid,
+          sql: buildSkipIndicesQuery(config, resolvedTable),
+          timeRange,
+          op: 'columns',
+        });
+        textIdx = parseTextIndexes(idxRows);
+        textIndexCache.set(cKey, textIdx);
+      } catch {
+        textIdx = [];
+      }
+      if (runRef.current !== runId) {
+        return;
+      }
+    }
+    setTextIndexes(textIdx);
 
     // Publish what's already known before Phase C runs, so the sidebar paints immediately instead
     // of waiting on a round-trip per JSON column. `loading` deliberately stays true until Phase C
@@ -433,5 +461,5 @@ export function useFieldDiscovery(
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [config.datasourceUid, config.database, resolvedTable, bucket, config.columns.timestamp]);
 
-  return { fields, loading, error, refresh, detectedPartitionTimestamp, fieldsFor };
+  return { fields, textIndexes, loading, error, refresh, detectedPartitionTimestamp, fieldsFor };
 }

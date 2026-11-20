@@ -1,5 +1,6 @@
 import { SourceConfig } from '../types';
 import { FieldModel } from './fieldModel';
+import type { TextIndexInfo } from './textIndex';
 import { looksLikeMapAccessor, quoteString } from './queryBuilder';
 
 export type FieldKind = 'text' | 'exact' | 'map' | 'json';
@@ -38,9 +39,11 @@ export interface FieldIndex {
    *  on-demand key browse (SearchBar.tsx) needs to resolve even when that exact key never made it
    *  into `fields`. */
   mapColumns: FieldModel[];
+  /** Text skip indexes found on the table (sql/textIndex.ts); absent = none known. */
+  textIndexes?: TextIndexInfo[];
 }
 
-export function buildFieldIndex(fields: FieldModel[]): FieldIndex {
+export function buildFieldIndex(fields: FieldModel[], textIndexes?: TextIndexInfo[]): FieldIndex {
   const bySqlExpr = new Map<string, FieldModel>();
   const byName = new Map<string, FieldModel>();
   const byDisplayName = new Map<string, FieldModel>();
@@ -59,7 +62,9 @@ export function buildFieldIndex(fields: FieldModel[]): FieldIndex {
       mapColumns.push(field);
     }
   }
-  return { bySqlExpr, byName, byDisplayName, mapColumns };
+  return textIndexes && textIndexes.length > 0
+    ? { bySqlExpr, byName, byDisplayName, mapColumns, textIndexes }
+    : { bySqlExpr, byName, byDisplayName, mapColumns };
 }
 
 /**

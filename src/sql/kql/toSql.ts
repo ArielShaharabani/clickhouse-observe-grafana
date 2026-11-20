@@ -12,6 +12,7 @@ import { SourceConfig } from '../../types';
 import { resolveField, FieldIndex, FieldKind } from '../fields';
 import { FieldModel } from '../fieldModel';
 import { quoteString, quoteIdentifier, escapeLike } from '../queryBuilder';
+import { indexedIlike } from '../textIndex';
 
 export function kqlToSql(node: KqlNode, config: SourceConfig, index?: FieldIndex): string {
   switch (node.type) {
@@ -42,7 +43,7 @@ function kqlIsToSql(node: KqlIs, config: SourceConfig, index?: FieldIndex): stri
     if (!bodyCol) {
       return '1=1'; // body column not mapped — ignore bare terms rather than emit broken SQL
     }
-    return bareTermSql(bodyCol, node.value, node.isWildcard, node.isPhrase);
+    return bareTermSql(bodyCol, node.value, node.isWildcard, node.isPhrase, index);
   }
 
   // ── Field-name wildcard: data*: 5 / datastream.*: logs — matches KQL, which lets a wildcard
@@ -76,12 +77,12 @@ function kqlIsToSql(node: KqlIs, config: SourceConfig, index?: FieldIndex): stri
       if (!bodyCol) {
         return '1=1';
       }
-      return bareTermSql(bodyCol, node.raw, WILDCARD_RE.test(node.raw), false);
+      return bareTermSql(bodyCol, node.raw, WILDCARD_RE.test(node.raw), false, index);
     }
-    return valueSql(node, node.field, 'exact');
+    return valueSql(node, node.field, 'exact', index);
   }
 
-  return valueSql(node, resolved.sqlExpr, resolved.kind);
+  return valueSql(node, resolved.sqlExpr, resolved.kind, index);
 }
 
 /**
@@ -89,13 +90,13 @@ function kqlIsToSql(node: KqlIs, config: SourceConfig, index?: FieldIndex): stri
  * path and field-wildcard expansion below — both need the same wildcard/phrase/typed-literal
  * handling per matched column.
  */
-function valueSql(node: KqlIs, sqlExpr: string, kind: FieldKind): string {
+function valueSql(node: KqlIs, sqlExpr: string, kind: FieldKind, index?: FieldIndex): string {
   const val = node.value;
 
   // Wildcard — applies to all field kinds (text, exact, map).
   // Check before isPhrase so "err*" with quotes can't override.
   if (node.isWildcard) {
-    return `${maybeQuote(sqlExpr)} ILIKE ${quoteString(wildcardLike(val))}`;
+    return ilikeSql(maybeQuote(sqlExpr), wildcardLike(val), index);
   }
 
   // Phrase — behavior is field-kind-dependent:
@@ -111,7 +112,7 @@ function valueSql(node: KqlIs, sqlExpr: string, kind: FieldKind): string {
 
   // Unquoted text column → substring contains (full-text behaviour).
   if (kind === 'text') {
-    return `${maybeQuote(sqlExpr)} ILIKE ${quoteString('%' + escapeLike(val) + '%')}`;
+    return ilikeSql(maybeQuote(sqlExpr), '%' + escapeLike(val) + '%', index);
   }
 
   // Unquoted exact / map / json column → equality, with true/false/null typed literals (the KQL
@@ -149,7 +150,7 @@ function fieldWildcardSql(node: KqlIs, field: string, config: SourceConfig, inde
       return `notEmpty(toString(${maybeQuote(f.sqlExpr)}))`;
     }
     const resolved = resolveField(f.sqlExpr, config, index);
-    return valueSql(node, f.sqlExpr, resolved?.kind ?? 'exact');
+    return valueSql(node, f.sqlExpr, resolved?.kind ?? 'exact', index);
   });
   return clauses.length === 1 ? clauses[0] : clauses.map((c) => `(${c})`).join(' OR ');
 }
@@ -189,10 +190,10 @@ function kqlRangeToSql(node: KqlRange, config: SourceConfig, index?: FieldIndex)
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
-function bareTermSql(bodyCol: string, value: string, isWildcard: boolean, isPhrase: boolean): string {
+function bareTermSql(bodyCol: string, value: string, isWildcard: boolean, isPhrase: boolean, index?: FieldIndex): string {
   if (isWildcard) {
     // Bare wildcard e.g. pay* → prefix/suffix/infix on body
-    return `${bodyCol} ILIKE ${quoteString(wildcardLike(value))}`;
+    return ilikeSql(bodyCol, wildcardLike(value), index);
   }
   if (isPhrase) {
     return phraseMatch(bodyCol, value);
@@ -201,7 +202,16 @@ function bareTermSql(bodyCol: string, value: string, isWildcard: boolean, isPhra
   // (`-`, `.`, `:`, `/`, space — all common in log search terms like "req-59" or "1.2.3.4"), and is
   // redundant even when it doesn't throw: everything a case-sensitive whole-token hasToken() match
   // can find, the case-insensitive substring ILIKE below already finds too. See C3 in the audit plan.
-  return `${bodyCol} ILIKE ${quoteString('%' + escapeLike(value) + '%')}`;
+  return ilikeSql(bodyCol, '%' + escapeLike(value) + '%', index);
+}
+
+/**
+ * `col ILIKE 'pattern'`, or - when a text skip index on `lower(col)` was discovered - the
+ * equivalent `lower(col) LIKE 'lowercased pattern'` the index can serve (see sql/textIndex.ts).
+ * Escaping is unchanged: the pattern arrives already LIKE-escaped and is quoted the same way.
+ */
+function ilikeSql(col: string, likePattern: string, index?: FieldIndex): string {
+  return indexedIlike(col, likePattern, index?.textIndexes) ?? `${col} ILIKE ${quoteString(likePattern)}`;
 }
 
 /**
