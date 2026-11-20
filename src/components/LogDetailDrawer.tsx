@@ -96,7 +96,9 @@ function flattenRowEntries(
       key: k,
       value: isTimestampField
         ? formatTimestamp(v)
-        : v !== null && typeof v === 'object' ? JSON.stringify(v) : String(v ?? ''),
+        : v !== null && typeof v === 'object'
+          ? JSON.stringify(v)
+          : String(v ?? ''),
       sqlExpr: k,
       type: resolveType(k),
     });
@@ -239,7 +241,13 @@ export function LogDetailDrawer({
       onClose();
       return;
     }
-    if ((e.key === 'ArrowLeft' || e.key === 'ArrowRight') && !e.altKey && !e.ctrlKey && !e.metaKey && !isTextEntryTarget(e.target)) {
+    if (
+      (e.key === 'ArrowLeft' || e.key === 'ArrowRight') &&
+      !e.altKey &&
+      !e.ctrlKey &&
+      !e.metaKey &&
+      !isTextEntryTarget(e.target)
+    ) {
       const step = e.key === 'ArrowLeft' ? onPrev : onNext;
       if (step) {
         e.preventDefault();
@@ -266,7 +274,9 @@ export function LogDetailDrawer({
     }
   }, [pinState, pinTable]);
   const togglePin = (sqlExpr: string) => {
-    const next = pinnedFields.includes(sqlExpr) ? pinnedFields.filter((x) => x !== sqlExpr) : [...pinnedFields, sqlExpr];
+    const next = pinnedFields.includes(sqlExpr)
+      ? pinnedFields.filter((x) => x !== sqlExpr)
+      : [...pinnedFields, sqlExpr];
     setPinState({ table: pinTable, pins: next });
     setFieldsPage(0); // show the pinned row at the top
   };
@@ -300,27 +310,18 @@ export function LogDetailDrawer({
   const failure = detailError ?? fieldsError ?? null;
   const c = config.columns;
   const jsonColumns = useMemo(
-    () =>
-      new Set(
-        (fields ?? []).filter((f) => f.source === 'column' && f.type === 'json').map((f) => f.name)
-      ),
+    () => new Set((fields ?? []).filter((f) => f.source === 'column' && f.type === 'json').map((f) => f.name)),
     [fields]
   );
   // Auto-detected Map-typed columns (no config mapping required, same as jsonColumns above) —
   // any of these gets flattened into dotted-path rows by groupAttributes below, instead of
   // requiring the 3 "Resource/Log/Scope Attributes" fields the Logs data-view editor used to have.
   const mapColumns = useMemo(
-    () =>
-      new Set(
-        (fields ?? []).filter((f) => f.source === 'column' && f.type === 'map').map((f) => f.name)
-      ),
+    () => new Set((fields ?? []).filter((f) => f.source === 'column' && f.type === 'map').map((f) => f.name)),
     [fields]
   );
   // sqlExpr -> discovered type, used to prefix each flat row with a type icon.
-  const typeByExpr = useMemo(
-    () => new Map((fields ?? []).map((f) => [f.sqlExpr, f.type] as const)),
-    [fields]
-  );
+  const typeByExpr = useMemo(() => new Map((fields ?? []).map((f) => [f.sqlExpr, f.type] as const)), [fields]);
   // A converted time field (epoch / text, PLAN #16d): the raw column is an ordinary number / text
   // field; only the converted value (CORE_ALIAS.timestamp, in every projection) is the time.
   const rawTimeCol = isConvertedTimestamp(config) ? '' : c.timestamp;
@@ -334,11 +335,15 @@ export function LogDetailDrawer({
   // The JSON tab renders fully expanded by default — every object/array node open, not
   // just the root.
   const jsonExpandedPaths = useMemo(() => allContainerPaths(effectiveRow), [effectiveRow]);
-  // The JSON tab shows the time as ISO 8601 like Kibana (the datasource hands it over as epoch ms).
-  const jsonRow = useMemo(
-    () => withIsoTimestamps(effectiveRow, [rawTimeCol, CORE_ALIAS.timestamp]),
-    [effectiveRow, rawTimeCol]
-  );
+  // The JSON tab shows times as ISO 8601 like Kibana (the datasource hands them over as epoch ms):
+  // the view's time column and every other DateTime column, e.g. the partition column
+  // `TimestampTime` (round 2 #18). A numeric column converted to time (rawTimeCol '') stays a number.
+  const jsonRow = useMemo(() => {
+    const dateTimeCols = (fields ?? [])
+      .filter((f) => f.source === 'column' && f.type === 'time' && f.name !== c.timestamp)
+      .map((f) => f.name);
+    return withIsoTimestamps(effectiveRow, [rawTimeCol, CORE_ALIAS.timestamp, ...dateTimeCols]);
+  }, [effectiveRow, rawTimeCol, fields, c.timestamp]);
 
   // Flat Field | Value table — no OTel category grouping. Map/JSON container
   // columns (ResourceAttributes, LogAttributes, …) are excluded in their raw blob form and
@@ -361,7 +366,6 @@ export function LogDetailDrawer({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [effectiveRow, containerCols, attrGroups, rawTimeCol, jsonColumns, typeByExpr]);
 
-
   // Reset per-log UI state (not the search/selected-only filters, which the user likely wants to
   // keep applied while stepping through prev/next) whenever a new log is opened.
   useEffect(() => {
@@ -370,8 +374,7 @@ export function LogDetailDrawer({
     setFieldsPage(0);
   }, [row]);
 
-  const isColumnSelected = (clickhouseField: string): boolean =>
-    columns.some((c) => c.sqlExpr === clickhouseField);
+  const isColumnSelected = (clickhouseField: string): boolean => columns.some((c) => c.sqlExpr === clickhouseField);
 
   const toggleAsColumn = (field: string, clickhouseField: string) => {
     if (!onToggleColumn) {
@@ -432,8 +435,7 @@ export function LogDetailDrawer({
     const isLong = value.length > VALUE_TRUNCATE_LEN;
     const isValueExpanded = expandedValues.has(valueKey);
     const displayValue = isLong && !isValueExpanded ? value.slice(0, VALUE_TRUNCATE_LEN) + '…' : value;
-    const traceHref =
-      clickhouseField === config.columns.traceId ? getTraceHref?.(value) : undefined;
+    const traceHref = clickhouseField === config.columns.traceId ? getTraceHref?.(value) : undefined;
     return (
       <div key={field} className={cx(styles.attrRow, isPinned && styles.attrRowPinned)} data-testid="doc-field-row">
         <span className={styles.attrKey} title={field}>
@@ -471,9 +473,11 @@ export function LogDetailDrawer({
           <DrawerValueActions field={clickhouseField} value={value} type={type} onAddFilter={onAddFilter} />
           {!NO_EXISTS_TYPES.has(type) &&
             !EMPTY_VALUES.has(value.trim()) &&
-            fieldActions({ field: clickhouseField, fieldLabel: field }, { addFilter: onAddFilter, copyText: copyToClipboard }, ['exists']).map(
-              (a) => <ActionIconButton key={a.id} action={a} />
-            )}
+            fieldActions(
+              { field: clickhouseField, fieldLabel: field },
+              { addFilter: onAddFilter, copyText: copyToClipboard },
+              ['exists']
+            ).map((a) => <ActionIconButton key={a.id} action={a} />)}
           <IconButton
             name="gf-pin"
             size="sm"
@@ -516,7 +520,13 @@ export function LogDetailDrawer({
           )}
           {(onPrev || onNext) && (
             <div className={styles.navGroup}>
-              <IconButton name="angle-double-left" size="sm" tooltip="First log" onClick={onFirst} disabled={!onFirst} />
+              <IconButton
+                name="angle-double-left"
+                size="sm"
+                tooltip="First log"
+                onClick={onFirst}
+                disabled={!onFirst}
+              />
               <IconButton name="angle-left" size="sm" tooltip="Previous log" onClick={onPrev} disabled={!onPrev} />
               {navLabel && <span className={styles.navLabel}>{navLabel}</span>}
               <IconButton name="angle-right" size="sm" tooltip="Next log" onClick={onNext} disabled={!onNext} />
@@ -550,104 +560,104 @@ export function LogDetailDrawer({
         </TabsBar>
       </div>
       <div className={styles.panelBody}>
-      {failure ? (
-        // Never render a partial field table under a failure — a truncated/wrong field list read
-        // as a real answer is worse than an empty pane with an obvious way to retry.
-        <div className={styles.centerFill}>
-          <Alert severity="error" title="Couldn't load this log's full data">
-            {failure}
-            {onRetryHydrate && (
-              <div className={styles.retryRow}>
-                <Button size="sm" variant="secondary" icon="sync" onClick={onRetryHydrate}>
-                  Retry
-                </Button>
-              </div>
-            )}
-          </Alert>
-        </div>
-      ) : blocked ? (
-        // Blocks both tabs until the full row AND field discovery have landed — see `blocked`'s
-        // doc comment above for why detailRow alone isn't enough.
-        <div className={styles.centerFill}>
-          <Spinner size="lg" />
-          <span className={styles.loadingLabel}>Loading all fields…</span>
-        </div>
-      ) : activeTab === 'json' ? (
-        <div className={styles.jsonWrap}>
-          <JsonTree data={jsonRow} defaultExpanded={jsonExpandedPaths} />
-        </div>
-      ) : (
-        <div className={styles.content}>
-          {/* Field/value search + selected-only toggle */}
-          <div className={styles.toolbarRow}>
-            <Input
-              prefix={<Icon name="search" />}
-              placeholder="Search field names and values"
-              aria-label="Search field names and values"
-              value={searchAttr}
-              onChange={(e) => setSearchAttr(e.currentTarget.value)}
-              className={styles.attrSearch}
-            />
-            <FieldTypeFilter
-              counts={typeCounts}
-              selected={typeFilter}
-              onChange={(t) => {
-                setTypeFilter(t);
-                setFieldsPage(0);
-              }}
-            />
-            <label className={styles.selectedOnlyLabel}>
-              <Switch value={selectedOnly} onChange={(e) => setSelectedOnly(e.currentTarget.checked)} />
-              Selected only
-            </label>
-            <label className={styles.selectedOnlyLabel}>
-              <Switch
-                value={hideNull}
-                onChange={(e) => {
-                  setHideNull(e.currentTarget.checked);
+        {failure ? (
+          // Never render a partial field table under a failure — a truncated/wrong field list read
+          // as a real answer is worse than an empty pane with an obvious way to retry.
+          <div className={styles.centerFill}>
+            <Alert severity="error" title="Couldn't load this log's full data">
+              {failure}
+              {onRetryHydrate && (
+                <div className={styles.retryRow}>
+                  <Button size="sm" variant="secondary" icon="sync" onClick={onRetryHydrate}>
+                    Retry
+                  </Button>
+                </div>
+              )}
+            </Alert>
+          </div>
+        ) : blocked ? (
+          // Blocks both tabs until the full row AND field discovery have landed — see `blocked`'s
+          // doc comment above for why detailRow alone isn't enough.
+          <div className={styles.centerFill}>
+            <Spinner size="lg" />
+            <span className={styles.loadingLabel}>Loading all fields…</span>
+          </div>
+        ) : activeTab === 'json' ? (
+          <div className={styles.jsonWrap}>
+            <JsonTree data={jsonRow} defaultExpanded={jsonExpandedPaths} />
+          </div>
+        ) : (
+          <div className={styles.content}>
+            {/* Field/value search + selected-only toggle */}
+            <div className={styles.toolbarRow}>
+              <Input
+                prefix={<Icon name="search" />}
+                placeholder="Search field names and values"
+                aria-label="Search field names and values"
+                value={searchAttr}
+                onChange={(e) => setSearchAttr(e.currentTarget.value)}
+                className={styles.attrSearch}
+              />
+              <FieldTypeFilter
+                counts={typeCounts}
+                selected={typeFilter}
+                onChange={(t) => {
+                  setTypeFilter(t);
                   setFieldsPage(0);
                 }}
               />
-              Hide null fields
-            </label>
-          </div>
+              <label className={styles.selectedOnlyLabel}>
+                <Switch value={selectedOnly} onChange={(e) => setSelectedOnly(e.currentTarget.checked)} />
+                Selected only
+              </label>
+              <label className={styles.selectedOnlyLabel}>
+                <Switch
+                  value={hideNull}
+                  onChange={(e) => {
+                    setHideNull(e.currentTarget.checked);
+                    setFieldsPage(0);
+                  }}
+                />
+                Hide null fields
+              </label>
+            </div>
 
-          {/* Flat Field | Value table — no OTel category grouping. */}
-          {(() => {
-            const matched = baseRows.filter((r) => typeFilter.size === 0 || typeFilter.has(r.type));
-            // Pinned rows first (in pin order), then the rest in their usual order.
-            const pinIndex = (r: { sqlExpr: string }) => pinnedFields.indexOf(r.sqlExpr);
-            const visible = [
-              ...matched.filter((r) => pinIndex(r) >= 0).sort((a, b) => pinIndex(a) - pinIndex(b)),
-              ...matched.filter((r) => pinIndex(r) < 0),
-            ];
-            const numberOfPages = Math.max(1, Math.ceil(visible.length / FIELDS_PAGE_SIZE));
-            const page = Math.min(fieldsPage, numberOfPages - 1);
-            const pageRows = visible.slice(page * FIELDS_PAGE_SIZE, (page + 1) * FIELDS_PAGE_SIZE);
-            return (
-              <>
-                <div className={styles.attrListHeader}>
-                  <span className={styles.attrKey}>Field</span>
-                  <span className={styles.attrValue}>Value</span>
-                </div>
-                <div className={styles.attrList}>
-                  {pageRows.map((r) => renderAttrRow(r.key, r.value, r.sqlExpr, r.type))}
-                </div>
-                {numberOfPages > 1 && (
-                  <div className={styles.fieldsPagination}>
-                    <Pagination
-                      currentPage={page + 1}
-                      numberOfPages={numberOfPages}
-                      onNavigate={(p) => setFieldsPage(p - 1)}
-                      hideWhenSinglePage
-                    />
+            {/* Flat Field | Value table — no OTel category grouping. */}
+            {(() => {
+              const matched = baseRows.filter((r) => typeFilter.size === 0 || typeFilter.has(r.type));
+              // Pinned rows first (in pin order), then the rest in their usual order.
+              const pinIndex = (r: { sqlExpr: string }) => pinnedFields.indexOf(r.sqlExpr);
+              const visible = [
+                ...matched.filter((r) => pinIndex(r) >= 0).sort((a, b) => pinIndex(a) - pinIndex(b)),
+                ...matched.filter((r) => pinIndex(r) < 0),
+              ];
+              const numberOfPages = Math.max(1, Math.ceil(visible.length / FIELDS_PAGE_SIZE));
+              const page = Math.min(fieldsPage, numberOfPages - 1);
+              const pageRows = visible.slice(page * FIELDS_PAGE_SIZE, (page + 1) * FIELDS_PAGE_SIZE);
+              return (
+                <>
+                  <div className={styles.attrListHeader}>
+                    <span className={styles.attrKey}>Field</span>
+                    <span className={styles.attrValue}>Value</span>
                   </div>
-                )}
-              </>
-            );
-          })()}
-        </div>
-      )}
+                  <div className={styles.attrList}>
+                    {pageRows.map((r) => renderAttrRow(r.key, r.value, r.sqlExpr, r.type))}
+                  </div>
+                  {numberOfPages > 1 && (
+                    <div className={styles.fieldsPagination}>
+                      <Pagination
+                        currentPage={page + 1}
+                        numberOfPages={numberOfPages}
+                        onNavigate={(p) => setFieldsPage(p - 1)}
+                        hideWhenSinglePage
+                      />
+                    </div>
+                  )}
+                </>
+              );
+            })()}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -713,7 +723,9 @@ const getStyles = (theme: GrafanaTheme2) => ({
     margin-top: ${theme.spacing(0.25)};
     color: ${theme.colors.primary.text};
     font-size: 13px;
-    &:hover { text-decoration: underline; }
+    &:hover {
+      text-decoration: underline;
+    }
   `,
   fieldsPagination: css`
     display: flex;
