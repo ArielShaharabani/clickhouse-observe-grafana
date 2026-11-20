@@ -14,7 +14,7 @@ test('pie shows one slice per service with grouped legend values', async ({ page
 
 test('metric tiles per service sit in a grid with the metric name as subtitle', async ({ page }) => {
   await new VisualizePage(page).open({ lens: lens('metric', [svc]) });
-  await expect(page.getByRole('listitem').first()).toContainText('Count of records');
+  await expect(page.getByTestId('lens-chart').getByRole('listitem').first()).toContainText('Count of records');
 });
 
 test('table: counts with thousands separators (payments 9,264)', async ({ page }) => {
@@ -37,5 +37,5 @@ test('Inspector request shows readable SQL (no escaped quotes or \n) and result 
   await expect(req).toContainText('SELECT');
   const text = (await req.textContent()) ?? '';
   expect(text).not.toContain('\\"');
-  expect(text).not.toContain('\n');
+  expect(text).not.toContain('\\n');
 });

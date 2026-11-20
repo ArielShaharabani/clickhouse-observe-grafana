@@ -62,7 +62,7 @@ test('filter groups and the bulk menu', async ({ page }) => {
 test('field statistics profile Timestamp as a range', async ({ page }) => {
   const logs = new LogsPage(page);
   await logs.open();
-  await page.getByText('Field statistics').click();
+  await page.getByRole('radio', { name: 'Field statistics' }).click();
   const row = page.getByTestId('field-stats-row-Timestamp');
   await expect(row).toContainText('→');
 });

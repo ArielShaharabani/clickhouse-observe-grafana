@@ -44,12 +44,13 @@ async function setSize(page: Page, n: string) {
 test('Top 3 + Other: payments 9,264 and Other is the remaining 16,128', async ({ page }) => {
   const viz = await openTable(page);
   await setSize(page, '3');
-  await tick(page, 'Group remaining values as Other');
+  // "Other" is on by default for new top-values buckets.
+  await expect(editor(page).getByRole('checkbox', { name: 'Group remaining values as Other' })).toBeChecked();
   await toTable(page);
   const rest = FIXTURE.counts.total - FIXTURE.counts.payments - 2 * 8064;
   await expect(viz.chart.getByText('Other', { exact: true })).toBeVisible();
-  await expect(viz.chart.getByText(String(rest), { exact: true })).toBeVisible();
-  await expect(viz.chart.getByText(String(FIXTURE.counts.payments), { exact: true })).toBeVisible();
+  await expect(viz.chart.getByText(rest.toLocaleString('en-US'), { exact: true })).toBeVisible();
+  await expect(viz.chart.getByText(FIXTURE.counts.payments.toLocaleString('en-US'), { exact: true })).toBeVisible();
   // Nothing lost: the table rows sum to the total.
   await expect(viz.chart.getByText('payments', { exact: true })).toBeVisible();
 });
@@ -57,8 +58,9 @@ test('Top 3 + Other: payments 9,264 and Other is the remaining 16,128', async ({
 test('without Other, only the top values are listed', async ({ page }) => {
   const viz = await openTable(page);
   await setSize(page, '3');
+  await tick(page, 'Group remaining values as Other');
   await toTable(page);
-  await expect(viz.chart.getByText(String(FIXTURE.counts.payments), { exact: true })).toBeVisible();
+  await expect(viz.chart.getByText(FIXTURE.counts.payments.toLocaleString('en-US'), { exact: true })).toBeVisible();
   await expect(viz.chart.getByText('Other', { exact: true })).toHaveCount(0);
 });
 
@@ -71,7 +73,7 @@ test('rank alphabetically (ascending) top 1 is auth; descending is payments', as
   await expect(viz.chart.getByText('payments', { exact: true })).toHaveCount(0);
   await tick(page, 'Descending');
   await expect(viz.chart.getByText('payments', { exact: true })).toBeVisible();
-  await expect(viz.chart.getByText(String(FIXTURE.counts.payments), { exact: true })).toBeVisible();
+  await expect(viz.chart.getByText(FIXTURE.counts.payments.toLocaleString('en-US'), { exact: true })).toBeVisible();
 });
 
 test('exclude values, and include by regular expression', async ({ page }) => {
@@ -89,7 +91,7 @@ test('exclude values, and include by regular expression', async ({ page }) => {
   await inc.fill('pay.*\nfront.*');
   await inc.blur();
   await expect(viz.chart.getByText('frontend', { exact: true })).toBeVisible();
-  await expect(viz.chart.getByText(String(FIXTURE.counts.payments), { exact: true })).toBeVisible();
+  await expect(viz.chart.getByText(FIXTURE.counts.payments.toLocaleString('en-US'), { exact: true })).toBeVisible();
   await expect(viz.chart.getByText('auth', { exact: true })).toHaveCount(0);
 });
 
@@ -123,7 +125,6 @@ test('alphabetical rank lists values in alphabetical order, Other always last', 
   await tick(page, 'Descending');
   await expect.poll(() => firstColumn(viz)).toEqual(['payments', 'inventory', 'frontend', 'checkout', 'auth']);
   await setSize(page, '2');
-  await tick(page, 'Group remaining values as Other');
   await expect.poll(() => firstColumn(viz)).toEqual(['payments', 'inventory', 'Other']);
 });
 

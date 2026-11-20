@@ -19,7 +19,7 @@ test('Table: Split metrics by turns severity values into columns, one row per se
   await expect(viz.group('Rows')).toContainText('ServiceName');
   await expect(viz.group('Split metrics by')).toContainText('SeverityText');
   await expect(viz.chart.getByText('error › Count of records')).toBeVisible();
-  await expect(viz.chart.getByText(String(FIXTURE.counts.errorsByService.payments), { exact: true })).toBeVisible();
+  await expect(viz.chart.getByText(FIXTURE.counts.errorsByService.payments.toLocaleString('en-US'), { exact: true })).toBeVisible();
   // One row per service, not per (service, severity).
   await expect(viz.chart.getByText('payments', { exact: true })).toHaveCount(1);
 });
@@ -27,7 +27,7 @@ test('Table: Split metrics by turns severity values into columns, one row per se
 test('Table: summary row and colour by value from the metric editor (no re-query)', async ({ page }) => {
   const viz = new VisualizePage(page);
   await viz.open({ lens: lens({ chartType: 'table', buckets: [svc], metrics: [count] }) });
-  await expect(viz.chart.getByText(String(FIXTURE.counts.payments), { exact: true })).toBeVisible();
+  await expect(viz.chart.getByText(FIXTURE.counts.payments.toLocaleString('en-US'), { exact: true })).toBeVisible();
   let queries = 0;
   page.on('request', (r) => {
     if (r.url().includes('/api/ds/query')) {
@@ -40,7 +40,7 @@ test('Table: summary row and colour by value from the metric editor (no re-query
   await editor(page).getByRole('radio', { name: 'Cell' }).click();
   await editor(page).getByRole('button', { name: 'Close', exact: true }).click();
   // Footer: the sum of all services.
-  await expect(viz.chart.getByText(String(FIXTURE.counts.total), { exact: true })).toBeVisible();
+  await expect(viz.chart.getByText(FIXTURE.counts.total.toLocaleString('en-US'), { exact: true })).toBeVisible();
   const url = new URL(page.url()).searchParams.get('lens') ?? '';
   expect(url).toContain('"summary":"sum"');
   expect(url).toContain('"colorBy":"cell"');
@@ -94,7 +94,7 @@ test('a hostile summary / colour / role in a shared link is dropped', async ({ p
       metrics: [{ ...count, summary: "sum') FROM system.users --", colorBy: '<img>', role: 'admin' }],
     }),
   });
-  await expect(viz.chart.getByText(String(FIXTURE.counts.payments), { exact: true })).toBeVisible();
+  await expect(viz.chart.getByText(FIXTURE.counts.payments.toLocaleString('en-US'), { exact: true })).toBeVisible();
   await expect(viz.group('Rows')).toContainText('ServiceName');
   await expect(viz.group('Split metrics by')).not.toContainText('ServiceName');
 });

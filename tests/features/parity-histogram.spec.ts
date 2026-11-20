@@ -132,17 +132,19 @@ test('Minute on 7 days is scaled to 15 minutes with a visible notice; nothing in
   await logs.expectRowCount(FIXTURE.counts.total);
 });
 
-test('the axis date line never overlaps the row-count caption (detail panel open or 0 rows)', async ({ page }) => {
+test('the axis date line never overlaps the row-count caption (detail panel open; no chart at 0 rows)', async ({ page }) => {
   const logs = new LogsPage(page);
   const assertClear = async () => {
     const axis = (await page.getByTestId('histogram-x-axis').boundingBox())!;
     const cap = (await logs.rowCount.boundingBox())!;
     expect(axis.y + axis.height).toBeLessThanOrEqual(cap.y + 1);
   };
-  // 0 rows: an empty week before the fixture.
+  // 0 rows: an empty week before the fixture. The empty state replaces the chart and its
+  // caption (PARITY-FIELDS), so there is nothing left to overlap.
   await logs.open({ from: String(FIXTURE.from - 7 * 24 * H), to: String(FIXTURE.from - 1000) });
-  await logs.expectRowCount(0);
-  await assertClear();
+  await expect(page.getByText('No events in selected time range')).toBeVisible();
+  await expect(logs.rowCount).toHaveCount(0);
+  await expect(page.getByTestId('histogram-x-axis')).toHaveCount(0);
   // Detail panel open (narrower chart).
   await logs.open({ from: String(JAN5 + 8 * H), to: String(JAN5 + 12 * H) });
   await logs.expectRowCount(2161);

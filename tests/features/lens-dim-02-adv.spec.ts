@@ -28,7 +28,7 @@ async function nextLensSql(page: Page, action: () => Promise<unknown>): Promise<
 test('Filter by limits one metric to matching documents (KQL compiled, conditional aggregate)', async ({ page }) => {
   const viz = new VisualizePage(page);
   await viz.open({ lens: byService({ kind: 'metric', id: 'm0', op: 'count' }) });
-  await expect(viz.chart.getByText(String(FIXTURE.counts.payments), { exact: true })).toBeVisible();
+  await expect(viz.chart.getByText(FIXTURE.counts.payments.toLocaleString('en-US'), { exact: true })).toBeVisible();
 
   await viz.dimensions.getByRole('button', { name: 'Edit Count of records' }).click();
   await editor(page)
@@ -38,8 +38,8 @@ test('Filter by limits one metric to matching documents (KQL compiled, condition
   await box.fill('SeverityText : error');
   const sql = await nextLensSql(page, () => box.press('Enter'));
   expect(sql).toContain('countIf(');
-  await expect(viz.chart.getByText(String(FIXTURE.counts.errorsByService.payments), { exact: true })).toBeVisible();
-  await expect(viz.chart.getByText(String(FIXTURE.counts.errorsByService.checkout), { exact: true })).toBeVisible();
+  await expect(viz.chart.getByText(FIXTURE.counts.errorsByService.payments.toLocaleString('en-US'), { exact: true })).toBeVisible();
+  await expect(viz.chart.getByText(FIXTURE.counts.errorsByService.checkout.toLocaleString('en-US'), { exact: true })).toBeVisible();
   // Kept in the URL, so a reload shows the same chart.
   expect(new URL(page.url()).searchParams.get('lens')).toContain('"filter":"SeverityText : error"');
 });
@@ -63,7 +63,7 @@ test('Time shift: preset adds a shifted copy of the data, labelled "1d ago"', as
   await viz.open({ lens: byService({ kind: 'metric', id: 'm0', op: 'count' }) });
   // Let the initial (unshifted) query land first: it is sent after field discovery and would
   // otherwise be the "next" request captured below.
-  await expect(viz.chart.getByText(String(FIXTURE.counts.payments), { exact: true })).toBeVisible();
+  await expect(viz.chart.getByText(FIXTURE.counts.payments.toLocaleString('en-US'), { exact: true })).toBeVisible();
   await viz.dimensions.getByRole('button', { name: 'Edit Count of records' }).click();
   await editor(page)
     .getByRole('button', { name: /Advanced/ })
@@ -83,7 +83,7 @@ test('a tampered time shift in a shared link never reaches SQL', async ({ page }
   );
   expect(sql).not.toContain('OR 1=1');
   expect(sql).not.toContain('ARRAY JOIN');
-  await expect(viz.chart.getByText(String(FIXTURE.counts.payments), { exact: true })).toBeVisible();
+  await expect(viz.chart.getByText(FIXTURE.counts.payments.toLocaleString('en-US'), { exact: true })).toBeVisible();
 });
 
 test('Appearance: value format, colour and right axis on an XY chart', async ({ page }) => {

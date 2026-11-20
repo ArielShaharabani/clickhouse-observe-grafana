@@ -42,7 +42,7 @@ test('keyword × keyword → stacked bar; Table suggestion shows exact counts', 
   await expect(viz.group('Rows')).toContainText('Top 9 values of ServiceName');
   await expect(viz.group('Rows')).toContainText('Top 9 values of SeverityText');
   // payments × error in the fixture.
-  await expect(viz.chart.getByText(String(FIXTURE.counts.paymentsErrors), { exact: true })).toBeVisible();
+  await expect(viz.chart.getByText(FIXTURE.counts.paymentsErrors.toLocaleString('en-US'), { exact: true })).toBeVisible();
 });
 
 test('uses the shared query: a Discover search narrows the chart', async ({ page }) => {
@@ -50,7 +50,7 @@ test('uses the shared query: a Discover search narrows the chart', async ({ page
   await viz.open({ q: 'ServiceName:payments' });
   await viz.addField('ServiceName');
   await viz.suggestion('Table').click();
-  await expect(viz.chart.getByText(String(FIXTURE.counts.payments), { exact: true })).toBeVisible();
+  await expect(viz.chart.getByText(FIXTURE.counts.payments.toLocaleString('en-US'), { exact: true })).toBeVisible();
   await expect(viz.chart.getByText('checkout', { exact: true })).toHaveCount(0);
 });
 
