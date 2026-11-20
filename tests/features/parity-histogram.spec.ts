@@ -15,7 +15,11 @@ test.use({ timezoneId: 'UTC' });
 const H = 3_600_000;
 const JAN5 = Date.UTC(2026, 0, 5);
 const urlParams = (page: Page) => new URL(page.url()).searchParams;
-const histogramSvg = (page: Page) => page.locator('svg').filter({ has: page.locator('rect') }).first();
+const histogramSvg = (page: Page) =>
+  page
+    .locator('svg')
+    .filter({ has: page.locator('rect') })
+    .first();
 const caption = (page: Page) => page.getByText(/rows \(count\) .*\(interval: /);
 
 async function drag(page: Page, fromPct: number, toPct: number) {
@@ -117,7 +121,9 @@ test('7 days: auto 3-hour buckets, day ticks "1st … 7th" with the month, no co
   }
 });
 
-test('Minute on 7 days is scaled to 15 minutes with a visible notice; nothing in the picker is disabled', async ({ page }) => {
+test('Minute on 7 days is scaled to 15 minutes with a visible notice; nothing in the picker is disabled', async ({
+  page,
+}) => {
   const logs = new LogsPage(page);
   await logs.open({ interval: 'minute' });
   await logs.expectRowCount(FIXTURE.counts.total);
@@ -132,7 +138,9 @@ test('Minute on 7 days is scaled to 15 minutes with a visible notice; nothing in
   await logs.expectRowCount(FIXTURE.counts.total);
 });
 
-test('the axis date line never overlaps the row-count caption (detail panel open; no chart at 0 rows)', async ({ page }) => {
+test('the axis date line never overlaps the row-count caption (detail panel open; no chart at 0 rows)', async ({
+  page,
+}) => {
   const logs = new LogsPage(page);
   const assertClear = async () => {
     const axis = (await page.getByTestId('histogram-x-axis').boundingBox())!;
@@ -177,9 +185,14 @@ test('a malformed bd param is normalised or dropped from the URL', async ({ page
   await logs.expectRowCount(FIXTURE.counts.total);
   await expect(page.getByRole('button', { name: 'No breakdown' })).toBeVisible();
   await expect.poll(() => urlParams(page).get('bd')).toBeNull();
+  // Round 2 #17: and it says so instead of dropping it silently.
+  await expect(page.getByTestId('breakdown-notice')).toContainText('NoSuchField');
 
-  // Junk value: same.
+  // Junk value: same, with a notice that can be dismissed.
   await logs.open({ bd: 'whatever' });
   await logs.expectRowCount(FIXTURE.counts.total);
   await expect.poll(() => urlParams(page).get('bd')).toBeNull();
+  await expect(page.getByTestId('breakdown-notice')).toContainText('"whatever"');
+  await page.getByRole('button', { name: 'Dismiss breakdown notice' }).click();
+  await expect(page.getByTestId('breakdown-notice')).toHaveCount(0);
 });

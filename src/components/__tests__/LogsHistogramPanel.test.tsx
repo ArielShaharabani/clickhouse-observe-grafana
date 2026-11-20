@@ -11,7 +11,7 @@ const timeRange = {
   raw: { from: dateTime(Date.UTC(2026, 0, 1)), to: dateTime(Date.UTC(2026, 0, 8)) },
 };
 
-function panel(invalidQuery: boolean) {
+function panel(invalidQuery: boolean, extra: Record<string, unknown> = {}) {
   return (
     <LogsHistogramPanel
       hasTime
@@ -30,6 +30,7 @@ function panel(invalidQuery: boolean) {
       collapsed={false}
       onToggleCollapsed={jest.fn()}
       invalidQuery={invalidQuery}
+      {...extra}
     />
   );
 }
@@ -45,5 +46,15 @@ describe('LogsHistogramPanel with an invalid search', () => {
     render(panel(false));
     expect(screen.queryByTestId('histogram-invalid-query')).toBeNull();
     expect(screen.getByText(/1,246 rows \(count\)/)).toBeInTheDocument();
+  });
+});
+
+describe('LogsHistogramPanel breakdown notice (round 2 #17)', () => {
+  it('shows the notice and dismisses it', () => {
+    const onDismiss = jest.fn();
+    render(panel(false, { breakdownNotice: 'Breakdown "x" was not understood', onDismissBreakdownNotice: onDismiss }));
+    expect(screen.getByTestId('breakdown-notice')).toHaveTextContent('"x"');
+    screen.getByRole('button', { name: 'Dismiss breakdown notice' }).click();
+    expect(onDismiss).toHaveBeenCalled();
   });
 });

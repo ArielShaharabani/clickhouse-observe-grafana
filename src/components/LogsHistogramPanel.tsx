@@ -42,6 +42,9 @@ interface LogsHistogramPanelProps {
   /** The search does not parse: the bars and count belong to the previous search, so hide them
    *  (Kibana clears the chart too) instead of showing a stale answer under the error. */
   invalidQuery?: boolean;
+  /** Why a breakdown from the link was not applied (round 2 #17); shown until dismissed. */
+  breakdownNotice?: string;
+  onDismissBreakdownNotice?: () => void;
 }
 
 function colorModeFor(breakdown: BreakdownSel): HistogramColorMode {
@@ -78,6 +81,8 @@ export function LogsHistogramPanel({
   onAddFilter,
   collapsed,
   invalidQuery = false,
+  breakdownNotice,
+  onDismissBreakdownNotice,
   onToggleCollapsed,
   editVisualizationUrl,
 }: LogsHistogramPanelProps) {
@@ -111,6 +116,20 @@ export function LogsHistogramPanel({
           />
         )}
       </div>
+      {breakdownNotice && (
+        <div className={styles.breakdownNotice} role="status" data-testid="breakdown-notice">
+          <Icon name="exclamation-triangle" size="sm" />
+          <span>{breakdownNotice}</span>
+          {onDismissBreakdownNotice && (
+            <IconButton
+              name="times"
+              size="sm"
+              aria-label="Dismiss breakdown notice"
+              onClick={onDismissBreakdownNotice}
+            />
+          )}
+        </div>
+      )}
       {!collapsed && invalidQuery ? (
         <div className={styles.histogramEmpty} role="status" data-testid="histogram-invalid-query">
           No chart: the search has an error
@@ -176,6 +195,13 @@ const getStyles = (theme: GrafanaTheme2) => ({
     align-items: center;
     gap: ${theme.spacing(1)};
     padding-bottom: ${theme.spacing(1)};
+  `,
+  breakdownNotice: css`
+    display: flex;
+    align-items: center;
+    gap: ${theme.spacing(0.5)};
+    color: ${theme.colors.warning.text};
+    font-size: ${theme.typography.bodySmall.fontSize};
   `,
   scaledNotice: css`
     display: inline-flex;
