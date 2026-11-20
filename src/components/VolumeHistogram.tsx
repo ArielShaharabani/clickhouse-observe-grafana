@@ -8,6 +8,7 @@ import { FilterPill, VolumeDataPoint } from '../types';
 import { BucketActionsPopover, bucketEnd } from './BucketActionsPopover';
 import { brushRange, isPartialBucket } from './_histogramInterval';
 import { AxisTick, timeTicks } from './_histogramTicks';
+import { formatAxisNumber } from '../utils/axisNumber';
 import {
   SEVERITY_COLORS,
   SEVERITY_ORDER,
@@ -603,7 +604,7 @@ export function VolumeHistogram({
         <div className={styles.yAxis} style={{ height: svgHeight }} data-testid="histogram-y-axis">
           {[...yTicks].reverse().map((tick) => (
             <span key={tick} style={{ top: `${yForValue(tick)}px` }}>
-              {formatCompact(tick)}
+              {formatAxisNumber(tick)}
             </span>
           ))}
         </div>
