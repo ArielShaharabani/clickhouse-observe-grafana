@@ -14,7 +14,7 @@ export interface GridDisplay {
   bodyLines: BodyLines;
 }
 
-export const DEFAULT_GRID_DISPLAY: GridDisplay = { density: 'normal', bodyLines: 3 };
+export const DEFAULT_GRID_DISPLAY: GridDisplay = { density: 'normal', bodyLines: 1 };
 
 const STORAGE_KEY = 'clickhouse-observe.gridDisplay';
 const DENSITIES: GridDensity[] = ['compact', 'normal', 'expanded'];

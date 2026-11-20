@@ -4,7 +4,7 @@
  * column, explicit header-menu sort, ISO time in the JSON view, and the single-document permalink.
  */
 import { dateTime } from '@grafana/data';
-import { docNavTargets, pageOfIndex } from '../_docNav';
+import { docNavTargets, knownTotal, LOAD_MORE_CHUNK, pageOfIndex } from '../_docNav';
 import { logsQueryReducer } from '../_logsQueryReducer';
 import { discoverWithFilter } from '../SingleDocView';
 import { clampColumnWidth, defaultColumns, sanitizeColumns, stripColumnWidths } from '../../data/columns';
@@ -44,6 +44,27 @@ const timeRange = {
   to: dateTime(1767916800000),
   raw: { from: dateTime(1767225600000), to: dateTime(1767916800000) },
 };
+
+describe('R2-GRID total and load-more', () => {
+  it('labels the open document against the known total', () => {
+    expect(docNavTargets(0, 200, true, 1207).label).toBe('1 of 1,207');
+    expect(docNavTargets(0, 200, true).label).toBe('1 of 200');
+    // A total below the loaded rows is stale: fall back to the loaded count.
+    expect(docNavTargets(0, 200, true, 150).label).toBe('1 of 200');
+  });
+  it('knownTotal trusts the histogram count only when it is usable', () => {
+    const ok = { hasHistogram: true, rawSql: false, volLoading: false, histogramCount: 1207, loaded: 200 };
+    expect(knownTotal(ok)).toBe(1207);
+    expect(knownTotal({ ...ok, hasHistogram: false })).toBeUndefined();
+    expect(knownTotal({ ...ok, rawSql: true })).toBeUndefined();
+    expect(knownTotal({ ...ok, volLoading: true })).toBeUndefined();
+    expect(knownTotal({ ...ok, histogramCount: 0 })).toBeUndefined();
+    expect(knownTotal({ ...ok, histogramCount: 150 })).toBeUndefined();
+  });
+  it('load-more fetches a bigger chunk', () => {
+    expect(LOAD_MORE_CHUNK).toBe(200);
+  });
+});
 
 describe('document navigation across every loaded row', () => {
   it('pages past the grid page: 50 of 200 still has a next document', () => {

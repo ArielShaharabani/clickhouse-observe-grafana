@@ -73,7 +73,7 @@ export { defaultColumns } from '../data/columns';
 import { logsQueryReducer } from './_logsQueryReducer';
 import { discoveryReconcileTargets } from './_discoveryReconcile';
 import { DefaultTimeRangeContext, resolveDefaultTimeRange } from '../utils/defaultTimeRange';
-import { docNavTargets, pageOfIndex } from './_docNav';
+import { docNavTargets, knownTotal, LOAD_ALL_MAX, LOAD_MORE_CHUNK, pageOfIndex } from './_docNav';
 
 const INITIAL_FETCH = 200;
 const PAGE_SIZE_OPTIONS = [10, 25, 50, 100, 250, 500];
@@ -1395,6 +1395,15 @@ export function LogsExplorer({ tabId, tabStrip }: LogsExplorerProps = {}) {
     rememberSearchContext(new URLSearchParams(searchParamsKey));
   }, [searchParamsKey]);
 
+  // Matching documents, from the histogram's count (no extra query); unknown for raw SQL / no time field.
+  const totalDocs = knownTotal({
+    hasHistogram: caps.hasTime,
+    rawSql: queryState.useRawSql,
+    volLoading,
+    histogramCount: totalEvents,
+    loaded: rows.length,
+  });
+
   // Lazy-fetch rows beyond the initial buffer when the user pages past it.
   const ensureRows = useCallback(
     async (page: number, currentPageSize: number, currentRows: LogRow[], currentHasMore: boolean) => {
@@ -1410,7 +1419,8 @@ export function LogsExplorer({ tabId, tabStrip }: LogsExplorerProps = {}) {
       const runId = runRef.current;
       try {
         const stateWithCols: LogsQueryState = fetchState;
-        const chunkSize = needed - currentRows.length;
+        // Fetch at least LOAD_MORE_CHUNK rows so paging does not cost one round trip per page.
+        const chunkSize = Math.max(needed - currentRows.length, LOAD_MORE_CHUNK);
         // Load-more chunks are builder-mode only (raw-SQL is excluded above), so narrow the
         // same way the initial fetch in executeQuery does.
         const sql = buildLogsQuery(
@@ -1456,6 +1466,13 @@ export function LogsExplorer({ tabId, tabStrip }: LogsExplorerProps = {}) {
     },
     [ensureRows, pageSize, rows, hasMore]
   );
+
+  const onLoadAll = useCallback(() => {
+    if (totalDocs === undefined || pageSize <= 0) {
+      return;
+    }
+    void ensureRows(Math.ceil(totalDocs / pageSize) - 1, pageSize, rows, hasMore);
+  }, [totalDocs, pageSize, ensureRows, rows, hasMore]);
 
   const onPageSizeChange = useCallback((size: number) => {
     setPageSize(size);
@@ -1513,7 +1530,7 @@ export function LogsExplorer({ tabId, tabStrip }: LogsExplorerProps = {}) {
   // fetches the next chunk when stepping past the last loaded one (Kibana pages through the whole
   // sample). Reference-equality lookup: pageRows are slices of the same row objects.
   const selectedIndex = selectedRow ? rows.indexOf(selectedRow) : -1;
-  const docNav = docNavTargets(selectedIndex, rows.length, hasMore && !queryState.useRawSql);
+  const docNav = docNavTargets(selectedIndex, rows.length, hasMore && !queryState.useRawSql, totalDocs);
   const docNavBusy = useRef(false);
   const goToDoc = useCallback(
     async (index: number) => {
@@ -1856,6 +1873,12 @@ export function LogsExplorer({ tabId, tabStrip }: LogsExplorerProps = {}) {
                     pageSize={pageSize}
                     pageSizeOptions={PAGE_SIZE_OPTIONS}
                     totalLoaded={rows.length}
+                    total={totalDocs}
+                    onLoadAll={
+                      totalDocs !== undefined && totalDocs <= LOAD_ALL_MAX && hasMore && !queryState.useRawSql
+                        ? onLoadAll
+                        : undefined
+                    }
                     hasMore={hasMore}
                     fetchingMore={fetchingMore}
                     onPageChange={onPageChange}
