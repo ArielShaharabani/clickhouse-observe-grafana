@@ -17,6 +17,7 @@ import { FIELD_TYPE_ICONS } from '../components/FieldSidebar/fieldIcons';
 import { FIELD_DRAG_MIME } from '../constants';
 import { decodeLogsState, encodeLogsState } from '../data/urlState';
 import { runQueryRows } from '../data/runQuery';
+import { ResultCache } from './resultCache';
 import { buildFieldIndex } from '../sql/fields';
 import { buildWhereConditions } from '../sql/queryBuilder';
 import { filtersForViewSwitch, loadPinnedFilters, tableKey } from '../state/sharedSearch';
@@ -118,6 +119,9 @@ export function dimensionGroups(s: LensState): Group[] {
       ];
   }
 }
+
+/** Rows of recent identical queries (PERF-QUERIES #5). */
+const lensRowCache = new ResultCache<Awaited<ReturnType<typeof runQueryRows>>>();
 
 export function LensPage() {
   const styles = useStyles2(getStyles);
@@ -360,7 +364,9 @@ export function LensPage() {
     return q ? lensFields.filter((f) => f.label.toLowerCase().includes(q)) : lensFields;
   }, [lensFields, nameFilter]);
 
-  // Run the chart query.
+  // Run the chart query. `refreshNonce` bumps on an explicit Refresh and bypasses the row cache.
+  const [refreshNonce, setRefreshNonce] = useState(0);
+  const bypassRef = useRef(0);
   const [result, setResult] = useState<{
     key: string;
     /** `queryKey` without the chart type / sub-type: a type switch may keep showing this result. */
@@ -405,7 +411,20 @@ export function LensPage() {
       fieldIndexRef.current
     );
     const range = { from: timeRange.from.valueOf(), to: timeRange.to.valueOf() };
-    runQueryRows({ datasourceUid: config.datasourceUid, sql, timeRange, op: 'lens', signal: abort.signal }).then(
+    // A chart-type switch compiles the same SQL: reuse its rows (small LRU + TTL) unless Refresh was hit.
+    const cacheKey = ResultCache.key(config.datasourceUid, sql, range.from, range.to);
+    const bypass = bypassRef.current !== refreshNonce;
+    bypassRef.current = refreshNonce;
+    const cached = bypass ? undefined : lensRowCache.get(cacheKey);
+    const rowsPromise = cached
+      ? Promise.resolve(cached)
+      : runQueryRows({ datasourceUid: config.datasourceUid, sql, timeRange, op: 'lens', signal: abort.signal }).then(
+          (r) => {
+            lensRowCache.set(cacheKey, r);
+            return r;
+          }
+        );
+    rowsPromise.then(
       (rows) =>
         !cancelled &&
         setResult({
@@ -425,7 +444,7 @@ export function LensPage() {
     };
     // queryKey covers every input that changes the SQL.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [queryKey, fieldsLoading]);
+  }, [queryKey, fieldsLoading, refreshNonce]);
   const current = result?.key === queryKey ? result : null;
   // A chart-type switch re-runs the query; until the new rows arrive keep drawing the previous chart
   // (same dimensions, filters and time) instead of a blank spinner frame. It is not interactive.
@@ -702,6 +721,12 @@ export function LensPage() {
           defaultTitle={defaultPanelTitle(lens)}
           buildPanel={buildPanel}
           timeRange={timeRange}
+        />
+        <IconButton
+          name="sync"
+          aria-label="Refresh"
+          tooltip="Refresh (re-runs the query)"
+          onClick={() => setRefreshNonce((n) => n + 1)}
         />
         <TimeRangePicker
           value={timeRange}

@@ -35,7 +35,13 @@ import {
 import { buildFieldIndex, FieldIndex } from '../sql/fields';
 import { FieldModel } from '../sql/fieldModel';
 import { addFilterPill } from '../sql/filters';
-import { buildLogDetailQuery, buildSurroundingDocsQuery, ContextAnchor, MAX_CONTEXT_SIZE } from '../sql/queryBuilder';
+import {
+  buildLogDetailQuery,
+  buildSurroundingDocsQuery,
+  CONTEXT_WINDOWS_SEC,
+  ContextAnchor,
+  MAX_CONTEXT_SIZE,
+} from '../sql/queryBuilder';
 import { tableKey } from '../state/sharedSearch';
 import { errMsg } from '../errMsg';
 import { DEFAULT_LOGS_QUERY_STATE, FilterPill, LogRow, SelectedColumn, SourceConfig } from '../types';
@@ -92,18 +98,36 @@ function useContextSearch(
     if (!enabled) {
       return;
     }
-    const sql = buildSurroundingDocsQuery(config, anchor, { direction, size, columns, filters }, indexRef.current);
-    if (!sql) {
+    if (!buildSurroundingDocsQuery(config, anchor, { direction, size, columns, filters }, indexRef.current)) {
       return;
     }
     const abort = new AbortController();
-    runQueryRows({
-      datasourceUid: config.datasourceUid,
-      sql,
-      timeRange: timeRangeRef.current,
-      op: 'context',
-      signal: abort.signal,
-    }).then(
+    // Search a narrow window around the anchor first and widen only while too few rows came back
+    // (the anchor itself is a point lookup and needs no window).
+    const ladder = direction === 'anchor' ? [undefined] : CONTEXT_WINDOWS_SEC;
+    const run = async (): Promise<unknown[]> => {
+      let rows: unknown[] = [];
+      for (const windowSec of ladder) {
+        const sql = buildSurroundingDocsQuery(
+          config,
+          anchor,
+          { direction, size, columns, filters, windowSec },
+          indexRef.current
+        );
+        rows = await runQueryRows({
+          datasourceUid: config.datasourceUid,
+          sql,
+          timeRange: timeRangeRef.current,
+          op: 'context',
+          signal: abort.signal,
+        });
+        if (rows.length >= size || abort.signal.aborted) {
+          break;
+        }
+      }
+      return rows;
+    };
+    run().then(
       (rows) => setResult({ key, rows: rows as LogRow[] }),
       (e) => {
         if (!abort.signal.aborted) {

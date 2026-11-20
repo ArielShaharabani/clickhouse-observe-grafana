@@ -1035,7 +1035,16 @@ export interface SurroundingDocsOpts {
   /** Filters for the neighbours; disabled ones are skipped, the anchor ignores them. The search
    *  query never applies here (spec). */
   filters: FilterPill[];
+  /**
+   * Half-width in seconds of the time window searched on the far side of the anchor (PERF-QUERIES #6):
+   * bounds both the timestamp and the partition column so ClickHouse reads a few granules instead of
+   * every part. Omitted = unbounded (the last step of CONTEXT_WINDOWS_SEC). Positive integers only.
+   */
+  windowSec?: number;
 }
+
+/** Widening ladder for surrounding documents: retry with the next window while too few rows came back. */
+export const CONTEXT_WINDOWS_SEC: Array<number | undefined> = [60, 3600, 86400, 30 * 86400, undefined];
 
 /**
  * Surrounding documents (DISC-DOC-02): Kibana's two `search_after` searches around the anchor's
@@ -1073,6 +1082,15 @@ export function buildSurroundingDocsQuery(
     conditions.push(`${ts} ${cmp}= ${at}`, `(${ts}, ${idExpr}) ${cmp} (${at}, ${anchor.id})`);
     if (prune) {
       conditions.push(newer ? `${prune} >= ${at} - INTERVAL 1 SECOND` : `${prune} <= ${at} + INTERVAL 1 SECOND`);
+    }
+    const w = opts.windowSec;
+    if (typeof w === 'number' && Number.isInteger(w) && w > 0) {
+      conditions.push(newer ? `${ts} <= ${at} + INTERVAL ${w} SECOND` : `${ts} >= ${at} - INTERVAL ${w} SECOND`);
+      if (prune) {
+        conditions.push(
+          newer ? `${prune} <= ${at} + INTERVAL ${w + 1} SECOND` : `${prune} >= ${at} - INTERVAL ${w + 1} SECOND`
+        );
+      }
     }
     const dir = newer ? 'ASC' : 'DESC';
     order = `ORDER BY ${ts} ${dir}, ${idExpr} ${dir}`;

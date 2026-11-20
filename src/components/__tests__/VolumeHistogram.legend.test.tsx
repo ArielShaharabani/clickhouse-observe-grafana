@@ -55,13 +55,13 @@ describe('DISC-CHART-02 legend', () => {
   it('click isolates a series: the others show an eye-slash and the y-axis rescales', () => {
     renderChart();
     const yLabels = () => [screen.getByTestId('histogram-y-axis').textContent ?? ''];
-    expect(yLabels().join(' ')).toMatch(/1K|1000|1 K/);
+    expect(yLabels().join(' ')).toMatch(/1,000/);
     fireEvent.click(legendButton('auth'));
     expect(legendButton('auth')).toHaveAttribute('aria-pressed', 'true');
     expect(legendButton('payments')).toHaveAttribute('aria-pressed', 'false');
     expect(within(legend()).getAllByTestId('legend-hidden-icon')).toHaveLength(2);
     // Only auth (max 40) is left: the axis tops out well below 100.
-    expect(yLabels().join(' ')).not.toMatch(/1K|1000|1 K/);
+    expect(yLabels().join(' ')).not.toMatch(/1,000/);
     // Clicking the isolated series again shows everything.
     fireEvent.click(legendButton('auth'));
     expect(within(legend()).queryAllByTestId('legend-hidden-icon')).toHaveLength(0);

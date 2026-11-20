@@ -1,6 +1,7 @@
 import {
   buildContextAnchorLookupQuery,
   buildSurroundingDocsQuery,
+  CONTEXT_WINDOWS_SEC,
   contextIdExpr,
   CORE_ALIAS,
   isContextAnchor,
@@ -196,5 +197,32 @@ describe('buildContextAnchorLookupQuery', () => {
   it('returns no query for an unparseable timestamp or no timestamp column', () => {
     expect(buildContextAnchorLookupQuery(cfg, { ...row, [CORE_ALIAS.timestamp]: 'nope' })).toBe('');
     expect(buildContextAnchorLookupQuery({ ...cfg, columns: { ...cfg.columns, timestamp: '' } }, row)).toBe('');
+  });
+});
+
+describe('buildSurroundingDocsQuery windows (PERF-QUERIES #6)', () => {
+  const AT = 'fromUnixTimestamp64Nano(1767603630000000000)';
+  it('newer: bounds the far side of the timestamp and partition column', () => {
+    const sql = buildSurroundingDocsQuery(cfg, ANCHOR, opts({ direction: 'newer', windowSec: 60 }));
+    expect(sql).toContain(`Timestamp <= ${AT} + INTERVAL 60 SECOND`);
+    expect(sql).toContain(`TimestampTime <= ${AT} + INTERVAL 61 SECOND`);
+  });
+  it('older: bounds below', () => {
+    const sql = buildSurroundingDocsQuery(cfg, ANCHOR, opts({ direction: 'older', windowSec: 3600 }));
+    expect(sql).toContain(`Timestamp >= ${AT} - INTERVAL 3600 SECOND`);
+    expect(sql).toContain(`TimestampTime >= ${AT} - INTERVAL 3601 SECOND`);
+  });
+  it('no window = unbounded; invalid windows are ignored (never reach SQL)', () => {
+    for (const w of [undefined, 0, -5, 1.5, NaN]) {
+      const sql = buildSurroundingDocsQuery(cfg, ANCHOR, opts({ direction: 'newer', windowSec: w }));
+      expect(sql).not.toMatch(/INTERVAL \d+ SECOND/g.test(sql) && sql.includes('+ INTERVAL') ? /\+ INTERVAL/ : /^$/);
+    }
+  });
+  it('the anchor lookup ignores the window', () => {
+    expect(buildSurroundingDocsQuery(cfg, ANCHOR, opts({ direction: 'anchor', windowSec: 60 }))).not.toContain('60 SECOND');
+  });
+  it('the ladder widens and ends unbounded', () => {
+    expect(CONTEXT_WINDOWS_SEC[0]).toBe(60);
+    expect(CONTEXT_WINDOWS_SEC[CONTEXT_WINDOWS_SEC.length - 1]).toBeUndefined();
   });
 });
