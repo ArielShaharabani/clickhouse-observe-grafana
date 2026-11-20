@@ -6,8 +6,8 @@
  * from the query request's time range automatically.
  */
 
-import { isDateBound, isNumericBound } from './filters';
-import { BreakdownSel, FilterPill, FilterOp, LogsQueryState, SelectedColumn, SourceConfig } from '../types';
+import { isCondGroup, isDateBound, isNumericBound } from './filters';
+import { BreakdownSel, FilterCondGroup, FilterPill, FilterOp, LogsQueryState, SelectedColumn, SourceConfig } from '../types';
 import { resolveField, FieldIndex } from './fields';
 import { parseKql, kqlToSql } from './kql';
 import { configSettingsFragments, queryTimeoutFragments, withSettings } from './settings';
@@ -248,7 +248,25 @@ function filterOpToSql(op: FilterOp): string {
   }
 }
 
+/** Compiles a compound pill: each leaf through buildFilterClause (values / identifiers quoted
+ *  there), every item and group parenthesised so precedence never leaks. */
+function buildCondGroupClause(g: FilterCondGroup, config: SourceConfig, index?: FieldIndex): string {
+  const parts = g.items.map((it) =>
+    isCondGroup(it)
+      ? buildCondGroupClause(it, config, index)
+      : buildFilterClause({ id: '', field: it.field, op: it.op, value: it.value, values: it.values }, config, index)
+  );
+  if (parts.length === 0) {
+    return '1=1';
+  }
+  return parts.length === 1 ? parts[0] : `(${parts.map((c) => `(${c})`).join(g.join === 'or' ? ' OR ' : ' AND ')})`;
+}
+
 function buildFilterClause(filter: FilterPill, config: SourceConfig, index?: FieldIndex): string {
+  if (filter.cond) {
+    const clause = buildCondGroupClause(filter.cond, config, index);
+    return filter.negate ? `NOT (${clause})` : clause;
+  }
   const value = filter.value.trim();
   const resolved = resolveField(filter.field, config, index);
   const sqlExprRaw = resolved ? resolved.sqlExpr : filter.field;
