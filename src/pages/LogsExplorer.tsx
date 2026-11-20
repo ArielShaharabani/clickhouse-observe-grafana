@@ -1,28 +1,9 @@
-import React, {
-  useCallback,
-  useContext,
-  useEffect,
-  useLayoutEffect,
-  useMemo,
-  useReducer,
-  useRef,
-  useState,
-} from 'react';
+import React, { useCallback, useContext, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { css, cx } from '@emotion/css';
 import { AppEvents, dateTime, GrafanaTheme2, PageLayoutType, rangeUtil, TimeRange } from '@grafana/data';
 import { getAppEvents, locationService, PluginPage } from '@grafana/runtime';
 import { buildContextUrl, buildSingleDocUrl, resolveContextAnchor } from '../data/surrounding';
-import {
-  Button,
-  Icon,
-  LinkButton,
-  RadioButtonGroup,
-  Spinner,
-  useStyles2,
-  TimeRangePicker,
-  RefreshPicker,
-  useSplitter,
-} from '@grafana/ui';
+import { Button, Icon, LinkButton, RadioButtonGroup, Spinner, useStyles2, TimeRangePicker, RefreshPicker, useSplitter } from '@grafana/ui';
 import { GridDisplay, GridDisplayOptions, loadGridDisplay, saveGridDisplay } from '../components/GridDisplayOptions';
 import { useSearchParams } from 'react-router-dom';
 import { QueryProgress } from '../components/QueryProgress/QueryProgress';
@@ -49,13 +30,7 @@ import { runQueryRows } from '../data/runQuery';
 import { fetchNewestFirst, isNewestFirstSort, narrowTimeRange } from '../data/windowedSearch';
 import { startAction } from '../diag/tracer';
 import { SpanHandle } from '../diag/types';
-import {
-  buildLogsQuery,
-  buildLogDetailQuery,
-  buildVolumeQuery,
-  resolveVolumeBreakdown,
-  logRowKey,
-} from '../sql/queryBuilder';
+import { buildLogsQuery, buildLogDetailQuery, buildVolumeQuery, resolveVolumeBreakdown, logRowKey } from '../sql/queryBuilder';
 import { buildFieldIndex } from '../sql/fields';
 import { isConvertedTimestamp } from '../sql/timeExpr';
 import { addFilterPill, makeFilter, sanitizeFilterPills } from '../sql/filters';
@@ -122,6 +97,8 @@ function readDetailSplit(): number {
   return raw > 0.2 && raw < 0.8 ? raw : DEFAULT_DETAIL_SPLIT;
 }
 
+
+
 export interface LogsExplorerProps {
   /** Session tab (DISC-NAV-01): kept as `_tab` in every URL this page writes. */
   tabId?: string;
@@ -145,38 +122,40 @@ export function LogsExplorer({ tabId, tabStrip }: LogsExplorerProps = {}) {
   // to resync from.
   const [initialUrlState] = useState(() => decodeLogsState(searchParams));
 
-  const [queryState, dispatch] = useReducer(logsQueryReducer, DEFAULT_LOGS_QUERY_STATE, (init) => {
-    // Pinned filters (SHARED-STATE-01) follow the user into a page opened *without* filters in
-    // its URL; a link that carries filters is reproduced exactly as the sender saw it.
-    const urlFilters = initialUrlState.filters ?? init.filters;
-    const stored = loadPinnedFilters();
-    // The table of the view the page opens on — the URL's own view when it names one, which
-    // App.tsx may not have activated yet at this point.
-    const initialView = views.find((v) => v.id === initialUrlState.viewId) ?? config;
-    const initialTable = tableKey(initialView.database, initialView.logsTable);
-    const baseFilters = initialUrlState.filters
-      ? normalizePinnedFlags(urlFilters, stored)
-      : mergePinnedFilters(urlFilters, stored, initialTable);
-    // Inbound trace->logs link (?traceId=…, see data/traceToLogsLink.ts): seed a filter pill for
-    // it, appended after the URL's own `filters` so both survive. Only when this view actually
-    // has a trace column mapped — config is available here because App.tsx already resolved the
-    // right Data View (possibly via the trace picker modal) before LogsExplorer ever mounted.
-    const filters =
-      initialUrlState.traceId && config.columns.traceId
-        ? addFilterPill(baseFilters, makeFilter(config.columns.traceId, initialUrlState.traceId, '='))
-        : baseFilters;
-    return {
-      ...init,
-      ...(initialUrlState.search !== undefined ? { search: initialUrlState.search } : {}),
-      ...(initialUrlState.filters || filters !== urlFilters ? { filters } : {}),
-      // URL columns are untrusted (their sqlExpr / key would reach SQL): rebuild them.
-      ...(initialUrlState.columns ? { columns: sanitizeColumns(initialUrlState.columns, initialView) } : {}),
-      ...(initialUrlState.sort ? { sort: initialUrlState.sort } : {}),
-    };
-  });
-  const [timeRange, setTimeRange] = useState<TimeRange>(
-    () => initialUrlState.timeRange ?? resolveDefaultTimeRange(defaultTime)
+  const [queryState, dispatch] = useReducer(
+    logsQueryReducer,
+    DEFAULT_LOGS_QUERY_STATE,
+    (init) => {
+      // Pinned filters (SHARED-STATE-01) follow the user into a page opened *without* filters in
+      // its URL; a link that carries filters is reproduced exactly as the sender saw it.
+      const urlFilters = initialUrlState.filters ?? init.filters;
+      const stored = loadPinnedFilters();
+      // The table of the view the page opens on — the URL's own view when it names one, which
+      // App.tsx may not have activated yet at this point.
+      const initialView = views.find((v) => v.id === initialUrlState.viewId) ?? config;
+      const initialTable = tableKey(initialView.database, initialView.logsTable);
+      const baseFilters = initialUrlState.filters
+        ? normalizePinnedFlags(urlFilters, stored)
+        : mergePinnedFilters(urlFilters, stored, initialTable);
+      // Inbound trace->logs link (?traceId=…, see data/traceToLogsLink.ts): seed a filter pill for
+      // it, appended after the URL's own `filters` so both survive. Only when this view actually
+      // has a trace column mapped — config is available here because App.tsx already resolved the
+      // right Data View (possibly via the trace picker modal) before LogsExplorer ever mounted.
+      const filters =
+        initialUrlState.traceId && config.columns.traceId
+          ? addFilterPill(baseFilters, makeFilter(config.columns.traceId, initialUrlState.traceId, '='))
+          : baseFilters;
+      return {
+        ...init,
+        ...(initialUrlState.search !== undefined ? { search: initialUrlState.search } : {}),
+        ...(initialUrlState.filters || filters !== urlFilters ? { filters } : {}),
+        // URL columns are untrusted (their sqlExpr / key would reach SQL): rebuild them.
+        ...(initialUrlState.columns ? { columns: sanitizeColumns(initialUrlState.columns, initialView) } : {}),
+        ...(initialUrlState.sort ? { sort: initialUrlState.sort } : {}),
+      };
+    }
   );
+  const [timeRange, setTimeRange] = useState<TimeRange>(() => initialUrlState.timeRange ?? resolveDefaultTimeRange(defaultTime));
   const getTraceHref = useTraceExploreLink(config.datasourceUid, timeRange);
 
   // Discovered once here (not just via <FieldsProvider> in descendants) so executeQuery below can
@@ -279,9 +258,7 @@ export function LogsExplorer({ tabId, tabStrip }: LogsExplorerProps = {}) {
     () => initialUrlState.refresh ?? RefreshPicker.offOption.value ?? ''
   );
   const [breakdownChoice, setBreakdown] = useState<BreakdownSel | null>(() =>
-    initialUrlState.breakdown && initialUrlState.breakdown.kind !== 'field'
-      ? { kind: initialUrlState.breakdown.kind }
-      : null
+    initialUrlState.breakdown && initialUrlState.breakdown.kind !== 'field' ? { kind: initialUrlState.breakdown.kind } : null
   );
   // A field breakdown from the URL is stored by FieldModel id and can only be resolved once field
   // discovery finishes; until then it is kept here so the URL write below doesn't drop it.
@@ -297,18 +274,13 @@ export function LogsExplorer({ tabId, tabStrip }: LogsExplorerProps = {}) {
   // column field `col:ServiceName` and the URL is rewritten with the canonical id.
   const pendingBreakdownField = useMemo(
     () =>
-      pendingBreakdownFieldId && urlViewActive
-        ? resolveBreakdownField(pendingBreakdownFieldId, fieldsState.fields)
-        : undefined,
+      pendingBreakdownFieldId && urlViewActive ? resolveBreakdownField(pendingBreakdownFieldId, fieldsState.fields) : undefined,
     [pendingBreakdownFieldId, urlViewActive, fieldsState.fields]
   );
   // A URL breakdown field that discovery (finished, for this view's table) doesn't know is
   // dropped, so the URL stops claiming a breakdown the chart doesn't show.
   const discoverySettled =
-    urlViewActive &&
-    !fieldsState.loading &&
-    fieldsState.fields.length > 0 &&
-    fieldsState.fieldsFor === discoveryKey(config);
+    urlViewActive && !fieldsState.loading && fieldsState.fields.length > 0 && fieldsState.fieldsFor === discoveryKey(config);
   // Round 2 #17: a breakdown the link asked for but that can't be applied is said, not dropped
   // silently: an unknown field once discovery settles, or a `bd` value that doesn't parse.
   const [breakdownNotice, setBreakdownNotice] = useState<string | undefined>(() => {
@@ -328,7 +300,10 @@ export function LogsExplorer({ tabId, tabStrip }: LogsExplorerProps = {}) {
   // (it depends on breakdown) and retriggers the effect that calls it, in an infinite fetch loop.
   const breakdown: BreakdownSel = useMemo(
     () =>
-      breakdownChoice ?? (pendingBreakdownField ? { kind: 'field', field: pendingBreakdownField } : { kind: 'none' }),
+      breakdownChoice ??
+      (pendingBreakdownField
+        ? { kind: 'field', field: pendingBreakdownField }
+        : { kind: 'none' }),
     [breakdownChoice, pendingBreakdownField]
   );
 
@@ -388,6 +363,7 @@ export function LogsExplorer({ tabId, tabStrip }: LogsExplorerProps = {}) {
       didReconcileForDiscoveryRef.current = false;
     }
     prevViewId.current = viewId;
+     
   }, [activeView?.id, views]);
 
   // Sidebar collapse + resizable width, persisted across sessions
@@ -409,17 +385,13 @@ export function LogsExplorer({ tabId, tabStrip }: LogsExplorerProps = {}) {
     }
     wasOpenRef.current = isOpen;
   }, [selectedRow]);
-  const {
-    containerProps: bodySplitterProps,
-    primaryProps: sidebarPaneProps,
-    secondaryProps: resultsPaneProps,
-    splitterProps,
-  } = useSplitter({
-    direction: 'row',
-    initialSize: readSidebarSplit(),
-    dragPosition: 'middle',
-    onSizeChanged: (flexSize) => window.localStorage.setItem(SIDEBAR_SPLIT_KEY, String(flexSize)),
-  });
+  const { containerProps: bodySplitterProps, primaryProps: sidebarPaneProps, secondaryProps: resultsPaneProps, splitterProps } =
+    useSplitter({
+      direction: 'row',
+      initialSize: readSidebarSplit(),
+      dragPosition: 'middle',
+      onSizeChanged: (flexSize) => window.localStorage.setItem(SIDEBAR_SPLIT_KEY, String(flexSize)),
+    });
   // Table | inline log detail split (replaces the old overlay Drawer) — same persistence pattern.
   const {
     containerProps: detailSplitterProps,
@@ -532,15 +504,7 @@ export function LogsExplorer({ tabId, tabStrip }: LogsExplorerProps = {}) {
     () => ({ ...queryState, columns: queryColumns }),
     // Every field of LogsQueryState except `columns` (replaced by queryColumns).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [
-      queryState.search,
-      queryState.filters,
-      queryState.rawSql,
-      queryState.useRawSql,
-      queryState.limit,
-      queryState.sort,
-      queryColumns,
-    ]
+    [queryState.search, queryState.filters, queryState.rawSql, queryState.useRawSql, queryState.limit, queryState.sort, queryColumns]
   );
 
   // What describeGroupChange's diff last compared against — updated only when a NEW group action
@@ -671,20 +635,8 @@ export function LogsExplorer({ tabId, tabStrip }: LogsExplorerProps = {}) {
       setSearchParams(next, { replace: true });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [
-    queryState.search,
-    queryState.filters,
-    queryState.sort,
-    queryState.columns,
-    effectiveColumns,
-    timeRange,
-    activeView?.id,
-    intervalMode,
-    breakdownChoice,
-    pendingBreakdownFieldId,
-    pendingBreakdownField?.id,
-    refreshInterval,
-  ]);
+  }, [queryState.search, queryState.filters, queryState.sort, queryState.columns, effectiveColumns, timeRange, activeView?.id, intervalMode, breakdownChoice, pendingBreakdownFieldId, pendingBreakdownField?.id, refreshInterval]);
+
 
   const resolvedInterval = useMemo<ResolvedInterval>(
     () => resolveInterval(intervalMode, timeRange),
@@ -773,15 +725,8 @@ export function LogsExplorer({ tabId, tabStrip }: LogsExplorerProps = {}) {
       // full row per page instead (see hydratePage below). Raw-SQL mode is untouched: whatever
       // the user wrote runs as-is, and the drawer reads straight off those rows, same as before.
       const sql = fetchState.useRawSql
-        ? fetchState.rawSql ||
-          buildLogsQuery(config, stateWithCols, { limit: INITIAL_FETCH, offset: 0 }, undefined, fieldIndexRef.current)
-        : buildLogsQuery(
-            config,
-            stateWithCols,
-            { limit: INITIAL_FETCH, offset: 0 },
-            { projection: 'grid' },
-            fieldIndexRef.current
-          );
+        ? fetchState.rawSql || buildLogsQuery(config, stateWithCols, { limit: INITIAL_FETCH, offset: 0 }, undefined, fieldIndexRef.current)
+        : buildLogsQuery(config, stateWithCols, { limit: INITIAL_FETCH, offset: 0 }, { projection: 'grid' }, fieldIndexRef.current);
 
       // Newest-first sort on a builder query: search the most recent window first and widen only
       // until the page is full (same rows as the single query; see data/windowedSearch.ts).
@@ -854,15 +799,10 @@ export function LogsExplorer({ tabId, tabStrip }: LogsExplorerProps = {}) {
     setVolLoading(true);
     try {
       const resolved = resolveInterval(intervalMode, timeRange);
-      const volSql = buildVolumeQuery(
-        config,
-        queryState,
-        {
-          interval: { unit: resolved.unit, value: resolved.value },
-          breakdown: resolveVolumeBreakdown(breakdown, config),
-        },
-        fieldIndexRef.current
-      );
+      const volSql = buildVolumeQuery(config, queryState, {
+        interval: { unit: resolved.unit, value: resolved.value },
+        breakdown: resolveVolumeBreakdown(breakdown, config),
+      }, fieldIndexRef.current);
 
       lastVolSqlRef.current = volSql;
       const volRows = await runQueryRows({
@@ -982,17 +922,13 @@ export function LogsExplorer({ tabId, tabStrip }: LogsExplorerProps = {}) {
       // PERF-URLQ: compile what each query would be with the discovered index and re-run only
       // those whose SQL differs from what already ran (a config-column search compiles the same).
       const nextLogs = fetchState.useRawSql
-        ? fetchState.rawSql ||
-          buildLogsQuery(config, fetchState, { limit: INITIAL_FETCH, offset: 0 }, undefined, fieldIndex)
+        ? fetchState.rawSql || buildLogsQuery(config, fetchState, { limit: INITIAL_FETCH, offset: 0 }, undefined, fieldIndex)
         : buildLogsQuery(config, fetchState, { limit: INITIAL_FETCH, offset: 0 }, { projection: 'grid' }, fieldIndex);
       const resolved = resolveInterval(intervalMode, timeRange);
       const nextVolume = buildVolumeQuery(
         config,
         queryState,
-        {
-          interval: { unit: resolved.unit, value: resolved.value },
-          breakdown: resolveVolumeBreakdown(breakdown, config),
-        },
+        { interval: { unit: resolved.unit, value: resolved.value }, breakdown: resolveVolumeBreakdown(breakdown, config) },
         fieldIndex
       );
       const targets = discoveryReconcileTargets({
@@ -1107,7 +1043,7 @@ export function LogsExplorer({ tabId, tabStrip }: LogsExplorerProps = {}) {
           if (runRef.current === runId && !found) {
             setDetailError(
               "Couldn't load this row's full data — no timestamp column is mapped for this view, " +
-                'and the row was not present in the current page fetch.'
+              'and the row was not present in the current page fetch.'
             );
           }
           return;
@@ -1132,7 +1068,7 @@ export function LogsExplorer({ tabId, tabStrip }: LogsExplorerProps = {}) {
           if (runRef.current === runId && !found) {
             setDetailError(
               "This row wasn't found on the replica that answered. If this ClickHouse cluster has " +
-                'multiple replicas, enable "Sequential consistency" for this view in Configuration.'
+              'multiple replicas, enable "Sequential consistency" for this view in Configuration.'
             );
           }
           return;
@@ -1267,10 +1203,7 @@ export function LogsExplorer({ tabId, tabStrip }: LogsExplorerProps = {}) {
     setBreakdownNotice(undefined);
     setBreakdown(b);
   }, []);
-  const onSetFieldBreakdown = useCallback(
-    (field: FieldModel) => chooseBreakdown({ kind: 'field', field }),
-    [chooseBreakdown]
-  );
+  const onSetFieldBreakdown = useCallback((field: FieldModel) => chooseBreakdown({ kind: 'field', field }), [chooseBreakdown]);
 
   // Stable identity: memoized action rows (drawer, field list) don't rebuild on every render.
   const onAddFilter = useCallback((filter: FilterPill) => dispatch({ type: 'ADD_FILTER', pill: filter }), []);
@@ -1311,9 +1244,7 @@ export function LogsExplorer({ tabId, tabStrip }: LogsExplorerProps = {}) {
         if (!anchor || !activeView) {
           throw new Error('This document could not be found again.');
         }
-        locationService.push(
-          buildSingleDocUrl({ viewId: activeView.id, anchor, timeRange, ret: searchParams.toString() })
-        );
+        locationService.push(buildSingleDocUrl({ viewId: activeView.id, anchor, timeRange, ret: searchParams.toString() }));
       } catch (e) {
         getAppEvents().publish({
           type: AppEvents.alertError.name,
@@ -1348,8 +1279,7 @@ export function LogsExplorer({ tabId, tabStrip }: LogsExplorerProps = {}) {
     // The same field may already be shown under another id (a column restored from a link); a
     // core column showing it (Message = Body) is never toggled off from here.
     const existing =
-      effectiveColumns.find((c) => c.id === col.id) ??
-      effectiveColumns.find((c) => !c.isCore && c.sqlExpr === col.sqlExpr);
+      effectiveColumns.find((c) => c.id === col.id) ?? effectiveColumns.find((c) => !c.isCore && c.sqlExpr === col.sqlExpr);
     if (existing) {
       dispatch({ type: 'REMOVE_COLUMN', id: existing.id, columns: effectiveColumns });
     } else {
@@ -1400,10 +1330,7 @@ export function LogsExplorer({ tabId, tabStrip }: LogsExplorerProps = {}) {
     dispatch({ type: 'SET_SEARCH', value: query });
     if (filters) {
       const table = tableKey(config.database, config.logsTable);
-      dispatch({
-        type: 'SET_FILTERS',
-        filters: mergePinnedFilters(sanitizeFilterPills(filters), loadPinnedFilters(), table),
-      });
+      dispatch({ type: 'SET_FILTERS', filters: mergePinnedFilters(sanitizeFilterPills(filters), loadPinnedFilters(), table) });
     }
     if (tr) {
       setTimeRange(tr);
@@ -1608,8 +1535,7 @@ export function LogsExplorer({ tabId, tabStrip }: LogsExplorerProps = {}) {
       docNavBusy.current = true;
       try {
         const runIdAtStart = runRef.current;
-        const list =
-          index < rows.length ? rows : await ensureRows(pageOfIndex(index, pageSize), pageSize, rows, hasMore);
+        const list = index < rows.length ? rows : await ensureRows(pageOfIndex(index, pageSize), pageSize, rows, hasMore);
         if (runRef.current !== runIdAtStart || !list[index]) {
           return;
         }
@@ -1662,397 +1588,378 @@ export function LogsExplorer({ tabId, tabStrip }: LogsExplorerProps = {}) {
   return (
     <FieldsContext.Provider value={fieldsState}>
       <PluginPage layout={PageLayoutType.Custom} pageNav={{ text: 'Logs' }}>
-        <div ref={containerRef} className={styles.container} style={{ height: availableHeight }}>
-          {tabStrip}
-          {/* Row 1: view picker + add filter + search (left/center) + saved/dashboard/time/refresh
+      <div ref={containerRef} className={styles.container} style={{ height: availableHeight }}>
+        {tabStrip}
+        {/* Row 1: view picker + add filter + search (left/center) + saved/dashboard/time/refresh
             (right) — condensed onto one line (Kibana Discover style) so the table below gets the
             vertical space the search bar's own row used to take. SearchBar itself is the
             flex-growing element (replaces the old plain headerSpacer div) so it absorbs whatever
             width the fixed-size controls around it don't need. `.header`'s existing flex-wrap
             still applies on narrow viewports — DOM order means TimeRangePicker/RefreshPicker (the
             last items) wrap to a second line first, not SearchBar. */}
-          <div className={styles.header}>
-            <DataViewPicker />
-            <AddFilterPopover loadValues={logsLoadValues} onAddFilter={onAddFilter} />
-            {/* SearchBar's own root has width:100% (right for its old standalone row), which alone
+        <div className={styles.header}>
+          <DataViewPicker />
+          <AddFilterPopover loadValues={logsLoadValues} onAddFilter={onAddFilter} />
+          {/* SearchBar's own root has width:100% (right for its old standalone row), which alone
               wouldn't grow to fill the remaining space in this shared flex row — wrap it so it
               does, independent of SearchBar's internal styling. */}
-            <QueryMenu
-              query={queryState.search}
-              filters={queryState.filters}
-              timeRange={timeRange}
-              dataViewId={activeView?.id}
-              pinTable={tableKey(config.database, config.logsTable)}
-              onFiltersChange={(f) => dispatch({ type: 'SET_FILTERS', filters: f })}
-              onClearAll={() => {
-                dispatch({ type: 'SET_SEARCH', value: '' });
-                dispatch({ type: 'SET_FILTERS', filters: [] });
-              }}
-              onLoadQuery={onLoadQuery}
+          <QueryMenu
+            query={queryState.search}
+            filters={queryState.filters}
+            timeRange={timeRange}
+            dataViewId={activeView?.id}
+            pinTable={tableKey(config.database, config.logsTable)}
+            onFiltersChange={(f) => dispatch({ type: 'SET_FILTERS', filters: f })}
+            onClearAll={() => {
+              dispatch({ type: 'SET_SEARCH', value: '' });
+              dispatch({ type: 'SET_FILTERS', filters: [] });
+            }}
+            onLoadQuery={onLoadQuery}
+          />
+          <div className={styles.headerSearchWrap}>
+            <SearchBar
+              value={queryState.search}
+              onChange={(v) => dispatch({ type: 'SET_SEARCH', value: v })}
+              onSearch={() => {}}
+              onInvalidQuery={setInvalidQuery}
+              loadValues={logsLoadValues}
+              loadMapKeys={logsLoadMapKeys}
             />
-            <div className={styles.headerSearchWrap}>
-              <SearchBar
-                value={queryState.search}
-                onChange={(v) => dispatch({ type: 'SET_SEARCH', value: v })}
-                onSearch={() => {}}
-                onInvalidQuery={setInvalidQuery}
-                loadValues={logsLoadValues}
-                loadMapKeys={logsLoadMapKeys}
-              />
-            </div>
-            <LinkButton href={exploreInVisualizeUrl} size="sm" variant="secondary" fill="outline" icon="chart-line">
-              Explore in Visualize
-            </LinkButton>
-            {/* Grouped so they wrap together as one atomic unit when the row runs out of width —
+          </div>
+          <LinkButton href={exploreInVisualizeUrl} size="sm" variant="secondary" fill="outline" icon="chart-line">
+            Explore in Visualize
+          </LinkButton>
+          {/* Grouped so they wrap together as one atomic unit when the row runs out of width —
               without this, flex-wrap can strand RefreshPicker alone on its own line while
               TimeRangePicker (which fit) stays on line 1, separating a control from the time
               range it refreshes. */}
-            <div className={styles.headerTimeGroup}>
-              {caps.hasTime && <TimeShorthandInput range={timeRange} onApply={setTimeRange} />}
-              {caps.hasTime && (
-                <TimeRangePicker
-                  value={timeRange}
-                  onChange={(range) => setTimeRange(range)}
-                  onChangeTimeZone={() => {}}
-                  onChangeFiscalYearStartMonth={() => {}}
-                  onMoveBackward={() => setTimeRange(shiftTimeRange(timeRange, -1))}
-                  onMoveForward={() => setTimeRange(shiftTimeRange(timeRange, 1))}
-                  onZoom={() => setTimeRange(zoomOutTimeRange(timeRange))}
-                  timeZone="browser"
-                  fiscalYearStartMonth={0}
-                />
-              )}
-              <RefreshPicker
-                onRefresh={() => executeQuery('Refresh')}
-                onIntervalChanged={setRefreshInterval}
-                value={refreshInterval}
-                isLoading={loading}
-                tooltip="Refresh"
-                isOnCanvas
+          <div className={styles.headerTimeGroup}>
+            {caps.hasTime && <TimeShorthandInput range={timeRange} onApply={setTimeRange} />}
+            {caps.hasTime && (
+              <TimeRangePicker
+                value={timeRange}
+                onChange={(range) => setTimeRange(range)}
+                onChangeTimeZone={() => {}}
+                onChangeFiscalYearStartMonth={() => {}}
+                onMoveBackward={() => setTimeRange(shiftTimeRange(timeRange, -1))}
+                onMoveForward={() => setTimeRange(shiftTimeRange(timeRange, 1))}
+                onZoom={() => setTimeRange(zoomOutTimeRange(timeRange))}
+                timeZone="browser"
+                fiscalYearStartMonth={0}
               />
-            </div>
+            )}
+            <RefreshPicker
+              onRefresh={() => executeQuery('Refresh')}
+              onIntervalChanged={setRefreshInterval}
+              value={refreshInterval}
+              isLoading={loading}
+              tooltip="Refresh"
+              isOnCanvas
+            />
           </div>
+        </div>
 
-          <QueryProgress active={loading || volLoading} onCancel={cancelQueries} />
+        <QueryProgress active={loading || volLoading} onCancel={cancelQueries} />
 
-          {/* Filter pills */}
-          {queryState.filters.length > 0 && (
-            <div className={styles.pills}>
-              <FilterPills
-                filters={queryState.filters}
-                pinTable={tableKey(config.database, config.logsTable)}
-                onChange={(f) => dispatch({ type: 'SET_FILTERS', filters: f })}
-                loadValues={logsLoadValues}
-              />
-            </div>
-          )}
+        {/* Filter pills */}
+        {queryState.filters.length > 0 && (
+          <div className={styles.pills}>
+            <FilterPills
+              filters={queryState.filters}
+              pinTable={tableKey(config.database, config.logsTable)}
+              onChange={(f) => dispatch({ type: 'SET_FILTERS', filters: f })}
+              loadValues={logsLoadValues}
+            />
+          </div>
+        )}
 
-          {/* SQL preview / edit */}
-          <SqlInspectorBar
-            queryState={{ ...queryState, columns: effectiveColumns }}
-            timeRange={timeRange}
-            activeViewId={activeView?.id}
-            onLoadSaved={onLoadSaved}
-            canAddToDashboard={canAddToDashboard}
-            onOpenAddToDashboard={() => setAddToDashboardOpen(true)}
-            onToggleRawSql={onToggleRawSql}
-            showSqlInspect={showSqlInspect}
-            onToggleShowSqlInspect={() => setShowSqlInspect((v) => !v)}
-            rawSqlDraft={rawSqlDraft}
-            onRawSqlDraftChange={setRawSqlDraft}
-            onRunRawSql={runRawSql}
-            builderSql={builderSql}
-            onOpenDiagnostics={() => setShowDiagnostics(true)}
-            session={{
-              config,
-              queryState: { ...queryState, columns: effectiveColumns },
-              rawColumns: queryState.columns,
-              timeRange,
-              index: fieldIndex,
-              viewId: activeView?.id,
-              viewName: activeView?.name,
-            }}
-          />
-          {showDiagnostics && <DiagnosticsDrawer onClose={() => setShowDiagnostics(false)} />}
+        {/* SQL preview / edit */}
+        <SqlInspectorBar
+          queryState={{ ...queryState, columns: effectiveColumns }}
+          timeRange={timeRange}
+          activeViewId={activeView?.id}
+          onLoadSaved={onLoadSaved}
+          canAddToDashboard={canAddToDashboard}
+          onOpenAddToDashboard={() => setAddToDashboardOpen(true)}
+          onToggleRawSql={onToggleRawSql}
+          showSqlInspect={showSqlInspect}
+          onToggleShowSqlInspect={() => setShowSqlInspect((v) => !v)}
+          rawSqlDraft={rawSqlDraft}
+          onRawSqlDraftChange={setRawSqlDraft}
+          onRunRawSql={runRawSql}
+          builderSql={builderSql}
+          onOpenDiagnostics={() => setShowDiagnostics(true)}
+          session={{ config, queryState: { ...queryState, columns: effectiveColumns }, rawColumns: queryState.columns, timeRange, index: fieldIndex, viewId: activeView?.id, viewName: activeView?.name }}
+        />
+        {showDiagnostics && <DiagnosticsDrawer onClose={() => setShowDiagnostics(false)} />}
 
-          {/* Error banner */}
-          {error && (
-            <div className={styles.error}>
-              <strong>Query error:</strong> {error}
-            </div>
-          )}
+        {/* Error banner */}
+        {error && (
+          <div className={styles.error}>
+            <strong>Query error:</strong> {error}
+          </div>
+        )}
 
-          {/* Two-pane: sidebar + results. The histogram now lives inside the results pane (below)
+        {/* Two-pane: sidebar + results. The histogram now lives inside the results pane (below)
             instead of as a full-width row above it, so the sidebar spans the full height
             alongside it, rather than the sidebar only starting beneath the histogram. */}
-          <div
-            {...(sidebarCollapsed ? {} : bodySplitterProps)}
-            className={cx(styles.body, !sidebarCollapsed && bodySplitterProps.className)}
-          >
-            {sidebarCollapsed ? (
-              <div className={styles.sidebarRail}>
-                <button className={styles.railBtn} title="Show fields" onClick={() => setSidebarCollapsed(false)}>
-                  <Icon name="angle-double-right" size="sm" />
-                </button>
+        <div
+          {...(sidebarCollapsed ? {} : bodySplitterProps)}
+          className={cx(styles.body, !sidebarCollapsed && bodySplitterProps.className)}
+        >
+          {sidebarCollapsed ? (
+            <div className={styles.sidebarRail}>
+              <button
+                className={styles.railBtn}
+                title="Show fields"
+                onClick={() => setSidebarCollapsed(false)}
+              >
+                <Icon name="angle-double-right" size="sm" />
+              </button>
+            </div>
+          ) : (
+            <>
+              <div {...sidebarPaneProps} className={cx(sidebarPaneProps.className, styles.sidebarPane)}>
+                <FieldSidebar
+                  queryState={{ ...queryState, columns: effectiveColumns }}
+                  timeRange={timeRange}
+                  onToggleColumn={onToggleColumn}
+                  onAddFilter={onAddFilter}
+                  onCollapse={() => setSidebarCollapsed(true)}
+                  onSetBreakdown={onSetFieldBreakdown}
+                  onVisualize={onVisualizeField}
+                />
               </div>
-            ) : (
-              <>
-                <div {...sidebarPaneProps} className={cx(sidebarPaneProps.className, styles.sidebarPane)}>
-                  <FieldSidebar
-                    queryState={{ ...queryState, columns: effectiveColumns }}
-                    timeRange={timeRange}
-                    onToggleColumn={onToggleColumn}
-                    onAddFilter={onAddFilter}
-                    onCollapse={() => setSidebarCollapsed(true)}
-                    onSetBreakdown={onSetFieldBreakdown}
-                    onVisualize={onVisualizeField}
-                  />
-                </div>
-                <div {...splitterProps} className={cx(splitterProps.className, styles.splitterHandle)} />
-              </>
-            )}
+              <div {...splitterProps} className={cx(splitterProps.className, styles.splitterHandle)} />
+            </>
+          )}
 
-            <div
-              {...(sidebarCollapsed ? {} : resultsPaneProps)}
-              className={cx(sidebarCollapsed ? undefined : resultsPaneProps.className, styles.results)}
-            >
-              {/* Only overlay when we already have rows to show underneath (a refetch) —
+          <div {...(sidebarCollapsed ? {} : resultsPaneProps)} className={cx(sidebarCollapsed ? undefined : resultsPaneProps.className, styles.results)}>
+            {/* Only overlay when we already have rows to show underneath (a refetch) —
                 the initial-load case is handled by LogsTable's own loading state, so the
                 two never show at once. */}
-              {loading && rows.length > 0 && (
-                <div className={styles.loadingOverlay}>
-                  <div className={styles.loadingContent}>
-                    <Spinner size="xl" />
-                    <span className={styles.loadingText}>Running query…</span>
-                  </div>
+            {loading && rows.length > 0 && (
+              <div className={styles.loadingOverlay}>
+                <div className={styles.loadingContent}>
+                  <Spinner size="xl" />
+                  <span className={styles.loadingText}>Running query…</span>
                 </div>
-              )}
+              </div>
+            )}
+            <div
+              {...(selectedRow ? detailSplitterProps : {})}
+              className={cx(styles.tableDetailSplit, selectedRow && detailSplitterProps.className)}
+            >
               <div
-                {...(selectedRow ? detailSplitterProps : {})}
-                className={cx(styles.tableDetailSplit, selectedRow && detailSplitterProps.className)}
+                {...(selectedRow ? tablePaneProps : {})}
+                style={
+                  selectedRow && detailExpanded
+                    ? { ...tablePaneProps.style, flexGrow: 0, flexBasis: '12%' }
+                    : selectedRow
+                    ? tablePaneProps.style
+                    : undefined
+                }
+                className={cx(styles.tablePane, selectedRow && tablePaneProps.className)}
               >
-                <div
-                  {...(selectedRow ? tablePaneProps : {})}
-                  style={
-                    selectedRow && detailExpanded
-                      ? { ...tablePaneProps.style, flexGrow: 0, flexBasis: '12%' }
-                      : selectedRow
-                        ? tablePaneProps.style
-                        : undefined
-                  }
-                  className={cx(styles.tablePane, selectedRow && tablePaneProps.className)}
-                >
-                  {/* Histogram + toolbar live inside the table pane (not the results pane as a
+                {/* Histogram + toolbar live inside the table pane (not the results pane as a
                     whole) so they shrink along with the table when the detail panel opens,
                     instead of spanning the full width behind it. */}
-                  <LogsHistogramPanel
-                    hasTime={caps.hasTime}
-                    hasSeverity={caps.hasSeverity}
-                    intervalMode={intervalMode}
-                    onIntervalModeChange={setIntervalMode}
-                    timeRange={timeRange}
-                    breakdown={breakdown}
-                    onBreakdownChange={chooseBreakdown}
-                    volumeData={volumeData}
-                    volLoading={volLoading}
-                    totalEvents={totalEvents}
-                    resolvedInterval={resolvedInterval}
-                    onSelectRange={onHistogramSelectRange}
-                    breakdownTarget={histogramBreakdownTarget}
-                    editVisualizationUrl={editVisualizationUrl}
-                    onAddFilter={onAddFilter}
-                    collapsed={histogramCollapsed}
-                    onToggleCollapsed={() => setHistogramCollapsed((v) => !v)}
-                    invalidQuery={!!invalidQuery}
-                    breakdownNotice={breakdownNotice}
-                    onDismissBreakdownNotice={() => setBreakdownNotice(undefined)}
-                  />
-                  <div className={styles.tableToolbar}>
-                    <RadioButtonGroup<ResultsTab>
-                      size="sm"
-                      aria-label="Results view"
-                      options={RESULTS_TABS}
-                      value={resultsTab}
-                      onChange={(tab) => {
-                        setResultsTab(tab);
-                        if (tab !== 'documents') {
-                          setSelectedRow(null);
-                          setDetailExpanded(false);
-                        }
-                      }}
-                    />
-                    {resultsTab === 'documents' && compareSelection.size >= 2 && (
-                      <Button
-                        variant="secondary"
-                        size="sm"
-                        icon="columns"
-                        onClick={() => {
-                          // Compare needs every field, not just the currently displayed columns —
-                          // pageRows are the narrow grid projection. Hydrate the full rows for this
-                          // page the same way opening the detail panel does.
-                          hydratePage(currentPage);
-                          setCompareOpen(true);
-                        }}
-                      >
-                        Compare ({compareSelection.size})
-                      </Button>
-                    )}
-                    {resultsTab === 'documents' && <GridDisplayOptions value={gridDisplay} onChange={setGridDisplay} />}
-                    <div className={styles.headerSpacer} />
-                  </div>
-                  {resultsTab === 'fieldStats' && (
-                    <FieldStatsTab
-                      queryState={{ ...queryState, columns: effectiveColumns }}
-                      timeRange={timeRange}
-                      onAddFilter={onAddFilter}
-                      onVisualize={onVisualizeField}
-                    />
-                  )}
-                  {resultsTab === 'documents' && (
-                    <>
-                      <LogsTable
-                        rows={invalidQuery ? [] : pageRows}
-                        loading={loading && rows.length === 0 && !invalidQuery}
-                        emptyState={
-                          <NoResults
-                            error={invalidQuery ?? logsError}
-                            onSearchEntireRange={caps.hasTime ? searchEntireTimeRange : undefined}
-                            onRetry={invalidQuery ? undefined : () => latestExecuteQuery.current('Retry')}
-                          />
-                        }
-                        columns={effectiveColumns}
-                        sort={queryState.sort}
-                        onRowClick={(row) => {
-                          if (selectedRow === row) {
-                            setSelectedRow(null);
-                            setDetailExpanded(false);
-                          } else {
-                            setSelectedRow(row);
-                          }
-                        }}
-                        onSort={(col, dir) => dispatch({ type: 'SET_SORT', col, dir })}
-                        onResizeColumn={(id, width) =>
-                          dispatch({ type: 'SET_COLUMN_WIDTH', id, width, columns: effectiveColumns })
-                        }
-                        onRemoveColumn={(col) =>
-                          dispatch({ type: 'REMOVE_COLUMN', id: col.id, columns: effectiveColumns })
-                        }
-                        onMoveColumn={(id, direction) =>
-                          dispatch({ type: 'REORDER_COLUMN', id, direction, columns: effectiveColumns })
-                        }
-                        onMoveColumnTo={(id, targetId) =>
-                          dispatch({ type: 'MOVE_COLUMN_TO', id, targetId, columns: effectiveColumns })
-                        }
-                        selectedRow={selectedRow}
-                        display={gridDisplay}
-                        onPageStep={onPageStep}
-                        compareSelection={compareSelection}
-                        onToggleCompare={onToggleCompare}
-                        highlighterFor={highlighterFor}
-                        onAddFilter={onAddFilter}
-                        timeFilterable={!isConvertedTimestamp(config)}
-                        onDropField={onDropField}
-                      />
-                      {!invalidQuery && (
-                        <PaginationBar
-                          page={currentPage}
-                          pageSize={pageSize}
-                          pageSizeOptions={PAGE_SIZE_OPTIONS}
-                          totalLoaded={rows.length}
-                          hasMore={hasMore}
-                          fetchingMore={fetchingMore}
-                          onPageChange={onPageChange}
-                          onPageSizeChange={onPageSizeChange}
-                        />
-                      )}
-                    </>
-                  )}
-                </div>
-                {selectedRow && (
-                  <>
-                    <div {...detailHandleProps} className={cx(detailHandleProps.className, styles.splitterHandle)} />
-                    <div
-                      {...detailPaneProps}
-                      style={
-                        detailExpanded
-                          ? { ...detailPaneProps.style, flexGrow: 1, flexBasis: '88%' }
-                          : detailPaneProps.style
+                <LogsHistogramPanel
+                  hasTime={caps.hasTime}
+                  hasSeverity={caps.hasSeverity}
+                  intervalMode={intervalMode}
+                  onIntervalModeChange={setIntervalMode}
+                  timeRange={timeRange}
+                  breakdown={breakdown}
+                  onBreakdownChange={chooseBreakdown}
+                  volumeData={volumeData}
+                  volLoading={volLoading}
+                  totalEvents={totalEvents}
+                  resolvedInterval={resolvedInterval}
+                  onSelectRange={onHistogramSelectRange}
+                  breakdownTarget={histogramBreakdownTarget}
+                  editVisualizationUrl={editVisualizationUrl}
+                  onAddFilter={onAddFilter}
+                  collapsed={histogramCollapsed}
+                  onToggleCollapsed={() => setHistogramCollapsed((v) => !v)}
+                  invalidQuery={!!invalidQuery}
+                  breakdownNotice={breakdownNotice}
+                  onDismissBreakdownNotice={() => setBreakdownNotice(undefined)}
+                />
+                <div className={styles.tableToolbar}>
+                  <RadioButtonGroup<ResultsTab>
+                    size="sm"
+                    aria-label="Results view"
+                    options={RESULTS_TABS}
+                    value={resultsTab}
+                    onChange={(tab) => {
+                      setResultsTab(tab);
+                      if (tab !== 'documents') {
+                        setSelectedRow(null);
+                        setDetailExpanded(false);
                       }
-                      className={cx(detailPaneProps.className, styles.detailPane)}
+                    }}
+                  />
+                  {resultsTab === 'documents' && compareSelection.size >= 2 && (
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      icon="columns"
+                      onClick={() => {
+                        // Compare needs every field, not just the currently displayed columns —
+                        // pageRows are the narrow grid projection. Hydrate the full rows for this
+                        // page the same way opening the detail panel does.
+                        hydratePage(currentPage);
+                        setCompareOpen(true);
+                      }}
                     >
-                      <LogDetailDrawer
-                        row={selectedRow}
-                        detailRow={detailRow}
-                        detailLoading={detailLoading}
-                        fieldsLoading={fieldsState.loading}
-                        fieldsError={fieldsState.error}
-                        detailError={detailError}
-                        onRetryHydrate={() => {
-                          if (!selectedRow) {
-                            return;
-                          }
-                          const key = logRowKey(selectedRow, config);
-                          hydratedRowsRef.current.delete(key);
-                          hydratingRowKeysRef.current.delete(key);
-                          setDetailError(null);
-                          hydrateRow(selectedRow);
-                        }}
-                        config={config}
-                        fields={fieldsState.fields}
-                        columns={effectiveColumns}
-                        onClose={() => {
-                          setSelectedRow(null);
-                          setDetailExpanded(false);
-                        }}
-                        expanded={detailExpanded}
-                        onToggleExpanded={() => setDetailExpanded((v) => !v)}
-                        onAddFilter={onAddFilter}
-                        onToggleColumn={onToggleColumn}
-                        getTraceHref={config.columns.traceId ? getTraceHref : undefined}
-                        onPrev={docNav.prev !== null ? () => goToDoc(docNav.prev!) : undefined}
-                        onNext={docNav.next !== null ? () => goToDoc(docNav.next!) : undefined}
-                        onFirst={docNav.first !== null ? () => goToDoc(docNav.first!) : undefined}
-                        onLast={docNav.last !== null ? () => goToDoc(docNav.last!) : undefined}
-                        navLabel={docNav.label}
-                        onViewSurrounding={
-                          !queryState.useRawSql && config.columns.timestamp && selectedRow
-                            ? () => onViewSurrounding(selectedRow)
-                            : undefined
-                        }
-                        onViewSingleDocument={
-                          !queryState.useRawSql && config.columns.timestamp && selectedRow
-                            ? () => onViewSingleDocument(selectedRow)
-                            : undefined
-                        }
+                      Compare ({compareSelection.size})
+                    </Button>
+                  )}
+                  {resultsTab === 'documents' && <GridDisplayOptions value={gridDisplay} onChange={setGridDisplay} />}
+                  <div className={styles.headerSpacer} />
+                </div>
+                {resultsTab === 'fieldStats' && (
+                  <FieldStatsTab
+                    queryState={{ ...queryState, columns: effectiveColumns }}
+                    timeRange={timeRange}
+                    onAddFilter={onAddFilter}
+                    onVisualize={onVisualizeField}
+                  />
+                )}
+                {resultsTab === 'documents' && (
+                  <>
+                  <LogsTable
+                    rows={invalidQuery ? [] : pageRows}
+                    loading={loading && rows.length === 0 && !invalidQuery}
+                    emptyState={
+                      <NoResults
+                        error={invalidQuery ?? logsError}
+                        onSearchEntireRange={caps.hasTime ? searchEntireTimeRange : undefined}
+                        onRetry={invalidQuery ? undefined : () => latestExecuteQuery.current('Retry')}
                       />
-                    </div>
+                    }
+                    columns={effectiveColumns}
+                    sort={queryState.sort}
+                    onRowClick={(row) => {
+                      if (selectedRow === row) {
+                        setSelectedRow(null);
+                        setDetailExpanded(false);
+                      } else {
+                        setSelectedRow(row);
+                      }
+                    }}
+                    onSort={(col, dir) => dispatch({ type: 'SET_SORT', col, dir })}
+                    onResizeColumn={(id, width) => dispatch({ type: 'SET_COLUMN_WIDTH', id, width, columns: effectiveColumns })}
+                    onRemoveColumn={(col) => dispatch({ type: 'REMOVE_COLUMN', id: col.id, columns: effectiveColumns })}
+                    onMoveColumn={(id, direction) => dispatch({ type: 'REORDER_COLUMN', id, direction, columns: effectiveColumns })}
+                    onMoveColumnTo={(id, targetId) => dispatch({ type: 'MOVE_COLUMN_TO', id, targetId, columns: effectiveColumns })}
+                    selectedRow={selectedRow}
+                    display={gridDisplay}
+                    onPageStep={onPageStep}
+                    compareSelection={compareSelection}
+                    onToggleCompare={onToggleCompare}
+                    highlighterFor={highlighterFor}
+                    onAddFilter={onAddFilter}
+                    timeFilterable={!isConvertedTimestamp(config)}
+                    onDropField={onDropField}
+                  />
+                  {!invalidQuery && (
+                  <PaginationBar
+                    page={currentPage}
+                    pageSize={pageSize}
+                    pageSizeOptions={PAGE_SIZE_OPTIONS}
+                    totalLoaded={rows.length}
+                    hasMore={hasMore}
+                    fetchingMore={fetchingMore}
+                    onPageChange={onPageChange}
+                    onPageSizeChange={onPageSizeChange}
+                  />
+                  )}
                   </>
                 )}
               </div>
+              {selectedRow && (
+                <>
+                  <div {...detailHandleProps} className={cx(detailHandleProps.className, styles.splitterHandle)} />
+                  <div
+                    {...detailPaneProps}
+                    style={detailExpanded ? { ...detailPaneProps.style, flexGrow: 1, flexBasis: '88%' } : detailPaneProps.style}
+                    className={cx(detailPaneProps.className, styles.detailPane)}
+                  >
+                    <LogDetailDrawer
+                      row={selectedRow}
+                      detailRow={detailRow}
+                      detailLoading={detailLoading}
+                      fieldsLoading={fieldsState.loading}
+                      fieldsError={fieldsState.error}
+                      detailError={detailError}
+                      onRetryHydrate={() => {
+                        if (!selectedRow) {
+                          return;
+                        }
+                        const key = logRowKey(selectedRow, config);
+                        hydratedRowsRef.current.delete(key);
+                        hydratingRowKeysRef.current.delete(key);
+                        setDetailError(null);
+                        hydrateRow(selectedRow);
+                      }}
+                      config={config}
+                      fields={fieldsState.fields}
+                      columns={effectiveColumns}
+                      onClose={() => {
+                        setSelectedRow(null);
+                        setDetailExpanded(false);
+                      }}
+                      expanded={detailExpanded}
+                      onToggleExpanded={() => setDetailExpanded((v) => !v)}
+                      onAddFilter={onAddFilter}
+                      onToggleColumn={onToggleColumn}
+                      getTraceHref={config.columns.traceId ? getTraceHref : undefined}
+                      onPrev={docNav.prev !== null ? () => goToDoc(docNav.prev!) : undefined}
+                      onNext={docNav.next !== null ? () => goToDoc(docNav.next!) : undefined}
+                      onFirst={docNav.first !== null ? () => goToDoc(docNav.first!) : undefined}
+                      onLast={docNav.last !== null ? () => goToDoc(docNav.last!) : undefined}
+                      navLabel={docNav.label}
+                      onViewSurrounding={
+                        !queryState.useRawSql && config.columns.timestamp && selectedRow
+                          ? () => onViewSurrounding(selectedRow)
+                          : undefined
+                      }
+                      onViewSingleDocument={
+                        !queryState.useRawSql && config.columns.timestamp && selectedRow
+                          ? () => onViewSingleDocument(selectedRow)
+                          : undefined
+                      }
+                    />
+                  </div>
+                </>
+              )}
             </div>
           </div>
-
-          {compareOpen && compareSelection.size >= 2 && (
-            <CompareLogsModal
-              rows={[...compareSelection]
-                .sort((a, b) => a - b)
-                .map((i) => pageRows[i])
-                .map((row) => hydratedRows.get(logRowKey(row, config)) ?? row)}
-              config={config}
-              onDismiss={() => setCompareOpen(false)}
-            />
-          )}
-
-          <AddToDashboardModal
-            isOpen={addToDashboardOpen}
-            onDismiss={() => setAddToDashboardOpen(false)}
-            config={config}
-            queryState={{ ...queryState, columns: effectiveColumns }}
-            breakdown={breakdown}
-            caps={caps}
-            timeRange={timeRange}
-          />
         </div>
+
+        {compareOpen && compareSelection.size >= 2 && (
+          <CompareLogsModal
+            rows={[...compareSelection]
+              .sort((a, b) => a - b)
+              .map((i) => pageRows[i])
+              .map((row) => hydratedRows.get(logRowKey(row, config)) ?? row)}
+            config={config}
+            onDismiss={() => setCompareOpen(false)}
+          />
+        )}
+
+        <AddToDashboardModal
+          isOpen={addToDashboardOpen}
+          onDismiss={() => setAddToDashboardOpen(false)}
+          config={config}
+          queryState={{ ...queryState, columns: effectiveColumns }}
+          breakdown={breakdown}
+          caps={caps}
+          timeRange={timeRange}
+        />
+      </div>
       </PluginPage>
     </FieldsContext.Provider>
   );

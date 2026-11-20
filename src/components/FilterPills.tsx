@@ -111,126 +111,128 @@ export function FilterPills({ filters, onChange, loadValues, pinTable }: FilterP
   // members adjacent); anything else renders as before.
   const groupSize = (g: string | undefined) => (g ? filters.filter((x) => x.group === g).length : 0);
   const pillNodes = filters.map((f, idx) => {
-    const { notPrefix, fieldPart, rest } = pillText(f);
-    const negated = f.cond ? !!f.negate : NEGATED_OPS.has(f.op);
-    const grouped = groupSize(f.group) > 1;
-    const firstInGroup = grouped && filters[idx - 1]?.group !== f.group;
-    const lastOfGroup = f.group ? filters.map((x) => x.group).lastIndexOf(f.group) : idx;
-    return (
-      <React.Fragment key={f.id}>
-        {grouped && !firstInGroup && (
-          <span className={styles.groupOp} aria-hidden="true">
-            {f.groupOp === 'or' ? 'OR' : 'AND'}
-          </span>
-        )}
-        <span
-          data-group={grouped ? f.group : undefined}
-          data-group-op={grouped ? (f.groupOp === 'or' ? 'or' : 'and') : undefined}
-          className={cx(
-            styles.pill,
-            f.pinned && styles.pillPinned,
-            negated && styles.pillNegated,
-            f.disabled && styles.pillDisabled,
-            grouped && styles.pillGrouped
+        const { notPrefix, fieldPart, rest } = pillText(f);
+        const negated = f.cond ? !!f.negate : NEGATED_OPS.has(f.op);
+        const grouped = groupSize(f.group) > 1;
+        const firstInGroup = grouped && filters[idx - 1]?.group !== f.group;
+        const lastOfGroup = f.group ? filters.map((x) => x.group).lastIndexOf(f.group) : idx;
+        return (
+          <React.Fragment key={f.id}>
+          {grouped && !firstInGroup && (
+            <span className={styles.groupOp} aria-hidden="true">
+              {f.groupOp === 'or' ? 'OR' : 'AND'}
+            </span>
           )}
-          title={filterLabel(f)}
-        >
-          <button
-            ref={(el) => {
-              if (el) {
-                pillButtons.current.set(f.id, el);
-              } else {
-                pillButtons.current.delete(f.id);
-              }
-            }}
-            className={styles.pillBody}
-            aria-haspopup="menu"
-            aria-label={`Filter actions: ${filterLabel(f)}${f.pinned ? ' (pinned)' : ''}${f.disabled ? ' (disabled)' : ''}`}
-            onClick={(e) => setMenu({ id: f.id, rect: e.currentTarget.getBoundingClientRect() })}
+          <span
+            data-group={grouped ? f.group : undefined}
+            data-group-op={grouped ? (f.groupOp === 'or' ? 'or' : 'and') : undefined}
+            className={cx(
+              styles.pill,
+              f.pinned && styles.pillPinned,
+              negated && styles.pillNegated,
+              f.disabled && styles.pillDisabled,
+              grouped && styles.pillGrouped
+            )}
+            title={filterLabel(f)}
           >
-            {f.pinned && <Icon name="gf-pin" size="xs" className={styles.pinIcon} aria-label="Pinned" />}
-            {notPrefix && <span className={styles.notPart}>NOT </span>}
-            {fieldPart && <span className={negated ? undefined : styles.fieldPart}>{fieldPart}</span>}
-            {rest}
-          </button>
-          <button
-            className={styles.removeBtn}
-            onClick={() => onRemove(f.id)}
-            aria-label={`Remove filter ${filterLabel(f)}`}
-          >
-            <Icon name="times" size="xs" />
-          </button>
-
-          {menu?.id === f.id && (
-            <FilterPillMenu
-              anchorRect={menu.rect}
-              pill={f}
-              onClose={() => setMenu(null)}
-              returnFocus={() => pillButton(f.id)}
-              onEdit={() => {
-                setEditing(menu);
-                setMenu(null);
-              }}
-              onToggleNegate={() => {
-                replaceIfPinned(f, { ...f, ...negateFilter(f) });
-                onChange(updateFilter(filters, f.id, negateFilter(f)));
-                setMenu(null);
-              }}
-              onToggleDisabled={() => {
-                onChange(toggleDisabled(filters, f.id));
-                setMenu(null);
-              }}
-              onTogglePin={() => {
-                if (f.pinned) {
-                  unpinFilterInStore(f);
+            <button
+              ref={(el) => {
+                if (el) {
+                  pillButtons.current.set(f.id, el);
                 } else {
-                  pinFilterInStore(f, pinTable);
+                  pillButtons.current.delete(f.id);
                 }
-                onChange(updateFilter(filters, f.id, { pinned: !f.pinned }));
-                setMenu(null);
               }}
-              onDelete={() => {
-                onRemove(f.id);
-                setMenu(null);
-              }}
-              canGroupWithNext={lastOfGroup < filters.length - 1}
-              onGroupWithNext={() => {
-                onChange(groupWithNext(filters, f.id));
-                setMenu(null);
-              }}
-              groupOp={grouped ? (f.groupOp === 'or' ? 'or' : 'and') : undefined}
-              onToggleGroupOp={() => {
-                onChange(setGroupOp(filters, f.group!, f.groupOp === 'or' ? 'and' : 'or'));
-                setMenu(null);
-              }}
-              onRemoveFromGroup={() => {
-                onChange(removeFromGroup(filters, f.id));
-                setMenu(null);
-              }}
-            />
-          )}
+              className={styles.pillBody}
+              aria-haspopup="menu"
+              aria-label={`Filter actions: ${filterLabel(f)}${f.pinned ? ' (pinned)' : ''}${f.disabled ? ' (disabled)' : ''}`}
+              onClick={(e) => setMenu({ id: f.id, rect: e.currentTarget.getBoundingClientRect() })}
+            >
+              {f.pinned && <Icon name="gf-pin" size="xs" className={styles.pinIcon} aria-label="Pinned" />}
+              {notPrefix && <span className={styles.notPart}>NOT </span>}
+              {fieldPart && (
+                <span className={negated ? undefined : styles.fieldPart}>{fieldPart}</span>
+              )}
+              {rest}
+            </button>
+            <button
+              className={styles.removeBtn}
+              onClick={() => onRemove(f.id)}
+              aria-label={`Remove filter ${filterLabel(f)}`}
+            >
+              <Icon name="times" size="xs" />
+            </button>
 
-          {editing?.id === f.id && (
-            <FilterPillEditPopover
-              anchorRect={editing.rect}
-              pill={f}
-              loadValues={loadValues}
-              onCancel={() => setEditing(null)}
-              returnFocus={() => pillButton(f.id)}
-              onSubmit={(patched) => {
-                // An edit that leaves one condition saves a plain pill: the old condition tree
-                // (and its negate) must not survive the merge, or the old OR/AND keeps applying.
-                const next = editedPill(f, patched);
-                replaceIfPinned(f, next);
-                onChange(filters.map((x) => (x.id === f.id ? next : x)));
-                setEditing(null);
-              }}
-            />
-          )}
-        </span>
-      </React.Fragment>
-    );
-  });
+            {menu?.id === f.id && (
+              <FilterPillMenu
+                anchorRect={menu.rect}
+                pill={f}
+                onClose={() => setMenu(null)}
+                returnFocus={() => pillButton(f.id)}
+                onEdit={() => {
+                  setEditing(menu);
+                  setMenu(null);
+                }}
+                onToggleNegate={() => {
+                  replaceIfPinned(f, { ...f, ...negateFilter(f) });
+                  onChange(updateFilter(filters, f.id, negateFilter(f)));
+                  setMenu(null);
+                }}
+                onToggleDisabled={() => {
+                  onChange(toggleDisabled(filters, f.id));
+                  setMenu(null);
+                }}
+                onTogglePin={() => {
+                  if (f.pinned) {
+                    unpinFilterInStore(f);
+                  } else {
+                    pinFilterInStore(f, pinTable);
+                  }
+                  onChange(updateFilter(filters, f.id, { pinned: !f.pinned }));
+                  setMenu(null);
+                }}
+                onDelete={() => {
+                  onRemove(f.id);
+                  setMenu(null);
+                }}
+                canGroupWithNext={lastOfGroup < filters.length - 1}
+                onGroupWithNext={() => {
+                  onChange(groupWithNext(filters, f.id));
+                  setMenu(null);
+                }}
+                groupOp={grouped ? (f.groupOp === 'or' ? 'or' : 'and') : undefined}
+                onToggleGroupOp={() => {
+                  onChange(setGroupOp(filters, f.group!, f.groupOp === 'or' ? 'and' : 'or'));
+                  setMenu(null);
+                }}
+                onRemoveFromGroup={() => {
+                  onChange(removeFromGroup(filters, f.id));
+                  setMenu(null);
+                }}
+              />
+            )}
+
+            {editing?.id === f.id && (
+              <FilterPillEditPopover
+                anchorRect={editing.rect}
+                pill={f}
+                loadValues={loadValues}
+                onCancel={() => setEditing(null)}
+                returnFocus={() => pillButton(f.id)}
+                onSubmit={(patched) => {
+                  // An edit that leaves one condition saves a plain pill: the old condition tree
+                  // (and its negate) must not survive the merge, or the old OR/AND keeps applying.
+                  const next = editedPill(f, patched);
+                  replaceIfPinned(f, next);
+                  onChange(filters.map((x) => (x.id === f.id ? next : x)));
+                  setEditing(null);
+                }}
+              />
+            )}
+          </span>
+          </React.Fragment>
+        );
+      });
 
   return (
     <div className={styles.container} data-testid="filter-pills">
@@ -483,14 +485,7 @@ interface FilterPillEditPopoverProps {
 
 const EDIT_PANEL_W = 760;
 
-function FilterPillEditPopover({
-  anchorRect,
-  pill,
-  loadValues,
-  onCancel,
-  onSubmit,
-  returnFocus,
-}: FilterPillEditPopoverProps) {
+function FilterPillEditPopover({ anchorRect, pill, loadValues, onCancel, onSubmit, returnFocus }: FilterPillEditPopoverProps) {
   const styles = useStyles2(getStyles);
   const pos = {
     top: anchorRect.bottom + 6,
@@ -500,13 +495,7 @@ function FilterPillEditPopover({
   return (
     <Portal>
       <div className={styles.backdrop} onClick={onCancel} />
-      <FilterPanel
-        className={styles.editPanel}
-        pos={pos}
-        label="Edit filter"
-        onClose={onCancel}
-        returnFocus={returnFocus}
-      >
+      <FilterPanel className={styles.editPanel} pos={pos} label="Edit filter" onClose={onCancel} returnFocus={returnFocus}>
         <div className={styles.panelHeader}>
           <span className={styles.panelTitle}>Edit filter</span>
         </div>
@@ -555,9 +544,7 @@ const getStyles = (theme: GrafanaTheme2) => ({
     font-size: ${theme.typography.bodySmall.fontSize};
     color: ${theme.colors.text.primary};
     max-width: 320px;
-    &:hover {
-      background: ${theme.colors.action.hover};
-    }
+    &:hover { background: ${theme.colors.action.hover}; }
   `,
   pillNegated: css`
     color: ${theme.colors.error.text};
@@ -639,9 +626,7 @@ const getStyles = (theme: GrafanaTheme2) => ({
     text-align: left;
     color: ${theme.colors.text.primary};
     font-size: ${theme.typography.bodySmall.fontSize};
-    &:hover {
-      background: ${theme.colors.action.hover};
-    }
+    &:hover { background: ${theme.colors.action.hover}; }
   `,
   editPanel: css`
     position: fixed;

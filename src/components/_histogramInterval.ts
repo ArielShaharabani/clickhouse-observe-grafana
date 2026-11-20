@@ -12,22 +12,22 @@ const UNIT_SECONDS: Record<Exclude<IntervalMode, 'auto'>, number> = {
   millisecond: 0.001,
   second: 1,
   minute: 60,
-  hour: 3_600,
-  day: 86_400,
-  week: 604_800,
-  month: 2_592_000, // 30 days
-  year: 31_536_000, // 365 days
+  hour:   3_600,
+  day:    86_400,
+  week:   604_800,
+  month:  2_592_000,  // 30 days
+  year:   31_536_000, // 365 days
 };
 
 const UNIT_CH: Record<Exclude<IntervalMode, 'auto'>, CHIntervalUnit> = {
   millisecond: 'MILLISECOND',
   second: 'SECOND',
   minute: 'MINUTE',
-  hour: 'HOUR',
-  day: 'DAY',
-  week: 'WEEK',
-  month: 'MONTH',
-  year: 'YEAR',
+  hour:   'HOUR',
+  day:    'DAY',
+  week:   'WEEK',
+  month:  'MONTH',
+  year:   'YEAR',
 };
 
 export interface ResolvedInterval {
@@ -51,27 +51,8 @@ export const MAX_BUCKETS = 1000;
 /** Round bucket widths (seconds) for auto mode and for scaling a too-fine fixed interval. 3 h and
  *  12 h are here so a 7-day range auto-buckets at 3 h (~56 bars, as Kibana) rather than 6 h. */
 const AUTO_STEPS = [
-  10,
-  30,
-  60,
-  120,
-  300,
-  600,
-  900,
-  1800,
-  3600,
-  7200,
-  10_800,
-  21_600,
-  43_200,
-  DAY_SEC,
-  2 * DAY_SEC,
-  5 * DAY_SEC,
-  10 * DAY_SEC,
-  30 * DAY_SEC,
-  90 * DAY_SEC,
-  180 * DAY_SEC,
-  365 * DAY_SEC,
+  10, 30, 60, 120, 300, 600, 900, 1800, 3600, 7200, 10_800, 21_600, 43_200, DAY_SEC,
+  2 * DAY_SEC, 5 * DAY_SEC, 10 * DAY_SEC, 30 * DAY_SEC, 90 * DAY_SEC, 180 * DAY_SEC, 365 * DAY_SEC,
 ];
 
 /** Sub-second widths (ms) a too-fine Millisecond interval scales through before whole seconds. */
@@ -82,25 +63,13 @@ function formatDuration(sec: number): string {
     const ms = Math.round(sec * 1000);
     return `${ms} millisecond${ms !== 1 ? 's' : ''}`;
   }
-  if (sec < 60) {
-    return `${sec} second${sec !== 1 ? 's' : ''}`;
-  }
-  if (sec < 3_600) {
-    return `${sec / 60} minute${sec / 60 !== 1 ? 's' : ''}`;
-  }
-  if (sec < DAY_SEC) {
-    return `${sec / 3_600} hour${sec / 3_600 !== 1 ? 's' : ''}`;
-  }
+  if (sec < 60)    {return `${sec} second${sec !== 1 ? 's' : ''}`;}
+  if (sec < 3_600) {return `${sec / 60} minute${sec / 60 !== 1 ? 's' : ''}`;}
+  if (sec < DAY_SEC) {return `${sec / 3_600} hour${sec / 3_600 !== 1 ? 's' : ''}`;}
   const days = sec / DAY_SEC;
-  if (days % 365 === 0) {
-    return `${days / 365} year${days / 365 !== 1 ? 's' : ''}`;
-  }
-  if (days % 30 === 0 && days >= 30) {
-    return `${days / 30} month${days / 30 !== 1 ? 's' : ''}`;
-  }
-  if (days % 7 === 0 && days >= 7) {
-    return `${days / 7} week${days / 7 !== 1 ? 's' : ''}`;
-  }
+  if (days % 365 === 0) {return `${days / 365} year${days / 365 !== 1 ? 's' : ''}`;}
+  if (days % 30 === 0 && days >= 30) {return `${days / 30} month${days / 30 !== 1 ? 's' : ''}`;}
+  if (days % 7 === 0 && days >= 7) {return `${days / 7} week${days / 7 !== 1 ? 's' : ''}`;}
   return `${days} day${days !== 1 ? 's' : ''}`;
 }
 

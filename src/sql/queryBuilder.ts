@@ -166,7 +166,8 @@ export function quoteString(value: string): string {
  * — that's an inherent ambiguity of dot-notation paths, not something a quoting fix can resolve.
  */
 export function quoteDottedPath(root: string, path: string): string {
-  const quoteSegment = (seg: string) => (/^[A-Za-z_][A-Za-z0-9_]*$/.test(seg) ? seg : quoteIdentPart(seg));
+  const quoteSegment = (seg: string) =>
+    /^[A-Za-z_][A-Za-z0-9_]*$/.test(seg) ? seg : quoteIdentPart(seg);
   return [root, ...path.split('.')].map(quoteSegment).join('.');
 }
 
@@ -187,9 +188,9 @@ export function quoteDottedPath(root: string, path: string): string {
  */
 export function escapeLike(value: string): string {
   return value
-    .replace(/\\/g, '\\\\') // escape backslash first (must be first!)
-    .replace(/%/g, '\\%') // literal % → not an ILIKE wildcard
-    .replace(/_/g, '\\_'); // literal _ → not an ILIKE single-char wildcard
+    .replace(/\\/g, '\\\\')  // escape backslash first (must be first!)
+    .replace(/%/g, '\\%')    // literal % → not an ILIKE wildcard
+    .replace(/_/g, '\\_');   // literal _ → not an ILIKE single-char wildcard
 }
 
 export function tableRef(config: SourceConfig, table: string): string {
@@ -290,7 +291,9 @@ function buildFilterClause(filter: FilterPill, config: SourceConfig, index?: Fie
     }
     const col = quoteIdentifier(sqlExprRaw);
     const list = vals.map(quoteString).join(', ');
-    return filter.op === 'one_of' ? `${col} IN (${list})` : `${col} NOT IN (${list})`;
+    return filter.op === 'one_of'
+      ? `${col} IN (${list})`
+      : `${col} NOT IN (${list})`;
   }
 
   // Range ops — gte / lt / between / not_between.
@@ -313,7 +316,9 @@ function buildFilterClause(filter: FilterPill, config: SourceConfig, index?: Fie
     const col = quoteIdentifier(sqlExprRaw);
     const lhs = mapValue ? `toFloat64OrNull(toString(${col}))` : col;
     const lit = (v: string) => (mapValue ? `toFloat64OrNull(${quoteString(v)})` : quoteString(v));
-    const positive = isPair ? `${lhs} BETWEEN ${lit(bounds[0])} AND ${lit(bounds[1])}` : `${lhs} >= ${lit(bounds[0])}`;
+    const positive = isPair
+      ? `${lhs} BETWEEN ${lit(bounds[0])} AND ${lit(bounds[1])}`
+      : `${lhs} >= ${lit(bounds[0])}`;
     switch (filter.op) {
       case 'gte':
       case 'between':
@@ -485,18 +490,12 @@ export interface BuildLogsQueryOpts {
 function coreAliasToRawColumn(alias: string, config: SourceConfig): string | undefined {
   const c = config.columns;
   switch (alias) {
-    case CORE_ALIAS.timestamp:
-      return timeExpr(config);
-    case CORE_ALIAS.body:
-      return c.body;
-    case CORE_ALIAS.severity:
-      return c.severity;
-    case CORE_ALIAS.serviceName:
-      return c.serviceName;
-    case CORE_ALIAS.traceId:
-      return c.traceId;
-    default:
-      return undefined;
+    case CORE_ALIAS.timestamp: return timeExpr(config);
+    case CORE_ALIAS.body: return c.body;
+    case CORE_ALIAS.severity: return c.severity;
+    case CORE_ALIAS.serviceName: return c.serviceName;
+    case CORE_ALIAS.traceId: return c.traceId;
+    default: return undefined;
   }
 }
 
@@ -528,8 +527,7 @@ export function buildLogsQuery(
   // A converted time field (PLAN #16d) is not a real column, so a bare SELECT * row would only
   // carry the raw epoch / text value. Alias the converted value in every projection so grid and
   // hydrated rows share the same time value (logRowKey, detail panel, compare).
-  const convertedTime =
-    !isGrid && isConvertedTimestamp(config) ? [`${timeExpr(config)} AS ${CORE_ALIAS.timestamp}`] : [];
+  const convertedTime = !isGrid && isConvertedTimestamp(config) ? [`${timeExpr(config)} AS ${CORE_ALIAS.timestamp}`] : [];
   const selectParts = isGrid && gridSelect.length > 0 ? gridSelect : ['*', ...convertedTime, ...extraSelect];
   const conditions = buildWhereConditions(config, state, index);
 
@@ -550,8 +548,7 @@ export function buildLogsQuery(
   // Kibana breaks ties of any non-time sort by time, newest first: without it, rows sharing a
   // sort value come back in arbitrary (and page-to-page unstable) order.
   const timeTie = c.timestamp ? (isGrid ? CORE_ALIAS.timestamp : timeExpr(config)) : null;
-  const tieBreak =
-    sortCol && timeTie && sortCol !== timeTie && sortCol !== CORE_ALIAS.timestamp ? `, ${timeTie} DESC` : '';
+  const tieBreak = sortCol && timeTie && sortCol !== timeTie && sortCol !== CORE_ALIAS.timestamp ? `, ${timeTie} DESC` : '';
 
   return withSettings(
     [
@@ -559,7 +556,9 @@ export function buildLogsQuery(
       `FROM ${tbl}`,
       conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : null,
       sortCol ? `ORDER BY ${sortCol} ${sortDir}${tieBreak}` : null,
-      pagination ? `LIMIT ${pagination.limit} OFFSET ${pagination.offset}` : `LIMIT ${state.limit}`,
+      pagination
+        ? `LIMIT ${pagination.limit} OFFSET ${pagination.offset}`
+        : `LIMIT ${state.limit}`,
     ],
     // Previously had no execution guardrail at all — every other query builder in this file caps
     // max_execution_time, but the grid/full-row list query (the one query guaranteed to run on
@@ -634,11 +633,13 @@ function detailRowConditions(config: SourceConfig, row: Record<string, unknown>)
   }
   // timeExpr: a converted (epoch / text) time field compares as DateTime64 (PLAN #16d).
   const ts = timeExpr(config);
-  const conditions = [`${ts} >= fromUnixTimestamp64Milli(${tsMs})`, `${ts} < fromUnixTimestamp64Milli(${tsMs + 1})`];
-  const coarse =
-    config.columns.partitionTimestamp && config.columns.partitionTimestamp !== '-'
-      ? `${config.columns.partitionTimestamp} >= fromUnixTimestamp64Milli(${tsMs}) - INTERVAL 1 SECOND AND ${config.columns.partitionTimestamp} <= fromUnixTimestamp64Milli(${tsMs + 1}) + INTERVAL 1 SECOND`
-      : null;
+  const conditions = [
+    `${ts} >= fromUnixTimestamp64Milli(${tsMs})`,
+    `${ts} < fromUnixTimestamp64Milli(${tsMs + 1})`,
+  ];
+  const coarse = config.columns.partitionTimestamp && config.columns.partitionTimestamp !== '-'
+    ? `${config.columns.partitionTimestamp} >= fromUnixTimestamp64Milli(${tsMs}) - INTERVAL 1 SECOND AND ${config.columns.partitionTimestamp} <= fromUnixTimestamp64Milli(${tsMs + 1}) + INTERVAL 1 SECOND`
+    : null;
   if (coarse) {
     conditions.push(coarse);
   }
@@ -680,7 +681,11 @@ function detailRowConditions(config: SourceConfig, row: Record<string, unknown>)
  * — see this function's own history above for why that silently turned "not found yet" into
  * "not found," which is worse than a loud timeout.
  */
-export function buildLogDetailQuery(config: SourceConfig, row: Record<string, unknown>, index?: FieldIndex): string {
+export function buildLogDetailQuery(
+  config: SourceConfig,
+  row: Record<string, unknown>,
+  index?: FieldIndex
+): string {
   const conditions = detailRowConditions(config, row);
   if (!conditions) {
     return '';
@@ -692,7 +697,12 @@ export function buildLogDetailQuery(config: SourceConfig, row: Record<string, un
   void index;
 
   return withSettings(
-    [`SELECT *`, `FROM ${tbl}`, `WHERE ${conditions.join(' AND ')}`, `LIMIT 1`],
+    [
+      `SELECT *`,
+      `FROM ${tbl}`,
+      `WHERE ${conditions.join(' AND ')}`,
+      `LIMIT 1`,
+    ],
     [...detailQuerySettings(config), ...configSettingsFragments(config)]
   );
 }
@@ -760,15 +770,14 @@ export function buildVolumeQuery(
   // The datasource's $__timeInterval macro splits its argument on commas and counts parentheses,
   // so a converted time field (e.g. `toDateTime64(toInt64("ts"), 3)`) gets the explicit form —
   // same rule as Lens's dashboard export (compile.ts).
-  const bucketExpr =
-    'macro' in interval
-      ? /[(),]/.test(ts)
-        ? `toStartOfInterval(toDateTime(${ts}), INTERVAL $__interval_s second)`
-        : `$__timeInterval(${ts})`
-      : interval.unit === 'MILLISECOND'
-        ? // Sub-second buckets need DateTime64 (a DateTime column has whole seconds only).
-          `toStartOfInterval(toDateTime64(${ts}, 3), INTERVAL ${interval.value} MILLISECOND)`
-        : `toStartOfInterval(${ts}, INTERVAL ${interval.value} ${interval.unit})`;
+  const bucketExpr = 'macro' in interval
+    ? /[(),]/.test(ts)
+      ? `toStartOfInterval(toDateTime(${ts}), INTERVAL $__interval_s second)`
+      : `$__timeInterval(${ts})`
+    : interval.unit === 'MILLISECOND'
+      ? // Sub-second buckets need DateTime64 (a DateTime column has whole seconds only).
+        `toStartOfInterval(toDateTime64(${ts}, 3), INTERVAL ${interval.value} MILLISECOND)`
+      : `toStartOfInterval(${ts}, INTERVAL ${interval.value} ${interval.unit})`;
   const conditions = buildWhereConditions(config, state, index);
   const condSql = conditions.join(' AND ');
 
@@ -856,7 +865,11 @@ export interface FieldTopValuesOpts {
   sampleSize?: number;
 }
 
-export function buildFieldTopValuesQuery(config: SourceConfig, sqlExpr: string, opts: FieldTopValuesOpts): string {
+export function buildFieldTopValuesQuery(
+  config: SourceConfig,
+  sqlExpr: string,
+  opts: FieldTopValuesOpts
+): string {
   const { table, conditions, limit = 10, sampleSize = 500 } = opts;
   const tbl = tableRef(config, table);
   const tsCol = timeExpr(config);
