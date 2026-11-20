@@ -130,9 +130,9 @@ describe('compound pill SQL', () => {
         },
       })
     );
-    // the double quote inside the identifier is escaped, so it never closes the quoted name
-    expect(c).toContain('"a\\" OR 1=1 --"');
-    expect(c).toContain('"b\\" ; DROP TABLE t"');
+    // the double quote inside the identifier is doubled, so it never closes the quoted name
+    expect(c).toContain('"a"" OR 1=1 --"');
+    expect(c).toContain('"b"" ; DROP TABLE t"');
   });
 });
 
