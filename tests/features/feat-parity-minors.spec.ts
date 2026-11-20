@@ -1,6 +1,7 @@
 import { expect } from '@grafana/plugin-e2e';
 import { test } from '../fixtures';
 import { LogsPage } from '../pages/LogsPage';
+import { FIXTURE } from '../fixture';
 
 // PARITY-MINORS (docs/dev/pending/PARITY-MINORS.md): shared saved searches, Copy column.
 
@@ -52,9 +53,12 @@ test('saved search: tab title, ss URL param, folder, store-time checkbox, delete
   await page.goto(`/a/poortuna-clickhouse-observe-app/logs?ss=${ss}`);
   await expect(page.getByRole('tab', { name })).toBeVisible();
 
-  // Changing the query drops the id.
-  await page.getByPlaceholder(/search/i).first().fill('zzz-changed');
-  await page.keyboard.press('Enter');
+  // Changing the query drops the id (after the saved search has finished loading, or its load
+  // would replace the typed query).
+  await logs.expectRowCount(FIXTURE.counts.total);
+  await logs.searchInput.fill('zzz-changed');
+  await logs.searchInput.press('Enter');
+  await logs.expectRowCount(0);
   await expect.poll(() => new URL(page.url()).searchParams.has('ss')).toBe(false);
 
   // The delete button has an accessible name.
