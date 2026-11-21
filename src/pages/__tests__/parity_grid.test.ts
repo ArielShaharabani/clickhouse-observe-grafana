@@ -173,6 +173,13 @@ describe('single-document permalink', () => {
     expect(sp.get('from')).toBeTruthy();
     expect(parseAnchorParam(path.split('/').pop())).toEqual(ANCHOR);
   });
+  it('is short: the range travels inside ret only, and old links with both still decode', () => {
+    const ret = 'from=now-7d&to=now&q=a';
+    const url = buildSingleDocUrl({ viewId: 'v', anchor: ANCHOR, timeRange, ret });
+    const sp = new URLSearchParams(url.split('?')[1]);
+    expect(sp.get('ret')).toBe(ret);
+    expect(sp.has('from')).toBe(false);
+  });
   it('the lookup selects the whole row by the validated anchor only', () => {
     const sql = buildDocumentByAnchorQuery(cfg, ANCHOR);
     expect(sql).toContain('SELECT *');

@@ -10,7 +10,7 @@
  * VOLUME_QUERY_SETTINGS doc comment for the full writeup.
  */
 
-import { buildVolumeQuery } from '../queryBuilder';
+import { buildCountQuery, buildVolumeQuery } from '../queryBuilder';
 import { DEFAULT_QUERY_TIMEOUT_SECONDS } from '../settings';
 import { EMPTY_COLUMN_MAPPING, LogsQueryState, SourceConfig } from '../../types';
 
@@ -23,6 +23,24 @@ const config: SourceConfig = {
 };
 
 const state: LogsQueryState = { search: '', filters: [], rawSql: '', useRawSql: false, limit: 200, columns: [] };
+
+describe('buildCountQuery (no-time data views)', () => {
+  const noTime: SourceConfig = { ...config, columns: { ...EMPTY_COLUMN_MAPPING } };
+  it('is one count() with no bucketing or time condition', () => {
+    const sql = buildCountQuery(noTime, state);
+    expect(sql).toContain('SELECT count() AS count');
+    expect(sql).toContain('FROM');
+    expect(sql).not.toContain('GROUP BY');
+    expect(sql).not.toContain('$__fromTime');
+  });
+  it('carries the filters', () => {
+    const sql = buildCountQuery(noTime, {
+      ...state,
+      filters: [{ id: 'f', field: 'a', op: '=', value: 'x' }],
+    });
+    expect(sql).toContain("'x'");
+  });
+});
 
 describe('buildVolumeQuery millisecond buckets (round 2 #21)', () => {
   it('casts to DateTime64(3) so sub-second buckets exist', () => {

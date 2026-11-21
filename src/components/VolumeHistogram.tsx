@@ -866,7 +866,7 @@ export function VolumeHistogram({
             <div className={styles.tooltipHint}>Partial bucket: only part of it is in the time range</div>
           )}
           <div className={styles.tooltipTotal}>
-            Total: {formatCount(Object.values(hoveredBar.levels).reduce((a, b) => a + b, 0))}
+            Count of records {formatCount(Object.values(hoveredBar.levels).reduce((a, b) => a + b, 0))}
           </div>
           {colorMode !== 'single' &&
             visibleLevels

@@ -21,7 +21,7 @@
  */
 
 import { TimeRange } from '@grafana/data';
-import { buildMapKeysQuery, KeyDiscoveryOpts, MAP_KEYS_SAMPLE_SIZE } from './introspection';
+import { buildMapKeysQuery, KeyDiscoveryOpts } from './introspection';
 import { runQueryRows } from '../data/runQuery';
 import { coarseTimeBucket } from './timeBucket';
 import { quoteString } from './queryBuilder';
@@ -51,9 +51,9 @@ export interface LoadKeysOpts extends KeyDiscoveryOpts {
   timeRange: TimeRange;
   /** Caller-supplied hash of current filter state, so the cache key stays scoped per-page. */
   cacheKey: string;
-  /** Wider condition sets to retry with, in order, while the sample finds no keys and is not full
-   *  (the window simply had too few rows, e.g. a sparse key set). A full sample with no keys is an
-   *  empty column and is never retried. Skipped when absent. */
+  /** Wider condition sets: when the first window held no rows at all, the widest one is tried once
+   *  (a sparse key set). A window with rows but no keys is an empty column and is never retried.
+   *  Skipped when absent. */
   fallbackWindows?: string[][];
 }
 
@@ -100,11 +100,12 @@ export async function fetchMapKeys(config: SourceConfig, mapColumn: string, opts
   const rows = await runQueryRows({ datasourceUid: config.datasourceUid, sql, timeRange: opts.timeRange, op: 'mapKeys' });
   const keys: KeyEntry[] = rows.map((r) => ({ key: String(r['k'] ?? '') })).filter((k) => k.key.length > 0);
   const total = rows.length > 0 ? Number(rows[0]['total'] ?? 0) : 0;
-  const sampleSize = opts.sampleSize ?? MAP_KEYS_SAMPLE_SIZE;
-  if (keys.length === 0 && total < sampleSize && opts.fallbackWindows && opts.fallbackWindows.length > 0) {
-    // Nothing in a window that was not even full: widen (still time-bounded) so sparse keys aren't lost.
-    const [next, ...rest] = opts.fallbackWindows;
-    return fetchMapKeys(config, mapColumn, { ...opts, conditions: next, fallbackWindows: rest });
+  if (keys.length === 0 && total === 0 && opts.fallbackWindows && opts.fallbackWindows.length > 0) {
+    // The window held no rows at all: widen once, straight to the widest (still time-bounded)
+    // window, so sparse keys aren't lost. A window with rows but no keys is an empty column and
+    // is never re-sampled (it used to cost one extra sample query per empty Map column).
+    const widest = opts.fallbackWindows[opts.fallbackWindows.length - 1];
+    return fetchMapKeys(config, mapColumn, { ...opts, conditions: widest, fallbackWindows: [] });
   }
   return { keys, total };
 }

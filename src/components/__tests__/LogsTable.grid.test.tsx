@@ -30,6 +30,14 @@ function setup(extra: Partial<React.ComponentProps<typeof LogsTable>> = {}) {
   return { grid, key, focused, onAddFilter, onPageStep, onRowClick };
 }
 
+describe('no mapped columns (no-time data view)', () => {
+  it('shows a Summary column with every field instead of blank rows', () => {
+    render(<LogsTable rows={[{ a: 'one', b: 2, __hidden: 'x', c: '' }]} loading={false} columns={[]} onRowClick={jest.fn()} />);
+    expect(screen.getByText('Summary')).toBeTruthy();
+    expect(screen.getByText('a: one b: 2')).toBeTruthy();
+  });
+});
+
 describe('DISC-TABLE-01 keyboard navigation', () => {
   it('moves a cell focus with arrows, Home/End and Ctrl+Home/End', () => {
     const { key, focused } = setup();

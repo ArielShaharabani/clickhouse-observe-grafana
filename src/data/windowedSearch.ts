@@ -23,7 +23,8 @@ export interface WindowPlanOpts {
   firstMs?: number;
   /** Growth factor between steps. Default 6. */
   factor?: number;
-  /** Max number of queries including the final full-range fallback. Default 4. */
+  /** Max number of queries including the final full-range fallback. Default 3 (fewer round trips
+   *  for a selective search; the result is the same either way). */
   maxSteps?: number;
 }
 
@@ -34,7 +35,7 @@ export interface WindowPlanOpts {
  */
 export function planWindows(spanMs: number, opts: WindowPlanOpts = {}): number[] {
   const factor = Math.max(2, opts.factor ?? 6);
-  const maxSteps = Math.max(1, Math.floor(opts.maxSteps ?? 4));
+  const maxSteps = Math.max(1, Math.floor(opts.maxSteps ?? 3));
   let w = Math.max(1, opts.firstMs ?? HOUR);
   const out: number[] = [];
   while (out.length < maxSteps - 1 && w * 2 <= spanMs) {
