@@ -9,7 +9,7 @@ import { css, cx } from '@emotion/css';
 import { formattedValueToString, getValueFormat, GrafanaTheme2 } from '@grafana/data';
 import { useStyles2 } from '@grafana/ui';
 import { LensResult, uniqueMetricLabels } from '../compile';
-import { grafanaUnit } from '../metricOptions';
+import { formatOf, grafanaUnit } from '../metricOptions';
 import { LensState, MetricDim } from '../state';
 
 export const EMPTY_TILE = '–';
@@ -30,7 +30,7 @@ export function formatMetricValue(m: MetricDim | undefined, v: number | undefine
   if (v === undefined || v === null || !Number.isFinite(v)) {
     return EMPTY_TILE;
   }
-  const { unit, decimals } = grafanaUnit(m?.format);
+  const { unit, decimals } = grafanaUnit(formatOf(m));
   if (!unit) {
     return v.toLocaleString(undefined, { maximumFractionDigits: decimals ?? 2 });
   }

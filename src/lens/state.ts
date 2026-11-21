@@ -9,7 +9,17 @@
  */
 import { FieldType } from '../sql/fieldModel';
 import { formulaErrors, FormulaFields, formulaUsesWindow, formulaTimeSeriesFns, MAX_FORMULA_LEN } from './formula';
-import { BASE_OPS, BaseOp, clampWindow, CUMULATIVE_BASE_OPS, DEFAULT_WINDOW, isCalcOp, MetricRef } from './calc';
+import {
+  BASE_OPS,
+  BaseOp,
+  clampWindow,
+  cleanRankValue,
+  CUMULATIVE_BASE_OPS,
+  DEFAULT_WINDOW,
+  isCalcOp,
+  MetricRef,
+} from './calc';
+export { cleanRankValue, DEFAULT_RANK_VALUE, MAX_RANK_VALUE } from './calc';
 import { cleanStyle, LensStyle } from './style';
 import { cleanLayers, ExtraLayer, sanitizeLayers } from './layers';
 import { isIntervalValue } from './interval';
@@ -27,6 +37,7 @@ export type MetricOp =
   | 'max'
   | 'unique'
   | 'percentile'
+  | 'percentile_rank'
   | 'std_dev'
   | 'last_value'
   | 'cumulative_sum'
@@ -281,6 +292,8 @@ export interface MetricDim extends MetricOptions {
   numeric?: boolean;
   /** For `percentile`: 1–99 (default 95). */
   percentile?: number;
+  /** For `percentile_rank`: the value whose rank is computed (default 0, as Kibana). */
+  rankValue?: number;
   /**
    * For Cumulative sum / Differences / Moving average (LENS-CALC-01): the metric calculated on
    * (Counter rate keeps its field on the metric itself: it is always computed on the maximum).
@@ -560,6 +573,7 @@ const OP_NAMES: Record<MetricOp, string> = {
   max: 'Maximum',
   unique: 'Unique count',
   percentile: 'Percentile',
+  percentile_rank: 'Percentile rank',
   std_dev: 'Standard deviation',
   last_value: 'Last value',
   cumulative_sum: 'Cumulative sum',
@@ -635,7 +649,9 @@ function metricBaseLabel(d: MetricDim): string {
   const what = d.fieldLabel ?? d.field;
   return d.op === 'percentile'
     ? `${ordinal(clampPercentile(d.percentile))} percentile of ${what}`
-    : `${OP_NAMES[d.op]} of ${what}`;
+    : d.op === 'percentile_rank'
+      ? `Percentile rank (${cleanRankValue(d.rankValue)}) of ${what}`
+      : `${OP_NAMES[d.op]} of ${what}`;
 }
 
 /** Label of a calculation's inner metric ("Count of records", "Median of duration"). */
@@ -646,7 +662,9 @@ export function refLabel(r: MetricRef): string {
   const what = r.fieldLabel ?? r.field;
   return r.op === 'percentile'
     ? `${ordinal(clampPercentile(r.percentile))} percentile of ${what}`
-    : `${OP_NAMES[r.op]} of ${what}`;
+    : r.op === 'percentile_rank'
+      ? `Percentile rank (${cleanRankValue(r.rankValue)}) of ${what}`
+      : `${OP_NAMES[r.op]} of ${what}`;
 }
 
 /** The inner metric of a calculation as a metric of its own (same id and Filter by / time shift). */
@@ -660,6 +678,9 @@ export function refMetric(m: MetricDim): MetricDim {
   }
   if (r.op === 'percentile') {
     out.percentile = clampPercentile(r.percentile);
+  }
+  if (r.op === 'percentile_rank') {
+    out.rankValue = cleanRankValue(r.rankValue);
   }
   return out;
 }
@@ -755,6 +776,7 @@ const OPS: readonly MetricOp[] = [
   'max',
   'unique',
   'percentile',
+  'percentile_rank',
   'std_dev',
   'last_value',
   'cumulative_sum',
@@ -788,6 +810,9 @@ export function cleanRef(x: unknown, op: MetricOp): MetricRef | undefined {
   out.numeric = r.numeric === true;
   if (out.op === 'percentile') {
     out.percentile = clampPercentile(r.percentile);
+  }
+  if (out.op === 'percentile_rank') {
+    out.rankValue = cleanRankValue(r.rankValue);
   }
   return out;
 }
@@ -913,6 +938,9 @@ function cleanMetrics(raw: unknown): MetricDim[] {
       }
       if (m.op === 'percentile') {
         out.percentile = m.percentile;
+      }
+      if (m.op === 'percentile_rank') {
+        out.rankValue = cleanRankValue(m.rankValue);
       }
       return out;
     });

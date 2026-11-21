@@ -234,6 +234,20 @@ export function formatValue(v: number, f: ValueFormat | undefined, fallback: (v:
   }
 }
 
+/**
+ * The format a metric is shown with: its own, else the function's default — Percentile rank (and a
+ * calculation over one) is a share 0–1 shown as a percent, as Kibana's percentile rank column.
+ */
+export function formatOf(
+  m: { op?: string; format?: ValueFormat; ref?: { op?: string } } | undefined
+): ValueFormat | undefined {
+  if (!m) {
+    return undefined;
+  }
+  const rank = m.op === 'percentile_rank' || m.ref?.op === 'percentile_rank';
+  return m.format ?? (rank ? { id: 'percent', decimals: 2 } : undefined);
+}
+
 /** Grafana field config (`unit`, `decimals`) for a value format, for the panels Lens renders / exports. */
 export function grafanaUnit(f: ValueFormat | undefined): { unit?: string; decimals?: number } {
   if (!f) {

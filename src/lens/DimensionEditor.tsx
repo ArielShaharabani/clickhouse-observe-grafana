@@ -29,6 +29,7 @@ import {
   withRefField,
   withRefOp,
   withRefPercentile,
+  withRefRankValue,
   withWindow,
   withBucketField,
   withDateOptions,
@@ -59,9 +60,11 @@ import {
   BASE_OPS,
   BaseOp,
   clampWindow,
+  cleanRankValue,
   CUMULATIVE_BASE_OPS,
   FUNCTION_HELP,
   hasDateHistogram,
+  MAX_RANK_VALUE,
   MAX_WINDOW,
 } from './calc';
 import { uniqueMetricLabels } from './compile';
@@ -259,6 +262,19 @@ export function DimensionEditor({
                 max={99}
                 value={clampPercentile(dim.percentile)}
                 onCommit={(n) => onChange({ ...dim, percentile: clampPercentile(n) })}
+              />
+            </Field>
+          )}
+          {dim.op === 'percentile_rank' && (
+            <Field label="Percentile ranks value">
+              <NumberInput
+                key={`rank-${cleanRankValue(dim.rankValue)}`}
+                label="Percentile ranks value"
+                min={-MAX_RANK_VALUE}
+                max={MAX_RANK_VALUE}
+                decimals
+                value={cleanRankValue(dim.rankValue)}
+                onCommit={(n) => onChange({ ...dim, rankValue: cleanRankValue(n) })}
               />
             </Field>
           )}
@@ -493,6 +509,19 @@ function CalcOfEditor({
           />
         </Field>
       )}
+      {ref.op === 'percentile_rank' && (
+        <Field label="Percentile ranks value">
+          <NumberInput
+            key={`rrank-${cleanRankValue(ref.rankValue)}`}
+            label="Percentile ranks value"
+            min={-MAX_RANK_VALUE}
+            max={MAX_RANK_VALUE}
+            decimals
+            value={cleanRankValue(ref.rankValue)}
+            onCommit={(n) => onChange(withRefRankValue(dim, n))}
+          />
+        </Field>
+      )}
       {dim.op === 'moving_average' && (
         <Field
           label="Window size"
@@ -698,7 +727,7 @@ export function toFormula(dim: MetricDim, fields: LensField[]): MetricDim {
   let text: string;
   if (hasRef(dim.op)) {
     const r = dim.ref ?? { op: 'count' as const };
-    const inner = quickToFormula(r.op, labelOf(r.field, r.fieldLabel), r.percentile);
+    const inner = quickToFormula(r.op, labelOf(r.field, r.fieldLabel), r.percentile, r.rankValue);
     text =
       dim.op === 'moving_average'
         ? `moving_average(${inner}, window=${clampWindow(dim.window)})`
@@ -706,7 +735,7 @@ export function toFormula(dim: MetricDim, fields: LensField[]): MetricDim {
   } else if (dim.op === 'counter_rate') {
     text = `counter_rate(${quickToFormula('max', labelOf(dim.field, dim.fieldLabel))})`;
   } else {
-    text = quickToFormula(dim.op, labelOf(dim.field, dim.fieldLabel), dim.percentile);
+    text = quickToFormula(dim.op, labelOf(dim.field, dim.fieldLabel), dim.percentile, dim.rankValue);
   }
   const ok = formulaErrors(text, all).length === 0 ? text : 'count()';
   const out = formulaMetric(dim, ok, all);
@@ -733,12 +762,15 @@ function NumberInput({
   max,
   value,
   onCommit,
+  decimals = false,
 }: {
   label: string;
   min: number;
   max: number;
   value: number;
   onCommit: (n: number) => void;
+  /** Accept decimals (Percentile ranks value); otherwise the value is rounded to a whole number. */
+  decimals?: boolean;
 }) {
   // Remounted (key) when the committed value changes, so the draft starts from it.
   const [draft, setDraft] = useState(String(value));
@@ -748,7 +780,7 @@ function NumberInput({
       setDraft(String(value));
       return;
     }
-    const clamped = Math.min(max, Math.max(min, Math.round(n)));
+    const clamped = Math.min(max, Math.max(min, decimals ? n : Math.round(n)));
     setDraft(String(clamped));
     if (clamped !== value) {
       onCommit(clamped);
@@ -760,6 +792,7 @@ function NumberInput({
       type="number"
       min={min}
       max={max}
+      step={decimals ? 'any' : undefined}
       value={draft}
       onChange={(e) => setDraft(e.currentTarget.value)}
       onBlur={commit}
