@@ -32,7 +32,7 @@ function setup(extra: Partial<React.ComponentProps<typeof LogsTable>> = {}) {
 
 describe('no mapped columns (no-time data view)', () => {
   it('shows a Summary column with every field instead of blank rows', () => {
-    render(<LogsTable rows={[{ a: 'one', b: 2, __hidden: 'x', c: '' }]} loading={false} columns={[]} />);
+    render(<LogsTable rows={[{ a: 'one', b: 2, __hidden: 'x', c: '' }]} loading={false} columns={[]} onRowClick={jest.fn()} />);
     expect(screen.getByText('Summary')).toBeTruthy();
     expect(screen.getByText('a: one b: 2')).toBeTruthy();
   });
