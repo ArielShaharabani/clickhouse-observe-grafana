@@ -1,7 +1,7 @@
 /**
  * Config page: manage shared data views (admin-only).
  * Views are stored in jsonData.dataViews[] and visible to all users of this plugin.
- * Users can also create personal (per-browser) views from the Logs Explorer header.
+ * Users can also create personal (per-browser) views from the Discover header.
  */
 
 import React, { ChangeEvent, useMemo, useState } from 'react';
@@ -115,7 +115,7 @@ const AppConfig = ({ plugin }: AppConfigProps) => {
       {views.length === 0 && (
         <div className={styles.empty}>
           No data views configured. Click &ldquo;Add view&rdquo; to create one, or users can create
-          personal views from the Logs Explorer header.
+          personal views from the Discover header.
         </div>
       )}
 

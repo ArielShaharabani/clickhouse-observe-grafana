@@ -277,7 +277,7 @@ describe('Add to dashboard (Discover)', () => {
   it('warns on a duplicate dashboard title and explains a name conflict', async () => {
     jest.useFakeTimers();
     try {
-      api.findDashboardsByTitle.mockResolvedValue([{ uid: 'o', title: 'Logs Explorer export', url: '/d/o' }]);
+      api.findDashboardsByTitle.mockResolvedValue([{ uid: 'o', title: 'Discover export', url: '/d/o' }]);
       renderModal();
       await act(async () => {
         jest.advanceTimersByTime(400);
@@ -287,7 +287,7 @@ describe('Add to dashboard (Discover)', () => {
       await act(async () => {
         fireEvent.click(screen.getByRole('button', { name: 'Add to dashboard' }));
       });
-      expect(screen.getByText(/named "Logs Explorer export" already exists/)).toBeInTheDocument();
+      expect(screen.getByText(/named "Discover export" already exists/)).toBeInTheDocument();
       expect(mockPush).not.toHaveBeenCalled();
     } finally {
       jest.useRealTimers();

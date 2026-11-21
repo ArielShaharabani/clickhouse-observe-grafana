@@ -20,13 +20,13 @@
       "large": "img/logo.svg"
     },
     "screenshots": [],
-    "version": "0.68.0",
+    "version": "0.68.1",
     "updated": "%TODAY%"
   },
   "includes": [
     {
       "type": "page",
-      "name": "Logs",
+      "name": "Discover",
       "path": "/a/poortuna-clickhouse-observe-app/logs",
       "addToNav": true,
       "defaultNav": false,
