@@ -17,6 +17,9 @@ test('open from Discover with a query, edit it, the chart updates, Explore in Di
   await page.getByRole('link', { name: 'Explore in Visualize' }).click();
   const viz = new VisualizePage(page);
   await expect(bar(page)).toHaveValue('ServiceName:payments');
+  // Explore in Visualize opens a chart over time; start from top values of ServiceName instead.
+  await viz.open({ q: 'ServiceName:payments' });
+  await expect(bar(page)).toHaveValue('ServiceName:payments');
   await viz.addField('ServiceName');
   await expect(viz.chart.getByRole('button', { name: /^payments · Count of records: 9,264$/ })).toBeVisible();
 
