@@ -57,6 +57,8 @@ interface AddToDashboardModalProps {
   caps: ViewCapabilities;
   /** Discover's time range: a new dashboard opens on it. */
   timeRange: TimeRange;
+  /** Documents matching Discover's search now (undefined when unknown): stated on the capped table panel. */
+  totalDocs?: number;
 }
 
 const DEFAULT_DASHBOARD_TITLE = 'Discover export';
@@ -73,6 +75,7 @@ export function AddToDashboardModal({
   breakdown,
   caps,
   timeRange,
+  totalDocs,
 }: AddToDashboardModalProps) {
   const styles = useStyles2(getStyles);
   const ids = useId();
@@ -82,9 +85,9 @@ export function AddToDashboardModal({
   const [includeTable, setIncludeTable] = useState(true);
   const [includeHistogram, setIncludeHistogram] = useState(caps.hasTime);
   const [destination, setDestination] = useState<Destination>('new');
-  const [newTitle, setNewTitle] = useState(DEFAULT_DASHBOARD_TITLE);
-  const [tableTitle, setTableTitle] = useState(DEFAULT_TABLE_TITLE);
-  const [histogramTitle, setHistogramTitle] = useState(DEFAULT_HISTOGRAM_TITLE);
+  const [newTitle, setNewTitle] = useState('');
+  const [tableTitle, setTableTitle] = useState('');
+  const [histogramTitle, setHistogramTitle] = useState('');
   // Titles already used by other dashboards (case-insensitive), checked as the title is typed.
   const [duplicateOf, setDuplicateOf] = useState<string | null>(null);
   const [existingUid, setExistingUid] = useState<string | undefined>(undefined);
@@ -103,9 +106,9 @@ export function AddToDashboardModal({
       setIncludeTable(true);
       setIncludeHistogram(caps.hasTime);
       setDestination('new');
-      setNewTitle(DEFAULT_DASHBOARD_TITLE);
-      setTableTitle(DEFAULT_TABLE_TITLE);
-      setHistogramTitle(DEFAULT_HISTOGRAM_TITLE);
+      setNewTitle('');
+      setTableTitle('');
+      setHistogramTitle('');
       setDuplicateOf(null);
       setExistingUid(undefined);
       setDashboardOptions(null);
@@ -138,9 +141,12 @@ export function AddToDashboardModal({
     };
   }, [isOpen, destination, dashboardOptions]);
 
+  // Empty title fields show their default as a placeholder instead of a prefilled value (as Kibana).
+  const dashboardTitle = newTitle.trim() || DEFAULT_DASHBOARD_TITLE;
+
   // Duplicate-title warning for a new dashboard (Grafana refuses the same title in one folder).
   useEffect(() => {
-    const t = newTitle.trim();
+    const t = dashboardTitle;
     if (!isOpen || destination !== 'new' || !t) {
       return;
     }
@@ -155,16 +161,14 @@ export function AddToDashboardModal({
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [isOpen, destination, newTitle]);
-  const duplicate = destination === 'new' && duplicateOf !== null && duplicateOf === newTitle.trim();
+  }, [isOpen, destination, dashboardTitle]);
+  const duplicate = destination === 'new' && duplicateOf !== null && duplicateOf === dashboardTitle;
 
   const loadingDashboards = destination === 'existing' && dashboardOptions === null;
 
   const canSave =
     (includeTable || includeHistogram) &&
-    (!includeTable || Boolean(tableTitle.trim())) &&
-    (!includeHistogram || Boolean(histogramTitle.trim())) &&
-    (destination === 'new' ? Boolean(newTitle.trim()) : Boolean(existingUid)) &&
+    (destination === 'new' || Boolean(existingUid)) &&
     !saving;
 
   function buildPanels(): ExportedPanel[] {
@@ -179,7 +183,7 @@ export function AddToDashboardModal({
         buildTablePanel(
           config,
           queryState,
-          { id: id++, title: tableTitle, gridPos: { x: 0, y, w: 24, h: 12 }, source },
+          { id: id++, title: tableTitle, gridPos: { x: 0, y, w: 24, h: 12 }, source, totalDocs },
           fieldIndex
         )
       );
@@ -208,14 +212,14 @@ export function AddToDashboardModal({
       if (destination === 'new') {
         // Grafana can save the same title twice in the General folder (new dashboards go there), so
         // refuse it here, as the warning under the title announces.
-        const same = await findDashboardsByTitle(newTitle.trim()).catch(() => []);
+        const same = await findDashboardsByTitle(dashboardTitle).catch(() => []);
         if (same.some((h) => !h.folderTitle)) {
           throw Object.assign(new Error('name-exists'), { data: { status: 'name-exists' } });
         }
       }
       const result =
         destination === 'new'
-          ? await saveDashboard(buildNewDashboard(panels, newTitle.trim(), dashboardTime(timeRange)))
+          ? await saveDashboard(buildNewDashboard(panels, dashboardTitle, dashboardTime(timeRange)))
           : await (async () => {
               const existing = await getDashboard(existingUid as string);
               const merged = appendPanelsToDashboard(existing.dashboard, panels);
@@ -224,7 +228,7 @@ export function AddToDashboardModal({
       onDismiss();
       locationService.push(result.url);
     } catch (e) {
-      setError(dashboardSaveError(e, newTitle.trim()));
+      setError(dashboardSaveError(e, dashboardTitle));
     } finally {
       setSaving(false);
     }
@@ -250,6 +254,7 @@ export function AddToDashboardModal({
               className={styles.panelTitle}
               aria-label="Logs table panel title"
               value={tableTitle}
+              placeholder={DEFAULT_TABLE_TITLE}
               disabled={!includeTable}
               onChange={(e) => setTableTitle(e.currentTarget.value)}
             />
@@ -265,6 +270,7 @@ export function AddToDashboardModal({
                 className={styles.panelTitle}
                 aria-label="Volume histogram panel title"
                 value={histogramTitle}
+                placeholder={DEFAULT_HISTOGRAM_TITLE}
                 disabled={!includeHistogram}
                 onChange={(e) => setHistogramTitle(e.currentTarget.value)}
               />
@@ -287,13 +293,12 @@ export function AddToDashboardModal({
       {destination === 'new' ? (
         <Field
           label="Dashboard title"
-          required
           htmlFor={`${ids}-dtitle`}
           description="The new dashboard opens on Discover's current time range."
           invalid={duplicate}
           error={duplicate ? 'A dashboard with this title already exists. Choose another title or add to the existing dashboard.' : undefined}
         >
-          <Input id={`${ids}-dtitle`} value={newTitle} onChange={(e) => setNewTitle(e.currentTarget.value)} autoFocus />
+          <Input id={`${ids}-dtitle`} value={newTitle} placeholder={DEFAULT_DASHBOARD_TITLE} onChange={(e) => setNewTitle(e.currentTarget.value)} autoFocus />
         </Field>
       ) : (
         <Field label="Dashboard" required>

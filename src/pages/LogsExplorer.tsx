@@ -2049,6 +2049,7 @@ export function LogsExplorer({ tabId, tabStrip, onTitle }: LogsExplorerProps = {
           breakdown={breakdown}
           caps={caps}
           timeRange={timeRange}
+          totalDocs={totalDocs}
         />
       </div>
       </PluginPage>

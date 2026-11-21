@@ -46,7 +46,9 @@ export function validShortUrl(res: unknown, origin: string): string | undefined 
     if (!/^https?:$/.test(u.protocol) || !/^(\/[A-Za-z0-9_.-]+)*\/goto\/[A-Za-z0-9_-]+$/.test(u.pathname) || u.pathname.includes('..')) {
       return undefined;
     }
-    return `${origin}${u.pathname}${u.search}`;
+    // `?orgId=1` is dropped: the main org is what a link resolves in by default (other orgs keep theirs).
+    const query = u.searchParams.get('orgId') === '1' && [...u.searchParams.keys()].length === 1 ? '' : u.search;
+    return `${origin}${u.pathname}${query}`;
   } catch {
     return undefined;
   }
