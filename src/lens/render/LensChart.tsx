@@ -18,7 +18,10 @@ import {
 } from '@grafana/data';
 import { PanelRenderer } from '@grafana/runtime';
 import { LensResult } from '../compile';
-import { LensState } from '../state';
+import { dimLabelIn, LensState, MAX_GAUGES } from '../state';
+import { isPieLike } from '../suggest';
+import { gaugeSpec } from './gaugeSpec';
+import { HeatmapChart } from './HeatmapChart';
 import { seriesColorOf } from '../style';
 import { stableColors, SESSION_COLOR_SLOTS } from './seriesColors';
 import { XyChart, XySelection } from './XyChart';
@@ -49,6 +52,10 @@ function numberFields(result: LensResult) {
 /** Chart type + shaped rows → the Grafana panel that draws them, with the metrics' appearance. */
 export function panelSpec(state: LensState, result: LensResult): PanelSpec {
   const spec = basePanelSpec(state, result);
+  if (state.chartType === 'gauge') {
+    // Unit, decimals and colour are already in the gauge's field config (colour bands win).
+    return spec;
+  }
   const xy = state.chartType === 'line' || state.chartType === 'area' || state.chartType === 'bar';
   const fieldConfig = withMetricAppearance(spec.fieldConfig, state, xy) as PanelSpec['fieldConfig'];
   if (!xy) {
@@ -110,7 +117,13 @@ function basePanelSpec(state: LensState, result: LensResult): PanelSpec {
         options: { legend, stacking, xField: 'x', showValue: 'never', orientation: 'auto', xTickLabelRotation: 0 },
         fieldConfig: { defaults: { custom: { fillOpacity: 80, lineWidth: 0 } }, overrides: [] },
       };
+    case 'gauge':
+      return gaugeSpec(state, result);
+    case 'heatmap':
+      // Drawn by HeatmapChart in Visualize; as a table of colour-coded rows here (a fallback only).
+      return { ...basePanelSpec({ ...state, chartType: 'table' }, result) };
     case 'pie':
+    case 'donut':
       if (result.xs.length > 0 && result.xs[0] !== '' && result.series.length === 1) {
         return pieSpec(state, result);
       }
@@ -121,14 +134,14 @@ function basePanelSpec(state: LensState, result: LensResult): PanelSpec {
         ? [{ name: 'category', type: FieldType.string, values: result.xLabels }, ...numberFields(result)]
         : numberFields(result);
       return {
-        pluginId: state.chartType === 'pie' ? 'piechart' : 'stat',
+        pluginId: isPieLike(state.chartType) ? 'piechart' : 'stat',
         frames: [createDataFrame({ fields })],
         options:
-          state.chartType === 'pie'
+          isPieLike(state.chartType)
             ? {
                 legend: { ...legend, placement: 'right', values: ['value', 'percent'] },
                 reduceOptions: { values: true, calcs: [], fields: '' },
-                pieType: 'pie',
+                pieType: state.chartType === 'donut' ? 'donut' : 'pie',
               }
             : {
                 reduceOptions: { values: byCategory, calcs: ['lastNotNull'], fields: '' },
@@ -205,7 +218,7 @@ function pieSpec(state: LensState, result: LensResult): PanelSpec {
     options: {
       legend: { ...legend, placement: 'right', values: ['value', 'percent'] },
       reduceOptions: { values: false, calcs: ['lastNotNull'], fields: '' },
-      pieType: 'pie',
+      pieType: state.chartType === 'donut' ? 'donut' : 'pie',
       displayLabels: pieDisplayLabels(fields.map((f) => f.values[0])),
       tooltip: { mode: 'single', sort: 'none' },
     },
@@ -263,6 +276,20 @@ export function LensChart({
       </div>
     );
   }
+  if (state.chartType === 'heatmap') {
+    const y = state.buckets[1];
+    return (
+      <div className={styles.box} data-testid="lens-chart" data-chart-type="heatmap" data-panel="heatmap">
+        <HeatmapChart
+          result={result}
+          metric={state.metrics[0]}
+          yTitle={y ? dimLabelIn(y, state.metrics) : ''}
+          bucketMs={bucketMs}
+          onSelect={onSelect}
+        />
+      </div>
+    );
+  }
   if (state.chartType === 'metric') {
     // Tiles drawn here: secondary metric, maximum-value progress bar (LENS-CHART-01).
     return (
@@ -290,6 +317,7 @@ function PanelChart({ state, result, timeRange }: { state: LensState; result: Le
     return () => ro.disconnect();
   }, []);
   const spec = panelSpec(state, result);
+  const hidden = state.chartType === 'gauge' ? Math.max(0, result.xs.length - MAX_GAUGES) : 0;
   const data: PanelData = {
     state: LoadingState.Done,
     series: spec.frames,
@@ -303,6 +331,11 @@ function PanelChart({ state, result, timeRange }: { state: LensState; result: Le
       data-chart-type={state.chartType}
       data-panel={spec.pluginId}
     >
+      {hidden > 0 && (
+        <div className={styles.note} data-testid="lens-gauge-note">
+          Showing the first {MAX_GAUGES} values ({hidden} more not shown)
+        </div>
+      )}
       {size.width > 0 && size.height > 0 && (
         <PanelRenderer
           title=""
@@ -320,6 +353,14 @@ function PanelChart({ state, result, timeRange }: { state: LensState; result: Le
 }
 
 const styles = {
+  note: css`
+    position: absolute;
+    right: 4px;
+    bottom: 0;
+    z-index: 1;
+    font-size: 12px;
+    opacity: 0.7;
+  `,
   box: css`
     position: relative;
     width: 100%;

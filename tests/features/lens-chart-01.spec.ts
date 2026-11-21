@@ -81,7 +81,7 @@ test('Metric: adding to Maximum value keeps the primary metric; switching to Bar
   await expect(viz.chart.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '100');
 
   await page.getByRole('button', { name: 'Chart type: Metric' }).click();
-  await page.getByRole('option', { name: /^Bar/ }).click();
+  await page.getByRole('option', { name: /^Bar Compare/ }).click();
   expect(new URL(page.url()).searchParams.get('lens') ?? '').not.toContain('"role"');
 });
 

@@ -31,6 +31,7 @@ import {
 import { dashArray, ResolvedEvent, ResolvedLine } from '../layers';
 import { assignColorSlots, SESSION_COLOR_SLOTS, seriesColorKey } from './seriesColors';
 import { fitTimeTicks, timeTicks, tooltipTime } from './timeTicks';
+import { truncateLabel } from './labels';
 import { formatAxisNumber, formatNumber } from '../../utils/axisNumber';
 
 export { formatAxisNumber, formatNumber };
@@ -73,6 +74,12 @@ function pointValue(s: LensResult['series'][number], x: string | number): number
 }
 
 const M = { top: 8, right: 8, bottom: 28, left: 52 };
+
+/** Width (px) of a horizontal bar chart's category axis: its longest label, 48 px to 35 % of the chart (max 260). */
+export function catAxisWidth(result: LensResult, width: number): number {
+  const longest = result.xs.reduce<number>((n, _x, xi) => Math.max(n, xText(result, xi, 0).length), 0);
+  return Math.round(Math.max(48, Math.min(longest * 6.6 + 14, Math.max(48, width * 0.35), 260)));
+}
 const HEIGHT_MIN = 200;
 
 const fmt = formatNumber;
@@ -270,10 +277,12 @@ export function XyChart({
   const TITLE = 18;
   // A time axis (vertical charts) has round-time ticks with the date on a second row.
   const timeAxis = result.xIsTime && !horizontal && result.xs.length > 0;
+  // Horizontal bars: the category axis is as wide as its longest label, up to 35 % of the chart
+  // (longer labels are cut with an ellipsis; the tooltip and the tick's title carry the full text).
   const catTicksDepth = !ax.bottom.ticks
     ? 8
     : horizontal
-      ? 96
+      ? catAxisWidth(result, size.w)
       : catRot === 0
         ? timeAxis
           ? 40
@@ -481,7 +490,8 @@ export function XyChart({
 
   const valueTickVals = valueTicks(lo, hi, leftScale);
   const rightTickVals = valueTicks(loR, hiR, rightScale);
-  const catTick = (xi: number) => xText(result, xi, spanMs).slice(0, horizontal ? 16 : 14);
+  const catTick = (xi: number) =>
+    horizontal ? truncateLabel(xText(result, xi, spanMs), catTicksDepth - 6) : xText(result, xi, spanMs).slice(0, 14);
 
   const legendEl = showLegend ? (
     <div
@@ -976,6 +986,7 @@ export function XyChart({
                         className={styles.tick}
                         data-testid="lens-category-tick"
                       >
+                        <title>{xText(result, xi, spanMs)}</title>
                         {catTick(xi)}
                       </text>
                     ) : (

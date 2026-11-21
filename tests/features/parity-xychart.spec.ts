@@ -88,7 +88,7 @@ test('Line has no sub-type; an old line + stacked link still loads as a plain li
   await expect(page.getByText('Line stacked')).toHaveCount(0);
   // Bar keeps the stored sub-type.
   await page.getByRole('button', { name: 'Chart type: Line' }).click();
-  await page.getByRole('option', { name: /^Bar/ }).click();
+  await page.getByRole('option', { name: /^Bar Compare/ }).click();
   await expect(page.getByRole('radio', { name: 'Stacked', exact: true })).toBeChecked();
 });
 

@@ -10,10 +10,12 @@ import {
   dimLabel,
   LensField,
   LensState,
+  MAX_PARKED,
   MetricDim,
   newDimId,
   XySubType,
 } from './state';
+import { cleanStyle } from './style';
 
 /** The data view's time column (for "metric over time" defaults). Undefined → no time field. */
 export interface LensContext {
@@ -119,7 +121,13 @@ export function addField(state: LensState, field: LensField, ctx: LensContext): 
  * the target can't hold is dropped. The layer is never cleared.
  */
 /** Charts that can show a date histogram. */
-const showsTime = (t: ChartType) => isXy(t) || t === 'table';
+const showsTime = (t: ChartType) => isXy(t) || t === 'table' || t === 'heatmap';
+
+/** Pie and Donut: the same roles (Slice by / Size by), drawn as a full or a hollow circle. */
+export const isPieLike = (t: ChartType) => t === 'pie' || t === 'donut';
+
+/** Charts that read a "Maximum value" metric (metric `role: 'max'`). */
+const readsMax = (t: ChartType) => t === 'metric' || t === 'gauge';
 
 /**
  * A time field on the workspace or a bucket slot: a date histogram, first. On a chart that can't show
@@ -160,7 +168,13 @@ export function switchChart(state: LensState, target: ChartType, ctx: LensContex
     ];
   }
   const offered = buckets;
+  // Metrics parked by an earlier switch come back after the visible ones.
   let metrics = [...state.metrics];
+  if (parked?.metrics && parked.metrics.length > 0) {
+    const have = new Set(metrics.map((m) => m.id));
+    metrics = [...metrics, ...parked.metrics.filter((m) => !have.has(m.id))];
+  }
+  const offeredMetrics = metrics;
   switch (target) {
     case 'line':
     case 'area':
@@ -184,10 +198,30 @@ export function switchChart(state: LensState, target: ChartType, ctx: LensContex
       break;
     }
     case 'pie':
+    case 'donut':
       // One "Slice by" (nested slices need a sunburst Grafana doesn't ship).
       buckets = buckets.filter((b) => b.kind !== 'date_histogram').slice(0, 1);
-      metrics = metrics.slice(0, 1);
+      metrics = metrics.filter((m) => m.role !== 'max').slice(0, 1);
       break;
+    case 'heatmap': {
+      // X = the first bucket (a date histogram goes there), Y = the next bucket that isn't a date.
+      const date = buckets.find((b) => b.kind === 'date_histogram');
+      const x = date ?? buckets[0];
+      const y = buckets.find((b) => b !== x && b.kind !== 'date_histogram');
+      buckets = x ? [x, ...(y ? [y] : [])] : [];
+      if (buckets.length === 0 && ctx.timeField) {
+        buckets = [dateDim(ctx.timeField.sqlExpr, ctx.timeField.label)];
+      }
+      metrics = metrics.filter((m) => m.role !== 'max').slice(0, 1);
+      break;
+    }
+    case 'gauge': {
+      // One value per gauge (+ a Maximum value); "Break down by" draws one gauge per value.
+      buckets = buckets.filter((b) => b.kind !== 'date_histogram').slice(0, 1);
+      const max = metrics.find((m) => m.role === 'max');
+      metrics = [...metrics.filter((m) => m.role !== 'max').slice(0, 1), ...(max ? [max] : [])];
+      break;
+    }
     case 'table':
       break;
   }
@@ -195,13 +229,18 @@ export function switchChart(state: LensState, target: ChartType, ctx: LensContex
   if (target !== 'table') {
     buckets = buckets.map(({ pivot: _p, ...b }) => b as BucketDim);
   }
-  if (target !== 'metric') {
-    metrics = metrics.map(({ role: _r, ...m }) => m as MetricDim);
+  // A "Maximum value" only means something on Metric / Gauge; elsewhere it is parked with its role.
+  const keptMax = readsMax(target) ? undefined : metrics.find((m) => m.role === 'max');
+  if (keptMax) {
+    metrics = metrics.filter((m) => m !== keptMax);
   }
   if (metrics.every((m) => m.role === 'max')) {
     metrics = [countMetric(), ...metrics];
   }
   const next: LensState = { chartType: target, buckets, metrics };
+  if (state.gauge) {
+    next.gauge = state.gauge;
+  }
   // Style and layers (LENS-STYLE-01, LENS-LAYER-01) only draw on XY charts; parked otherwise.
   const style = isXy(state.chartType) ? state.style : parked?.style;
   const layers = isXy(state.chartType) ? state.layers : parked?.layers;
@@ -219,13 +258,16 @@ export function switchChart(state: LensState, target: ChartType, ctx: LensContex
   const dropped = offered.filter((b) => !kept.has(b.id) && (b.kind === 'date_histogram' || !showsTime(target)));
   const parkStyle = isXy(target) ? undefined : style;
   const parkLayers = isXy(target) ? undefined : layers;
-  if (dropped.length > 0 || parkStyle || parkLayers) {
+  const keptMetrics = new Set(metrics.map((m) => m.id));
+  const droppedMetrics = offeredMetrics.filter((m) => !keptMetrics.has(m.id)).slice(0, MAX_PARKED);
+  if (dropped.length > 0 || droppedMetrics.length > 0 || parkStyle || parkLayers) {
     const from = isXy(state.chartType) ? state.chartType : (parked?.chartType ?? state.chartType);
     const fromSub = isXy(state.chartType) ? state.subType : parked?.subType;
     next.parked = {
       chartType: from,
       ...(fromSub ? { subType: fromSub } : {}),
       buckets: dropped.map(({ pivot: _p, ...b }) => b as BucketDim),
+      ...(droppedMetrics.length > 0 ? { metrics: droppedMetrics } : {}),
       ...(parkStyle ? { style: parkStyle } : {}),
       ...(parkLayers ? { layers: parkLayers } : {}),
     };
@@ -259,10 +301,22 @@ export function suggestions(state: LensState, ctx: LensContext): Suggestion[] {
     add('Line', switchChart(state, 'line', ctx));
     add('Bar percentage', switchChart(state, 'bar', ctx, 'percentage'));
   }
+  // Errors per service over time: which row lights up when (R3-CHARTS). Only time × categories.
+  if (b0?.kind === 'date_histogram' && b1 && b1.kind !== 'date_histogram' && state.metrics.length === 1) {
+    add('Heat map', switchChart(state, 'heatmap', ctx));
+  }
   if (hasTerms) {
     add('Bar percentage', switchChart(state, 'bar', ctx, 'percentage'));
+    // Top values first on X: horizontal bars keep long values (services, hosts, messages) readable.
+    if (b0?.kind === 'terms' && !hasDate) {
+      add('Bar horizontal', switchKind(state, 'bar_horizontal', ctx));
+    }
     add('Pie', switchChart(state, 'pie', ctx));
     add('Table', switchChart(state, 'table', ctx));
+  }
+  // A metric with a Maximum value reads as progress against a target: a gauge.
+  if (state.chartType === 'metric' && state.metrics.some((m) => m.role === 'max')) {
+    add('Gauge', switchChart(state, 'gauge', ctx));
   }
   // Flip: swap X and breakdown (rule 6) — category × category only; a date breakdown would turn
   // every time bucket into its own series.
@@ -278,7 +332,7 @@ export function suggestions(state: LensState, ctx: LensContext): Suggestion[] {
   const seen = new Set<string>();
   return out.filter((s) => {
     const key = JSON.stringify({
-      c: s.state.chartType,
+      c: chartKind(s.state),
       t: s.state.subType,
       b: s.state.buckets.map((b) => b.id),
       m: s.state.metrics.map((m) => m.id),
@@ -291,9 +345,32 @@ export function suggestions(state: LensState, ctx: LensContext): Suggestion[] {
   });
 }
 
-/** Human title of a state's chart, e.g. "Bar stacked", "Line", "Metric". */
+/**
+ * What the chart switcher lists (R3-CHARTS): the chart types, plus "Bar horizontal" — a Bar whose
+ * Style → Bar orientation is horizontal (one flag, so the switcher and the Style panel agree).
+ */
+export type ChartKind = ChartType | 'bar_horizontal';
+
+export const KIND_LABELS: Record<ChartKind, string> = { ...CHART_LABELS, bar_horizontal: 'Bar horizontal' };
+
+export function chartKind(s: LensState): ChartKind {
+  return s.chartType === 'bar' && s.style?.orientation === 'horizontal' ? 'bar_horizontal' : s.chartType;
+}
+
+/** Switches to a switcher entry: Bar / Bar horizontal also set the bar orientation. */
+export function switchKind(state: LensState, kind: ChartKind, ctx: LensContext): LensState {
+  const next = switchChart(state, kind === 'bar_horizontal' ? 'bar' : kind, ctx);
+  if (kind !== 'bar' && kind !== 'bar_horizontal') {
+    return next;
+  }
+  const { orientation: _o, ...rest } = next.style ?? {};
+  const style = cleanStyle(kind === 'bar_horizontal' ? { ...rest, orientation: 'horizontal' } : rest);
+  const { style: _s, ...base } = next;
+  return style ? { ...base, style } : base;
+}
+
+/** Human title of a state's chart, e.g. "Bar stacked", "Bar horizontal percentage", "Line", "Metric". */
 export function chartTitle(s: LensState): string {
-  return s.subType && isXy(s.chartType) && s.chartType !== 'line'
-    ? `${CHART_LABELS[s.chartType]} ${s.subType}`
-    : CHART_LABELS[s.chartType];
+  const label = KIND_LABELS[chartKind(s)];
+  return s.subType && isXy(s.chartType) && s.chartType !== 'line' ? `${label} ${s.subType}` : label;
 }

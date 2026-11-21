@@ -71,7 +71,7 @@ export function MetricAdvanced({ dim, chart, onChange }: Props) {
   const formatId = useId();
   const hasDateHistogram = chart?.buckets.some((b) => b.kind === 'date_histogram') ?? false;
   const xy = !chart || chart.chartType === 'line' || chart.chartType === 'area' || chart.chartType === 'bar';
-  const breakdown = (chart?.buckets.length ?? 0) > 1 || chart?.chartType === 'pie';
+  const breakdown = (chart?.buckets.length ?? 0) > 1 || chart?.chartType === 'pie' || chart?.chartType === 'donut';
   const formula = dim.op === 'formula';
 
   return (
