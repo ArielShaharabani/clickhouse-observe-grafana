@@ -42,7 +42,8 @@ function numberFields(result: LensResult) {
   return result.series.map((s) => ({
     name: s.name,
     type: FieldType.number,
-    values: result.xs.map((x) => s.points.get(x) ?? (result.xIsTime ? 0 : null)),
+    // A missing time bucket is 0 only for counts; other metrics (and calculations) have no value there.
+    values: result.xs.map((x) => s.points.get(x) ?? (result.xIsTime && s.zeroFill ? 0 : null)),
   }));
 }
 

@@ -565,10 +565,11 @@ export function validateFormula(node: FormulaNode, fields: FormulaFields): Formu
             }
           }
           const before = aggs;
+          const errorsBefore = errors.length;
           inWindow = n.fn;
           n.args.forEach((a) => walk(a, false));
           inWindow = null;
-          if (aggs === before) {
+          if (aggs === before && errors.length === errorsBefore) {
             errors.push(new FormulaError(`${n.fn} needs a metric, e.g. ${n.fn}(count())`, n.pos));
           }
           return;

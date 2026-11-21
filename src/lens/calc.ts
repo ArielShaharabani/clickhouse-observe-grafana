@@ -27,7 +27,8 @@ export const CALC_OPS: readonly CalcOp[] = ['counter_rate', 'cumulative_sum', 'd
 export const isCalcOp = (op: MetricOp): op is CalcOp => (CALC_OPS as readonly string[]).includes(op);
 
 /** Functions a calculation can wrap (the inner metric). */
-export type BaseOp = 'count' | 'avg' | 'last_value' | 'max' | 'median' | 'min' | 'percentile' | 'std_dev' | 'sum' | 'unique';
+export type BaseOp =
+  'count' | 'avg' | 'last_value' | 'max' | 'median' | 'min' | 'percentile' | 'std_dev' | 'sum' | 'unique';
 export const BASE_OPS: readonly BaseOp[] = [
   'avg',
   'count',
@@ -62,7 +63,15 @@ export function clampWindow(w: unknown): number {
 }
 
 /** Ops whose inner aggregate is empty (NULL) for a bucket without values; count / sum / unique are 0. */
-const NULLABLE_OPS: ReadonlySet<string> = new Set(['avg', 'last_value', 'max', 'median', 'min', 'percentile', 'std_dev']);
+const NULLABLE_OPS: ReadonlySet<string> = new Set([
+  'avg',
+  'last_value',
+  'max',
+  'median',
+  'min',
+  'percentile',
+  'std_dev',
+]);
 export const isNullableOp = (op: string): boolean => NULLABLE_OPS.has(op);
 
 /** Kibana's wording of each quick function (grid buttons and labels). */
@@ -123,8 +132,7 @@ export const counterRateSql = (a: string, over: string): string => {
 
 export type OverallFn = 'sum' | 'average' | 'min' | 'max';
 const OVERALL_SQL: Record<OverallFn, string> = { sum: 'sum', average: 'avg', min: 'min', max: 'max' };
-export const overallSql = (fn: OverallFn, a: string, over: string): string =>
-  `${OVERALL_SQL[fn]}(${a}) OVER (${over})`;
+export const overallSql = (fn: OverallFn, a: string, over: string): string => `${OVERALL_SQL[fn]}(${a}) OVER (${over})`;
 
 /** Whether the chart has a date histogram (what every time-series calculation needs). */
 export const hasDateHistogram = (s: Pick<LensState, 'buckets'>): boolean =>

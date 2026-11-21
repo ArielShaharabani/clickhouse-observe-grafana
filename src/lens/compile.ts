@@ -66,7 +66,6 @@ import {
   isRankable,
   refMetric,
   usesWindow,
-
   KIND_MISSING,
   KIND_OTHER,
   KIND_VALUE,

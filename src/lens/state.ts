@@ -550,7 +550,9 @@ export const autoLabel = (d: BucketDim | MetricDim): string => autoLabelIn(d);
 export function autoLabelIn(d: BucketDim | MetricDim, metrics?: MetricDim[]): string {
   if (d.kind === 'metric') {
     // Counter rate is always per unit of time (per second unless normalized otherwise).
-    return metricBaseLabel(d) + optionsLabelSuffix(d.op === 'counter_rate' ? { ...d, normalize: d.normalize ?? 's' } : d);
+    return (
+      metricBaseLabel(d) + optionsLabelSuffix(d.op === 'counter_rate' ? { ...d, normalize: d.normalize ?? 's' } : d)
+    );
   }
   if (d.kind === 'terms') {
     const dir = rankDirOf(d);

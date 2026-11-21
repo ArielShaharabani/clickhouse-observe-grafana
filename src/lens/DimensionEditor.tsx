@@ -234,9 +234,7 @@ export function DimensionEditor({
           <div className={styles.help} role="note" aria-label="About this function">
             {FUNCTION_HELP[dim.op]}
           </div>
-          {hasRef(dim.op) && (
-            <CalcOfEditor dim={dim} fields={fields} timeField={timeField} onChange={onChange} />
-          )}
+          {hasRef(dim.op) && <CalcOfEditor dim={dim} fields={fields} timeField={timeField} onChange={onChange} />}
           {dim.op !== 'count' && !hasRef(dim.op) && (
             <Field label="Field" htmlFor={fieldId}>
               <Combobox
@@ -702,7 +700,9 @@ export function toFormula(dim: MetricDim, fields: LensField[]): MetricDim {
     const r = dim.ref ?? { op: 'count' as const };
     const inner = quickToFormula(r.op, labelOf(r.field, r.fieldLabel), r.percentile);
     text =
-      dim.op === 'moving_average' ? `moving_average(${inner}, window=${clampWindow(dim.window)})` : `${dim.op}(${inner})`;
+      dim.op === 'moving_average'
+        ? `moving_average(${inner}, window=${clampWindow(dim.window)})`
+        : `${dim.op}(${inner})`;
   } else if (dim.op === 'counter_rate') {
     text = `counter_rate(${quickToFormula('max', labelOf(dim.field, dim.fieldLabel))})`;
   } else {
@@ -713,7 +713,6 @@ export function toFormula(dim: MetricDim, fields: LensField[]): MetricDim {
   // A formula's counter_rate is per bucket; the quick function's per-second rate stays a normalization.
   return dim.op === 'counter_rate' && ok !== 'count()' ? { ...out, normalize: dim.normalize ?? 's' } : out;
 }
-
 
 /** Keeps a field set elsewhere (e.g. a shared link) selectable even if the function's list excludes it. */
 function withCurrent(list: LensField[], current: string | undefined, all: LensField[]): LensField[] {

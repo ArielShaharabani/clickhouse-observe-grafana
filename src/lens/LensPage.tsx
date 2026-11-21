@@ -44,6 +44,7 @@ import { addBucket, addMetric, metricForField, nextBucketField, queryShape, repl
 import { withSeriesColor } from './style';
 import {
   BucketDim,
+  calculationError,
   decodeLens,
   dimLabelIn,
   dropMissingRankMetric,
@@ -392,8 +393,10 @@ export function LensPage() {
   const queryKey = JSON.stringify([encodeLens(queryShape(lens)), ...queryContext]);
   const { chartType: _ct, subType: _st, ...lensBase } = queryShape(lens);
   const baseKey = JSON.stringify([JSON.stringify(lensBase), ...queryContext]);
+  // A time-series calculation without a date histogram (LENS-CALC-01): say why instead of querying.
+  const calcError = calculationError(lens);
   useEffect(() => {
-    if (isEmptyLens(lens) || !config.datasourceUid || fieldsLoading) {
+    if (isEmptyLens(lens) || !config.datasourceUid || fieldsLoading || calcError) {
       return;
     }
     let cancelled = false;
@@ -853,6 +856,10 @@ export function LensPage() {
                   Visualize builds a chart from the fields you pick — no query editor needed.
                 </div>
               </div>
+            ) : calcError ? (
+              <Alert severity="warning" title="This chart needs a date histogram">
+                {calcError}
+              </Alert>
             ) : current?.error ? (
               <Alert severity="error" title="The chart query failed">
                 {current.error}

@@ -73,6 +73,7 @@ export function MetricAdvanced({ dim, chart, onChange }: Props) {
   const xy = !chart || chart.chartType === 'line' || chart.chartType === 'area' || chart.chartType === 'bar';
   const breakdown = (chart?.buckets.length ?? 0) > 1 || chart?.chartType === 'pie';
   const formula = dim.op === 'formula';
+  const counterRate = dim.op === 'counter_rate';
 
   return (
     <>
@@ -125,17 +126,23 @@ export function MetricAdvanced({ dim, chart, onChange }: Props) {
           )}
           <Field
             label="Normalize by unit"
-            description={hasDateHistogram ? 'Value per unit of time in each bucket' : 'Needs a date histogram'}
+            description={
+              !hasDateHistogram
+                ? 'Needs a date histogram'
+                : counterRate
+                  ? 'A counter rate is always per unit of time (per second by default)'
+                  : 'Value per unit of time in each bucket'
+            }
           >
             <RadioButtonGroup<NormalizeUnit | 'none'>
               aria-label="Normalize by unit"
               size="sm"
               disabled={!hasDateHistogram}
               options={[
-                { label: 'None', value: 'none' },
+                ...(counterRate ? [] : [{ label: 'None', value: 'none' as const }]),
                 ...NORMALIZE_UNITS.map((u) => ({ label: NORMALIZE_LABEL[u], value: u })),
               ]}
-              value={dim.normalize ?? 'none'}
+              value={dim.normalize ?? (counterRate ? 's' : 'none')}
               onChange={(v) => onChange(withOption(dim, 'normalize', v === 'none' ? undefined : v))}
             />
           </Field>

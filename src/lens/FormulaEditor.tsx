@@ -19,6 +19,7 @@ import {
   formulaFieldNames,
   FormulaFields,
   fnSignature,
+  FormulaFn,
   MAX_FORMULA_LEN,
   parseFormula,
 } from './formula';
@@ -99,6 +100,22 @@ export function formulaSuggestions(text: string, cursor: number, fieldNames: str
 }
 
 const PAIRS: Record<string, string> = { '(': ')', "'": "'" };
+
+/** Sections of the function reference (LENS-CALC-01). */
+const FUNCTION_GROUPS: Array<{ kind: FormulaFn['kind']; title: string; note?: string }> = [
+  { kind: 'agg', title: 'Aggregations' },
+  {
+    kind: 'series',
+    title: 'Time series',
+    note: 'Calculated per series over the date buckets; they need a date histogram dimension.',
+  },
+  {
+    kind: 'overall',
+    title: 'Overall',
+    note: 'One value per series: the series is the date histogram / intervals, split by the other dimensions; without either, all rows.',
+  },
+  { kind: 'math', title: 'Math' },
+];
 
 export function FormulaEditor({ dim, fields, onChange }: Props) {
   const styles = useStyles2(getStyles);
@@ -276,14 +293,23 @@ export function FormulaEditor({ dim, fields, onChange }: Props) {
       )}
       {showRef && (
         <div className={styles.reference} aria-label="Function reference" role="region">
-          {FORMULA_FUNCTIONS.map((f) => (
-            <div key={f.name}>
-              <code>{fnSignature(f)}</code>
-              <div className={styles.hint}>{f.description}</div>
-            </div>
+          {FUNCTION_GROUPS.map((g) => (
+            <section key={g.kind} aria-label={g.title}>
+              <div className={styles.groupTitle}>{g.title}</div>
+              {g.note && <div className={styles.hint}>{g.note}</div>}
+              {FORMULA_FUNCTIONS.filter((f) => f.kind === g.kind).map((f) => (
+                <div key={f.name}>
+                  <code>{fnSignature(f)}</code>
+                  <div className={styles.hint}>{f.description}</div>
+                </div>
+              ))}
+            </section>
           ))}
           <div className={styles.hint}>
             Example: <code>count(kql=&apos;SeverityText : ERROR&apos;) / count()</code>
+          </div>
+          <div className={styles.hint}>
+            Percent of total: <code>count() / overall_sum(count())</code>
           </div>
         </div>
       )}
@@ -292,6 +318,10 @@ export function FormulaEditor({ dim, fields, onChange }: Props) {
 }
 
 const getStyles = (theme: GrafanaTheme2) => ({
+  groupTitle: css`
+    font-weight: ${theme.typography.fontWeightMedium};
+    margin-top: ${theme.spacing(0.5)};
+  `,
   wrap: css`
     display: flex;
     flex-direction: column;
