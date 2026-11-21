@@ -36,6 +36,8 @@ interface Props {
   dim: MetricDim;
   /** The chart the metric belongs to (decides which options apply). */
   chart?: LensState;
+  /** False when the data view has no time field: Time shift and Reduced time range are hidden. */
+  hasTime?: boolean;
   onChange: (m: MetricDim) => void;
 }
 
@@ -65,7 +67,7 @@ function kqlError(q: string): string | null {
   }
 }
 
-export function MetricAdvanced({ dim, chart, onChange }: Props) {
+export function MetricAdvanced({ dim, chart, hasTime = true, onChange }: Props) {
   const styles = useStyles2(getStyles);
   const [open, setOpen] = useState(Boolean(dim.filter || dim.shift || dim.reducedRange || dim.normalize));
   const formatId = useId();
@@ -98,30 +100,34 @@ export function MetricAdvanced({ dim, chart, onChange }: Props) {
                   onCommit={(v) => onChange(withOption(dim, 'filter', v.trim() ? v : undefined))}
                 />
               </Field>
-              <Field label="Time shift" description="Compare with an earlier period">
-                <SpanOption
-                  label="Time shift"
-                  value={dim.shift}
-                  presets={SHIFT_PRESETS}
-                  onCommit={(v) => onChange(withOption(dim, 'shift', v))}
-                />
-              </Field>
-              <Field
-                label="Reduced time range"
-                description={
-                  hasDateHistogram
-                    ? 'Not available with a date histogram'
-                    : 'Only the last part of the time range counts'
-                }
-              >
-                <SpanOption
-                  label="Reduced time range"
-                  value={dim.reducedRange}
-                  presets={REDUCED_PRESETS}
-                  disabled={hasDateHistogram}
-                  onCommit={(v) => onChange(withOption(dim, 'reducedRange', v))}
-                />
-              </Field>
+              {hasTime && (
+                <>
+                  <Field label="Time shift" description="Compare with an earlier period">
+                    <SpanOption
+                      label="Time shift"
+                      value={dim.shift}
+                      presets={SHIFT_PRESETS}
+                      onCommit={(v) => onChange(withOption(dim, 'shift', v))}
+                    />
+                  </Field>
+                  <Field
+                    label="Reduced time range"
+                    description={
+                      hasDateHistogram
+                        ? 'Not available with a date histogram'
+                        : 'Only the last part of the time range counts'
+                    }
+                  >
+                    <SpanOption
+                      label="Reduced time range"
+                      value={dim.reducedRange}
+                      presets={REDUCED_PRESETS}
+                      disabled={hasDateHistogram}
+                      onCommit={(v) => onChange(withOption(dim, 'reducedRange', v))}
+                    />
+                  </Field>
+                </>
+              )}
             </>
           )}
           <Field

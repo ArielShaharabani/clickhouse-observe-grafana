@@ -10,6 +10,13 @@ Versions track the plugin's release history. `Unreleased` collects commits not y
 
 ---
 
+## [0.69.0] — 2026-11-21
+
+### Changed
+- Data views without a time field: Visualize hides its time picker and the Time shift / Reduced time range metric options (Discover already hid its time picker and histogram). Choosing "No time field" for a data view shows a short warning that every search reads the whole table.
+
+---
+
 ## [0.68.1] — 2026-11-21
 
 ### Changed

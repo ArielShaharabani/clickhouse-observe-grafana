@@ -856,15 +856,18 @@ export function LensPage() {
           tooltip="Refresh (re-runs the query)"
           onClick={() => setRefreshNonce((n) => n + 1)}
         />
-        <TimeRangePicker
-          value={timeRange}
-          onChange={setTimeRange}
-          onChangeTimeZone={() => undefined}
-          onMoveBackward={() => setTimeRange(shiftTimeRange(timeRange, -1))}
-          onMoveForward={() => setTimeRange(shiftTimeRange(timeRange, 1))}
-          onZoom={() => setTimeRange(zoomOutTimeRange(timeRange))}
-          timeZone="browser"
-        />
+        {/* A view without a time field has no time range (same as Discover). */}
+        {ctx.timeField && (
+          <TimeRangePicker
+            value={timeRange}
+            onChange={setTimeRange}
+            onChangeTimeZone={() => undefined}
+            onMoveBackward={() => setTimeRange(shiftTimeRange(timeRange, -1))}
+            onMoveForward={() => setTimeRange(shiftTimeRange(timeRange, 1))}
+            onZoom={() => setTimeRange(zoomOutTimeRange(timeRange))}
+            timeZone="browser"
+          />
+        )}
       </div>
 
       <QueryProgress active={chartLoading} />
