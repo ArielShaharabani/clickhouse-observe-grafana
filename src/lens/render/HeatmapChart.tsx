@@ -23,8 +23,8 @@ import { truncateLabel } from './labels';
 export { truncateLabel };
 
 /** Sequential ramps (low → high); the dark one runs dark → bright so hot cells stand out on both. */
-export const HEATMAP_RAMP_LIGHT = ['#e6f0fb', '#a9cbf0', '#5b9be0', '#2563b8', '#0c3b7a'];
-export const HEATMAP_RAMP_DARK = ['#1c2b42', '#21497f', '#2f73cc', '#6ea6f2', '#cfe3ff'];
+export const HEATMAP_RAMP_LIGHT = ['#d3e4f7', '#a9cbf0', '#5b9be0', '#2563b8', '#0c3b7a'];
+export const HEATMAP_RAMP_DARK = ['#233a5e', '#21497f', '#2f73cc', '#6ea6f2', '#cfe3ff'];
 
 const hex = (c: string) => [1, 3, 5].map((i) => parseInt(c.slice(i, i + 2), 16));
 
@@ -57,7 +57,7 @@ export function cellValue(result: LensResult, xi: number, si: number): number | 
 /** Longest label (px) a Y tick may take: about 7 px a character, between 40 px and 35 % of the width. */
 export function yLabelWidth(labels: string[], width: number): number {
   const longest = labels.reduce((n, l) => Math.max(n, l.length), 0);
-  return Math.round(Math.max(40, Math.min(longest * 6.6 + 8, width * 0.35, 240)));
+  return Math.round(Math.max(40, Math.min(longest * 6.6 + 16, width * 0.35, 240)));
 }
 
 interface Props {
@@ -65,6 +65,8 @@ interface Props {
   metric?: MetricDim;
   /** Y axis title (the breakdown's label); empty without a breakdown. */
   yTitle?: string;
+  /** The metric's label, under the value in the tooltip. */
+  metricLabel?: string;
   bucketMs?: number;
   onSelect?: (sel: XySelection) => void;
 }
@@ -72,7 +74,7 @@ interface Props {
 const M = { top: 8, right: 12, bottom: 40 };
 const LEGEND_H = 34;
 
-export function HeatmapChart({ result, metric, yTitle, bucketMs, onSelect }: Props) {
+export function HeatmapChart({ result, metric, yTitle, metricLabel, bucketMs, onSelect }: Props) {
   const styles = useStyles2(getStyles);
   const theme = useTheme2();
   const ramp = theme.isDark ? HEATMAP_RAMP_DARK : HEATMAP_RAMP_LIGHT;
@@ -182,13 +184,13 @@ export function HeatmapChart({ result, metric, yTitle, bucketMs, onSelect }: Pro
                 style={{ background: v === null ? 'transparent' : colorOf(v) }}
                 aria-hidden
               />
-              <span className={styles.tooltipName}>{hasY ? yLabels[shown.si] : (metric ? yLabels[0] : '')}</span>
+              <span className={styles.tooltipName}>{yLabels[shown.si]}</span>
               <span className={styles.tooltipValue}>{v === null ? 'No data' : fmt(v)}</span>
             </>
           );
         })()}
       </div>
-      {hasY && result.series[0] && <div className={styles.tooltipMetric}>{metricName(result)}</div>}
+      {hasY && metricLabel && <div className={styles.tooltipMetric}>{metricLabel}</div>}
     </div>
   );
 
@@ -271,7 +273,7 @@ export function HeatmapChart({ result, metric, yTitle, bucketMs, onSelect }: Pro
           {/* Cells: one grid, one tab stop (roving focus with the arrow keys). */}
           <g
             role="grid"
-            aria-label={`Heat map: ${metricName(result)}`}
+            aria-label={`Heat map: ${metricLabel ?? metricName(result)}`}
             tabIndex={0}
             onKeyDown={onKeyDown}
             onFocus={() => setFocused(true)}

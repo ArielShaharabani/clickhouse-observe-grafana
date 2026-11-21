@@ -491,7 +491,7 @@ export function XyChart({
   const valueTickVals = valueTicks(lo, hi, leftScale);
   const rightTickVals = valueTicks(loR, hiR, rightScale);
   const catTick = (xi: number) =>
-    horizontal ? truncateLabel(xText(result, xi, spanMs), catTicksDepth - 6) : xText(result, xi, spanMs).slice(0, 14);
+    horizontal ? truncateLabel(xText(result, xi, spanMs), catTicksDepth) : xText(result, xi, spanMs).slice(0, 14);
 
   const legendEl = showLegend ? (
     <div

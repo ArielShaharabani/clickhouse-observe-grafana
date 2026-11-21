@@ -284,6 +284,7 @@ export function LensChart({
           result={result}
           metric={state.metrics[0]}
           yTitle={y ? dimLabelIn(y, state.metrics) : ''}
+          metricLabel={state.metrics[0] ? dimLabelIn(state.metrics[0], state.metrics) : undefined}
           bucketMs={bucketMs}
           onSelect={onSelect}
         />
@@ -298,7 +299,98 @@ export function LensChart({
       </div>
     );
   }
+  if (state.chartType === 'gauge' && state.gauge?.shape !== 'bar') {
+    return <GaugeGrid state={state} result={result} timeRange={timeRange} />;
+  }
   return <PanelChart state={state} result={result} timeRange={timeRange} />;
+}
+
+/** Columns for `n` equal cells in a box, each as large as possible (an arc and its caption are about square). */
+export function gaugeColumns(n: number, width: number, height: number): number {
+  let best = 1;
+  let bestSize = 0;
+  for (let c = 1; c <= Math.max(1, n); c++) {
+    const rows = Math.ceil(n / c);
+    const size = Math.min(width / c, height / rows);
+    if (size > bestSize + 0.5) {
+      best = c;
+      bestSize = size;
+    }
+  }
+  return best;
+}
+
+/**
+ * Arc gauges in an even grid, one Grafana gauge per cell: Grafana's own repeater grows the last
+ * row's gauges to fill it, so the same value would look bigger there.
+ */
+function GaugeGrid({ state, result, timeRange }: { state: LensState; result: LensResult; timeRange: TimeRange }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [size, setSize] = useState({ width: 0, height: 0 });
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) {
+      return;
+    }
+    const ro = new ResizeObserver(([entry]) => {
+      setSize({ width: Math.floor(entry.contentRect.width), height: Math.floor(entry.contentRect.height) });
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  const spec = panelSpec(state, result);
+  const fields = spec.frames[0]?.fields ?? [];
+  const hidden = Math.max(0, result.xs.length - MAX_GAUGES);
+  const cols = gaugeColumns(fields.length, size.width, size.height - (hidden > 0 ? 18 : 0));
+  const rows = Math.max(1, Math.ceil(fields.length / cols));
+  const cw = Math.floor(size.width / cols);
+  const ch = Math.floor((size.height - (hidden > 0 ? 18 : 0)) / rows);
+  return (
+    <div ref={ref} className={styles.box} data-testid="lens-chart" data-chart-type="gauge" data-panel="gauge">
+      {hidden > 0 && (
+        <div className={styles.note} data-testid="lens-gauge-note">
+          Showing the first {MAX_GAUGES} values ({hidden} more not shown)
+        </div>
+      )}
+      <div
+        className={styles.gaugeGrid}
+        style={{ gridTemplateColumns: `repeat(${cols}, ${cw}px)`, gridTemplateRows: `repeat(${rows}, ${ch}px)` }}
+      >
+        {cw > 20 &&
+          ch > 40 &&
+          fields.map((f, i) => (
+            <div
+              key={`${i}:${f.name}`}
+              className={styles.gaugeCell}
+              role="img"
+              aria-label={`${f.name}: ${f.values[0]}`}
+              data-testid="lens-gauge"
+            >
+              <PanelRenderer
+                title=""
+                pluginId="gauge"
+                width={cw}
+                height={ch - (fields.length > 1 ? 22 : 0)}
+                data={{
+                  state: LoadingState.Done,
+                  series: [createDataFrame({ fields: [f] })],
+                  timeRange: timeRange ?? getDefaultTimeRange(),
+                }}
+                options={spec.options}
+                fieldConfig={spec.fieldConfig as FieldConfigSource}
+                timeZone="browser"
+              />
+              {/* Grafana hides a lone gauge's name: the value it is for goes underneath. */}
+              {fields.length > 1 && (
+                <div className={styles.gaugeName} title={f.name}>
+                  {f.name}
+                </div>
+              )}
+            </div>
+          ))}
+      </div>
+    </div>
+  );
 }
 
 /** Metric / Table / Pie through Grafana's own panels. */
@@ -353,6 +445,26 @@ function PanelChart({ state, result, timeRange }: { state: LensState; result: Le
 }
 
 const styles = {
+  gaugeGrid: css`
+    display: grid;
+    width: 100%;
+    height: 100%;
+  `,
+  gaugeCell: css`
+    position: relative;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  `,
+  gaugeName: css`
+    text-align: center;
+    font-size: 13px;
+    line-height: 22px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    padding: 0 8px;
+  `,
   note: css`
     position: absolute;
     right: 4px;

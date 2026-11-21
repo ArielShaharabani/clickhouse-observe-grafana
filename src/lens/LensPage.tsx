@@ -100,12 +100,15 @@ export function dimensionGroups(s: LensState): Group[] {
   switch (s.chartType) {
     case 'line':
     case 'area':
-    case 'bar':
+    case 'bar': {
+      // Horizontal bars: the categories run down the vertical axis, the values along the horizontal one.
+      const flip = chartKind(s) === 'bar_horizontal';
       return [
-        { name: 'Horizontal axis', role: 'bucket', dims: opt(b0) },
-        { name: 'Vertical axis', role: 'metric', dims: s.metrics, multi: true },
+        { name: flip ? 'Vertical axis' : 'Horizontal axis', role: 'bucket', dims: opt(b0) },
+        { name: flip ? 'Horizontal axis' : 'Vertical axis', role: 'metric', dims: s.metrics, multi: true },
         { name: 'Breakdown', role: 'bucket', dims: b0 ? opt(b1) : [] },
       ];
+    }
     case 'table':
       return [
         { name: 'Rows', role: 'bucket', dims: s.buckets.filter((b) => !b.pivot), multi: true },

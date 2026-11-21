@@ -273,7 +273,7 @@ function baseLensPanel(
       };
     }
     case 'heatmap':
-      return heatmapPanel(state, base, names);
+      return heatmapPanel(state, base, names, opts.series);
     case 'gauge':
       return gaugePanel(state, base, opts.gaugeMax);
     case 'metric':
@@ -333,7 +333,12 @@ type PanelBase = Omit<LensPanel, 'type'>;
  * Categories on X have no core panel that draws them as cells, so the export is the same matrix
  * as a table with colour-coded cells (rows = Y values, columns = X values).
  */
-function heatmapPanel(state: LensState, base: PanelBase, names: Record<string, string>): LensPanel {
+function heatmapPanel(
+  state: LensState,
+  base: PanelBase,
+  names: Record<string, string>,
+  series?: LensPanelOpts['series']
+): LensPanel {
   const [x, y] = state.buckets;
   const pivot: Transformation[] = y
     ? [
@@ -351,8 +356,22 @@ function heatmapPanel(state: LensState, base: PanelBase, names: Record<string, s
     return {
       ...base,
       type: 'heatmap',
+      // Rows in rank order (the biggest on top, as in Visualize): the pivot sorts its columns by value.
       transformations: y
-        ? [...pivot, rename({ [`${bucketAlias(0)}\\${bucketAlias(1)}`]: names[bucketAlias(0)] })]
+        ? [
+            ...pivot,
+            {
+              id: 'organize',
+              options: {
+                renameByName: { [`${bucketAlias(0)}\\${bucketAlias(1)}`]: names[bucketAlias(0)] },
+                excludeByName: {},
+                indexByName: Object.fromEntries([
+                  [`${bucketAlias(0)}\\${bucketAlias(1)}`, 0],
+                  ...(series ?? []).filter((r) => !r.synthetic).map((r, i) => [r.breakdown ?? r.name, i + 1]),
+                ]),
+              },
+            },
+          ]
         : [rename(names)],
       options: {
         calculate: false,

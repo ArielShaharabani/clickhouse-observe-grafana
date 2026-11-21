@@ -14,7 +14,7 @@ export function niceCeil(v: number): number {
     return 1;
   }
   const p = Math.pow(10, Math.floor(Math.log10(v)));
-  const m = [1, 2, 2.5, 5, 10].find((k) => k * p >= v * (1 - 1e-12)) ?? 10;
+  const m = [1, 1.5, 2, 2.5, 3, 4, 5, 6, 8, 10].find((k) => k * p >= v * (1 - 1e-12)) ?? 10;
   return m * p;
 }
 
@@ -55,9 +55,9 @@ export function gaugeOptions(state: LensState): { pluginId: 'gauge' | 'bargauge'
         valueMode: 'color',
         namePlacement: 'top',
         showUnfilled: true,
-        sizing: 'auto',
-        minVizHeight: 16,
-        maxVizHeight: 48,
+        // One bar per Break down by value at a readable height; a lone bar fills the panel.
+        ...(state.buckets.length > 0 ? { sizing: 'manual', minVizHeight: 24, maxVizHeight: 28 } : { sizing: 'auto' }),
+        text: { titleSize: 13, valueSize: 20 },
       },
     };
   }
@@ -71,6 +71,7 @@ export function gaugeOptions(state: LensState): { pluginId: 'gauge' | 'bargauge'
       sizing: 'auto',
       minVizWidth: 75,
       minVizHeight: 75,
+      text: { titleSize: 13 },
     },
   };
 }
