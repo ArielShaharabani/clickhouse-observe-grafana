@@ -59,7 +59,8 @@ const pill = (page: Page, text: RegExp) => page.getByRole('button', { name: text
 const picker = (page: Page) => page.getByRole('button', { name: /^Data view/ });
 const expectTable = (page: Page, table: string) =>
   expect(picker(page)).toHaveAttribute('title', `Switch data view (default.${table})`);
-const ctxLabel = (page: Page) => page.getByTestId('lens-context');
+// R3-QUERYBAR: the carried query is the editable search bar's value (the read-only summary is gone).
+const ctxLabel = (page: Page) => page.getByRole('textbox', { name: 'Search logs (KQL)' });
 
 test('#16b: Visualize has a data view picker; switching keeps query and time, drops fields the view lacks', async ({
   page,
@@ -164,7 +165,7 @@ test('#16c: Visualize from the side menu (no params) restores the tab context', 
 
   await page.goto(`/a/${pluginJson.id}/visualize`);
   await expectTable(page, 'otel_logs');
-  await expect(ctxLabel(page)).toHaveText(/ServiceName:payments/);
+  await expect(ctxLabel(page)).toHaveValue(/ServiceName:payments/);
   const after = new URL(page.url()).searchParams;
   for (const k of ['q', 'from', 'to', 'ds']) {
     expect(after.get(k)).toBe(before.get(k));
@@ -177,6 +178,6 @@ test('#16c: a Visualize link with its own context is not overridden by the remem
   await logs.expectRowCount(FIXTURE.counts.payments);
   const viz = new VisualizePage(page);
   await viz.open({ q: 'ServiceName:auth' });
-  await expect(ctxLabel(page)).toHaveText(/ServiceName:auth/);
+  await expect(ctxLabel(page)).toHaveValue(/ServiceName:auth/);
   expect(new URL(page.url()).searchParams.get('q')).toBe('ServiceName:auth');
 });

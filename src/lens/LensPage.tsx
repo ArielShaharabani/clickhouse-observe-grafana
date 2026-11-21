@@ -21,7 +21,7 @@ import { runQueryRows } from '../data/runQuery';
 import { ResultCache } from './resultCache';
 import { buildFieldIndex } from '../sql/fields';
 import { buildWhereConditions } from '../sql/queryBuilder';
-import { filtersForViewSwitch, loadPinnedFilters, tableKey } from '../state/sharedSearch';
+import { filtersForViewSwitch, loadPinnedFilters, mergePinnedFilters, tableKey } from '../state/sharedSearch';
 import { hasSearchContext, rememberSearchContext, restoreSearchContext } from '../state/lastSearch';
 import { draftScopeOf, visualizeEntry } from './entry';
 import { discoverBreakdownOf, discoverColumns, discoverIntervalOf, discoverUrl, lensContextFor } from './handoff';
@@ -29,8 +29,12 @@ import { buildLensPanel, defaultPanelTitle } from './panelExport';
 import { SaveActions } from './SaveActions';
 import { loadLensDraft, saveLensDraft } from './draft';
 import { FilterPills } from '../components/FilterPills';
+import { FieldsContext } from '../components/FieldsContext';
+import { QueryRow, withQuery } from './QueryRow';
+import { LoadedQuery } from '../components/QueryMenu/QueryMenu';
+import { parseKql } from '../sql/kql';
 import { useAutocompleteSources } from '../autocomplete/service';
-import { addFilterPill, makeFilter } from '../sql/filters';
+import { addFilterPill, makeFilter, sanitizeFilterPills } from '../sql/filters';
 import { FilterChoice, FilterChooser } from './FilterChooser';
 import { XySelection, xLabel } from './render/XyChart';
 import { DEFAULT_LOGS_QUERY_STATE, FilterPill } from '../types';
@@ -273,13 +277,97 @@ export function LensPage() {
     },
     [setSearchParams, defaultTime]
   );
+  // Query bar (R3-QUERYBAR): a submitted query goes to `q` the way filters go to `filters` (one
+  // history entry). `invalidQuery` is the bar's own parse error; a `q` that arrives by URL is
+  // checked here too, so neither ever reaches the query.
+  const [invalidQuery, setInvalidQuery] = useState<string | null>(null);
+  const urlQueryError = useMemo(() => {
+    if (!search.trim()) {
+      return null;
+    }
+    try {
+      parseKql(search.trim());
+      return null;
+    } catch (e) {
+      return e instanceof Error ? e.message : String(e);
+    }
+  }, [search]);
+  const queryError = invalidQuery ?? urlQueryError;
+  const setSearch = useCallback(
+    (next: string) => {
+      setSearchParams((prev) => withQuery(prev, next), { replace: false });
+    },
+    [setSearchParams]
+  );
   const addFilters = useCallback(
     (pills: FilterPill[]) => setFilters(pills.reduce(addFilterPill, filters)),
     [filters, setFilters]
   );
 
+  // Query menu: clear all / a saved query. One URL update, like a filter change.
+  const clearQuery = useCallback(() => {
+    setSearchParams(
+      (prev) => {
+        const sp = new URLSearchParams(prev);
+        sp.delete('q');
+        sp.delete('filters');
+        return sp;
+      },
+      { replace: false }
+    );
+  }, [setSearchParams]);
+  const onLoadQuery = useCallback(
+    ({ query, filters: loaded, timeRange: tr }: LoadedQuery) => {
+      setInvalidQuery(null);
+      const merged = loaded
+        ? mergePinnedFilters(
+            sanitizeFilterPills(loaded),
+            loadPinnedFilters(),
+            tableKey(config.database, config.logsTable)
+          )
+        : undefined;
+      const enc = encodeLogsState({
+        search: query,
+        filters: merged ?? [],
+        columns: [],
+        timeRange: tr ?? resolveDefaultTimeRange(defaultTime),
+      });
+      setSearchParams(
+        (prev) => {
+          const sp = new URLSearchParams(prev);
+          if (query.trim()) {
+            sp.set('q', query);
+          } else {
+            sp.delete('q');
+          }
+          if (merged) {
+            const f = enc.get('filters');
+            if (f) {
+              sp.set('filters', f);
+            } else {
+              sp.delete('filters');
+            }
+          }
+          if (tr) {
+            sp.set('from', enc.get('from') ?? '');
+            sp.set('to', enc.get('to') ?? '');
+          }
+          return sp;
+        },
+        { replace: false }
+      );
+    },
+    [setSearchParams, config.database, config.logsTable, defaultTime]
+  );
+  // A query that changes through the URL (Back / Forward, a saved query) replaces a typed-in error.
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setInvalidQuery(null);
+  }, [search]);
+
   // Fields of the active data view.
-  const { fields, loading: discovering, fieldsFor } = useFieldDiscovery(config, timeRange);
+  const discovery = useFieldDiscovery(config, timeRange);
+  const { fields, loading: discovering, fieldsFor } = discovery;
   // Fields are usable only when they are this view's: right after a view switch `fields` still
   // holds the previous table's until the new discovery publishes (#16b).
   const fieldsLoading = discovering || !viewSettled || fieldsFor !== discoveryKey(config);
@@ -352,7 +440,7 @@ export function LensPage() {
       }
     }
   }, [fieldsLoading, lens, urlLens, setLens]);
-  const { loadValues } = useAutocompleteSources({
+  const { loadValues, loadMapKeys } = useAutocompleteSources({
     config,
     query: { ...DEFAULT_LOGS_QUERY_STATE, search, filters },
     timeRange,
@@ -393,7 +481,7 @@ export function LensPage() {
   const { chartType: _ct, subType: _st, ...lensBase } = queryShape(lens);
   const baseKey = JSON.stringify([JSON.stringify(lensBase), ...queryContext]);
   useEffect(() => {
-    if (isEmptyLens(lens) || !config.datasourceUid || fieldsLoading) {
+    if (isEmptyLens(lens) || !config.datasourceUid || fieldsLoading || queryError) {
       return;
     }
     let cancelled = false;
@@ -445,7 +533,7 @@ export function LensPage() {
     };
     // queryKey covers every input that changes the SQL.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [queryKey, fieldsLoading, refreshNonce]);
+  }, [queryKey, fieldsLoading, refreshNonce, !!queryError]);
   const current = result?.key === queryKey ? result : null;
   // A chart-type switch re-runs the query; until the new rows arrive keep drawing the previous chart
   // (same dimensions, filters and time) instead of a blank spinner frame. It is not interactive.
@@ -471,7 +559,7 @@ export function LensPage() {
     timeRange,
     index: fieldIndex,
     timeAxis,
-    enabled: xyChart && !fieldsLoading && !!lens.layers,
+    enabled: xyChart && !fieldsLoading && !queryError && !!lens.layers,
   });
   const setLayers = (layers: ExtraLayer[]) => setLens({ ...lens, layers: layers.length > 0 ? layers : undefined });
   const [layerItemRef, setLayerItem] = useState<LayerItemRef | null>(null);
@@ -494,7 +582,7 @@ export function LensPage() {
   const suggestedTime = Math.round((timeRange.from.valueOf() + timeRange.to.valueOf()) / 2);
   // SHARED-PERF-01: same running cue as Discover (no Cancel here: leaving the chart without a
   // result would need its own empty state).
-  const chartLoading = fieldsLoading || (!isEmptyLens(lens) && !!config.datasourceUid && !current);
+  const chartLoading = fieldsLoading || (!isEmptyLens(lens) && !!config.datasourceUid && !current && !queryError);
   const approxNote = current?.data ? lensApproxNote(lens) : null;
 
   const onAdd = (f: LensField) => setLens(addField(lens, f, ctx));
@@ -702,14 +790,6 @@ export function LensPage() {
       <div className={styles.toolbar}>
         <span className={styles.title}>Visualize</span>
         <DataViewPicker />
-        {/* The picker already names the data view; only the carried query / filters are summarised. */}
-        {(search || filters.length > 0) && (
-          <span className={styles.context} data-testid="lens-context">
-            {[search, filters.length > 0 ? `${filters.length} filter${filters.length > 1 ? 's' : ''}` : '']
-              .filter(Boolean)
-              .join(' · ')}
-          </span>
-        )}
         <div className={styles.spacer} />
         <LinkButton href={exploreUrl} onClick={onExplore} variant="secondary" size="sm" icon="compass" fill="outline">
           Explore in Discover
@@ -725,7 +805,7 @@ export function LensPage() {
         </Button>
         <SaveActions
           paramsKey={paramsKey}
-          disabled={isEmptyLens(lens) || fieldsLoading}
+          disabled={isEmptyLens(lens) || fieldsLoading || !!queryError}
           defaultTitle={defaultPanelTitle(lens)}
           buildPanel={buildPanel}
           timeRange={timeRange}
@@ -748,6 +828,27 @@ export function LensPage() {
       </div>
 
       <QueryProgress active={chartLoading} />
+
+      <FieldsContext.Provider value={discovery}>
+        <QueryRow
+          search={search}
+          filters={filters}
+          timeRange={timeRange}
+          dataViewId={activeView?.id}
+          pinTable={tableKey(config.database, config.logsTable)}
+          loadValues={loadValues}
+          loadMapKeys={loadMapKeys}
+          onSearch={setSearch}
+          onInvalidQuery={setInvalidQuery}
+          onFiltersChange={setFilters}
+          onAddFilter={(pill) => addFilters([pill])}
+          onClearAll={() => {
+            setInvalidQuery(null);
+            clearQuery();
+          }}
+          onLoadQuery={onLoadQuery}
+        />
+      </FieldsContext.Provider>
 
       <FilterPills
         filters={filters}
@@ -853,6 +954,10 @@ export function LensPage() {
                   Visualize builds a chart from the fields you pick — no query editor needed.
                 </div>
               </div>
+            ) : queryError ? (
+              <Alert severity="error" title="The query is not valid" data-testid="lens-invalid-query">
+                {queryError}
+              </Alert>
             ) : current?.error ? (
               <Alert severity="error" title="The chart query failed">
                 {current.error}

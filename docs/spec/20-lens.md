@@ -12,6 +12,13 @@ Lens lets a user build a chart by adding fields, then corrects the guess through
 | Centre | Workspace (chart) with chart title; below it a collapsible `Suggestions` strip of thumbnail cards |
 | Right (\~390 px) | Toolbar: `Legend`, `Style` (XY) or chart-specific; Layer panel: chart-type switcher, sub-type (`Stacked`), ⚙ layer settings, ⌫ Clear layer, ⧉ Duplicate layer, data view per layer, then dimension groups; `+` Add layer |
 
+### LENS-QUERY-01 Query row (R3-QUERYBAR)
+
+- **Row:** under the toolbar, the same controls and components as Discover's header: Add filter, the query menu (Clear all, Load / Save query, pin / negate / disable all), the KQL search bar with autocomplete (values and Map keys from this view's own fields), then the filter pills. Wraps at narrow widths; the old read-only query summary in the toolbar is gone.
+- **Shared context:** the bar edits the URL `q` (same params as Discover). Typing changes nothing until Enter / Search; the submit writes `q` in one history entry (push, like filters) and the chart re-runs once. Back / Forward restore the previous query.
+- **Invalid KQL:** the bar shows its error; the chart area shows `The query is not valid` instead of a chart, no query is sent, Save is disabled. A `q` that arrives in the URL and does not parse is treated the same.
+- **Consumers:** chart click / legend filters, Explore in Discover, Save / Add to dashboard, Inspector, data view switch and pinned filters all read the same `q` / `filters`.
+
 ### LENS-START-01 Empty state and entry points
 
 - **Empty workspace:** illustration, `Drop some fields here to start`, sub-text `Lens is the recommended editor for creating visualizations`, feedback link.
