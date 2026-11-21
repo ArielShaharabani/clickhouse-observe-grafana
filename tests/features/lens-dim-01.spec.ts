@@ -33,7 +33,7 @@ test('metric editor: function change keeps the field, label follows until rename
   await ed.getByRole('button', { name: 'Maximum' }).click();
   await pickField(page, 'Vertical axis', 'SeverityNumber');
   await expect(ed.getByRole('button', { name: 'Maximum' })).toHaveAttribute('aria-pressed', 'true');
-  await ed.getByRole('button', { name: 'Percentile' }).click();
+  await ed.getByRole('button', { name: 'Percentile', exact: true }).click();
   await expect(ed.getByRole('textbox', { name: 'Name' })).toHaveAttribute(
     'placeholder',
     '95th percentile of SeverityNumber'

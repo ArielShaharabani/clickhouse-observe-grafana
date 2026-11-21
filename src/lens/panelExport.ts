@@ -287,10 +287,10 @@ function baseLensPanel(
     case 'donut': {
       const byCategory = state.buckets.length > 0;
       const pie = state.chartType !== 'metric';
-      // Stat tiles by category take their names from the row ("payments"); a renamed metric field
-      // gets a fixed display name that hides them, so only the category column is renamed and
-      // several metrics are told apart by "value · metric", as in Visualize.
-      const tiles = !pie && byCategory;
+      // Stat tiles and pie slices by category take their names from the row ("payments"); a renamed
+      // metric field gets a fixed display name that hides them, so only the category column is
+      // renamed and several metric tiles are told apart by "value · metric", as in Visualize.
+      const tiles = byCategory;
       const labels = uniqueMetricLabels(state.metrics);
       return {
         ...base,

@@ -24,6 +24,10 @@ Versions track the plugin's release history. `Unreleased` collects commits not y
 - Search suggestions no longer reopen after Enter (or Clear) when a value lookup was still pending (round 3 #20; the shared search bar, so Discover too).
 - Metric tiles by category fit the chart area: rows shrink from 140 px down to 110 px before the grid scrolls (the third row was cut by 8 px; round 3 #23).
 
+
+### Fixed (coordinator, batch 11)
+- Saved pie and donut panels show each slice's value ("payments"), not "Count of records" for every slice (the metric field is no longer renamed for pies, as for metric tiles in 0.69.2).
+- A Discover link with a search no longer sends its list and histogram queries twice when field discovery finishes before the first fetch (12 → 10 queries on the fixture).
 ---
 
 ## [0.71.0] — 2026-11-21

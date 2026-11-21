@@ -30,7 +30,10 @@ test('Percentile rank: quick function with a value, shown as a percent; formula 
   await expect(value).toHaveValue('9');
   await value.fill('13');
   await value.press('Enter');
-  await expect(viz.dimensions).toContainText('Percentile rank (13) of SeverityNumber');
+  await expect(editor(page).getByRole('textbox', { name: 'Name' })).toHaveAttribute(
+    'placeholder',
+    'Percentile rank (13) of SeverityNumber'
+  );
 
   await viz.open({
     lens: lensOf(
