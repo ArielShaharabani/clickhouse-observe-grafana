@@ -113,3 +113,47 @@ describe('SearchBar — Map dot-drilldown', () => {
     expect(loadMapKeys).toHaveBeenCalledTimes(1); // still just the one fetch
   });
 });
+
+describe('SearchBar — closing on submit (round 3 #20)', () => {
+  const level: FieldModel = {
+    id: 'col:SeverityText',
+    name: 'SeverityText',
+    displayName: 'SeverityText',
+    sqlExpr: 'SeverityText',
+    type: 'string',
+    source: 'column',
+  };
+
+  it('Enter closes the suggestions and a value fetch still in flight does not reopen them', async () => {
+    jest.useFakeTimers();
+    try {
+      const onSearch = jest.fn();
+      const loadValues = jest.fn(async () => [{ value: 'error', count: 23 }]);
+      render(
+        <FieldsContext.Provider value={{ fields: [level], loading: false, error: null, refresh: () => {} }}>
+          <SearchBar
+            value=""
+            onChange={() => {}}
+            onSearch={onSearch}
+            loadValues={loadValues as never}
+            loadMapKeys={async () => ({ keys: [], total: 0 })}
+          />
+        </FieldsContext.Provider>
+      );
+      const input = screen.getByPlaceholderText(/filter logs with kql/i) as HTMLInputElement;
+      fireEvent.focus(input);
+      typeAtEnd(input, 'SeverityText:error');
+      fireEvent.keyDown(input, { key: 'Enter' });
+      expect(onSearch).toHaveBeenCalled();
+      // The debounced value fetch would have fired 250 ms after the last keystroke.
+      await act(async () => {
+        jest.advanceTimersByTime(500);
+        await Promise.resolve();
+      });
+      expect(loadValues).not.toHaveBeenCalled();
+      expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+});

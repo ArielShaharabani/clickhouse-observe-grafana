@@ -9,7 +9,7 @@ import { css, cx } from '@emotion/css';
 import { formattedValueToString, getValueFormat, GrafanaTheme2 } from '@grafana/data';
 import { useStyles2 } from '@grafana/ui';
 import { LensResult, uniqueMetricLabels } from '../compile';
-import { grafanaUnit } from '../metricOptions';
+import { formatOf, grafanaUnit } from '../metricOptions';
 import { LensState, MetricDim } from '../state';
 
 export const EMPTY_TILE = '–';
@@ -30,7 +30,7 @@ export function formatMetricValue(m: MetricDim | undefined, v: number | undefine
   if (v === undefined || v === null || !Number.isFinite(v)) {
     return EMPTY_TILE;
   }
-  const { unit, decimals } = grafanaUnit(m?.format);
+  const { unit, decimals } = grafanaUnit(formatOf(m));
   if (!unit) {
     return v.toLocaleString(undefined, { maximumFractionDigits: decimals ?? 2 });
   }
@@ -130,11 +130,13 @@ export function MetricTiles({ state, result }: { state: LensState; result: LensR
 }
 
 const getStyles = (theme: GrafanaTheme2) => ({
-  // Three columns of fixed-height tiles; a single tile is centred at a Kibana-like size, not stretched.
+  // Three columns of tiles up to 140 px tall that shrink (down to 110 px) so every row fits the
+  // chart area, as Kibana's; only more rows than that scroll. A single tile is centred at a
+  // Kibana-like size, not stretched.
   grid: css`
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
-    grid-auto-rows: 140px;
+    grid-auto-rows: minmax(110px, 140px);
     align-content: start;
     gap: ${theme.spacing(1)};
     width: 100%;

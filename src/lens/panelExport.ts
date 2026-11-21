@@ -19,7 +19,7 @@ import { seriesColorOf } from './style';
 import { stableColors } from './render/seriesColors';
 import { VISUALIZE_SOURCE_KEY } from './panelSource';
 import { gaugeDefaults, gaugeMetrics, gaugeOptions } from './render/gaugeSpec';
-import { grafanaUnit } from './metricOptions';
+import { formatOf, grafanaUnit } from './metricOptions';
 
 export interface LensPanelOpts {
   id: number;
@@ -383,7 +383,7 @@ function heatmapPanel(
         },
       ]
     : [];
-  const { unit, decimals } = grafanaUnit(state.metrics[0]?.format);
+  const { unit, decimals } = grafanaUnit(formatOf(state.metrics[0]));
   const units = { unit: unit ?? 'locale', ...(decimals !== undefined ? { decimals } : {}) };
   if (x?.kind === 'date_histogram') {
     return {

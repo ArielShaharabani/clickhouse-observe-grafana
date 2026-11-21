@@ -2,8 +2,7 @@ import { dateTime } from '@grafana/data';
 import { compileLens } from '../compile';
 import { buildLensPanel, columnNames, defaultPanelTitle } from '../panelExport';
 import { saveLens } from '../SaveLensModal';
-import { LENS_DRAFT_KEY, loadLensDraft, saveLensDraft } from '../draft';
-import { decodeLens, EMPTY_LENS, LensState, sanitizeLens } from '../state';
+import { decodeLens, LensState, sanitizeLens } from '../state';
 import { OTEL_COLUMN_MAPPING, SourceConfig } from '../../types';
 import * as dashboards from '../../data/dashboards';
 
@@ -233,26 +232,5 @@ describe('saveLens', () => {
   it('library only: no dashboard is touched', async () => {
     expect(await saveLens({ panel: p, destination: 'none', library: true, timeRange: range })).toEqual({});
     expect(api.saveDashboard).not.toHaveBeenCalled();
-  });
-});
-
-describe('unsaved chart draft', () => {
-  beforeEach(() => window.sessionStorage.clear());
-
-  it('round-trips, clears when empty, and rejects junk', () => {
-    const s = lens('bar', [date], 'stacked');
-    saveLensDraft('ds|t', s);
-    expect(loadLensDraft('ds|t')).toEqual(s);
-    saveLensDraft('ds|t', EMPTY_LENS);
-    expect(window.sessionStorage.getItem(LENS_DRAFT_KEY)).toBeNull();
-    window.sessionStorage.setItem(LENS_DRAFT_KEY, JSON.stringify({ scope: 'ds|t', lens: '{"chartType":"evil"}' }));
-    expect(loadLensDraft('ds|t')).toBeUndefined();
-    window.sessionStorage.setItem(LENS_DRAFT_KEY, 'not json');
-    expect(loadLensDraft('ds|t')).toBeUndefined();
-  });
-
-  it('only restores on the source it was built on', () => {
-    saveLensDraft('ds|a', lens('bar', [date], 'stacked'));
-    expect(loadLensDraft('ds|b')).toBeUndefined();
   });
 });

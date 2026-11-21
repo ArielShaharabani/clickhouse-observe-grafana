@@ -27,6 +27,7 @@ import { stableColors, SESSION_COLOR_SLOTS } from './seriesColors';
 import { XyChart, XySelection } from './XyChart';
 import { withMetricAppearance } from './fieldConfig';
 import { MetricTiles } from './MetricTiles';
+import { PieChart } from './PieChart';
 import { tableColumns, tableOverrides } from '../tableChart';
 import { autoAxisTitles, withLensStyle } from './styleConfig';
 import { LayerData, resolveLayers } from '../layers';
@@ -125,7 +126,7 @@ function basePanelSpec(state: LensState, result: LensResult): PanelSpec {
       return { ...basePanelSpec({ ...state, chartType: 'table' }, result) };
     case 'pie':
     case 'donut':
-      if (result.xs.length > 0 && result.xs[0] !== '' && result.series.length === 1) {
+      if (hasSlices(result)) {
         return pieSpec(state, result);
       }
     // falls through (no categories: the same panel as the Metric chart)
@@ -190,11 +191,11 @@ export function pieDisplayLabels(values: number[]): Array<'name' | 'percent'> {
   return crowded ? [] : ['name', 'percent'];
 }
 
-/**
- * Pie: one field per slice, so each slice has its own colour — the value's stable colour (the same
- * as in the XY chart), or a legend pick — and labels read "name NN%"; legend values are grouped.
- */
-function pieSpec(state: LensState, result: LensResult): PanelSpec {
+/** Whether a pie / donut has slices to draw (one metric over categories). */
+const hasSlices = (result: LensResult) => result.xs.length > 0 && result.xs[0] !== '' && result.series.length === 1;
+
+/** Slice names, values and colours: the value's stable colour (as in the XY chart) or a legend pick. */
+function pieData(state: LensState, result: LensResult): { names: string[]; values: number[]; colors: string[] } {
   const theme = createTheme();
   const series = result.series[0];
   const names = result.xLabels.map((l, i) => l ?? String(result.xs[i]));
@@ -206,10 +207,19 @@ function pieSpec(state: LensState, result: LensResult): PanelSpec {
     (n) => seriesColorOf(state.style, n),
     SESSION_COLOR_SLOTS
   );
+  return { names, values: names.map((_, i) => series.points.get(result.xs[i]) ?? 0), colors };
+}
+
+/**
+ * Pie: one field per slice, so each slice has its own colour — the value's stable colour (the same
+ * as in the XY chart), or a legend pick — and labels read "name NN%"; legend values are grouped.
+ */
+function pieSpec(state: LensState, result: LensResult): PanelSpec {
+  const { names, values, colors } = pieData(state, result);
   const fields = names.map((name, i) => ({
     name,
     type: FieldType.number,
-    values: [series.points.get(result.xs[i]) ?? 0],
+    values: [values[i]],
     config: { color: { mode: 'fixed', fixedColor: colors[i] } },
   }));
   return {
@@ -296,6 +306,23 @@ export function LensChart({
     return (
       <div className={styles.box} data-testid="lens-chart" data-chart-type="metric" data-panel="tiles">
         <MetricTiles state={state} result={result} />
+      </div>
+    );
+  }
+  if (isPieLike(state.chartType) && hasSlices(result)) {
+    // Custom-drawn: Kibana-like labels (decimals, inside or outside, no overlap) and click to filter.
+    const { names, values, colors } = pieData(state, result);
+    return (
+      <div className={styles.box} data-testid="lens-chart" data-chart-type={state.chartType} data-panel="pie">
+        <PieChart
+          names={names}
+          values={values}
+          colors={colors}
+          donut={state.chartType === 'donut'}
+          metric={state.metrics[0]}
+          metricLabel={state.metrics[0] ? dimLabelIn(state.metrics[0], state.metrics) : undefined}
+          onSelect={onSelect}
+        />
       </div>
     );
   }

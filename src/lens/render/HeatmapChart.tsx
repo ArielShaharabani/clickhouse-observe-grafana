@@ -14,7 +14,7 @@ import { GrafanaTheme2 } from '@grafana/data';
 import { useStyles2, useTheme2 } from '@grafana/ui';
 import { LensResult } from '../compile';
 import { MetricDim } from '../state';
-import { formatValue } from '../metricOptions';
+import { formatOf, formatValue } from '../metricOptions';
 import { formatAxisNumber, formatNumber } from '../../utils/axisNumber';
 import { fitTimeTicks, timeTicks, tooltipTime } from './timeTicks';
 import { XySelection, xText } from './XyChart';
@@ -106,8 +106,8 @@ export function HeatmapChart({ result, metric, yTitle, metricLabel, bucketMs, on
 
   const nx = result.xs.length;
   const ny = result.series.length;
-  const fmt = (v: number) => formatValue(v, metric?.format, formatNumber);
-  const axisFmt = (v: number) => formatValue(v, metric?.format, formatAxisNumber);
+  const fmt = (v: number) => formatValue(v, formatOf(metric), formatNumber);
+  const axisFmt = (v: number) => formatValue(v, formatOf(metric), formatAxisNumber);
   const values: number[] = [];
   result.series.forEach((s) => s.points.forEach((v) => values.push(v)));
   const [lo, hi] = heatDomain(values);

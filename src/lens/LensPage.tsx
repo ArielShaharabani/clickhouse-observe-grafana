@@ -23,11 +23,10 @@ import { buildFieldIndex } from '../sql/fields';
 import { buildWhereConditions } from '../sql/queryBuilder';
 import { filtersForViewSwitch, loadPinnedFilters, mergePinnedFilters, tableKey } from '../state/sharedSearch';
 import { hasSearchContext, rememberSearchContext, restoreSearchContext } from '../state/lastSearch';
-import { draftScopeOf, visualizeEntry } from './entry';
+import { visualizeEntry } from './entry';
 import { discoverBreakdownOf, discoverColumns, discoverIntervalOf, discoverUrl, lensContextFor } from './handoff';
 import { buildLensPanel, defaultPanelTitle } from './panelExport';
 import { SaveActions } from './SaveActions';
-import { loadLensDraft, saveLensDraft } from './draft';
 import { FilterPills } from '../components/FilterPills';
 import { QueryRow, withQuery } from './QueryRow';
 import { LoadedQuery } from '../components/QueryMenu/QueryMenu';
@@ -54,6 +53,7 @@ import {
   EMPTY_LENS,
   encodeLens,
   isEmptyLens,
+  lensFieldsPending,
   LensField,
   LensState,
   MetricDim,
@@ -171,7 +171,8 @@ export function LensPage() {
   const paramsKey = searchParams.toString();
 
   // Entry (#16b / #16c): restore the tab's last context when the URL has none, apply the URL's
-  // data view, merge pins, restore the draft — computed once, applied in ONE URL update below.
+  // data view, merge pins — computed once, applied in ONE URL update below. The chart comes from
+  // the URL only: a fresh open starts empty (as Kibana), a reload keeps it.
   const [entry] = useState(() =>
     visualizeEntry({
       params: searchParams,
@@ -179,7 +180,6 @@ export function LensPage() {
       activeView,
       storedPins: loadPinnedFilters(),
       restoreContext: restoreSearchContext,
-      loadDraft: loadLensDraft,
     })
   );
   const [entered, setEntered] = useState(false);
@@ -224,7 +224,6 @@ export function LensPage() {
       activeView,
       storedPins: loadPinnedFilters(),
       restoreContext: restoreSearchContext,
-      loadDraft: loadLensDraft,
     });
     if (again.params.toString() !== sp.toString()) {
       setSearchParams(again.params, { replace: true });
@@ -241,20 +240,12 @@ export function LensPage() {
   const search = urlState.search ?? '';
   const filters = useMemo(() => urlState.filters ?? [], [urlState]);
   const timeRange = useMemo(() => urlState.timeRange ?? resolveDefaultTimeRange(defaultTime), [urlState, defaultTime]);
-  // LENS-SAVE-01 draft, scoped to the datasource + table the chart was built on.
-  const draftScope = draftScopeOf(config);
   const urlLens = useMemo(() => decodeLens(new URLSearchParams(paramsKey).get('lens')) ?? EMPTY_LENS, [paramsKey]);
-  // Every chart shown (also one opened from a Discover link) becomes the draft; clearing happens in
-  // setLens. Only once this view's fields are in (the effect is declared below, after discovery):
-  // mid-switch the URL still holds the previous view's chart, which must not become this view's draft.
 
   const setLens = useCallback(
     (raw: LensState) => {
       // A rank metric that was removed goes back to ranking by count in the stored state too.
       const next = dropMissingRankMetric(raw);
-      if (isEmptyLens(next)) {
-        saveLensDraft(draftScope, next);
-      }
       setSearchParams(
         (prev) => {
           const sp = new URLSearchParams(prev);
@@ -268,7 +259,7 @@ export function LensPage() {
         { replace: true }
       );
     },
-    [setSearchParams, draftScope]
+    [setSearchParams]
   );
   const setTimeRange = useCallback(
     (r: TimeRange) => {
@@ -400,11 +391,13 @@ export function LensPage() {
   }, [search]);
 
   // Fields of the active data view.
-  const discovery = useFieldDiscovery(config, timeRange);
+  // No text-index lookup: Visualize's queries do not use it (one query less on every open).
+  const discovery = useFieldDiscovery(config, timeRange, { textIndexes: false });
   const { fields, loading: discovering, fieldsFor } = discovery;
   // Fields are usable only when they are this view's: right after a view switch `fields` still
   // holds the previous table's until the new discovery publishes (#16b).
-  const fieldsLoading = discovering || !viewSettled || fieldsFor !== discoveryKey(config);
+  const fieldsPublished = viewSettled && fieldsFor === discoveryKey(config);
+  const fieldsLoading = discovering || !fieldsPublished;
   const fieldIndex = useMemo(() => buildFieldIndex(fields), [fields]);
   const fieldIndexRef = useRef(fieldIndex);
   useLayoutEffect(() => {
@@ -423,15 +416,13 @@ export function LensPage() {
     () => new Set([...fields.map((f) => f.sqlExpr), ...(config.columns.timestamp ? [config.columns.timestamp] : [])]),
     [fields, config.columns.timestamp]
   );
+  // The chart runs as soon as this view's columns include every field it uses, without waiting for
+  // the JSON paths (one more round trip); a chart on a field not known yet still waits.
+  const chartFieldsLoading = lensFieldsPending(fieldsPublished, discovering, urlLens, allowedFields);
   const lens = useMemo(
-    () => (fieldsLoading ? urlLens : sanitizeLens(urlLens, allowedFields)),
-    [urlLens, allowedFields, fieldsLoading]
+    () => (chartFieldsLoading ? urlLens : sanitizeLens(urlLens, allowedFields)),
+    [urlLens, allowedFields, chartFieldsLoading]
   );
-  useEffect(() => {
-    if (!fieldsLoading && !isEmptyLens(lens)) {
-      saveLensDraft(draftScope, lens);
-    }
-  }, [lens, draftScope, fieldsLoading]);
 
   // Data view switch on this page (#16b): the URL names the new view, query and time stay, filters
   // follow filtersForViewSwitch (D7 for pins; other pills disabled on a different table), and once
@@ -517,7 +508,7 @@ export function LensPage() {
   // A time-series calculation without a date histogram (LENS-CALC-01): say why instead of querying.
   const calcError = calculationError(lens);
   useEffect(() => {
-    if (isEmptyLens(lens) || !config.datasourceUid || fieldsLoading || queryError || calcError) {
+    if (isEmptyLens(lens) || !config.datasourceUid || chartFieldsLoading || queryError || calcError) {
       return;
     }
     let cancelled = false;
@@ -569,7 +560,7 @@ export function LensPage() {
     };
     // queryKey covers every input that changes the SQL.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [queryKey, fieldsLoading, refreshNonce, !!queryError]);
+  }, [queryKey, chartFieldsLoading, refreshNonce, !!queryError]);
   const current = result?.key === queryKey ? result : null;
   // A chart-type switch re-runs the query; until the new rows arrive keep drawing the previous chart
   // (same dimensions, filters and time) instead of a blank spinner frame. It is not interactive.
@@ -595,7 +586,7 @@ export function LensPage() {
     timeRange,
     index: fieldIndex,
     timeAxis,
-    enabled: xyChart && !fieldsLoading && !queryError && !!lens.layers,
+    enabled: xyChart && !chartFieldsLoading && !queryError && !!lens.layers,
   });
   const setLayers = (layers: ExtraLayer[]) => setLens({ ...lens, layers: layers.length > 0 ? layers : undefined });
   const [layerItemRef, setLayerItem] = useState<LayerItemRef | null>(null);
@@ -618,7 +609,7 @@ export function LensPage() {
   const suggestedTime = Math.round((timeRange.from.valueOf() + timeRange.to.valueOf()) / 2);
   // SHARED-PERF-01: same running cue as Discover (no Cancel here: leaving the chart without a
   // result would need its own empty state).
-  const chartLoading = fieldsLoading || (!isEmptyLens(lens) && !!config.datasourceUid && !current && !queryError && !calcError);
+  const chartLoading = chartFieldsLoading || (!isEmptyLens(lens) && !!config.datasourceUid && !current && !queryError && !calcError);
   const approxNote = current?.data ? lensApproxNote(lens) : null;
 
   const onAdd = (f: LensField) => setLens(addField(lens, f, ctx));
@@ -845,7 +836,7 @@ export function LensPage() {
         </Button>
         <SaveActions
           paramsKey={paramsKey}
-          disabled={isEmptyLens(lens) || fieldsLoading || !!queryError || !!calcError}
+          disabled={isEmptyLens(lens) || chartFieldsLoading || !!queryError || !!calcError}
           defaultTitle={defaultPanelTitle(lens)}
           buildPanel={buildPanel}
           timeRange={timeRange}

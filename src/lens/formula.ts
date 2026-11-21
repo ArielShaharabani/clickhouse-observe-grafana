@@ -16,9 +16,12 @@ import { quoteIdentifier } from '../sql/queryBuilder';
 import { timeExpr } from '../sql/timeExpr';
 import {
   counterRateSql,
+  cleanRankValue,
   cumulativeSumSql,
+  DEFAULT_RANK_VALUE,
   DEFAULT_WINDOW,
   differencesSql,
+  MAX_RANK_VALUE,
   MAX_WINDOW,
   movingAverageSql,
   OverallFn,
@@ -76,6 +79,14 @@ export const FORMULA_FUNCTIONS: FormulaFn[] = [
     numeric: true,
     args: [FIELD, { name: 'percentile', type: 'number', optional: true, named: true }, KQL],
     description: 'Value below which the given percentage of values fall (percentile=95 by default).',
+  },
+  {
+    name: 'percentile_rank',
+    kind: 'agg',
+    numeric: true,
+    args: [FIELD, { name: 'value', type: 'number', optional: true, named: true }, KQL],
+    description:
+      'Share of the values that are less than or equal to the given value, from 0 to 1 (value=0 by default), e.g. percentile_rank(bytes, value=100).',
   },
   {
     name: 'unique_count',
@@ -393,6 +404,11 @@ class Parser {
         if (t.kind === 'ident' && t.text[0] !== '`' && this.toks[this.i + 1]?.kind === 'eq') {
           this.next();
           this.next();
+          // A leading minus belongs to the number (`value=-5`); the text stays lexer-restricted digits.
+          const minus = this.peek().kind === 'op' && this.peek().text === '-' && this.toks[this.i + 1]?.kind === 'num';
+          if (minus) {
+            this.next();
+          }
           const v = this.next();
           if (v.kind !== 'str' && v.kind !== 'num') {
             throw new FormulaError(`Expected a string or number for ${t.text}=`, v.pos);
@@ -400,7 +416,7 @@ class Parser {
           if (t.text in named) {
             throw new FormulaError(`Argument ${t.text} given twice`, t.pos);
           }
-          named[t.text] = { kind: v.kind, value: v.kind === 'str' ? v.value! : v.text };
+          named[t.text] = { kind: v.kind, value: v.kind === 'str' ? v.value! : `${minus ? '-' : ''}${v.text}` };
         } else {
           args.push(this.expr(depth));
         }
@@ -596,6 +612,12 @@ export function validateFormula(node: FormulaNode, fields: FormulaFields): Formu
               errors.push(new FormulaError('percentile must be between 0 and 100', n.pos));
             }
           }
+          if (n.named.value) {
+            const v = Number(n.named.value.value);
+            if (!Number.isFinite(v) || Math.abs(v) > MAX_RANK_VALUE) {
+              errors.push(new FormulaError('value must be a number', n.pos));
+            }
+          }
           if (n.named.kql) {
             try {
               parseKql(n.named.kql.value);
@@ -772,6 +794,18 @@ export function stdDevSql(x: string, cond?: string): string {
   return cond ? `stddevPopIfOrNull(${x}, ${cond})` : `stddevPopOrNull(${x})`;
 }
 
+/**
+ * Percentile rank (Kibana's `percentile_rank`): the share (0–1, shown as a percent) of the values
+ * that are less than or equal to `value`; documents without the field do not count. Always OrNull:
+ * no values -> empty. `value` is a number we parsed and bounded, printed by us. Shared by the quick
+ * function and the formula.
+ */
+export function percentileRankSql(x: string, value: number, cond?: string): string {
+  const v = cleanRankValue(value);
+  const lt = `toFloat64(${x} <= ${String(v)})`;
+  return cond ? `avgIfOrNull(${lt}, ${cond})` : `avgOrNull(${lt})`;
+}
+
 /** The newest document that has a value (Kibana: top hit by the time field where the field exists). Shared by the quick function and the formula. */
 export function lastValueSql(x: string, cond: string | undefined, config: SourceConfig): string {
   if (!config.columns.timestamp) {
@@ -809,6 +843,9 @@ function emitAgg(
   if (fn.name === 'last_value') {
     return lastValueSql(x!, cond, ctx.config);
   }
+  if (fn.name === 'percentile_rank') {
+    return percentileRankSql(x!, n.named.value ? Number(n.named.value.value) : DEFAULT_RANK_VALUE, cond);
+  }
 
   if (fn.name === 'count') {
     if (!f) {
@@ -841,7 +878,7 @@ export function fieldToken(name: string): string {
 }
 
 /** Formula text for a quick function (switching a metric to Formula converts it). */
-export function quickToFormula(op: string, fieldLabel?: string, percentile?: number): string {
+export function quickToFormula(op: string, fieldLabel?: string, percentile?: number, rankValue?: number): string {
   const f = fieldLabel !== undefined ? fieldToken(fieldLabel) : '';
   switch (op) {
     case 'count':
@@ -857,6 +894,8 @@ export function quickToFormula(op: string, fieldLabel?: string, percentile?: num
 
     case 'percentile':
       return `percentile(${f}, percentile=${percentile ?? 95})`;
+    case 'percentile_rank':
+      return `percentile_rank(${f}, value=${cleanRankValue(rankValue)})`;
     case 'median':
     case 'sum':
     case 'min':
