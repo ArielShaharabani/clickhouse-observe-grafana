@@ -25,7 +25,7 @@ function fakeRunner(gapMs: number, matchEvery: number) {
 
 describe('planWindows', () => {
   it('grows geometrically and ends with the full span', () => {
-    expect(planWindows(7 * DAY)).toEqual([H, 6 * H, 36 * H, 7 * DAY]);
+    expect(planWindows(7 * DAY)).toEqual([H, 6 * H, 7 * DAY]);
   });
   it('caps the number of steps', () => {
     expect(planWindows(100 * DAY, { maxSteps: 2 })).toEqual([H, 100 * DAY]);
@@ -53,16 +53,16 @@ describe('fetchNewestFirst', () => {
     const f = fakeRunner(60_000, 10); // one match per 10 min
     const res = await fetchNewestFirst({ fromMs: from, toMs: to, limit: 200, run: f.makeRun(200) });
     expect(res.steps).toBe(3);
-    expect(f.calls.map((c) => to - c.fromMs)).toEqual([H, 6 * H, 36 * H]);
+    expect(f.calls.map((c) => to - c.fromMs)).toEqual([H, 6 * H, 7 * DAY]);
     expect(res.rows).toEqual(f.all(from, to).slice(0, 200));
-    expect(res.windowMs).toBe(36 * H);
+    expect(res.windowMs).toBe(7 * DAY);
   });
 
   it('falls back to the full range, returning every row when fewer than limit exist', async () => {
     const f = fakeRunner(60_000, 600); // very sparse
     const res = await fetchNewestFirst({ fromMs: from, toMs: to, limit: 200, run: f.makeRun(200) });
-    expect(res.steps).toBe(4);
-    expect(f.calls[3]).toEqual({ fromMs: from, toMs: to });
+    expect(res.steps).toBe(3);
+    expect(f.calls[2]).toEqual({ fromMs: from, toMs: to });
     expect(res.rows).toEqual(f.all(from, to));
   });
 

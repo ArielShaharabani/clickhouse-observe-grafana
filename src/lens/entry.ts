@@ -8,17 +8,14 @@
  * 2. The data view: the URL's `ds` when it names a known view, else the active view; `ds` is then
  *    always written, so the URL names the view the chart is built on.
  * 3. No `filters` → stored pinned filters (D7: disabled when pinned on another table).
- * 4. No `lens` → the draft saved for that view's datasource + table (LENS-SAVE-01).
+ *
+ * The chart itself (`lens`) comes only from the URL: a fresh open (the side-menu link) starts with
+ * an empty workspace, as Kibana's Lens does; a reload keeps the chart because the URL carries it
+ * (round 3 #19 — the per-tab draft that used to refill an open without `lens` is gone).
  */
-import { DataView, SourceConfig } from '../types';
+import { DataView } from '../types';
 import { mergePinnedFilters, StoredPin, tableKey } from '../state/sharedSearch';
 import { hasSearchContext } from '../state/lastSearch';
-import { encodeLens, LensState } from './state';
-
-/** Scope of a Lens draft: the datasource + table a chart was built on. */
-export function draftScopeOf(view: Pick<SourceConfig, 'datasourceUid' | 'database' | 'logsTable'>): string {
-  return `${view.datasourceUid}|${tableKey(view.database, view.logsTable)}`;
-}
 
 export interface VisualizeEntryInput {
   params: URLSearchParams;
@@ -26,7 +23,6 @@ export interface VisualizeEntryInput {
   activeView: DataView | null;
   storedPins: StoredPin[];
   restoreContext: (viewIds: string[]) => URLSearchParams | undefined;
-  loadDraft: (scope: string) => LensState | undefined;
 }
 
 export interface VisualizeEntry {
@@ -50,12 +46,6 @@ export function visualizeEntry(input: VisualizeEntryInput): VisualizeEntry {
     const pins = mergePinnedFilters([], input.storedPins, tableKey(view.database, view.logsTable));
     if (pins.length > 0) {
       sp.set('filters', JSON.stringify(pins));
-    }
-  }
-  if (!sp.has('lens')) {
-    const draft = input.loadDraft(draftScopeOf(view));
-    if (draft) {
-      sp.set('lens', encodeLens(draft));
     }
   }
   return { params: sp, view };

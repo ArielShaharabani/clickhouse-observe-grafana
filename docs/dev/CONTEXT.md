@@ -1,7 +1,7 @@
 # Context snapshot — read this to restart
 
 Saved after every feature (and every review-fix round). A new session can resume from this file plus `PROGRESS.md` alone.
-Last saved: 2026-11-21, #- R3-CHARTS merged (PR 70, v0.68.0).
+Last saved: 2026-11-21, #- R4-VIZ merged (PR 79, v0.72.0).
 
 ## Goal
 Bring Kibana Discover + Lens style exploration to Grafana on ClickHouse by extending the **ClickHouse Observe** app plugin.
@@ -76,6 +76,9 @@ Bring Kibana Discover + Lens style exploration to Grafana on ClickHouse by exten
 | - | R3-QUERYBAR: Visualize query row | 70 | src/lens/QueryRow.tsx, src/lens/LensPage.tsx |
 | - | R3-FUNCTIONS: Visualize metric functions and calculations | 70 | src/lens/compile.ts, src/lens/formula.ts, src/lens/state.ts, src/lens/DimensionEditor.tsx |
 | - | R3-CHARTS: Visualize chart types: bar horizontal, donut, heat map, gauge | 70 | src/lens/render/HeatmapChart.tsx, src/lens/panelExport.ts, src/lens/suggest.ts, src/lens/ChartTypeSwitcher.tsx |
+| - | R4-DISCOVER: Discover round-3 fixes | 79 | src/components/LogsTable.tsx, src/pages/LogsExplorer.tsx, src/data/windowedSearch.ts, src/sql/keys.ts |
+| - | R4-DASH: Dashboards and sharing round-3 fixes | 79 | src/lens/panelExport.ts, src/data/panelExport.ts, src/components/AddToDashboard/AddToDashboardModal.tsx, src/data/shortUrl.ts |
+| - | R4-VIZ: Visualize round-3 fixes: percentile rank, pie labels, faster open | 79 | src/lens/calc.ts, src/lens/formula.ts, src/lens/render/PieChart.tsx, src/lens/LensPage.tsx, src/components/SearchBar.tsx |
 
 ## Key decisions (details in DECISIONS.md)
 - Frontend-only; queries via grafana-clickhouse-datasource (`src/data/runQuery.ts`). Plain React + @grafana/ui, no Scenes.

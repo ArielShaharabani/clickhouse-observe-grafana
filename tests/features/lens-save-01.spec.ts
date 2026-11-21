@@ -84,14 +84,19 @@ test('save to the library only: a library panel is created, no navigation', asyn
   expect(found[0].model.targets[0].rawSql).toContain('SeverityText');
 });
 
-test('unsaved chart survives opening Visualize without it (session draft)', async ({ page }) => {
+test('a fresh open starts with an empty workspace; a reload keeps the unsaved chart (round 3 #19)', async ({ page }) => {
   const viz = new VisualizePage(page);
   await viz.open();
   await viz.addField('ServiceName');
   await expect(viz.chart.getByRole('button', { name: /^payments · Count of records: 9,264$/ })).toBeVisible();
 
-  await viz.open(); // no `lens` in the URL
+  // Reload: the URL carries the chart.
+  await page.reload();
   await expect(viz.group('Horizontal axis')).toContainText('Top 9 values of ServiceName');
-  await expect.poll(() => new URL(page.url()).searchParams.get('lens')).toContain('ServiceName');
+
+  // A fresh open (no `lens` in the URL, like the side-menu link) starts empty, as Kibana's Lens.
+  await viz.open();
+  await expect(page.getByText('Drop some fields here to start')).toBeVisible();
+  expect(new URL(page.url()).searchParams.get('lens')).toBeNull();
   expect(FIXTURE.counts.payments).toBe(9264);
 });

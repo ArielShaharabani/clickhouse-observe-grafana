@@ -8,7 +8,9 @@
  * in-flight request.
  */
 export interface ReconcileSql {
-  /** SQL of the list query as last issued, or null when it has not run yet. */
+  /** SQL of the list query as last issued, or null when it has not run yet: the initial (debounced)
+   *  fetch is then still pending and builds its SQL with the discovered index when it fires, so a
+   *  re-run would only send the same query twice. */
   prevLogs: string | null;
   /** SQL the list query would build now (with the discovered field index). */
   nextLogs: string;
@@ -18,7 +20,7 @@ export interface ReconcileSql {
 
 export function discoveryReconcileTargets(s: ReconcileSql): { logs: boolean; volume: boolean } {
   return {
-    logs: s.prevLogs === null || s.prevLogs !== s.nextLogs,
-    volume: s.prevVolume === null || s.prevVolume !== s.nextVolume,
+    logs: s.prevLogs !== null && s.prevLogs !== s.nextLogs,
+    volume: s.prevVolume !== null && s.prevVolume !== s.nextVolume,
   };
 }

@@ -4,7 +4,7 @@
  * One metric → field defaults; several → one override per metric, matched by its label.
  */
 import { uniqueMetricLabels } from '../compile';
-import { grafanaUnit } from '../metricOptions';
+import { formatOf, grafanaUnit } from '../metricOptions';
 import { LensState, MetricDim } from '../state';
 
 export interface LensFieldConfig {
@@ -16,7 +16,7 @@ const escapeRegex = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 function properties(m: MetricDim, state: LensState, xy: boolean): Array<{ id: string; value: unknown }> {
   const props: Array<{ id: string; value: unknown }> = [];
-  const { unit, decimals } = grafanaUnit(m.format);
+  const { unit, decimals } = grafanaUnit(formatOf(m));
   if (unit) {
     props.push({ id: 'unit', value: unit });
   }

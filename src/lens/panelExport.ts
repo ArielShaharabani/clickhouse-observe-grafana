@@ -6,7 +6,7 @@
  * transformations into what the matching core panel draws. Pure: unit-tested on the JSON.
  */
 import { createTheme, TimeRange } from '@grafana/data';
-import { chDatasourceRef, ExportedPanel, FORMAT_TABLE, GridPos } from '../data/panelExport';
+import { chDatasourceRef, EXPORT_VOLUME_POINTS, ExportedPanel, FORMAT_TABLE, GridPos } from '../data/panelExport';
 import { SourceConfig } from '../types';
 import { bucketAlias, compileLens, kindAlias, metricAlias, uniqueMetricLabels } from './compile';
 import { dimLabelIn, LensState } from './state';
@@ -19,7 +19,7 @@ import { seriesColorOf } from './style';
 import { stableColors } from './render/seriesColors';
 import { VISUALIZE_SOURCE_KEY } from './panelSource';
 import { gaugeDefaults, gaugeMetrics, gaugeOptions } from './render/gaugeSpec';
-import { grafanaUnit } from './metricOptions';
+import { formatOf, grafanaUnit } from './metricOptions';
 
 export interface LensPanelOpts {
   id: number;
@@ -192,6 +192,9 @@ function baseLensPanel(
     ...(opts.description?.trim() ? { description: opts.description.trim() } : {}),
     gridPos: opts.gridPos,
     datasource,
+    // Auto date buckets: ~60 per range, like Visualize's auto interval. Grafana's default (the
+    // panel width in pixels) gave ~1-minute buckets and hairline bars.
+    ...(state.buckets.some((b) => b.kind === 'date_histogram') ? { maxDataPoints: EXPORT_VOLUME_POINTS } : {}),
     targets: [
       {
         refId: 'A',
@@ -284,10 +287,10 @@ function baseLensPanel(
     case 'donut': {
       const byCategory = state.buckets.length > 0;
       const pie = state.chartType !== 'metric';
-      // Stat tiles by category take their names from the row ("payments"); a renamed metric field
-      // gets a fixed display name that hides them, so only the category column is renamed and
-      // several metrics are told apart by "value · metric", as in Visualize.
-      const tiles = !pie && byCategory;
+      // Stat tiles and pie slices by category take their names from the row ("payments"); a renamed
+      // metric field gets a fixed display name that hides them, so only the category column is
+      // renamed and several metric tiles are told apart by "value · metric", as in Visualize.
+      const tiles = byCategory;
       const labels = uniqueMetricLabels(state.metrics);
       return {
         ...base,
@@ -380,7 +383,7 @@ function heatmapPanel(
         },
       ]
     : [];
-  const { unit, decimals } = grafanaUnit(state.metrics[0]?.format);
+  const { unit, decimals } = grafanaUnit(formatOf(state.metrics[0]));
   const units = { unit: unit ?? 'locale', ...(decimals !== undefined ? { decimals } : {}) };
   if (x?.kind === 'date_histogram') {
     return {

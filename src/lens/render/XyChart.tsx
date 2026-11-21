@@ -13,7 +13,7 @@ import { IconButton, useStyles2, useTheme2 } from '@grafana/ui';
 import { LensResult } from '../compile';
 import { moveMenuFocus, usePopoverDialog } from '../../components/a11y/dialog';
 import { ChartType, MetricDim, XySubType } from '../state';
-import { formatValue } from '../metricOptions';
+import { formatOf, formatValue } from '../metricOptions';
 import {
   AxisScale,
   axisOf,
@@ -219,8 +219,8 @@ export function XyChart({
     return theme.visualization.getColorByName(palette[(hasBreakdown ? slots[i] : i) % palette.length]);
   });
   const color = (i: number) => colors[i];
-  const fmtOf = (si: number, v: number) => formatValue(v, metricOf(si)?.format, fmt);
-  const axisFmtOf = (si: number, v: number) => formatValue(v, metricOf(si)?.format, formatAxisNumber);
+  const fmtOf = (si: number, v: number) => formatValue(v, formatOf(metricOf(si)), fmt);
+  const axisFmtOf = (si: number, v: number) => formatValue(v, formatOf(metricOf(si)), formatAxisNumber);
   const visible = result.series.map((s) => !hidden.has(s.name));
   // Line has no stacking (as in Kibana): a sub-type kept from Bar / Area doesn't change it.
   const mode: 'stacked' | 'percentage' | 'none' =

@@ -13,6 +13,7 @@ import {
   FilterSpec,
   RangeDim,
   clampPercentile,
+  cleanRankValue,
   DEFAULT_PERCENTILE,
   hasRef,
   LensField,
@@ -37,6 +38,7 @@ const NUMERIC_OPS: ReadonlySet<MetricOp> = new Set([
   'min',
   'max',
   'percentile',
+  'percentile_rank',
   'std_dev',
   'last_value',
   'counter_rate',
@@ -103,6 +105,7 @@ export function withOp(m: MetricDim, op: MetricOp, fields: LensField[]): MetricD
     fieldLabel: keep.label,
     numeric: keep.type === 'number',
     percentile: op === 'percentile' ? clampPercentile(m.percentile ?? DEFAULT_PERCENTILE) : undefined,
+    rankValue: op === 'percentile_rank' ? cleanRankValue(m.rankValue ?? m.ref?.rankValue) : undefined,
     name: m.name,
     ...metricOptionsOf(m),
   };
@@ -122,6 +125,9 @@ function currentRef(m: MetricDim): MetricRef {
   const r: MetricRef = { op: m.op as BaseOp, field: m.field, fieldLabel: m.fieldLabel, numeric: m.numeric };
   if (m.op === 'percentile') {
     r.percentile = clampPercentile(m.percentile ?? DEFAULT_PERCENTILE);
+  }
+  if (m.op === 'percentile_rank') {
+    r.rankValue = cleanRankValue(m.rankValue);
   }
   return r;
 }
@@ -152,6 +158,9 @@ export function withRefOp(m: MetricDim, op: BaseOp, fields: LensField[]): Metric
   if (op === 'percentile') {
     ref.percentile = clampPercentile(m.ref?.percentile ?? DEFAULT_PERCENTILE);
   }
+  if (op === 'percentile_rank') {
+    ref.rankValue = cleanRankValue(m.ref?.rankValue);
+  }
   return { ...m, ref };
 }
 
@@ -164,6 +173,11 @@ export function withRefField(m: MetricDim, field: LensField): MetricDim {
 /** Sets the inner metric's percentile (1–99). */
 export function withRefPercentile(m: MetricDim, p: number): MetricDim {
   return m.ref ? { ...m, ref: { ...m.ref, percentile: clampPercentile(p) } } : m;
+}
+
+/** Sets the inner metric's percentile rank value. */
+export function withRefRankValue(m: MetricDim, v: number): MetricDim {
+  return m.ref ? { ...m, ref: { ...m.ref, rankValue: cleanRankValue(v) } } : m;
 }
 
 /** Sets a Moving average's window (1–100). */

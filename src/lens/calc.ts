@@ -28,7 +28,17 @@ export const isCalcOp = (op: MetricOp): op is CalcOp => (CALC_OPS as readonly st
 
 /** Functions a calculation can wrap (the inner metric). */
 export type BaseOp =
-  'count' | 'avg' | 'last_value' | 'max' | 'median' | 'min' | 'percentile' | 'std_dev' | 'sum' | 'unique';
+  | 'count'
+  | 'avg'
+  | 'last_value'
+  | 'max'
+  | 'median'
+  | 'min'
+  | 'percentile'
+  | 'percentile_rank'
+  | 'std_dev'
+  | 'sum'
+  | 'unique';
 export const BASE_OPS: readonly BaseOp[] = [
   'avg',
   'count',
@@ -37,6 +47,7 @@ export const BASE_OPS: readonly BaseOp[] = [
   'median',
   'min',
   'percentile',
+  'percentile_rank',
   'std_dev',
   'sum',
   'unique',
@@ -51,6 +62,17 @@ export interface MetricRef {
   fieldLabel?: string;
   numeric?: boolean;
   percentile?: number;
+  /** Percentile rank: the value whose rank is computed. */
+  rankValue?: number;
+}
+
+export const DEFAULT_RANK_VALUE = 0;
+/** Largest |value| a percentile rank accepts (keeps the SQL literal a plain number). */
+export const MAX_RANK_VALUE = 1e15;
+/** Percentile rank value: any finite number within ±1e15; anything else → the default (0). */
+export function cleanRankValue(v: unknown): number {
+  const n = typeof v === 'number' ? v : typeof v === 'string' && v.trim() !== '' ? Number(v) : NaN;
+  return Number.isFinite(n) && Math.abs(n) <= MAX_RANK_VALUE ? n : DEFAULT_RANK_VALUE;
 }
 
 export const DEFAULT_WINDOW = 5;
@@ -70,6 +92,7 @@ const NULLABLE_OPS: ReadonlySet<string> = new Set([
   'median',
   'min',
   'percentile',
+  'percentile_rank',
   'std_dev',
 ]);
 export const isNullableOp = (op: string): boolean => NULLABLE_OPS.has(op);
@@ -83,6 +106,7 @@ export const FUNCTION_HELP: Record<Exclude<MetricOp, 'formula'>, string> = {
   median: 'The middle value of a number field (50th percentile).',
   min: 'The smallest value of a number field.',
   percentile: 'The value below which the given percentage of values fall.',
+  percentile_rank: 'The percentage of the values of a number field that are less than or equal to the given value.',
   std_dev: 'How much the values of a number field vary around their mean (population standard deviation).',
   sum: 'The total of the values of a number field.',
   unique: 'The number of distinct values of a field (approximate).',

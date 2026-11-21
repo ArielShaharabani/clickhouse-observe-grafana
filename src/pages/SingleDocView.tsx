@@ -50,8 +50,10 @@ export function SingleDocView() {
   const paramsKey = searchParams.toString();
   const urlState = useMemo(() => decodeLogsState(new URLSearchParams(paramsKey)), [paramsKey]);
   const [fallbackRange] = useState(() => getDefaultTimeRange());
-  const timeRange = urlState.timeRange ?? fallbackRange;
   const ret = useMemo(() => new URLSearchParams(paramsKey).get('ret'), [paramsKey]);
+  // Short links carry the range only inside `ret`; older links also have their own from / to.
+  const retRange = useMemo(() => (ret ? decodeLogsState(new URLSearchParams(ret)).timeRange : undefined), [ret]);
+  const timeRange = urlState.timeRange ?? retRange ?? fallbackRange;
   const fieldsState = useFieldDiscovery(config, timeRange);
 
   const sql = anchor && viewReady ? buildDocumentByAnchorQuery(config, anchor) : '';

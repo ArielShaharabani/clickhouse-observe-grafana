@@ -68,11 +68,16 @@ export interface SingleDocUrlInput {
  * "View single document" permalink (PARITY-GRID): `doc/<dataViewId>/<ns>_<id>` — the document's
  * stable identity is the same ContextAnchor as surrounding documents (epoch-ns timestamp + row-id
  * hash of the mapped core columns), so the link keeps working regardless of time range, sort or
- * paging. The query string only carries `from` / `to` and `ret`.
+ * paging. The query string carries `ret` (which holds the time range) or, without it, `from` / `to`.
  */
 export function buildSingleDocUrl(input: SingleDocUrlInput): string {
-  const sp = encodeLogsState({ search: '', filters: [], columns: [], timeRange: input.timeRange });
-  if (input.ret) {
+  // The time range travels inside `ret` (the Discover query string carries from / to); only a link
+  // whose return context has no range carries its own from / to. Old links with both still decode.
+  const retHasRange = input.ret ? new URLSearchParams(input.ret).has('from') : false;
+  const sp = retHasRange
+    ? new URLSearchParams({ ret: input.ret })
+    : encodeLogsState({ search: '', filters: [], columns: [], timeRange: input.timeRange });
+  if (!retHasRange && input.ret) {
     sp.set('ret', input.ret);
   }
   return `${prefixRoute('doc')}/${encodeURIComponent(input.viewId)}/${formatAnchorParam(input.anchor)}?${sp.toString()}`;

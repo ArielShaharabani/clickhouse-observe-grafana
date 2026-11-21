@@ -67,6 +67,8 @@ export interface PanelExportOpts {
   gridPos: GridPos;
   /** `discoverSourceOf(...)`: lets the dashboard panel menu reopen the search in Discover. */
   source?: string;
+  /** Documents matching the search when the panel is added (table panel's cap notice). */
+  totalDocs?: number;
 }
 
 /**
@@ -147,6 +149,16 @@ function columnLayout(columns: SelectedColumn[]): {
 /** Rows the exported Discover table holds (Discover's grid pages 200 at a time; a dashboard has no "load more"). */
 export const EXPORT_TABLE_LIMIT = 1000;
 
+/** The table panel's description: the cap, and how many documents matched when it was added. */
+export function tableDescription(totalDocs?: number): string {
+  const cap = EXPORT_TABLE_LIMIT.toLocaleString('en-US');
+  const matched =
+    totalDocs !== undefined && totalDocs > EXPORT_TABLE_LIMIT
+      ? `${totalDocs.toLocaleString('en-US')} documents matched when this panel was added; it shows only the newest ${cap}.`
+      : `Shows the newest ${cap} documents matching the search.`;
+  return `${matched} Open in Discover for all of them.`;
+}
+
 /** Buckets the exported volume panel aims for, like Discover's auto interval (about 50-60 bars). */
 export const EXPORT_VOLUME_POINTS = 60;
 
@@ -180,9 +192,15 @@ export function buildTablePanel(
   return {
     id: opts.id,
     type: 'table',
-    title: opts.title?.trim() || 'Logs',
-    // The query is capped, so the panel says so instead of a row count that reads like a total.
-    description: `The newest ${EXPORT_TABLE_LIMIT.toLocaleString('en-US')} documents matching the search. Open in Discover for all of them.`,
+    // A capped table says so in its title too (the description is only an info icon).
+    title:
+      opts.title?.trim() ||
+      (opts.totalDocs !== undefined && opts.totalDocs > EXPORT_TABLE_LIMIT
+        ? `Logs (newest ${EXPORT_TABLE_LIMIT.toLocaleString('en-US')})`
+        : 'Logs'),
+    // The query is capped, so the panel says so (with the true count when known) instead of a row
+    // count that reads like a total.
+    description: tableDescription(opts.totalDocs),
     gridPos: opts.gridPos,
     datasource,
     targets: [

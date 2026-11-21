@@ -133,8 +133,36 @@ function highlighted(
 
 const upper = (s: string) => s.toUpperCase();
 
+/**
+ * A data view with no mapped columns (e.g. no time field) has nothing to show by default: the grid
+ * would be blank until a column is added. Kibana shows a "Summary" column with every field, so
+ * this does too. The rows already carry every field (the grid query falls back to SELECT *).
+ */
+const SUMMARY_COLUMN: SelectedColumn = {
+  id: '__summary',
+  key: '__summary',
+  sqlExpr: '',
+  displayName: 'Summary',
+  type: 'text',
+  isCore: true,
+};
+
+/** `key: value` for every non-empty field of the row (internal `__` aliases left out). */
+export function summarizeRow(row: LogRow): string {
+  const parts: string[] = [];
+  for (const [k, v] of Object.entries(row)) {
+    if (k.startsWith('__') || v === null || v === undefined || v === '') {
+      continue;
+    }
+    parts.push(`${k}: ${cellTextValue(v)}`);
+  }
+  return parts.join('  ');
+}
+
+const cellRaw = (col: SelectedColumn, row: LogRow): unknown => (col === SUMMARY_COLUMN ? summarizeRow(row) : row[col.key]);
+
 function renderCell(col: SelectedColumn, row: LogRow, matcher: RegExp | null | undefined, markClass: string): React.ReactNode {
-  const raw = row[col.key];
+  const raw = cellRaw(col, row);
   if (col.type === 'time') {
     return String(formatTimestamp(raw));
   }
@@ -151,7 +179,7 @@ function renderCell(col: SelectedColumn, row: LogRow, matcher: RegExp | null | u
 export function LogsTable({
   rows,
   loading,
-  columns,
+  columns: columnsProp,
   sort,
   onRowClick,
   onSort,
@@ -171,13 +199,14 @@ export function LogsTable({
   onPageStep,
   anchorRow,
 }: LogsTableProps) {
+  const columns = useMemo(() => (columnsProp.length === 0 ? [SUMMARY_COLUMN] : columnsProp), [columnsProp]);
   const wrap = display.bodyLines === 'auto';
   const bodyLines = display.bodyLines === 'auto' ? 0 : display.bodyLines;
   const showCompare = compareSelection !== undefined && onToggleCompare !== undefined;
   const styles = useStyles2(getStyles);
   // One compiled matcher per column, not per cell per render (the grid re-renders on hover).
   const matchers = useMemo(
-    () => new Map(columns.map((c) => [c.id, highlighterFor ? highlighterFor(c) : null])),
+    () => new Map(columns.map((c) => [c.id, highlighterFor && c !== SUMMARY_COLUMN ? highlighterFor(c) : null])),
     [columns, highlighterFor]
   );
   // Roving keyboard focus on one cell (row index within this page, column index), independent of
@@ -448,7 +477,7 @@ export function LogsTable({
     const idx = columns.findIndex((c) => c.id === col.id);
     const sorted = sort?.col === col.key ? sort.dir : undefined;
     const items: ColumnMenuItem[] = [];
-    if (onSort) {
+    if (onSort && col !== SUMMARY_COLUMN) {
       items.push(
         { id: 'asc', label: 'Sort ascending', icon: 'arrow-up', active: sorted === 'asc', run: () => onSort(col.key, 'asc') },
         { id: 'desc', label: 'Sort descending', icon: 'arrow-down', active: sorted === 'desc', run: () => onSort(col.key, 'desc') }
@@ -469,7 +498,7 @@ export function LogsTable({
         id: 'copy-values',
         label: 'Copy column',
         icon: 'copy',
-        run: () => void copyToClipboard(rows.map((r) => cellTextValue(r[col.key])).join('\n')),
+        run: () => void copyToClipboard(rows.map((r) => cellTextValue(cellRaw(col, r))).join('\n')),
       });
     }
     if (onRemoveColumn && !col.isCore) {
@@ -689,7 +718,7 @@ export function LogsTable({
                     </button>
                   </td>
                   {columns.map((col, ci) => {
-                    const rawValue = row[col.key];
+                    const rawValue = cellRaw(col, row);
                     const isFocusedCell = gridFocused && isFocused && focusCell.ci === ci;
                     const isExpanded = expanded?.rows === rows && expanded.row === row && expanded.colId === col.id;
                     // A raw Map/JSON *container* column (added as its own column, e.g. the whole
@@ -705,7 +734,7 @@ export function LogsTable({
                       !col.sqlExpr.includes('[') &&
                       !col.sqlExpr.includes('.');
                     const filterable =
-                      onAddFilter && rawValue !== null && rawValue !== undefined && !isRawContainer &&
+                      onAddFilter && col !== SUMMARY_COLUMN && rawValue !== null && rawValue !== undefined && !isRawContainer &&
                       (timeFilterable || col.type !== 'time');
                     return (
                       <td
@@ -1081,9 +1110,8 @@ const getStyles = (theme: GrafanaTheme2) => ({
   bodyCell: css`
     max-width: 0;
     width: 100%;
-    & > span {
-      min-width: 18em;
-    }
+    /* On the cell, not the text inside it: a span wider than its cell spills over the next column. */
+    min-width: 18em;
   `,
   /** First row: below the cell, so it never covers the sticky column header. */
   cellToolbarBelow: css`

@@ -85,6 +85,21 @@ describe('sql/keys.ts caching', () => {
     }
   });
 
+  it('an empty window is retried once with the widest window; a window with rows but no keys is not', async () => {
+    mockRunQueryRows.mockResolvedValueOnce([]).mockResolvedValueOnce([{ k: 'a', total: 2 }]);
+    const found = await loadColumnKeys(config, 'LogAttributes', { ...opts(), fallbackWindows: [['w1'], ['w2']] });
+    expect(found.keys).toEqual([{ key: 'a' }]);
+    expect(mockRunQueryRows).toHaveBeenCalledTimes(2);
+    expect(String(mockRunQueryRows.mock.calls[1][0].sql)).toContain('w2');
+    expect(String(mockRunQueryRows.mock.calls[1][0].sql)).not.toContain('w1');
+
+    mockRunQueryRows.mockClear();
+    mockRunQueryRows.mockResolvedValueOnce([{ k: '', total: 40 }]);
+    const empty = await loadColumnKeys(config, 'ScopeAttributes', { ...opts(), fallbackWindows: [['w1'], ['w2']] });
+    expect(empty.keys).toEqual([]);
+    expect(mockRunQueryRows).toHaveBeenCalledTimes(1);
+  });
+
   it('peekColumnKeys returns undefined on a miss and the cached value on a fresh hit', async () => {
     expect(peekColumnKeys(config.datasourceUid, 'LogAttributes', timeRange, opts())).toBeUndefined();
     mockRunQueryRows.mockResolvedValue([{ k: 'a', total: 1 }]);

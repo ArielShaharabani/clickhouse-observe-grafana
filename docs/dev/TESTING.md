@@ -497,3 +497,29 @@ LENS-DATAVIEW acceptance:
 | E2E | `tests/features/r3-charts.spec.ts` (5 tests) — run once by the agent on its own container (all passed); coordinator: not run |
 | E2E | Updated `lens-type-01.spec.ts` (option regex excludes "Bar horizontal"), `lens-chart-01.spec.ts` (Maximum value parked on Metric → Bar), `parity-xychart.spec.ts` (Bar option) — run once by the agent with `lens-style-01` / `lens-save-01` (all passed); coordinator: not run |
 | IT | Chart switch to / from every new type sends no request when the SQL doesn't change (e2e heat map / bar horizontal / gauge tests count `/api/ds/query`) |
+
+### R4-DISCOVER (PR 79)
+| Case | Status |
+| --- | --- |
+
+### R4-DASH (PR 79)
+| Case | Status |
+| --- | --- |
+| jest: panel `maxDataPoints`, capped table title/description, short URL without orgId | passes |
+| e2e: Add to dashboard shows empty title fields with placeholders | not run (coordinator) |
+| e2e: Cancel after a chart type change shows `Leave with unsaved changes?`; Cancel unchanged goes straight back | not run (coordinator) |
+| e2e: short link matches `/goto/<uid>` without `orgId=1` and opens | not run (coordinator) |
+
+### R4-VIZ (PR 79)
+| Case | Status |
+| --- | --- |
+| Jest | `src/lens/__tests__/percentileRank.test.tsx` (labels, SQL app / dashboard / Filter by / inner metric, URL cleaning, percent default + saved panel `percentunit`, function switching, formula accept / reject / SQL / quick → formula, editor value input incl. decimals and the inner-metric input) |
+| Jest | `src/lens/__tests__/pieChart.test.tsx` (decimal percent, severity pie labels and no overlap, outside labels + leader lines, donut labels in the ring or outside, many thin slices, full circle, slices as buttons that filter, legend, tooltip) |
+| Jest | `src/components/__tests__/SearchBar.test.tsx` (Enter closes the list; the pending value fetch does not reopen it — fails without the fix) |
+| Jest | `src/components/__tests__/perfMetadata.test.tsx` (skip-index lookup in flight before the columns answer; skipped with `textIndexes: false`) |
+| Jest | `src/lens/__tests__/dataview.test.ts` (open without `lens` stays empty even with a stored draft; URL lens kept; `lensFieldsPending`) |
+| Jest | `src/lens/__tests__/save.test.ts` (draft tests removed with the draft) |
+| E2E | `tests/features/r4-viz.spec.ts` — not run (coordinator) |
+| E2E | `tests/features/lens-save-01.spec.ts` (fresh open empty, reload keeps the chart; replaces the session-draft test) — not run (coordinator) |
+| E2E | `tests/features/parity-charts2.spec.ts`, `tests/features/r3-charts.spec.ts` (pie / donut are `data-panel="pie"` now) — not run (coordinator) |
+| Manual | perf-50m Visualize load (`kibana-compare/round3/visualize/o-perf.js`): expect 6 queries, no `data_skipping_indices`, chart query issued right after `system.columns` — not run (coordinator) |

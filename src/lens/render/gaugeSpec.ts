@@ -5,7 +5,7 @@
  */
 import { createDataFrame, createTheme, DataFrame, FieldType } from '@grafana/data';
 import { LensResult } from '../compile';
-import { grafanaUnit } from '../metricOptions';
+import { formatOf, grafanaUnit } from '../metricOptions';
 import { GaugeOptions, LensState, MAX_GAUGES } from '../state';
 
 /** A round number at or above `v` (1, 2, 2.5, 5 × 10^k): the automatic maximum. */
@@ -83,7 +83,7 @@ export function gaugeDefaults(state: LensState): Record<string, unknown> {
   const theme = createTheme();
   const { value } = gaugeMetrics(state);
   const m = state.metrics[value];
-  const { unit, decimals } = grafanaUnit(m?.format);
+  const { unit, decimals } = grafanaUnit(formatOf(m));
   const color = m?.color ?? theme.visualization.getColorByName('blue');
   return {
     unit: unit ?? 'locale',

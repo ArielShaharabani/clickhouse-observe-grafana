@@ -70,10 +70,10 @@ describe('discoveryReconcileTargets', () => {
     expect(t).toEqual({ logs: true, volume: true });
   });
 
-  it('re-runs a query that never ran', () => {
+  it('leaves a query that has not run yet to its pending fetch (no duplicate request)', () => {
     expect(discoveryReconcileTargets({ prevLogs: null, nextLogs: 'a', prevVolume: null, nextVolume: 'b' })).toEqual({
-      logs: true,
-      volume: true,
+      logs: false,
+      volume: false,
     });
   });
 });

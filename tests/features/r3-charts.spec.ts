@@ -85,7 +85,8 @@ test('donut: same roles as pie, drawn as a ring', async ({ page }) => {
   await viz.addField('ServiceName');
   await pickChart(page, 'donut', /^Donut/);
   await expect(viz.chart).toHaveAttribute('data-chart-type', 'donut');
-  await expect(viz.chart).toHaveAttribute('data-panel', 'piechart');
+  await expect(viz.chart).toHaveAttribute('data-panel', 'pie');
+  await expect(page.getByTestId('lens-pie')).toHaveAttribute('data-pie-type', 'donut');
   await expect(viz.group('Slice by')).toContainText('ServiceName');
   await expect(viz.chart.getByText('payments').first()).toBeVisible();
 });
@@ -169,17 +170,19 @@ test('saved donut, bar and metric panels show the service names, never the row-k
     await expect(viz.chart).toHaveAttribute('data-chart-type', lens.chartType);
     await page.getByRole('button', { name: 'Save', exact: true }).click();
     const dialog = page.getByRole('dialog', { name: 'Save Lens visualization' });
-    await dialog.getByLabel(/^Title/).fill(`r3 kinds ${lens.chartType} ${Date.now().toString(36)}`);
+    const title = `r3 kinds ${lens.chartType} ${Date.now().toString(36)}`;
+    await dialog.getByLabel(/^Title/).fill(title);
     await dialog.getByRole('radio', { name: 'New' }).check({ force: true });
     await dialog.getByRole('button', { name: 'Save and go to dashboard' }).click();
     await expect(page).toHaveURL(/\/d\//);
     const uid = new URL(page.url()).pathname.split('/')[2];
-    const panel = page.locator('[data-viz-panel-key], section[data-testid*="Panel header"]').first();
-    await expect(page.getByText('payments').first()).toBeVisible({ timeout: 30_000 });
-    await expect(page.getByText('checkout').first()).toBeVisible();
+    // Scoped to the panel: the names must come from the panel's own slices / tiles / legend.
+    const panel = page.getByRole('region', { name: title });
+    await expect(panel.getByText('payments').first()).toBeVisible({ timeout: 30_000 });
+    await expect(panel.getByText('checkout').first()).toBeVisible();
     await expect(panel.getByText(/\bk[01]\b/)).toHaveCount(0);
     if (lens.metrics.length > 1) {
-      await expect(page.getByText('payments · Count of records').first()).toBeVisible();
+      await expect(panel.getByText('payments · Count of records').first()).toBeVisible();
     }
     if (lens.chartType === 'donut') {
       await expect(panel.getByText('Count of records')).toHaveCount(0);

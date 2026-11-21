@@ -39,7 +39,7 @@ import {
   stepBucket,
 } from './interval';
 import { FieldIndex } from '../sql/fields';
-import { formulaToSql, FormulaSqlContext, lastValueSql, stdDevSql } from './formula';
+import { formulaToSql, FormulaSqlContext, lastValueSql, percentileRankSql, stdDevSql } from './formula';
 import {
   clampWindow,
   counterRateSql,
@@ -54,6 +54,7 @@ import type { RefComputed } from './layers';
 import {
   BucketDim,
   clampPercentile,
+  cleanRankValue,
   DateHistogramDim,
   dimLabel,
   dimLabelIn,
@@ -188,6 +189,8 @@ function metricSql(m: MetricDim, fctx: FormulaSqlContext, cond?: string, orNull 
       return stdDevSql(x, cond);
     case 'last_value':
       return lastValueSql(x, cond, fctx.config);
+    case 'percentile_rank':
+      return percentileRankSql(x, cleanRankValue(m.rankValue), cond);
     case 'percentile': {
       // A number we produce (clamped 1–99), never text from the URL.
       const q = (clampPercentile(m.percentile) / 100).toFixed(2);

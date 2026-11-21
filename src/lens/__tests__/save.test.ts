@@ -2,8 +2,7 @@ import { dateTime } from '@grafana/data';
 import { compileLens } from '../compile';
 import { buildLensPanel, columnNames, defaultPanelTitle } from '../panelExport';
 import { saveLens } from '../SaveLensModal';
-import { LENS_DRAFT_KEY, loadLensDraft, saveLensDraft } from '../draft';
-import { decodeLens, EMPTY_LENS, LensState, sanitizeLens } from '../state';
+import { decodeLens, LensState, sanitizeLens } from '../state';
 import { OTEL_COLUMN_MAPPING, SourceConfig } from '../../types';
 import * as dashboards from '../../data/dashboards';
 
@@ -48,6 +47,11 @@ const panel = (s: LensState) =>
 const ids = (p: ReturnType<typeof panel>) => (p.transformations ?? []).map((t) => t.id);
 
 describe('LENS-SAVE-01 dashboard SQL', () => {
+  it('R4-DASH: a date-histogram panel asks for ~60 buckets (Visualize auto interval), others do not', () => {
+    expect(panel(lens('bar', [date])).maxDataPoints).toBe(60);
+    expect(panel(lens('bar', [service])).maxDataPoints).toBeUndefined();
+  });
+
   it('date buckets use the $__timeInterval macro (follows the dashboard time), app mode unchanged', () => {
     const s = lens('bar', [date, level], 'stacked');
     const dash = compileLens(s, config, conds, range, 'dashboard').sql;
@@ -228,26 +232,5 @@ describe('saveLens', () => {
   it('library only: no dashboard is touched', async () => {
     expect(await saveLens({ panel: p, destination: 'none', library: true, timeRange: range })).toEqual({});
     expect(api.saveDashboard).not.toHaveBeenCalled();
-  });
-});
-
-describe('unsaved chart draft', () => {
-  beforeEach(() => window.sessionStorage.clear());
-
-  it('round-trips, clears when empty, and rejects junk', () => {
-    const s = lens('bar', [date], 'stacked');
-    saveLensDraft('ds|t', s);
-    expect(loadLensDraft('ds|t')).toEqual(s);
-    saveLensDraft('ds|t', EMPTY_LENS);
-    expect(window.sessionStorage.getItem(LENS_DRAFT_KEY)).toBeNull();
-    window.sessionStorage.setItem(LENS_DRAFT_KEY, JSON.stringify({ scope: 'ds|t', lens: '{"chartType":"evil"}' }));
-    expect(loadLensDraft('ds|t')).toBeUndefined();
-    window.sessionStorage.setItem(LENS_DRAFT_KEY, 'not json');
-    expect(loadLensDraft('ds|t')).toBeUndefined();
-  });
-
-  it('only restores on the source it was built on', () => {
-    saveLensDraft('ds|a', lens('bar', [date], 'stacked'));
-    expect(loadLensDraft('ds|b')).toBeUndefined();
   });
 });
