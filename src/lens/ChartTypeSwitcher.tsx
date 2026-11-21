@@ -37,7 +37,18 @@ export const CHART_DESCRIPTIONS: Record<ChartKind, string> = {
   gauge: 'Show a value against a range or a target',
 };
 
-const ORDER: ChartKind[] = ['bar', 'bar_horizontal', 'line', 'area', 'metric', 'table', 'pie', 'donut', 'heatmap', 'gauge'];
+const ORDER: ChartKind[] = [
+  'bar',
+  'bar_horizontal',
+  'line',
+  'area',
+  'metric',
+  'table',
+  'pie',
+  'donut',
+  'heatmap',
+  'gauge',
+];
 
 /** Types matching a search (name or description, case-insensitive), in menu order. */
 export function filterChartTypes(query: string): ChartKind[] {

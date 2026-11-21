@@ -204,7 +204,9 @@ export function XyChart({
   const hasBreakdown = result.series.some((s) => s.breakdown !== undefined);
   // Colours: a legend choice, else the metric's own colour (a series that is the metric itself),
   // else a breakdown value's stable colour (by value, not position), else the metric's position.
-  const slots = hasBreakdown ? assignColorSlots(result.series.map(seriesColorKey), palette.length, undefined, SESSION_COLOR_SLOTS) : [];
+  const slots = hasBreakdown
+    ? assignColorSlots(result.series.map(seriesColorKey), palette.length, undefined, SESSION_COLOR_SLOTS)
+    : [];
   const colors = result.series.map((s, i) => {
     const picked = seriesColorOf(style, s.name);
     if (picked) {

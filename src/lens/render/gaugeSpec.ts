@@ -111,7 +111,8 @@ export function gaugeMaxes(state: LensState, values: number[], maxValues: Array<
 
 /** The automatic maximum of a gauge chart's current rows (what Visualize draws without a max). */
 export function gaugeAutoMax(state: LensState, result: LensResult): number {
-  const max = gaugeSpec({ ...state, gauge: { ...state.gauge, max: undefined } }, result).frames[0]?.fields[0]?.config.max;
+  const max = gaugeSpec({ ...state, gauge: { ...state.gauge, max: undefined } }, result).frames[0]?.fields[0]?.config
+    .max;
   return typeof max === 'number' ? max : 1;
 }
 

@@ -35,7 +35,13 @@ export function rampColor(ramp: string[], t: number): string {
   const a = hex(ramp[i]);
   const b = hex(ramp[i + 1]);
   const f = x - i;
-  return `#${a.map((v, k) => Math.round(v + (b[k] - v) * f).toString(16).padStart(2, '0')).join('')}`;
+  return `#${a
+    .map((v, k) =>
+      Math.round(v + (b[k] - v) * f)
+        .toString(16)
+        .padStart(2, '0')
+    )
+    .join('')}`;
 }
 
 /** Value domain of the cells: from 0 (or a lower value) to the largest; a flat domain gets width 1. */
@@ -156,7 +162,12 @@ export function HeatmapChart({ result, metric, yTitle, metricLabel, bucketMs, on
     } else if ((e.key === 'Enter' || e.key === ' ') && cellValue(result, active.xi, active.si) !== null) {
       e.preventDefault();
       const r = boxRef.current?.getBoundingClientRect();
-      select(active.xi, active.si, (r?.left ?? 0) + left + cw * (active.xi + 0.5), (r?.top ?? 0) + M.top + ch * active.si);
+      select(
+        active.xi,
+        active.si,
+        (r?.left ?? 0) + left + cw * (active.xi + 0.5),
+        (r?.top ?? 0) + M.top + ch * active.si
+      );
     }
   };
   const shown = hover ?? (focused ? active : null);
@@ -220,9 +231,7 @@ export function HeatmapChart({ result, metric, yTitle, metricLabel, bucketMs, on
               data-testid="lens-heatmap-y"
             >
               <title>{l}</title>
-              {ch >= 11 || si % Math.ceil(11 / Math.max(1, ch)) === 0
-                ? truncateLabel(l, left - (yTitle ? 18 : 0))
-                : ''}
+              {ch >= 11 || si % Math.ceil(11 / Math.max(1, ch)) === 0 ? truncateLabel(l, left - (yTitle ? 18 : 0)) : ''}
             </text>
           ))}
           {yTitle && (

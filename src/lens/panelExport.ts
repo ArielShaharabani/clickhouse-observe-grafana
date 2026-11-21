@@ -344,9 +344,20 @@ function heatmapPanel(
     ? [
         {
           id: 'groupingToMatrix',
-          options: x?.kind === 'date_histogram'
-            ? { columnField: bucketAlias(1), rowField: bucketAlias(0), valueField: metricAlias(0), emptyValue: 'null' }
-            : { columnField: bucketAlias(0), rowField: bucketAlias(1), valueField: metricAlias(0), emptyValue: 'null' },
+          options:
+            x?.kind === 'date_histogram'
+              ? {
+                  columnField: bucketAlias(1),
+                  rowField: bucketAlias(0),
+                  valueField: metricAlias(0),
+                  emptyValue: 'null',
+                }
+              : {
+                  columnField: bucketAlias(0),
+                  rowField: bucketAlias(1),
+                  valueField: metricAlias(0),
+                  emptyValue: 'null',
+                },
         },
       ]
     : [];
@@ -376,7 +387,15 @@ function heatmapPanel(
       options: {
         calculate: false,
         cellGap: 1,
-        color: { mode: 'scheme', scheme: 'Blues', steps: 64, exponent: 0.5, scale: 'exponential', reverse: false, fill: 'dark-blue' },
+        color: {
+          mode: 'scheme',
+          scheme: 'Blues',
+          steps: 64,
+          exponent: 0.5,
+          scale: 'exponential',
+          reverse: false,
+          fill: 'dark-blue',
+        },
         filterValues: { le: -1e-9 },
         rowsFrame: { layout: 'auto' },
         yAxis: { axisPlacement: 'left', reverse: true },

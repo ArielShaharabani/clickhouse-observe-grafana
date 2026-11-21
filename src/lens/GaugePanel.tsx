@@ -39,7 +39,9 @@ export function GaugePanel({ gauge, hasMaxMetric, onChange }: Props) {
           label="Minimum"
           value={gauge?.min ?? 0}
           onApply={(v) => set({ min: v })}
-          validate={(v) => (v !== undefined && gauge?.max !== undefined && v >= gauge.max ? 'Must be below the maximum' : undefined)}
+          validate={(v) =>
+            v !== undefined && gauge?.max !== undefined && v >= gauge.max ? 'Must be below the maximum' : undefined
+          }
         />
         {hasMaxMetric ? (
           <div className={styles.note}>Maximum: the Maximum value metric</div>
@@ -61,8 +63,16 @@ export function GaugePanel({ gauge, hasMaxMetric, onChange }: Props) {
         value={gauge?.bands ?? 'none'}
         options={[
           { label: 'None', value: 'none' },
-          { label: 'Low is good', value: 'low', description: 'Green, then amber from 70 % and red from 90 % of the range' },
-          { label: 'High is good', value: 'high', description: 'Red, then amber from 70 % and green from 90 % of the range' },
+          {
+            label: 'Low is good',
+            value: 'low',
+            description: 'Green, then amber from 70 % and red from 90 % of the range',
+          },
+          {
+            label: 'High is good',
+            value: 'high',
+            description: 'Red, then amber from 70 % and green from 90 % of the range',
+          },
         ]}
         onChange={(v) => set({ bands: v === 'none' ? undefined : v })}
       />

@@ -547,7 +547,9 @@ export function LensPage() {
     const lostTime =
       (next.chartType === 'heatmap' && next.buckets.length === 0) ||
       (isXy(next.chartType) &&
-        (next.chartType === 'bar' ? next.buckets.length === 0 : !next.buckets.some((b) => b.kind === 'date_histogram')));
+        (next.chartType === 'bar'
+          ? next.buckets.length === 0
+          : !next.buckets.some((b) => b.kind === 'date_histogram')));
     setLens(switchChart(next, lostTime ? chooseChart(next.buckets) : next.chartType, ctx));
   };
   const cards = useMemo(() => suggestions(lens, ctx), [lens, ctx]);

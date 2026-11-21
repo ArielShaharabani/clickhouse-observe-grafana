@@ -662,7 +662,7 @@ function cleanBuckets(raw: unknown): BucketDim[] {
   if (!Array.isArray(raw)) {
     return [];
   }
-return (raw as BucketDim[])
+  return (raw as BucketDim[])
     .filter(
       (b) =>
         b &&

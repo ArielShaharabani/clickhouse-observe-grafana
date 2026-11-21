@@ -136,20 +136,19 @@ function basePanelSpec(state: LensState, result: LensResult): PanelSpec {
       return {
         pluginId: isPieLike(state.chartType) ? 'piechart' : 'stat',
         frames: [createDataFrame({ fields })],
-        options:
-          isPieLike(state.chartType)
-            ? {
-                legend: { ...legend, placement: 'right', values: ['value', 'percent'] },
-                reduceOptions: { values: true, calcs: [], fields: '' },
-                pieType: state.chartType === 'donut' ? 'donut' : 'pie',
-              }
-            : {
-                reduceOptions: { values: byCategory, calcs: ['lastNotNull'], fields: '' },
-                textMode: byCategory ? 'value_and_name' : 'auto',
-                colorMode: 'none',
-                graphMode: 'none',
-                justifyMode: 'auto',
-              },
+        options: isPieLike(state.chartType)
+          ? {
+              legend: { ...legend, placement: 'right', values: ['value', 'percent'] },
+              reduceOptions: { values: true, calcs: [], fields: '' },
+              pieType: state.chartType === 'donut' ? 'donut' : 'pie',
+            }
+          : {
+              reduceOptions: { values: byCategory, calcs: ['lastNotNull'], fields: '' },
+              textMode: byCategory ? 'value_and_name' : 'auto',
+              colorMode: 'none',
+              graphMode: 'none',
+              justifyMode: 'auto',
+            },
         fieldConfig: { defaults: {}, overrides: [] },
       };
     }
@@ -410,6 +409,7 @@ function PanelChart({ state, result, timeRange }: { state: LensState; result: Le
   }, []);
   const spec = panelSpec(state, result);
   const hidden = state.chartType === 'gauge' ? Math.max(0, result.xs.length - MAX_GAUGES) : 0;
+  const lone = state.chartType === 'gauge' && (spec.frames[0]?.fields.length ?? 0) === 1;
   const data: PanelData = {
     state: LoadingState.Done,
     series: spec.frames,
@@ -428,23 +428,41 @@ function PanelChart({ state, result, timeRange }: { state: LensState; result: Le
           Showing the first {MAX_GAUGES} values ({hidden} more not shown)
         </div>
       )}
+      {/* A lone bar gauge: a bullet-sized bar, centred, under its metric's name (as Kibana draws it). */}
+      {lone && size.width > 0 && (
+        <div className={styles.loneName} style={{ top: Math.max(0, size.height / 2 - 52) }}>
+          {state.metrics[0]
+            ? dimLabelIn(state.metrics.find((m) => m.role !== 'max') ?? state.metrics[0], state.metrics)
+            : ''}
+        </div>
+      )}
       {size.width > 0 && size.height > 0 && (
-        <PanelRenderer
-          title=""
-          pluginId={spec.pluginId}
-          width={size.width}
-          height={size.height}
-          data={data}
-          options={spec.options}
-          fieldConfig={spec.fieldConfig as FieldConfigSource}
-          timeZone="browser"
-        />
+        <div
+          style={lone ? { position: 'absolute', left: 0, right: 0, top: Math.max(0, size.height / 2 - 28) } : undefined}
+        >
+          <PanelRenderer
+            title=""
+            pluginId={spec.pluginId}
+            width={size.width}
+            height={lone ? Math.min(size.height, 56) : size.height}
+            data={data}
+            options={spec.options}
+            fieldConfig={spec.fieldConfig as FieldConfigSource}
+            timeZone="browser"
+          />
+        </div>
       )}
     </div>
   );
 }
 
 const styles = {
+  loneName: css`
+    position: absolute;
+    left: 4px;
+    font-size: 14px;
+    font-weight: 500;
+  `,
   gaugeGrid: css`
     display: grid;
     width: 100%;
