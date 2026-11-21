@@ -3,7 +3,7 @@ import { test } from '../fixtures';
 import { LogsPage } from '../pages/LogsPage';
 
 // SHARED-AUTOCOMPLETE-01 (docs/spec/30-shared.md): field suggestions show their type; value
-// suggestions come from real data scoped to the current time range and filters.
+// suggestions come from real data scoped to the current time range and the filters on other fields.
 
 test('field prefix suggests matching fields with their data type', async ({ page }) => {
   const logs = new LogsPage(page);
@@ -29,4 +29,17 @@ test('value suggestions are scoped by the active filters', async ({ page }) => {
   await expect(values.filter({ hasText: 'payments' }).first()).toBeVisible();
   await expect(values.filter({ hasText: 'checkout' })).toHaveCount(0);
   await expect(values.filter({ hasText: 'frontend' })).toHaveCount(0);
+});
+
+test('values of a field ignore the search text and filters on that same field', async ({ page }) => {
+  // Changing ServiceName: "payments" to another service must offer the other services.
+  const onPayments = { id: 'e2e-svc', field: 'ServiceName', op: '=', value: 'payments' };
+  const logs = new LogsPage(page);
+  await logs.open({ q: 'ServiceName : "payments"', filters: JSON.stringify([onPayments]) });
+  await logs.searchInput.click();
+  await logs.searchInput.press('ControlOrMeta+a');
+  await logs.searchInput.pressSequentially('ServiceName : ', { delay: 40 });
+  const values = logs.searchBar.getByRole('listbox').getByRole('option');
+  await expect(values.filter({ hasText: 'checkout' }).first()).toBeVisible();
+  await expect(values.filter({ hasText: 'frontend' }).first()).toBeVisible();
 });
