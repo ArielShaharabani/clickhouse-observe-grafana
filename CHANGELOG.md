@@ -10,6 +10,13 @@ Versions track the plugin's release history. `Unreleased` collects commits not y
 
 ---
 
+## [0.69.2] — 2026-11-21
+
+### Fixed
+- Panels saved from Visualize with a top-values breakdown no longer show phantom series on the dashboard (pie / donut slices all named "Count of records", "payments k0 = 0", doubled bar legends "k1 auth", zero metric tiles): the row-kind columns are hidden, Other / (missing) rows are labelled in the query, and metric tiles keep their per-value names ("payments", or "payments · Count of records" with several metrics).
+
+---
+
 ## [0.69.1] — 2026-11-21
 
 ### Fixed

@@ -8,7 +8,7 @@
 import { createTheme, TimeRange } from '@grafana/data';
 import { chDatasourceRef, ExportedPanel, FORMAT_TABLE, GridPos } from '../data/panelExport';
 import { SourceConfig } from '../types';
-import { bucketAlias, compileLens, metricAlias, uniqueMetricLabels } from './compile';
+import { bucketAlias, compileLens, kindAlias, metricAlias, uniqueMetricLabels } from './compile';
 import { dimLabelIn, LensState } from './state';
 import { chartTitle } from './suggest';
 import { withMetricAppearance } from './render/fieldConfig';
@@ -93,8 +93,11 @@ function splitSeriesNames(state: LensState): unknown[] {
   }));
 }
 
+/** Row-kind columns of top-values buckets (Other / missing): for ordering only, never a series. */
+const KIND_COLUMNS = Object.fromEntries([0, 1, 2, 3].map((i) => [kindAlias(i), true]));
+
 function rename(names: Record<string, string>): Transformation {
-  return { id: 'organize', options: { renameByName: names, excludeByName: {}, indexByName: {} } };
+  return { id: 'organize', options: { renameByName: names, excludeByName: KIND_COLUMNS, indexByName: {} } };
 }
 
 /**
@@ -281,10 +284,15 @@ function baseLensPanel(
     case 'donut': {
       const byCategory = state.buckets.length > 0;
       const pie = state.chartType !== 'metric';
+      // Stat tiles by category take their names from the row ("payments"); a renamed metric field
+      // gets a fixed display name that hides them, so only the category column is renamed and
+      // several metrics are told apart by "value · metric", as in Visualize.
+      const tiles = !pie && byCategory;
+      const labels = uniqueMetricLabels(state.metrics);
       return {
         ...base,
         type: pie ? 'piechart' : 'stat',
-        transformations: [rename(names)],
+        transformations: [rename(tiles ? { [bucketAlias(0)]: names[bucketAlias(0)] } : names)],
         options: pie
             ? {
                 legend: { ...LEGEND, placement: 'right', values: ['value'] },
@@ -298,7 +306,18 @@ function baseLensPanel(
                 graphMode: 'none',
                 justifyMode: 'auto',
               },
-        fieldConfig: { defaults: {}, overrides: [] },
+        fieldConfig: {
+          defaults: {},
+          overrides:
+            tiles && state.metrics.length > 1
+              ? state.metrics.map((_, i) => ({
+                  matcher: { id: 'byName', options: metricAlias(i) },
+                  properties: [
+                    { id: 'displayName', value: '${__data.fields[0]} · ' + labels[i].replace(/\$/g, '＄') },
+                  ],
+                }))
+              : [],
+        },
       };
     }
     case 'table':

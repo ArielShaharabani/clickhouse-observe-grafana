@@ -31,7 +31,7 @@ exports[`SQL saved panels compute the same calculation over $__timeInterval buck
 "SELECT b0, k1, b1, sum(ifNull(a0, 0)) OVER (PARTITION BY b1, k1 ORDER BY b0 ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS m0
 FROM (
 WITH top1 AS (SELECT toString("ServiceName") AS v FROM "default"."spec_logs" WHERE Timestamp >= $__fromTime AND Timestamp <= $__toTime AND v IS NOT NULL GROUP BY v ORDER BY count() DESC LIMIT 3)
-SELECT toStartOfInterval(toDateTime("Timestamp"), INTERVAL greatest(86400, $__interval_s) second) AS b0, multiIf(toString("ServiceName") IS NULL, 2, toString("ServiceName") GLOBAL IN (SELECT v FROM top1), 0, 1) AS k1, if(k1 = 0, toString("ServiceName"), '') AS b1, count() AS a0
+SELECT toStartOfInterval(toDateTime("Timestamp"), INTERVAL greatest(86400, $__interval_s) second) AS b0, multiIf(toString("ServiceName") IS NULL, 2, toString("ServiceName") GLOBAL IN (SELECT v FROM top1), 0, 1) AS k1, multiIf(k1 = 1, 'Other', k1 = 2, '(missing)', if(toString("ServiceName") IN ('Other'), concat(toString("ServiceName"), ' (value)'), toString("ServiceName"))) AS b1, count() AS a0
 FROM "default"."spec_logs"
 WHERE Timestamp >= $__fromTime AND Timestamp <= $__toTime AND toString("ServiceName") IS NOT NULL
 GROUP BY b0, b1, k1

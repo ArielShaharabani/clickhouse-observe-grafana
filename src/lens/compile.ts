@@ -91,6 +91,19 @@ export const bucketAlias = (i: number) => `b${i}`;
 export const metricAlias = (i: number) => `m${i}`;
 /** Row-kind column of a top-values bucket with Other / missing on (see KIND_* in state.ts). */
 export const kindAlias = (i: number) => `k${i}`;
+
+/**
+ * A saved panel's label for a top-values row: Grafana can't read the row-kind column, so the
+ * synthetic rows are labelled in SQL ("Other", "(missing)") and a real value spelled the same gets
+ * the " (value)" suffix, as Visualize shows it (termCell).
+ */
+function dashboardTermLabel(b: { other?: boolean; missing?: boolean }, r: string, kind: string): string {
+  const clashes = [b.other ? OTHER_VALUE : '', b.missing ? MISSING_VALUE : ''].filter(Boolean);
+  const value = clashes.length
+    ? `if(${r} IN (${clashes.map(quoteString).join(', ')}), concat(${r}, ' (value)'), ${r})`
+    : r;
+  return `multiIf(${kind} = ${KIND_OTHER}, ${quoteString(OTHER_VALUE)}, ${kind} = ${KIND_MISSING}, ${quoteString(MISSING_VALUE)}, ${value})`;
+}
 /** Bucket width column of an automatic Intervals bucket. */
 export const widthAlias = (i: number) => `w${i}`;
 
@@ -483,7 +496,9 @@ export function compileLens(
       );
       selects.push(
         `multiIf(${r} IS NULL, ${KIND_MISSING}, ${inTop}, ${KIND_VALUE}, ${KIND_OTHER}) AS ${kindAlias(i)}`,
-        `if(${kindAlias(i)} = ${KIND_VALUE}, ${r}, '') AS ${bucketAlias(i)}`
+        mode === 'dashboard'
+          ? `${dashboardTermLabel(b, r, kindAlias(i))} AS ${bucketAlias(i)}`
+          : `if(${kindAlias(i)} = ${KIND_VALUE}, ${r}, '') AS ${bucketAlias(i)}`
       );
     }
   });
