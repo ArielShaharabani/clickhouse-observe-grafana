@@ -85,7 +85,8 @@ test('donut: same roles as pie, drawn as a ring', async ({ page }) => {
   await viz.addField('ServiceName');
   await pickChart(page, 'donut', /^Donut/);
   await expect(viz.chart).toHaveAttribute('data-chart-type', 'donut');
-  await expect(viz.chart).toHaveAttribute('data-panel', 'piechart');
+  await expect(viz.chart).toHaveAttribute('data-panel', 'pie');
+  await expect(page.getByTestId('lens-pie')).toHaveAttribute('data-pie-type', 'donut');
   await expect(viz.group('Slice by')).toContainText('ServiceName');
   await expect(viz.chart.getByText('payments').first()).toBeVisible();
 });

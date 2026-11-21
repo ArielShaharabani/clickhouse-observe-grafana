@@ -272,7 +272,18 @@ export function SearchBar({
   // buildSearchClause's own try/catch (queryBuilder.ts) still exists as a safety net for callers
   // that don't go through this gate — restored saved searches, dashboard export — so it stays
   // reachable there, just not from typing.
+  // Closing the list must also cancel suggestion work still in flight (the debounced value fetch,
+  // a Map key fetch): otherwise it reopens the list after Enter / Clear (Kibana closes it).
+  const cancelPendingSuggestions = useCallback(() => {
+    requestSeqRef.current++;
+    if (debounceRef.current) {
+      clearTimeout(debounceRef.current);
+      debounceRef.current = null;
+    }
+  }, []);
+
   const commit = useCallback(() => {
+    cancelPendingSuggestions();
     const trimmed = inputValue.trim();
     if (trimmed) {
       try {
@@ -294,7 +305,7 @@ export function SearchBar({
     setMapKeyState(null);
     onChange(inputValue);
     onSearch();
-  }, [inputValue, onChange, onSearch, onInvalidQuery]);
+  }, [inputValue, onChange, onSearch, onInvalidQuery, cancelPendingSuggestions]);
 
   const onKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
     if (!open || suggestions.length === 0) {
@@ -340,6 +351,7 @@ export function SearchBar({
   };
 
   const onClear = () => {
+    cancelPendingSuggestions();
     setInputValue('');
     setParseError(null);
     setSuggestions([]);

@@ -9,9 +9,9 @@ const svc = { kind: 'terms', id: 'b0', field: 'ServiceName', label: 'ServiceName
 
 test('pie shows one slice per service with grouped legend values', async ({ page }) => {
   await new VisualizePage(page).open({ lens: lens('pie', [svc]) });
-  await expect(page.getByTestId('lens-chart')).toHaveAttribute('data-panel', 'piechart');
-  // Legend carries value and percent (on-slice labels are dropped when a slice is too small to label).
-  await expect(page.getByTestId('lens-chart').getByText('%').first()).toBeVisible();
+  await expect(page.getByTestId('lens-chart')).toHaveAttribute('data-panel', 'pie');
+  // Legend carries value and percent (with decimals, as Kibana).
+  await expect(page.getByTestId('lens-pie-legend').getByText('%').first()).toBeVisible();
 });
 
 test('metric tiles per service sit in a grid with the metric name as subtitle', async ({ page }) => {
