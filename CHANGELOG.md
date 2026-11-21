@@ -10,6 +10,47 @@ Versions track the plugin's release history. `Unreleased` collects commits not y
 
 ---
 
+## [0.68.0] — 2026-11-21
+
+### Added
+- **Four chart types in Visualize (R3-CHARTS):** **Bar horizontal** (its own switcher entry; top values with long labels, largest on top, the category axis sized to the labels with `…` and the full text on hover), **Donut**, **Heat map** (e.g. errors per service over time: rows in rank order, colour legend, empty cells distinct from 0, tooltip, click-to-filter, keyboard grid) and **Gauge** (arc or horizontal bar, one per Break down by value up to 12, maximum from the Maximum value metric, a typed number or automatic, optional colour bands).
+- Each saves to a dashboard as the matching native Grafana panel: barchart (horizontal), piechart (donut), heatmap (time on X; a colour-coded table matrix for categories on X), gauge / bar gauge.
+- Suggestions: `Heat map` for a date histogram with a category breakdown, `Bar horizontal` for top values on X, `Gauge` for a Metric with a Maximum value.
+
+### Changed
+- A chart switch now also parks the metrics the target can't show (Pie / Donut / Heat map / Gauge show one) and restores them on the way back; a Maximum value metric is parked with its role instead of becoming a plain metric on Bar / Table.
+- Bar horizontal's dimension groups read `Vertical axis` (categories) and `Horizontal axis` (metrics).
+
+---
+
+## [0.67.0] — 2026-11-21
+
+### Added
+- **Standard deviation and Last value (LENS-CALC-01).** New quick functions: population standard deviation of a number field (as Elasticsearch's `std_deviation`), and the value of the newest document (by the data view's time field) that has the field.
+- **Time-series calculations.** A "Calculations" group in the metric editor: Cumulative sum, Differences, Moving average (Window size 1–100, default 5) and Counter rate (per second). Each wraps a metric ("Moving average of Median of duration"; Cumulative sum adds counts or sums) and is calculated per series. They need a date histogram: without one they are disabled with the reason, and a chart that loses its date histogram shows why instead of wrong numbers.
+- **Formula functions:** `standard_deviation`, `last_value`, `cumulative_sum`, `differences`, `moving_average(…, window=5)`, `counter_rate`, `overall_sum`, `overall_average`, `overall_min`, `overall_max` — e.g. `count() / overall_sum(count())` for percent of total. The function reference is grouped (Aggregations, Time series, Overall, Math).
+- Every quick function has a short explanation (tooltip and a note under the grid).
+
+### Changed
+- Empty metric values (a bucket with no values, the first bucket of a difference) are gaps in charts and empty table cells instead of 0; counts stay 0.
+- Top values "Rank by → Custom metric" lists only metrics that can rank (not calculations, except Cumulative sum, which ranks by its total).
+
+### Fixed
+- Saved dashboard panels with a week / month / year interval and Include empty rows failed with a ClickHouse WITH FILL type error.
+- Normalize by unit on a saved panel with a typed minimum interval used the dashboard interval instead of the bucket length.
+
+---
+
+## [0.66.0] — 2026-11-21
+
+### Added
+- **Visualize has Discover's query row (R3-QUERYBAR).** Add filter, the query menu (Clear all, load saved query, pin / negate / disable all), and the KQL search bar with autocomplete sit under the toolbar, above the filter pills. Typing changes nothing until Enter; the query goes to the shared `q` URL param (one history entry) and the chart re-runs once. An invalid query shows the error in the bar and in place of the chart.
+
+### Changed
+- The read-only query / filter-count summary in the Visualize toolbar is removed (the bar shows the query).
+
+---
+
 ## [0.65.0] — 2026-11-20
 
 - Changed: opening or saving a saved search names the Discover tab after it (was "Untitled") and puts its id in the URL (`ss=<id>`). The id is cleared when the query, filters, columns or sort are changed, or the data view switched, and a link carrying only `ss` reopens the saved search in a fresh browser. The Share link keeps `ss`.
