@@ -53,7 +53,7 @@ interface Props {
   onBack: () => void;
 }
 
-function Radio<T extends string>(props: {
+export function Radio<T extends string>(props: {
   label: string;
   value: T;
   options: Array<{ label: string; value: T; description?: string }>;
@@ -76,7 +76,7 @@ function Radio<T extends string>(props: {
 }
 
 /** A number box applied on blur / Enter when it parses; invalid text shows an error and isn't applied. */
-function NumberBox(props: {
+export function NumberBox(props: {
   label: string;
   value?: number;
   onApply: (v: number | undefined) => void;

@@ -60,7 +60,18 @@ import {
   RECORDS_FIELD,
   sanitizeLens,
 } from './state';
-import { addField, chartTitle, chooseChart, isLensField, isXy, LensContext, suggestions, switchChart } from './suggest';
+import {
+  addField,
+  chartKind,
+  chartTitle,
+  chooseChart,
+  isLensField,
+  isXy,
+  LensContext,
+  suggestions,
+  switchChart,
+  switchKind,
+} from './suggest';
 import { shiftTimeRange, zoomOutTimeRange } from '../utils/timeRangeNav';
 import { QueryProgress } from '../components/QueryProgress/QueryProgress';
 import { lensApproxNote } from './approx';
@@ -72,6 +83,8 @@ import { ExtraLayer } from './layers';
 import { useLayerData } from './useLayerData';
 import { DefaultTimeRangeContext, resolveDefaultTimeRange } from '../utils/defaultTimeRange';
 import { panelSourceOf } from './panelSource';
+import { gaugeAutoMax } from './render/gaugeSpec';
+import { GaugePanel } from './GaugePanel';
 
 interface Group {
   name: string;
@@ -91,12 +104,15 @@ export function dimensionGroups(s: LensState): Group[] {
   switch (s.chartType) {
     case 'line':
     case 'area':
-    case 'bar':
+    case 'bar': {
+      // Horizontal bars: the categories run down the vertical axis, the values along the horizontal one.
+      const flip = chartKind(s) === 'bar_horizontal';
       return [
-        { name: 'Horizontal axis', role: 'bucket', dims: opt(b0) },
-        { name: 'Vertical axis', role: 'metric', dims: s.metrics, multi: true },
+        { name: flip ? 'Vertical axis' : 'Horizontal axis', role: 'bucket', dims: opt(b0) },
+        { name: flip ? 'Horizontal axis' : 'Vertical axis', role: 'metric', dims: s.metrics, multi: true },
         { name: 'Breakdown', role: 'bucket', dims: b0 ? opt(b1) : [] },
       ];
+    }
     case 'table':
       return [
         { name: 'Rows', role: 'bucket', dims: s.buckets.filter((b) => !b.pivot), multi: true },
@@ -118,9 +134,27 @@ export function dimensionGroups(s: LensState): Group[] {
       ];
     }
     case 'pie':
+    case 'donut':
       return [
         { name: 'Slice by', role: 'bucket', dims: s.buckets },
         { name: 'Size by', role: 'metric', dims: s.metrics },
+      ];
+    case 'heatmap':
+      return [
+        { name: 'Horizontal axis', role: 'bucket', dims: opt(b0) },
+        { name: 'Vertical axis', role: 'bucket', dims: b0 ? opt(b1) : [] },
+        { name: 'Cell value', role: 'metric', dims: s.metrics.slice(0, 1) },
+      ];
+    case 'gauge':
+      return [
+        { name: 'Metric', role: 'metric', dims: s.metrics.filter((m) => m.role !== 'max').slice(0, 1) },
+        {
+          name: 'Maximum value',
+          role: 'metric',
+          dims: s.metrics.filter((m) => m.role === 'max').slice(0, 1),
+          tag: 'max',
+        },
+        { name: 'Break down by', role: 'bucket', dims: opt(b0) },
       ];
   }
 }
@@ -601,8 +635,11 @@ export function LensPage() {
     // A removal must stick: line/area (and a bar left with nothing on X) would add the time axis
     // straight back, so re-pick the chart from what remains instead.
     const lostTime =
-      isXy(next.chartType) &&
-      (next.chartType === 'bar' ? next.buckets.length === 0 : !next.buckets.some((b) => b.kind === 'date_histogram'));
+      (next.chartType === 'heatmap' && next.buckets.length === 0) ||
+      (isXy(next.chartType) &&
+        (next.chartType === 'bar'
+          ? next.buckets.length === 0
+          : !next.buckets.some((b) => b.kind === 'date_histogram')));
     setLens(switchChart(next, lostTime ? chooseChart(next.buckets) : next.chartType, ctx));
   };
   const cards = useMemo(() => suggestions(lens, ctx), [lens, ctx]);
@@ -648,6 +685,7 @@ export function LensPage() {
         gridPos: { x: 0, y: 0, w: 12, h: 8 },
         title,
         description,
+        gaugeMax: lens.chartType === 'gauge' && current?.data ? gaugeAutoMax(lens, current.data) : undefined,
         series: (current?.data ?? stale?.data)?.series.map((x) => ({
           name: x.name,
           breakdown: x.breakdown,
@@ -918,7 +956,7 @@ export function LensPage() {
 
         <section className={styles.workspace} aria-label="Workspace">
           <div className={styles.chartHeader}>
-            <Icon name={CHART_ICONS[lens.chartType]} />
+            <Icon name={CHART_ICONS[chartKind(lens)]} />
             <span>{isEmptyLens(lens) ? 'No visualization' : chartTitle(lens)}</span>
             {!isEmptyLens(lens) && (
               <Button size="sm" variant="secondary" fill="text" icon="trash-alt" onClick={() => setLens(EMPTY_LENS)}>
@@ -1026,7 +1064,7 @@ export function LensPage() {
                       aria-current={c.current || undefined}
                       onClick={() => !c.current && setLens(c.state)}
                     >
-                      <Icon name={CHART_ICONS[c.state.chartType]} size="xl" />
+                      <Icon name={CHART_ICONS[chartKind(c.state)]} size="xl" />
                       <span className={styles.cardTitle}>{c.title}</span>
                     </button>
                   ))}
@@ -1060,9 +1098,9 @@ export function LensPage() {
         <section ref={dimsRef} className={styles.dims} aria-label="Dimensions">
           {!isEmptyLens(lens) && !editingDim && (
             <ChartTypeSwitcher
-              value={lens.chartType}
+              value={chartKind(lens)}
               subType={lens.subType}
-              onChange={(t) => setLens(switchChart(lens, t, ctx))}
+              onChange={(t) => setLens(switchKind(lens, t, ctx))}
               onSubTypeChange={(sub) => setLens(switchChart(lens, lens.chartType, ctx, sub))}
             />
           )}
@@ -1168,6 +1206,16 @@ export function LensPage() {
               suggestedTime={suggestedTime}
               onChange={setLayers}
               onEdit={setLayerItem}
+            />
+          )}
+          {!isEmptyLens(lens) && !editingDim && lens.chartType === 'gauge' && (
+            <GaugePanel
+              gauge={lens.gauge}
+              hasMaxMetric={lens.metrics.some((m) => m.role === 'max')}
+              onChange={(gauge) => {
+                const { gauge: _g, ...rest } = lens;
+                setLens(gauge ? { ...rest, gauge } : rest);
+              }}
             />
           )}
         </section>

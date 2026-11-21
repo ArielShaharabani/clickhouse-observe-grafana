@@ -15,7 +15,7 @@ import { cleanLayers, ExtraLayer, sanitizeLayers } from './layers';
 import { isIntervalValue } from './interval';
 import { cleanMetricOptions, MetricOptions, optionsLabelSuffix } from './metricOptions';
 
-export type ChartType = 'line' | 'area' | 'bar' | 'metric' | 'table' | 'pie';
+export type ChartType = 'line' | 'area' | 'bar' | 'metric' | 'table' | 'pie' | 'donut' | 'heatmap' | 'gauge';
 export type XySubType = 'stacked' | 'percentage' | 'unstacked';
 
 export type MetricOp =
@@ -462,19 +462,65 @@ export interface LensState {
    * layers. Switching back restores it. Not part of the chart query.
    */
   parked?: LensParked;
+  /** Gauge options (R3-CHARTS); display-only, kept across chart switches, drawn only on a gauge. */
+  gauge?: GaugeOptions;
 }
+
+/**
+ * Gauge (R3-CHARTS): the shape (arc = Grafana `gauge`, bar = `bargauge`), the range and optional
+ * colour bands. Max: the "Maximum value" metric when there is one, else `max`, else automatic (a
+ * round number above the largest value).
+ */
+export interface GaugeOptions {
+  shape?: 'bar';
+  min?: number;
+  max?: number;
+  /** Green / amber / red bands at 70 % and 90 % of the range ('low': low values are good). */
+  bands?: 'low' | 'high';
+}
+
+/** Keeps only the known, well-typed gauge options of untrusted input; nothing set → undefined. */
+export function cleanGauge(raw: unknown): GaugeOptions | undefined {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    return undefined;
+  }
+  const g = raw as Record<string, unknown>;
+  const out: GaugeOptions = {};
+  if (g.shape === 'bar') {
+    out.shape = 'bar';
+  }
+  const okNum = (x: unknown): x is number => typeof x === 'number' && Number.isFinite(x) && Math.abs(x) < 1e15;
+  if (okNum(g.min) && g.min !== 0) {
+    out.min = g.min;
+  }
+  if (okNum(g.max)) {
+    out.max = g.max;
+  }
+  if (out.min !== undefined && out.max !== undefined && out.max <= out.min) {
+    delete out.max;
+  }
+  if (g.bands === 'low' || g.bands === 'high') {
+    out.bands = g.bands;
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
+}
+
+/** At most this many gauges (one per Break down by value) are drawn. */
+export const MAX_GAUGES = 12;
 
 export interface LensParked {
   /** The last chart that could show the parked buckets (where a dropped time field returns to). */
   chartType: ChartType;
   subType?: XySubType;
   buckets: BucketDim[];
+  /** Metrics the current chart can't show (Pie / Heat map / Gauge show one), restored by a switch back. */
+  metrics?: MetricDim[];
   style?: LensStyle;
   layers?: ExtraLayer[];
 }
 
-/** At most this many parked buckets survive the URL. */
-const MAX_PARKED = 8;
+/** At most this many parked buckets (and parked metrics) survive the URL. */
+export const MAX_PARKED = 8;
 
 /** A field as the suggestion engine sees it. `records` is the virtual "Records" field (count). */
 export interface LensField {
@@ -661,6 +707,9 @@ export const CHART_LABELS: Record<ChartType, string> = {
   metric: 'Metric',
   table: 'Table',
   pie: 'Pie',
+  donut: 'Donut',
+  heatmap: 'Heat map',
+  gauge: 'Gauge',
 };
 
 export function isEmptyLens(s: LensState): boolean {
@@ -672,7 +721,7 @@ export function encodeLens(s: LensState): string {
   return JSON.stringify(s);
 }
 
-const CHARTS: readonly ChartType[] = ['line', 'area', 'bar', 'metric', 'table', 'pie'];
+const CHARTS: readonly ChartType[] = ['line', 'area', 'bar', 'metric', 'table', 'pie', 'donut', 'heatmap', 'gauge'];
 const OPS: readonly MetricOp[] = [
   'count',
   'median',
@@ -761,7 +810,7 @@ function cleanBuckets(raw: unknown): BucketDim[] {
   if (!Array.isArray(raw)) {
     return [];
   }
-return (raw as BucketDim[])
+  return (raw as BucketDim[])
     .filter(
       (b) =>
         b &&
@@ -787,6 +836,63 @@ return (raw as BucketDim[])
     });
 }
 
+/** Known metric functions with well-typed keys only (the URL is untrusted). */
+function cleanMetrics(raw: unknown): MetricDim[] {
+  if (!Array.isArray(raw)) {
+    return [];
+  }
+  const str = (x: unknown) => typeof x === 'string';
+  const okName = (n: unknown) => n === undefined || (str(n) && (n as string).length <= MAX_NAME);
+  const okPct = (p: unknown) => p === undefined || (typeof p === 'number' && Number.isFinite(p) && p >= 1 && p <= 99);
+  return (raw as MetricDim[])
+    .filter(
+      (m) =>
+        m &&
+        m.kind === 'metric' &&
+        str(m.id) &&
+        OPS.includes(m.op) &&
+        (m.op === 'formula'
+          ? str(m.formula) && (m.formula as string).length <= MAX_FORMULA_LEN
+          : hasRef(m.op)
+            ? cleanRef(m.ref, m.op) !== undefined
+            : m.op === 'count' || str(m.field)) &&
+        okName(m.name) &&
+        okPct(m.percentile)
+    )
+    .map((m): MetricDim => {
+      // Only known, well-typed keys survive (the URL is untrusted).
+      const opts = { ...cleanMetricOptions(m as unknown as Record<string, unknown>), ...cleanChartOptions(m) };
+      if (m.op === 'formula') {
+        return {
+          kind: 'metric',
+          id: m.id,
+          op: 'formula',
+          formula: m.formula,
+          formulaFields: cleanFormulaFields(m.formulaFields) ?? {},
+          name: m.name,
+          ...opts,
+        };
+      }
+      const out: MetricDim = { kind: 'metric', id: m.id, op: m.op, name: m.name, ...opts };
+      if (hasRef(m.op)) {
+        out.ref = cleanRef(m.ref, m.op);
+        if (m.op === 'moving_average') {
+          out.window = m.window === undefined ? DEFAULT_WINDOW : clampWindow(m.window);
+        }
+        return out;
+      }
+      if (m.op !== 'count') {
+        out.field = m.field;
+        out.fieldLabel = typeof m.fieldLabel === 'string' ? m.fieldLabel.slice(0, 500) : undefined;
+        out.numeric = m.numeric === true;
+      }
+      if (m.op === 'percentile') {
+        out.percentile = m.percentile;
+      }
+      return out;
+    });
+}
+
 function cleanParked(raw: unknown): LensParked | undefined {
   if (!raw || typeof raw !== 'object') {
     return undefined;
@@ -796,9 +902,10 @@ function cleanParked(raw: unknown): LensParked | undefined {
     return undefined;
   }
   const buckets = cleanBuckets(p.buckets).slice(0, MAX_PARKED);
+  const metrics = cleanMetrics(p.metrics).slice(0, MAX_PARKED);
   const style = cleanStyle(p.style);
   const layers = cleanLayers(p.layers);
-  if (buckets.length === 0 && !style && !layers) {
+  if (buckets.length === 0 && metrics.length === 0 && !style && !layers) {
     return undefined;
   }
   const subType = ['stacked', 'percentage', 'unstacked'].includes(p.subType as string)
@@ -808,6 +915,7 @@ function cleanParked(raw: unknown): LensParked | undefined {
     chartType: p.chartType as ChartType,
     ...(subType ? { subType } : {}),
     buckets,
+    ...(metrics.length > 0 ? { metrics } : {}),
     ...(style ? { style } : {}),
     ...(layers ? { layers } : {}),
   };
@@ -822,61 +930,13 @@ export function decodeLens(raw: string | null | undefined): LensState | undefine
     if (!v || !CHARTS.includes(v.chartType) || !Array.isArray(v.buckets) || !Array.isArray(v.metrics)) {
       return undefined;
     }
-    const str = (x: unknown) => typeof x === 'string';
-    const okName = (n: unknown) => n === undefined || (str(n) && (n as string).length <= MAX_NAME);
-    const okPct = (p: unknown) => p === undefined || (typeof p === 'number' && Number.isFinite(p) && p >= 1 && p <= 99);
     const buckets = cleanBuckets(v.buckets);
-    const metrics = (v.metrics as MetricDim[])
-      .filter(
-        (m) =>
-          m &&
-          m.kind === 'metric' &&
-          str(m.id) &&
-          OPS.includes(m.op) &&
-          (m.op === 'formula'
-            ? str(m.formula) && (m.formula as string).length <= MAX_FORMULA_LEN
-            : hasRef(m.op)
-              ? cleanRef(m.ref, m.op) !== undefined
-              : m.op === 'count' || str(m.field)) &&
-          okName(m.name) &&
-          okPct(m.percentile)
-      )
-      .map((m): MetricDim => {
-        // Only known, well-typed keys survive (the URL is untrusted).
-        const opts = { ...cleanMetricOptions(m as unknown as Record<string, unknown>), ...cleanChartOptions(m) };
-        if (m.op === 'formula') {
-          return {
-            kind: 'metric',
-            id: m.id,
-            op: 'formula',
-            formula: m.formula,
-            formulaFields: cleanFormulaFields(m.formulaFields) ?? {},
-            name: m.name,
-            ...opts,
-          };
-        }
-        const out: MetricDim = { kind: 'metric', id: m.id, op: m.op, name: m.name, ...opts };
-        if (hasRef(m.op)) {
-          out.ref = cleanRef(m.ref, m.op);
-          if (m.op === 'moving_average') {
-            out.window = m.window === undefined ? DEFAULT_WINDOW : clampWindow(m.window);
-          }
-          return out;
-        }
-        if (m.op !== 'count') {
-          out.field = m.field;
-          out.fieldLabel = typeof m.fieldLabel === 'string' ? m.fieldLabel.slice(0, 500) : undefined;
-          out.numeric = m.numeric === true;
-        }
-        if (m.op === 'percentile') {
-          out.percentile = m.percentile;
-        }
-        return out;
-      });
+    const metrics = cleanMetrics(v.metrics);
     const subType = ['stacked', 'percentage', 'unstacked'].includes(v.subType) ? (v.subType as XySubType) : undefined;
     const style = cleanStyle(v.style);
     const layers = cleanLayers(v.layers);
     const parked = cleanParked(v.parked);
+    const gauge = cleanGauge(v.gauge);
     return {
       chartType: v.chartType,
       subType,
@@ -885,6 +945,7 @@ export function decodeLens(raw: string | null | undefined): LensState | undefine
       ...(style ? { style } : {}),
       ...(layers ? { layers } : {}),
       ...(parked ? { parked } : {}),
+      ...(gauge ? { gauge } : {}),
     };
   } catch {
     return undefined;
@@ -899,14 +960,7 @@ export function decodeLens(raw: string | null | undefined): LensState | undefine
 export function sanitizeLens(s: LensState, allowed: ReadonlySet<string>): LensState {
   // Filters buckets have no field: their queries go through the KQL compiler like the search bar.
   const kept = s.buckets.filter((b) => b.kind === 'filters' || allowed.has(b.field));
-  const metrics = s.metrics.filter((m) =>
-    m.op === 'formula'
-      ? formulaAllowed(m, allowed)
-      : hasRef(m.op)
-        ? !!m.ref && (m.ref.op === 'count' || (m.ref.field !== undefined && allowed.has(m.ref.field)))
-        : m.op === 'count' || (m.field !== undefined && allowed.has(m.field))
-  );
-
+  const metrics = s.metrics.filter((m) => metricAllowed(m, allowed));
   // A rank metric that no longer exists falls back to ranking by count.
   const ids = new Set(metrics.map((m) => m.id));
   // Computed reference lines (LENS-LAYER-01) follow the same field rule.
@@ -930,7 +984,7 @@ export function sanitizeLens(s: LensState, allowed: ReadonlySet<string>): LensSt
     return EMPTY_LENS;
   }
   // Nothing left to put on an axis: show the remaining metrics as numbers.
-  if (buckets.length === 0 && s.chartType !== 'metric' && s.chartType !== 'table') {
+  if (buckets.length === 0 && s.chartType !== 'metric' && s.chartType !== 'table' && s.chartType !== 'gauge') {
     return { chartType: 'metric', buckets, metrics };
   }
   const { layers: _l, parked: _p, ...rest } = s;
@@ -943,13 +997,28 @@ function sanitizeParked(p: LensParked | undefined, allowed: ReadonlySet<string>)
     return p;
   }
   const buckets = p.buckets.filter((b) => b.kind === 'filters' || allowed.has(b.field));
+  const metrics = p.metrics?.filter((m) => metricAllowed(m, allowed));
   const layers = sanitizeLayers(p.layers, allowed);
-  if (buckets.length === p.buckets.length && layers === p.layers) {
+  if (buckets.length === p.buckets.length && metrics?.length === p.metrics?.length && layers === p.layers) {
     return p;
   }
-  const { layers: _l, ...rest } = p;
-  const out: LensParked = { ...rest, buckets, ...(layers ? { layers } : {}) };
-  return out.buckets.length === 0 && !out.style && !out.layers ? undefined : out;
+  const { layers: _l, metrics: _m, ...rest } = p;
+  const out: LensParked = {
+    ...rest,
+    buckets,
+    ...(metrics && metrics.length > 0 ? { metrics } : {}),
+    ...(layers ? { layers } : {}),
+  };
+  return out.buckets.length === 0 && !out.metrics && !out.style && !out.layers ? undefined : out;
+}
+
+/** A metric's field (or a formula's fields) must be a discovered field; count needs none. */
+function metricAllowed(m: MetricDim, allowed: ReadonlySet<string>): boolean {
+  return m.op === 'formula'
+    ? formulaAllowed(m, allowed)
+    : hasRef(m.op)
+      ? !!m.ref && (m.ref.op === 'count' || (m.ref.field !== undefined && allowed.has(m.ref.field)))
+      : m.op === 'count' || (m.field !== undefined && allowed.has(m.field));
 }
 
 /**
