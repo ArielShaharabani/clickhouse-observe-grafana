@@ -168,6 +168,14 @@ describe('MetricAdvanced editor', () => {
     expect(onChange).toHaveBeenLastCalledWith({ ...count, filter: 'SeverityText : ERROR' });
   });
 
+  it('a view without a time field hides Time shift and Reduced time range', () => {
+    render(<MetricAdvanced dim={count} chart={chart} hasTime={false} onChange={jest.fn()} />);
+    fireEvent.click(screen.getByRole('button', { name: /Advanced/ }));
+    expect(screen.getByLabelText('Filter by')).toBeInTheDocument();
+    expect(screen.queryByText('Time shift')).not.toBeInTheDocument();
+    expect(screen.queryByText('Reduced time range')).not.toBeInTheDocument();
+  });
+
   it('time shift: preset buttons and typed values; garbage is not applied', () => {
     const onChange = jest.fn();
     render(<MetricAdvanced dim={count} chart={chart} onChange={onChange} />);

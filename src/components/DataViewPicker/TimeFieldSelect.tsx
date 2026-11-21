@@ -28,6 +28,9 @@ import {
 
 export const NO_TIME_VALUE = '__no_time__';
 
+export const NO_TIME_NOTE =
+  'Without a time field there is no time range: every search reads the whole table, and the histogram and time picker are hidden. Fine for small reference tables; event and log tables should use a time column.';
+
 export interface TimeFieldColumn {
   name: string;
   type: string;
@@ -150,6 +153,11 @@ export function TimeFieldSelect({
             aria-label="Epoch unit"
           />
         </Field>
+      )}
+      {timestamp === '' && (
+        <div className={styles.note} data-testid="no-time-note">
+          {NO_TIME_NOTE}
+        </div>
       )}
       {converted && (
         <div className={styles.note} data-testid="converted-time-note">

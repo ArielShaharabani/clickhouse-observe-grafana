@@ -267,7 +267,7 @@ export function DimensionEditor({
 
       {dim.kind === 'range' && <RangeEditor key={dim.id} dim={dim} fields={fields} onChange={onChange} />}
       {dim.kind === 'filters' && <FiltersEditor key={dim.id} dim={dim} onChange={onChange} />}
-      {dim.kind === 'metric' && <MetricAdvanced dim={dim} chart={chart} onChange={onChange} />}
+      {dim.kind === 'metric' && <MetricAdvanced dim={dim} chart={chart} hasTime={!!timeField} onChange={onChange} />}
       {dim.kind === 'metric' && chart?.chartType === 'table' && <TableMetricOptions dim={dim} onChange={onChange} />}
 
       {dim.kind === 'terms' && (

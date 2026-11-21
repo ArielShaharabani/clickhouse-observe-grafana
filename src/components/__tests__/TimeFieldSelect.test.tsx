@@ -76,6 +76,16 @@ describe('TimeFieldSelect (PLAN #16d)', () => {
     render(<TimeFieldSelect columns={COLUMNS} timestamp="Timestamp" format={undefined} onChange={jest.fn()} />);
     expect(screen.queryByTestId('converted-time-note')).not.toBeInTheDocument();
     expect(screen.queryByLabelText('Epoch unit')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('no-time-note')).not.toBeInTheDocument();
+  });
+
+  it('"No time field" shows a short warning; nothing chosen yet shows none', () => {
+    const { rerender } = render(
+      <TimeFieldSelect columns={COLUMNS} timestamp={undefined} format={undefined} onChange={jest.fn()} />
+    );
+    expect(screen.queryByTestId('no-time-note')).not.toBeInTheDocument();
+    rerender(<TimeFieldSelect columns={COLUMNS} timestamp="" format={undefined} onChange={jest.fn()} />);
+    expect(screen.getByTestId('no-time-note')).toHaveTextContent(/every search reads the whole table/);
   });
 });
 

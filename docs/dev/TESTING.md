@@ -178,6 +178,7 @@ LENS-DATAVIEW acceptance:
 ### DATAVIEW-TIME (PR 30)
 | Case | Status |
 | --- | --- |
+| View without a time field: Discover hides the time picker and histogram, Visualize hides its time picker (`tests/features/dataview-no-time.spec.ts`); warning on "No time field", Time shift / Reduced time range hidden (jest `TimeFieldSelect.test.tsx`, `metricAppearance.test.tsx`) | ✅ |
 | Converted time fields (epoch s / ms / ns, ISO text) find every fixture row in the fixture range and filter by level (`tests/features/dataview-time.spec.ts`, fixture view `default.spec_logs_epoch` from `scripts/clickhouse-init/05_dataview_time_fixture.sql`) | ✅ |
 | Converted epoch ms over the incident window matches the native view's count | ✅ |
 | Edit data view: switch time column, epoch unit guessed from a sample, saved to the personal view | ✅ |
