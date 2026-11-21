@@ -13,7 +13,7 @@ Versions track the plugin's release history. `Unreleased` collects commits not y
 ## [0.68.0] — 2026-11-21
 
 ### Added
-- **Four chart types in Visualize (R3-CHARTS):** **Bar horizontal** (its own switcher entry; top values with long labels, largest on top, the category axis sized to the labels with `…` and the full text on hover), **Donut**, **Heat map** (e.g. errors per service over time: rows in rank order, colour legend, empty cells distinct from 0, tooltip, click-to-filter, keyboard grid) and **Gauge** (arc or horizontal bar, one per Break down by value up to 12, maximum from the Maximum value metric, a typed number or automatic, optional colour bands).
+- **Four chart types in Visualize (R3-CHARTS):** **Bar horizontal** (its own switcher entry; top values with long labels, largest on top, the category axis sized to the labels with `…` and the full text on hover), **Donut**, **Heat map** (e.g. errors per service over time: rows in rank order, colour legend, a count with no row is 0 (other metrics: empty cell, distinct from 0), tooltip, click-to-filter, keyboard grid) and **Gauge** (arc or horizontal bar, one per Break down by value up to 12, maximum from the Maximum value metric, a typed number or automatic, optional colour bands).
 - Each saves to a dashboard as the matching native Grafana panel: barchart (horizontal), piechart (donut), heatmap (time on X; a colour-coded table matrix for categories on X), gauge / bar gauge.
 - Suggestions: `Heat map` for a date histogram with a category breakdown, `Bar horizontal` for top values on X, `Gauge` for a Metric with a Maximum value.
 

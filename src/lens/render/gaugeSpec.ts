@@ -18,10 +18,12 @@ export function niceCeil(v: number): number {
   return m * p;
 }
 
+// Only used to resolve named colours (green / red / ...), which do not depend on the user's theme.
+const COLOR_THEME = createTheme();
+
 /** Colour bands: green / amber / red at 70 % and 90 % of the range, mirrored when high is good. */
 export function gaugeThresholds(bands: GaugeOptions['bands'], color: string) {
-  const theme = createTheme();
-  const c = (n: string) => theme.visualization.getColorByName(n);
+  const c = (n: string) => COLOR_THEME.visualization.getColorByName(n);
   if (!bands) {
     return { mode: 'absolute', steps: [{ color, value: null }] };
   }
@@ -96,10 +98,10 @@ export function gaugeDefaults(state: LensState): Record<string, unknown> {
  * The maximum of each gauge: its "Maximum value" metric, else the typed maximum, else a round
  * number above the largest value (shared by all gauges, so they compare).
  */
-export function gaugeMaxes(state: LensState, values: number[], maxValues: Array<number | null>): number[] {
+export function gaugeMaxes(state: LensState, values: Array<number | null>, maxValues: Array<number | null>): number[] {
   const min = state.gauge?.min ?? 0;
   const typed = state.gauge?.max;
-  const auto = niceCeil(Math.max(min + 1e-9, ...values.map((v) => (Number.isFinite(v) ? v : 0))) - min) + min;
+  const auto = niceCeil(Math.max(min + 1e-9, ...values.map((v) => (v !== null && Number.isFinite(v) ? v : 0))) - min) + min;
   return values.map((_v, i) => {
     const own = maxValues[i];
     if (own !== null && own !== undefined && own > min) {
@@ -132,7 +134,7 @@ export function gaugeSpec(state: LensState, result: LensResult): GaugeSpec {
   const valueSeries = result.series.find((s) => s.metricIndex === value);
   const maxSeries = max >= 0 ? result.series.find((s) => s.metricIndex === max) : undefined;
   const xs = result.xs.slice(0, MAX_GAUGES);
-  const values = xs.map((x) => valueSeries?.points.get(x) ?? 0);
+  const values = xs.map((x) => valueSeries?.points.get(x) ?? (valueSeries?.zeroFill ? 0 : null));
   const maxes = gaugeMaxes(
     state,
     values,

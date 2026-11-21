@@ -39,7 +39,7 @@ import {
   stepBucket,
 } from './interval';
 import { FieldIndex } from '../sql/fields';
-import { formulaToSql, FormulaSqlContext } from './formula';
+import { formulaToSql, FormulaSqlContext, lastValueSql, stdDevSql } from './formula';
 import {
   clampWindow,
   counterRateSql,
@@ -172,16 +172,9 @@ function metricSql(m: MetricDim, fctx: FormulaSqlContext, cond?: string, orNull 
     case 'unique':
       return agg('uniq', f, '');
     case 'std_dev':
-      // Population standard deviation, as Elasticsearch's std_deviation; no values → empty, never nan.
-      return agg('stddevPop', x, 'OrNull');
-    case 'last_value': {
-      // The newest document that has a value (Kibana: top hit by the time field where the field exists).
-      if (!fctx.config.columns.timestamp) {
-        return 'NULL';
-      }
-      const c = [`${x} IS NOT NULL`, cond].filter(Boolean).join(' AND ');
-      return `argMaxIfOrNull(${x}, ${timeExpr(fctx.config)}, ${c})`;
-    }
+      return stdDevSql(x, cond);
+    case 'last_value':
+      return lastValueSql(x, cond, fctx.config);
     case 'percentile': {
       // A number we produce (clamped 1–99), never text from the URL.
       const q = (clampPercentile(m.percentile) / 100).toFixed(2);
@@ -1206,14 +1199,15 @@ export function orderSeries(state: LensState, series: LensSeries[]): LensSeries[
     return series;
   }
   const dir = rankDirOf(b) === 'asc' ? 1 : -1;
+  // Same rank as the top-N CTE: a rankable rank metric, else the row count (a plain Count metric;
+  // with none, the query's order, which already follows it).
   const rankIdx =
     b.rankBy === 'metric'
-      ? Math.max(
-          0,
-          state.metrics.findIndex((m) => m.id === b.rankMetric && isRankable(m))
-        )
-      : 0;
-  const rankCumulative = state.metrics[rankIdx]?.op === 'cumulative_sum';
+      ? state.metrics.findIndex((m) => m.id === b.rankMetric && isRankable(m))
+      : -1;
+  const countIdx = state.metrics.findIndex((m) => m.op === 'count' && !m.shift && !m.filter);
+  const useIdx = rankIdx >= 0 ? rankIdx : countIdx;
+  const rankCumulative = state.metrics[useIdx]?.op === 'cumulative_sum';
   // One group per breakdown value (its display label, the part every series of the value shares).
   const groupOf = (s: LensSeries) => `${s.synthetic ? '1' : '0'}${s.breakdown ?? ''}`;
   const totals = new Map<string, number>();
@@ -1223,7 +1217,7 @@ export function orderSeries(state: LensState, series: LensSeries[]): LensSeries[
     if (!firstSeen.has(g)) {
       firstSeen.set(g, i);
     }
-    if (s.metricIndex === rankIdx) {
+    if (s.metricIndex === useIdx) {
       // A cumulative sum's total is its last value (the largest bucket); other metrics add up.
       let t = 0;
       if (rankCumulative) {

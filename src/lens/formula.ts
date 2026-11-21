@@ -767,6 +767,20 @@ function emitWindow(
   throw new Error('unknown window function');
 }
 
+/** Population standard deviation (as Elasticsearch's std_deviation); always OrNull: no values -> empty, never nan / 0. Shared by the quick function and the formula. */
+export function stdDevSql(x: string, cond?: string): string {
+  return cond ? `stddevPopIfOrNull(${x}, ${cond})` : `stddevPopOrNull(${x})`;
+}
+
+/** The newest document that has a value (Kibana: top hit by the time field where the field exists). Shared by the quick function and the formula. */
+export function lastValueSql(x: string, cond: string | undefined, config: SourceConfig): string {
+  if (!config.columns.timestamp) {
+    return 'NULL';
+  }
+  const c = [`${x} IS NOT NULL`, cond].filter(Boolean).join(' AND ');
+  return `argMaxIfOrNull(${x}, ${timeExpr(config)}, ${c})`;
+}
+
 function emitAgg(
   n: Extract<FormulaNode, { type: 'call' }>,
   fn: FormulaFn,
@@ -790,16 +804,10 @@ function emitAgg(
   const orNull = ctx.window ? 'OrNull' : '';
 
   if (fn.name === 'standard_deviation') {
-    // Always OrNull: no values → empty, never nan / 0.
-    return cond ? `stddevPopIfOrNull(${x}, ${cond})` : `stddevPopOrNull(${x})`;
+    return stdDevSql(x!, cond);
   }
   if (fn.name === 'last_value') {
-    if (!ctx.config.columns.timestamp) {
-      return 'NULL';
-    }
-    // The newest document that has a value (Kibana: top hit sorted by time, field exists).
-    const c = [`${x} IS NOT NULL`, cond].filter(Boolean).join(' AND ');
-    return `argMaxIfOrNull(${x}, ${timeExpr(ctx.config)}, ${c})`;
+    return lastValueSql(x!, cond, ctx.config);
   }
 
   if (fn.name === 'count') {

@@ -292,6 +292,18 @@ describe('R3-CHARTS rendering', () => {
     expect(bar.options.orientation).toBe('horizontal');
   });
 
+  it('gauge: a missing non-count value is no value (and no maximum); a count is 0', () => {
+    const rows = [{ b0: 'payments', m0: 12 }];
+    const withAvg: LensState = { chartType: 'gauge', buckets: [svc], metrics: [avg] };
+    const res = shapeLensRows(withAvg, rows);
+    const spec = gaugeSpec(withAvg, { ...res, xs: [...res.xs, 'ghost'], xLabels: [...res.xLabels, 'ghost'] });
+    expect(spec.frames[0].fields.map((f) => f.values[0])).toEqual([12, null]);
+    const cnt: LensState = { chartType: 'gauge', buckets: [svc], metrics: [count] };
+    const cres = shapeLensRows(cnt, rows);
+    const cspec = gaugeSpec(cnt, { ...cres, xs: [...cres.xs, 'ghost'], xLabels: [...cres.xLabels, 'ghost'] });
+    expect(cspec.frames[0].fields.map((f) => f.values[0])).toEqual([12, 0]);
+  });
+
   it('gauge colour bands', () => {
     expect(gaugeThresholds(undefined, '#123456')).toEqual({
       mode: 'absolute',
@@ -343,18 +355,19 @@ describe('R3-CHARTS HeatmapChart', () => {
   ];
   const result = shapeLensRows(s, rows);
 
-  it('draws a cell per X × Y; an empty cell is not a zero', () => {
-    expect(cellValue(result, 1, 1)).toBeNull();
+  it('draws a cell per X × Y; a count with no row is 0, any other metric has no value', () => {
+    expect(cellValue(result, 1, 1)).toBe(0);
     expect(cellValue(result, 0, 1)).toBe(0);
+    const avgState: LensState = { chartType: 'heatmap', buckets: [svc, lvl], metrics: [avg] };
+    expect(cellValue(shapeLensRows(avgState, rows), 1, 1)).toBeNull();
     render(<HeatmapChart result={result} metric={count} metricLabel="Count of records" yTitle="SeverityText" />);
     const cells = screen.getAllByRole('gridcell');
     expect(cells).toHaveLength(4);
     expect(screen.getAllByTestId('lens-heatmap-y').map((t) => t.textContent)).toEqual(['errorerror', 'warnwarn']);
-    expect(screen.getByRole('gridcell', { name: 'auth · warn: No data' })).toHaveAttribute('data-value', '');
+    expect(screen.getByRole('gridcell', { name: 'auth · warn: 0' })).toHaveAttribute('data-value', '0');
     expect(screen.getByRole('gridcell', { name: 'payments · warn: 0' })).toHaveAttribute('data-value', '0');
     expect(screen.getByRole('grid', { name: 'Heat map: Count of records' })).toBeTruthy();
     expect(screen.getByTestId('lens-heatmap-legend')).toHaveAttribute('aria-label', 'Color scale from 0 to 1,200');
-    expect(screen.getByText('No data')).toBeTruthy();
   });
 
   it('click and keyboard select a cell (the same filter chooser as XY charts); hover shows the tooltip', () => {
@@ -366,8 +379,6 @@ describe('R3-CHARTS HeatmapChart', () => {
     expect(screen.getByRole('tooltip').textContent).toContain('Count of records');
     fireEvent.click(cell);
     expect(onSelect).toHaveBeenLastCalledWith(expect.objectContaining({ xIndex: 1, seriesIndex: 0 }));
-    // Empty cells don't filter.
-    fireEvent.click(screen.getByRole('gridcell', { name: 'auth · warn: No data' }));
     expect(onSelect).toHaveBeenCalledTimes(1);
     const grid = screen.getByRole('grid');
     grid.focus();

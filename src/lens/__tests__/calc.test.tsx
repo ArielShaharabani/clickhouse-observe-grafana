@@ -8,7 +8,7 @@
 import React, { useState } from 'react';
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import { dateTime } from '@grafana/data';
-import { compileLens, shapeLensRows } from '../compile';
+import { compileLens, LensSeries, orderSeries, shapeLensRows } from '../compile';
 import { DimensionEditor, toFormula } from '../DimensionEditor';
 import { withOp, withRefOp, withWindow } from '../dimensions';
 import { clampWindow, counterRateSql, cumulativeSumSql, differencesSql, movingAverageSql } from '../calc';
@@ -19,6 +19,7 @@ import {
   BucketDim,
   calculationError,
   decodeLens,
+  dropMissingRankMetric,
   encodeLens,
   isRankable,
   LensField,
@@ -247,6 +248,30 @@ describe('SQL', () => {
       metrics: [count, movAvg],
     });
     expect(fallback).toContain('GROUP BY v ORDER BY count() DESC LIMIT 3');
+  });
+
+  it('a rank metric that is not rankable is cleared once (count); the legend follows the count rank', () => {
+    const cnt: MetricDim = { ...count, id: 'c' };
+    const st: LensState = {
+      chartType: 'bar',
+      buckets: [date, { ...svc, rankBy: 'metric', rankMetric: 'm1', rankDir: 'asc' }],
+      metrics: [diffs, { ...movAvg, id: 'm1' }, cnt],
+    };
+    const cleaned = dropMissingRankMetric(st);
+    expect(cleaned.buckets[1]).toMatchObject({ rankBy: undefined, rankMetric: undefined });
+    expect(dropMissingRankMetric(cleaned)).toBe(cleaned);
+    expect(decodeLens(encodeLens(st))?.buckets[1]).toMatchObject({ rankBy: undefined });
+    // Differences totals say b > a; the count (what the top-N ranks by) says a > b.
+    const mk = (name: string, metricIndex: number, v: number): LensSeries => ({
+      name,
+      breakdown: name,
+      points: new Map([[0, v]]),
+      metricIndex,
+      zeroFill: metricIndex === 2,
+    });
+    const series = [mk('a', 0, 1), mk('a', 2, 90), mk('b', 0, 500), mk('b', 2, 10)];
+    const names = (x: LensSeries[]) => x.filter((y) => y.metricIndex === 2).map((y) => y.name);
+    expect(names(orderSeries(cleaned, series))).toEqual(['a', 'b']);
   });
 
   it('percent of total: overall over everything without a date histogram, per series with one', () => {

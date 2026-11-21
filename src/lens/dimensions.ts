@@ -2,7 +2,7 @@
  * Dimension editing (spec LENS-DIM-01 / LENS-DIM-02): pure helpers behind the dimension editor.
  */
 import { metricOptionsOf } from './metricOptions';
-import { BaseOp, clampWindow, CUMULATIVE_BASE_OPS, DEFAULT_WINDOW, isCalcOp, MetricRef } from './calc';
+import { BASE_OPS, BaseOp, CALC_OPS, clampWindow, CUMULATIVE_BASE_OPS, DEFAULT_WINDOW, isCalcOp, MetricRef } from './calc';
 import {
   BucketDim,
   cleanDateHistogram,
@@ -26,20 +26,9 @@ import {
 import { addTimeBucket, isLensField, LensContext, switchChart } from './suggest';
 
 /** Quick functions, in the editor grid's order (alphabetical, as in Kibana). */
-export const QUICK_FUNCTIONS: MetricOp[] = [
-  'avg',
-  'count',
-  'last_value',
-  'max',
-  'median',
-  'min',
-  'percentile',
-  'std_dev',
-  'sum',
-  'unique',
-];
+export const QUICK_FUNCTIONS: MetricOp[] = [...BASE_OPS];
 /** Time-series calculations (LENS-CALC-01): the grid's "Calculations" group; they need a date histogram. */
-export const CALC_FUNCTIONS: MetricOp[] = ['counter_rate', 'cumulative_sum', 'differences', 'moving_average'];
+export const CALC_FUNCTIONS: MetricOp[] = [...CALC_OPS];
 
 const NUMERIC_OPS: ReadonlySet<MetricOp> = new Set([
   'median',

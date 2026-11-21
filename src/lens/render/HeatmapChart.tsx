@@ -54,10 +54,12 @@ export function heatDomain(values: number[]): [number, number] {
   return hi > lo ? [lo, hi] : [lo, lo + 1];
 }
 
-/** The cell's value, or null when the result has no row for it (an empty cell, not a 0). */
+/** The cell's value, or null when the result has no row for it (an empty cell, not a 0, unless the series zero-fills: a count). */
 export function cellValue(result: LensResult, xi: number, si: number): number | null {
-  const v = result.series[si]?.points.get(result.xs[xi]);
-  return v === undefined ? null : v;
+  const s = result.series[si];
+  const v = s?.points.get(result.xs[xi]);
+  // A count of nothing is 0 (zeroFill); any other metric has no value.
+  return v === undefined ? (s?.zeroFill ? 0 : null) : v;
 }
 
 /** Longest label (px) a Y tick may take: about 7 px a character, between 40 px and 35 % of the width. */

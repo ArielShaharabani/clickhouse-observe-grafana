@@ -206,12 +206,15 @@ export function listError(list: string[], regex: boolean): string | null {
   return null;
 }
 
-/** Resets a rank-by-metric that points at a metric the state no longer has (back to count). */
+/**
+ * Resets a rank-by-metric that points at a metric the state no longer has, or one that cannot be
+ * ranked by (a calculation other than Cumulative sum): back to count.
+ */
 export function dropMissingRankMetric(s: LensState): LensState {
-  const ids = new Set(s.metrics.map((m) => m.id));
+  const ok = new Set(s.metrics.filter(isRankable).map((m) => m.id));
   let changed = false;
   const buckets = s.buckets.map((b) => {
-    if (b.kind === 'terms' && b.rankBy === 'metric' && !(b.rankMetric && ids.has(b.rankMetric))) {
+    if (b.kind === 'terms' && b.rankBy === 'metric' && !(b.rankMetric && ok.has(b.rankMetric))) {
       changed = true;
       return { ...b, rankBy: undefined, rankMetric: undefined, rankDir: undefined };
     }
@@ -661,14 +664,35 @@ export function refMetric(m: MetricDim): MetricDim {
   return out;
 }
 
+const FORMULA_CACHE_MAX = 200;
+const USES_WINDOW = new Map<string, boolean>();
+const NEEDS_HISTOGRAM = new Map<string, boolean>();
+
+/** Per-formula-string memo (small bounded cache): these run in render paths and re-parse otherwise. */
+function memoFormula(cache: Map<string, boolean>, src: string, compute: (src: string) => boolean): boolean {
+  const hit = cache.get(src);
+  if (hit !== undefined) {
+    return hit;
+  }
+  const v = compute(src);
+  if (cache.size >= FORMULA_CACHE_MAX) {
+    cache.clear();
+  }
+  cache.set(src, v);
+  return v;
+}
+
 /** Whether a metric is a time-series calculation (quick function, or a formula using one / overall_*). */
 export function usesWindow(m: MetricDim): boolean {
-  return isCalcOp(m.op) || (m.op === 'formula' && formulaUsesWindow(m.formula ?? ''));
+  return isCalcOp(m.op) || (m.op === 'formula' && memoFormula(USES_WINDOW, m.formula ?? '', formulaUsesWindow));
 }
 
 /** Whether a metric needs a date histogram (time-series calculations; overall_* does not). */
 export function needsDateHistogram(m: MetricDim): boolean {
-  return isCalcOp(m.op) || (m.op === 'formula' && formulaTimeSeriesFns(m.formula ?? '').length > 0);
+  return (
+    isCalcOp(m.op) ||
+    (m.op === 'formula' && memoFormula(NEEDS_HISTOGRAM, m.formula ?? '', (f) => formulaTimeSeriesFns(f).length > 0))
+  );
 }
 
 /**
@@ -845,8 +869,9 @@ function cleanMetrics(raw: unknown): MetricDim[] {
   const okName = (n: unknown) => n === undefined || (str(n) && (n as string).length <= MAX_NAME);
   const okPct = (p: unknown) => p === undefined || (typeof p === 'number' && Number.isFinite(p) && p >= 1 && p <= 99);
   return (raw as MetricDim[])
+    .map((m) => ({ m, ref: m && OPS.includes(m.op) && hasRef(m.op) ? cleanRef(m.ref, m.op) : undefined }))
     .filter(
-      (m) =>
+      ({ m, ref }) =>
         m &&
         m.kind === 'metric' &&
         str(m.id) &&
@@ -854,12 +879,12 @@ function cleanMetrics(raw: unknown): MetricDim[] {
         (m.op === 'formula'
           ? str(m.formula) && (m.formula as string).length <= MAX_FORMULA_LEN
           : hasRef(m.op)
-            ? cleanRef(m.ref, m.op) !== undefined
+            ? ref !== undefined
             : m.op === 'count' || str(m.field)) &&
         okName(m.name) &&
         okPct(m.percentile)
     )
-    .map((m): MetricDim => {
+    .map(({ m, ref }): MetricDim => {
       // Only known, well-typed keys survive (the URL is untrusted).
       const opts = { ...cleanMetricOptions(m as unknown as Record<string, unknown>), ...cleanChartOptions(m) };
       if (m.op === 'formula') {
@@ -875,7 +900,7 @@ function cleanMetrics(raw: unknown): MetricDim[] {
       }
       const out: MetricDim = { kind: 'metric', id: m.id, op: m.op, name: m.name, ...opts };
       if (hasRef(m.op)) {
-        out.ref = cleanRef(m.ref, m.op);
+        out.ref = ref;
         if (m.op === 'moving_average') {
           out.window = m.window === undefined ? DEFAULT_WINDOW : clampWindow(m.window);
         }
@@ -937,7 +962,7 @@ export function decodeLens(raw: string | null | undefined): LensState | undefine
     const layers = cleanLayers(v.layers);
     const parked = cleanParked(v.parked);
     const gauge = cleanGauge(v.gauge);
-    return {
+    return dropMissingRankMetric({
       chartType: v.chartType,
       subType,
       buckets,
@@ -946,7 +971,7 @@ export function decodeLens(raw: string | null | undefined): LensState | undefine
       ...(layers ? { layers } : {}),
       ...(parked ? { parked } : {}),
       ...(gauge ? { gauge } : {}),
-    };
+    });
   } catch {
     return undefined;
   }
@@ -962,7 +987,7 @@ export function sanitizeLens(s: LensState, allowed: ReadonlySet<string>): LensSt
   const kept = s.buckets.filter((b) => b.kind === 'filters' || allowed.has(b.field));
   const metrics = s.metrics.filter((m) => metricAllowed(m, allowed));
   // A rank metric that no longer exists falls back to ranking by count.
-  const ids = new Set(metrics.map((m) => m.id));
+  const ids = new Set(metrics.filter(isRankable).map((m) => m.id));
   // Computed reference lines (LENS-LAYER-01) follow the same field rule.
   const layers = sanitizeLayers(s.layers, allowed);
   const parked = sanitizeParked(s.parked, allowed);

@@ -845,7 +845,7 @@ export function LensPage() {
         </Button>
         <SaveActions
           paramsKey={paramsKey}
-          disabled={isEmptyLens(lens) || fieldsLoading || !!queryError}
+          disabled={isEmptyLens(lens) || fieldsLoading || !!queryError || !!calcError}
           defaultTitle={defaultPanelTitle(lens)}
           buildPanel={buildPanel}
           timeRange={timeRange}
