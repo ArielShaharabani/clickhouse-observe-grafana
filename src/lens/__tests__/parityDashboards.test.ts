@@ -35,6 +35,7 @@ const config: SourceConfig = {
 const range = { from: dateTime(Date.UTC(2026, 0, 1)), to: dateTime(Date.UTC(2026, 0, 8)), raw: { from: 'now-7d', to: 'now' } };
 const conds = ['Timestamp >= $__fromTime AND Timestamp <= $__toTime'];
 const date = { kind: 'date_histogram' as const, id: 'b0', field: 'Timestamp', label: 'Timestamp', interval: 'auto' as const };
+const KIND_COLUMNS = { k0: true, k1: true, k2: true, k3: true };
 const service = { kind: 'terms' as const, id: 'b1', field: 'ServiceName', label: 'ServiceName', size: 9 };
 const count = { kind: 'metric' as const, id: 'm0', op: 'count' as const };
 const avg = { kind: 'metric' as const, id: 'm1', op: 'avg' as const, field: 'SeverityNumber', numeric: true };
@@ -166,7 +167,7 @@ describe('Saved Lens panels: split series names and empty buckets', () => {
     const p = buildLensPanel(line([date, service]), config, conds, range, opts);
     expect(p.transformations?.[0]).toEqual({
       id: 'organize',
-      options: { renameByName: { b0: 'Timestamp' }, excludeByName: {}, indexByName: {} },
+      options: { renameByName: { b0: 'Timestamp' }, excludeByName: KIND_COLUMNS, indexByName: {} },
     });
     expect(p.fieldConfig?.overrides).toEqual([
       {
@@ -188,10 +189,26 @@ describe('Saved Lens panels: split series names and empty buckets', () => {
     expect(overrides.some((o) => o.matcher.options === 'm0' && o.properties.some((x) => (x as { id: string }).id === 'custom.axisPlacement'))).toBe(true);
   });
 
+  it('row-kind columns never become a series; Other / (missing) are labelled in SQL (round 3 P1)', () => {
+    const top = { ...service, other: true, missing: true };
+    for (const state of [line([date, top]), { ...line([top]), chartType: 'pie' as const }]) {
+      const p = buildLensPanel(state, config, conds, range, opts);
+      const organize = p.transformations?.find((t) => t.id === 'organize') as unknown as {
+        options: { excludeByName: object };
+      };
+      expect(organize.options.excludeByName).toMatchObject({ k0: true, k1: true });
+      const sql = (p.targets[0] as { rawSql: string }).rawSql;
+      expect(sql).toContain("'Other'");
+      expect(sql).toContain("'(missing)'");
+      expect(sql).toContain("' (value)'");
+      expect(sql).not.toContain(", '') AS b");
+    }
+  });
+
   it('no breakdown: the metric is renamed as before', () => {
     const p = buildLensPanel(line([date]), config, conds, range, opts);
     expect(p.transformations).toEqual([
-      { id: 'organize', options: { renameByName: { b0: 'Timestamp', m0: 'Count of records' }, excludeByName: {}, indexByName: {} } },
+      { id: 'organize', options: { renameByName: { b0: 'Timestamp', m0: 'Count of records' }, excludeByName: KIND_COLUMNS, indexByName: {} } },
     ]);
     expect(p.fieldConfig?.overrides).toEqual([]);
   });

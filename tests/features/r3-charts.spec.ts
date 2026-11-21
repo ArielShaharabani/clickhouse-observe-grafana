@@ -151,3 +151,39 @@ test('save a heat map and a gauge to a dashboard: native heatmap / gauge panels'
     await expect(page.getByTestId(/data-testid Panel header/).filter({ hasText: title })).toBeVisible();
   }
 });
+
+test('saved donut, bar and metric panels show the service names, never the row-kind columns', async ({ page }) => {
+  const viz = new VisualizePage(page);
+  const date = { kind: 'date_histogram', id: 'b0', field: 'Timestamp', label: 'Timestamp', interval: 'auto' };
+  for (const lens of [
+    { chartType: 'donut', buckets: [svc], metrics: [count] },
+    { chartType: 'bar', buckets: [date, svc], metrics: [count] },
+    { chartType: 'metric', buckets: [svc], metrics: [count] },
+    {
+      chartType: 'metric',
+      buckets: [svc],
+      metrics: [count, { kind: 'metric', id: 'm1', op: 'unique', field: 'SeverityText' }],
+    },
+  ]) {
+    await viz.open({ q: ERRORS, lens: JSON.stringify(lens) });
+    await expect(viz.chart).toHaveAttribute('data-chart-type', lens.chartType);
+    await page.getByRole('button', { name: 'Save', exact: true }).click();
+    const dialog = page.getByRole('dialog', { name: 'Save Lens visualization' });
+    await dialog.getByLabel(/^Title/).fill(`r3 kinds ${lens.chartType} ${Date.now().toString(36)}`);
+    await dialog.getByRole('radio', { name: 'New' }).check({ force: true });
+    await dialog.getByRole('button', { name: 'Save and go to dashboard' }).click();
+    await expect(page).toHaveURL(/\/d\//);
+    const uid = new URL(page.url()).pathname.split('/')[2];
+    const panel = page.locator('[data-viz-panel-key], section[data-testid*="Panel header"]').first();
+    await expect(page.getByText('payments').first()).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByText('checkout').first()).toBeVisible();
+    await expect(panel.getByText(/\bk[01]\b/)).toHaveCount(0);
+    if (lens.metrics.length > 1) {
+      await expect(page.getByText('payments · Count of records').first()).toBeVisible();
+    }
+    if (lens.chartType === 'donut') {
+      await expect(panel.getByText('Count of records')).toHaveCount(0);
+    }
+    await page.request.delete(`/api/dashboards/uid/${uid}`);
+  }
+});

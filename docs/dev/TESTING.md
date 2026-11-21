@@ -493,6 +493,7 @@ LENS-DATAVIEW acceptance:
 | Case | Status |
 | --- | --- |
 | Jest | `src/lens/__tests__/r3Charts.test.tsx` (26: cleanGauge / decode / sanitize incl. hostile gauge and parked metrics; switchChart remapping for heat map / gauge / donut incl. parking and restore; same SQL across switches; Bar horizontal kind, title, groups, axis width, truncation; suggestions; switcher list; donut / gauge panel specs, auto max, bands, grid columns; heat map helpers; HeatmapChart cells, empty vs zero, tooltip, click / keyboard select, legend; export of all four), `ChartTypeSwitcher.test.tsx` (10 entries, Bar horizontal by keyboard) |
+| E2E | Saved donut / bar / metric panels with a breakdown show the values, never the row-kind columns `k0`/`k1` (round 3 P1, `r3-charts.spec.ts`; jest `parityDashboards.test.ts`) | ✅ |
 | E2E | `tests/features/r3-charts.spec.ts` (5 tests) — run once by the agent on its own container (all passed); coordinator: not run |
 | E2E | Updated `lens-type-01.spec.ts` (option regex excludes "Bar horizontal"), `lens-chart-01.spec.ts` (Maximum value parked on Metric → Bar), `parity-xychart.spec.ts` (Bar option) — run once by the agent with `lens-style-01` / `lens-save-01` (all passed); coordinator: not run |
 | IT | Chart switch to / from every new type sends no request when the SQL doesn't change (e2e heat map / bar horizontal / gauge tests count `/api/ds/query`) |
