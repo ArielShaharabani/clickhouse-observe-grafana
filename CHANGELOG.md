@@ -10,6 +10,45 @@ Versions track the plugin's release history. `Unreleased` collects commits not y
 
 ---
 
+## [0.72.0] — 2026-11-21
+
+### Added
+- **Visualize: Percentile rank** (round 3 #22). Quick function with a `Percentile ranks value` input (any number, decimals allowed, default 0 as in Kibana): the share of a number field's values that are less than or equal to the value, shown as a percent ("77.67%") unless the metric has its own Value format. Label "Percentile rank (9) of SeverityNumber". Also as the inner metric of Differences / Moving average, and in Formula as `percentile_rank(field, value=N)` (0–1). Saved dashboard panels compute the same SQL and show it as a percent.
+
+### Changed
+- **Visualize pie / donut labels** (round 3 #18): drawn by the page instead of Grafana's piechart. Labels read like Kibana's ("info 43.93%", up to two decimals), sit inside the slice (the donut's ring) when they fit, otherwise outside with a leader line, and never overlap; the legend shows value and decimal percent; hovering a slice shows a tooltip; one click (or Enter) on a slice filters on its value. Saved dashboard pie panels are unchanged (Grafana's piechart).
+- **A fresh Visualize open starts with an empty workspace** (round 3 #19), as Kibana's Lens: the side-menu link no longer brings back the previous chart (the per-tab session draft is gone). A reload, Back, a shared link and Explore in Discover → Back keep the chart, which rides in the URL.
+- **Visualize opens faster** (round 3 #8): the chart query starts as soon as the table's columns are known (it no longer waits for the JSON-path lookup unless the chart uses a JSON path), and Visualize skips the text skip-index lookup it never used — one query and two round trips fewer before the chart on a table with a JSON column (perf-50m: 7 → 6 queries). Discover reads the skip indexes alongside the columns instead of after them (one round trip fewer before its first query).
+
+### Fixed
+- Search suggestions no longer reopen after Enter (or Clear) when a value lookup was still pending (round 3 #20; the shared search bar, so Discover too).
+- Metric tiles by category fit the chart area: rows shrink from 140 px down to 110 px before the grid scrolls (the third row was cut by 8 px; round 3 #23).
+
+---
+
+## [0.71.0] — 2026-11-21
+
+- Saved Visualize panels with a date histogram bucket like Visualize's auto interval (about 60 bars) instead of ~1-minute buckets drawn as hairlines.
+- Add to dashboard: panel and dashboard titles start empty with placeholders (`Logs`, `Log volume`, `Discover export`) instead of prefilled text. A Logs table capped at 1,000 rows is titled `Logs (newest 1,000)` by default, and its info text states how many documents matched when it was added.
+- Cancel in Visualize (edit from a dashboard) also asks `Leave with unsaved changes?` when the dashboard could not be loaded; the baseline is taken from the URL at entry.
+- Short links drop `?orgId=1` (`/goto/<uid>`).
+
+---
+
+## [0.70.0] — 2026-11-21
+
+- Discover: a data view with no mapped columns (e.g. no time field) opens with a Summary column (`key: value` of every field) instead of blank rows.
+- Discover: data views without a time field show the matching count ("200 of 41,520 loaded", Load all) from one count query.
+- Discover: the document panel overlays the grid (Kibana flyout) instead of squeezing it; grid, Message column and pager stay intact.
+- Discover: the Message column no longer overlaps an added column at 1440 px (minimum width now on the cell).
+- Discover: fewer queries on load with a search: windowed document search is at most 3 steps; empty Map columns are sampled once.
+- Histogram tooltip reads "Count of records N".
+- Single-document permalink is shorter: the time range travels only inside `ret`. Old links still open.
+- Field sidebar default width 24 % (min 240 px) so long names fit.
+- A link naming a personal data view missing from this browser shows a warning instead of silently opening another view.
+
+---
+
 ## [0.69.2] — 2026-11-21
 
 ### Fixed

@@ -28,6 +28,47 @@ Grafana's time picker applies a range immediately (no pending state), so only th
 ## D10 — Action registry (SHARED-ACTION-01)
 `src/actions/registry.ts` defines each value/field action once (icon, short tooltip, specific accessible name, compatibility, behaviour): `valueActions(ctx, host, ids?)` → filter for / filter out / copy; `fieldActions` → exists / does not exist. A surface passes an `ActionHost` (`addFilter` omitted = read-only → copy only) and keeps its own layout. Grafana's `IconButton` uses `tooltip` as its accessible name, so icon surfaces use `ActionIconButton` (Tooltip wrapper) to keep names like "Filter for Service: payments". The field list's "filter out rows that have this field" is now a `not_exists` pill (same SQL as the old `= ''`).
 
+## D68 — Visualize round-3 fixes: percentile rank, pie labels, faster open (R4-VIZ)
+R4-VIZ (round 3 Visualize rows 8, 18, 19, 20, 22, 23).
+
+Percentile rank follows Kibana 9.5's `percentile_rank` operation (read from its Lens bundle): `operationParams: value` (number, default 0), number fields only, filterable / shiftable, allowed as a reference (inner metric) — so it is in `BASE_OPS`, except Cumulative sum (Count / Sum only, unchanged). Kibana's `aggSinglePercentileRank` returns the ES percentage / 100 with the serialized format `percent`; we return the same 0–1 share and default the display to percent with two decimals through `formatOf(metric)` (the metric's own format wins; a calculation over a percentile rank also defaults to percent), applied in every renderer and in saved panels (`percentunit`). The formula result keeps the number format (Kibana's formula column has no per-function default). The SQL is the exact share (`avgOrNull(toFloat64(x <= v))`, NULLs skipped, no values → empty), not ES's TDigest estimate: on the fixture `percentile_rank(SeverityNumber, value=9)` is 77.67 % here and 66.25 % in Elasticsearch, whose TDigest interpolates across the many equal values (9.60 % are < 9, 77.67 % are ≤ 9); Kibana's own docs define it as "the percentage of values which are below a certain value" with "greater than or equal to 95 % of the observed values" — the exact ≤ share. `rankValue` lives in `calc.ts` with the other calculation constants (state.ts re-exports it) to keep formula.ts free of a state.ts import cycle.
+
+Pie / Donut: Grafana's piechart has one panel-wide label switch, whole-number percents and no collision handling, so the slices are drawn by `render/PieChart.tsx` like the XY charts and the heat map. Placement: try the label inside the slice (exact box-in-sector test, a few radii for a pie, the ring's middle for a donut; one line, then name / percent on two lines), else outside left / right of the mid-angle with an elbow leader line; outside labels are spread per side top to bottom (forward then backward pass) and, when the height cannot hold them all, the smallest slices lose their label (legend and tooltip keep the numbers). The pie shrinks to leave room for outside labels. The old Grafana-panel path (`pieSpec`, `pieDisplayLabels`) stays for multi-series pies and is what `panelSpec` still describes. Click on a slice uses the existing filter chooser (`onSelect`, x index = slice).
+
+Fresh open: the brief asks for an empty workspace on a fresh open while a reload keeps the chart. A reload keeps the URL (`lens`), so the session draft's only remaining effect was the behaviour being removed; it is deleted (`src/lens/draft.ts`, `visualizeEntry`'s step 4, the save effect) rather than kept as dead storage. A stale `clickhouse-observe.lensDraft` entry in a tab's session storage is simply never read.
+
+Open performance: on perf-50m the 7 queries were `system.columns`, `system.data_skipping_indices`, `distinctJSONPaths(Payload)`, three map-key samples and the chart; the chart waited for columns → skip indexes → JSON paths (three serial round trips; each query is 8–80 ms in ClickHouse, the rest is the Grafana round trip). Now the chart waits for the columns only (`lensFieldsPending`: columns published and, while discovery is still running, every field of the chart already known — `sanitizeLens` would not drop anything), Visualize does not request skip indexes (its search compile never used them: `buildFieldIndex(fields)` without text indexes), and other pages fetch them concurrently with the columns (shared in-flight promise per table). Map-key samples still run (the field list needs them), after the columns and in parallel with the chart. Not measured here (no browser runs): expected about two round trips less before the chart; the remaining ~3 s is Grafana's own boot.
+
+Search suggestions: `commit()` / `onClear()` already closed the list, but the 250 ms debounced value fetch (and a Map-key fetch) of the last keystroke was still allowed to reopen it. Both now bump the request sequence and clear the debounce (`cancelPendingSuggestions`).
+
+Metric tiles: `grid-auto-rows: minmax(110px, 140px)` with the grid's definite height lets the rows grow to 140 px only within the free space, so three rows fit a 428 px area; more rows than fit at 110 px scroll as before.
+
+Deferred: - Saved dashboard pie / donut panels still use Grafana's piechart (whole-number labels, no collision handling); only Visualize draws its own.
+- Kibana rotates a thin slice's label along the slice; here it goes outside with a leader line instead.
+- Pie legend position / visibility from Style → Legend (XY only today); the pie legend is always shown (right, or below under 420 px).
+- Map-key samples: three queries (one per Map column) are kept; merging them into one sample query would save two more requests but changes the shared, per-column cached key sampler.
+- Lens's KQL compile does not use the table's text skip indexes (unchanged; Discover does).
+
+## D67 — Dashboards and sharing round-3 fixes (R4-DASH)
+- Row 6: paging past 1,000 needs a count or a larger query on every dashboard load; not done. The cap is now visible in the title and the description gives the true count (a snapshot at add time, not live). A live count would need a second target and a frame selector on the table panel.
+- Row 7: the confirm already existed in the code (SaveActions); the round-3 script may have hit a state where the baseline was never set (dashboard load pending or failing). Fixed by a URL-at-entry fallback baseline. Could not reproduce without running Observe; verify in the e2e run.
+- Row 15: deferred (see Deferred).
+- Row 17: only `orgId=1` is dropped (other orgs keep it, so their links still resolve). 41 characters here against Kibana's 35; the rest is Grafana's 14-character uid and `/goto/`.
+
+Deferred: - Row 15 (saved searches listed among dashboards): they are Grafana dashboards by design (folder `Observe saved searches` + tag `observe-saved-search` already group them). Grafana has no hidden or custom object type for the dashboard list. The `(ss_<id>)` suffix in the title guarantees a unique title in the folder (overwrite is off) and is what lookup by id searches, so existing searches depend on it; shortening it would break them. Needs a product decision (e.g. a tag-based id and a migration).
+- Row 6 paging past 1,000 and a live row count.
+
+## D66 — Discover round-3 fixes (R4-DISCOVER)
+- Row 1: client-side Summary (rows already carry every field via the `SELECT *` fallback), no SQL change. It is not sortable, filterable or removable; adding any column replaces it.
+- Row 3: overlay is not resizable any more (the detail splitter and its `detailSplit` localStorage key are gone); width 45 % (min 400 px), 88 % when expanded.
+- Row 9: could not run the app. Reading the code, the extra queries with `q=` are (a) windowed search steps (1 h, 6 h, 36 h, full) because a selective search fills the page late, and (b) the key sample retrying wider windows for an empty Map column. Cut step count to 3 and retry only when the first window held no rows (straight to the widest window). The post-discovery reconcile already re-runs only when SQL differs. Expected saving 2 queries; the coordinator should recount (target still above Kibana's 4).
+- Row 12: `ret` already holds from/to; if it does not, the link keeps its own from/to. Link is now roughly 120-130 chars with a typical `ret`, not Kibana's 77 (the return context is kept).
+- Row 13: widened the default; saved user splits are unchanged.
+- Row 14: notice only (data views stay in localStorage).
+
+Deferred: - Query count with `q=` not measured; may still exceed Kibana's 4.
+- Documents tab label "Documents (N)" not added; the footer carries the count.
+
 ## D65 — Data views without a time field (NO-TIME)
 A data view may have no time field (timeless reference tables). There is no time range anywhere: Discover hides the time picker, time shorthand and histogram; Visualize hides its time picker and the metric options Time shift and Reduced time range, and never suggests a metric over time. Every query reads the whole table, so the time field picker shows a short warning when "No time field" is chosen. Numbers stored as text in Map columns are not converted at query time (round-2 #14, won't fix): users add a typed MATERIALIZED column instead.
 
