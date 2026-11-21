@@ -12,7 +12,7 @@ import { dateTime, GrafanaTheme2, IconName, locationUtil, TimeRange } from '@gra
 import { locationService } from '@grafana/runtime';
 import { Alert, Button, Icon, IconButton, Input, LinkButton, Spinner, TimeRangePicker, useStyles2 } from '@grafana/ui';
 import { DataViewContext, SourceConfigContext } from '../components/App/App';
-import { discoveryKey, useFieldDiscovery } from '../components/FieldsContext';
+import { discoveryKey, FieldsContext, useFieldDiscovery } from '../components/FieldsContext';
 import { DataViewPicker } from '../components/DataViewPicker/DataViewPicker';
 import { FIELD_TYPE_ICONS } from '../components/FieldSidebar/fieldIcons';
 import { FIELD_DRAG_MIME } from '../constants';
@@ -29,7 +29,6 @@ import { buildLensPanel, defaultPanelTitle } from './panelExport';
 import { SaveActions } from './SaveActions';
 import { loadLensDraft, saveLensDraft } from './draft';
 import { FilterPills } from '../components/FilterPills';
-import { FieldsContext } from '../components/FieldsContext';
 import { QueryRow, withQuery } from './QueryRow';
 import { LoadedQuery } from '../components/QueryMenu/QueryMenu';
 import { parseKql } from '../sql/kql';
