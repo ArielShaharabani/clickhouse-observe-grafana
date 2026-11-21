@@ -3,7 +3,7 @@ import { css, cx } from '@emotion/css';
 import { AppEvents, dateTime, GrafanaTheme2, PageLayoutType, rangeUtil, TimeRange } from '@grafana/data';
 import { getAppEvents, locationService, PluginPage } from '@grafana/runtime';
 import { buildContextUrl, buildSingleDocUrl, resolveContextAnchor } from '../data/surrounding';
-import { Button, Icon, LinkButton, RadioButtonGroup, Spinner, useStyles2, TimeRangePicker, RefreshPicker, useSplitter } from '@grafana/ui';
+import { Alert, Button, Icon, LinkButton, RadioButtonGroup, Spinner, useStyles2, TimeRangePicker, RefreshPicker, useSplitter } from '@grafana/ui';
 import { GridDisplay, GridDisplayOptions, loadGridDisplay, saveGridDisplay } from '../components/GridDisplayOptions';
 import { useSearchParams } from 'react-router-dom';
 import { QueryProgress } from '../components/QueryProgress/QueryProgress';
@@ -30,7 +30,7 @@ import { runQueryRows } from '../data/runQuery';
 import { fetchNewestFirst, isNewestFirstSort, narrowTimeRange } from '../data/windowedSearch';
 import { startAction } from '../diag/tracer';
 import { SpanHandle } from '../diag/types';
-import { buildLogsQuery, buildLogDetailQuery, buildVolumeQuery, resolveVolumeBreakdown, logRowKey } from '../sql/queryBuilder';
+import { buildCountQuery, buildLogsQuery, buildLogDetailQuery, buildVolumeQuery, resolveVolumeBreakdown, logRowKey } from '../sql/queryBuilder';
 import { buildFieldIndex } from '../sql/fields';
 import { isConvertedTimestamp } from '../sql/timeExpr';
 import { addFilterPill, makeFilter, sanitizeFilterPills } from '../sql/filters';
@@ -80,12 +80,10 @@ const INITIAL_FETCH = 200;
 const PAGE_SIZE_OPTIONS = [10, 25, 50, 100, 250, 500];
 const DEFAULT_PAGE_SIZE = 50;
 const SIDEBAR_SPLIT_KEY = 'clickhouse-observe.logsExplorer.sidebarSplit';
-const DEFAULT_SIDEBAR_SPLIT = 0.18;
-const DETAIL_SPLIT_KEY = 'clickhouse-observe.logsExplorer.detailSplit';
-const DEFAULT_DETAIL_SPLIT = 0.45;
+const DEFAULT_SIDEBAR_SPLIT = 0.24;
 
 /** Narrowest the field sidebar / document panel can get (drag or a wide grid). */
-const SIDEBAR_MIN_WIDTH = 200;
+const SIDEBAR_MIN_WIDTH = 240;
 const DETAIL_MIN_WIDTH = 400;
 
 function readSidebarSplit(): number {
@@ -93,10 +91,6 @@ function readSidebarSplit(): number {
   return raw > 0.05 && raw < 0.6 ? raw : DEFAULT_SIDEBAR_SPLIT;
 }
 
-function readDetailSplit(): number {
-  const raw = Number(window.localStorage.getItem(DETAIL_SPLIT_KEY));
-  return raw > 0.2 && raw < 0.8 ? raw : DEFAULT_DETAIL_SPLIT;
-}
 
 
 
@@ -212,6 +206,8 @@ export function LogsExplorer({ tabId, tabStrip, onTitle }: LogsExplorerProps = {
   // the histogram appear to reload, and so the histogram can show its own stale-data overlay
   // instead of silently keeping old bars during an actual volume refetch.
   const [volLoading, setVolLoading] = useState(false);
+  // Matching documents of a data view without a time field (no histogram to count from).
+  const [noTimeCount, setNoTimeCount] = useState<{ sql: string; count: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
   // The list query itself failed: the grid shows the error instead of the previous (now stale)
   // rows. A histogram-only failure leaves the valid rows alone.
@@ -339,6 +335,11 @@ export function LogsExplorer({ tabId, tabStrip, onTitle }: LogsExplorerProps = {
   // default: `pendingUrlViewRef` makes it wait until the URL's view is actually active, otherwise
   // it sees default → URL view as a user switch and wipes the query/filters the link carried.
   const appliedUrlViewRef = useRef(false);
+  // A link naming a data view this browser doesn't have (personal data views live in the browser's
+  // own storage, not on the server): tell the user instead of silently opening another view.
+  const [missingLinkView, setMissingLinkView] = useState<string | undefined>(() =>
+    initialUrlState.viewId && !views.some((v) => v.id === initialUrlState.viewId) ? initialUrlState.viewId : undefined
+  );
   const pendingUrlViewRef = useRef<string | undefined>(undefined);
   useEffect(() => {
     if (appliedUrlViewRef.current) {
@@ -425,18 +426,6 @@ export function LogsExplorer({ tabId, tabStrip, onTitle }: LogsExplorerProps = {
       dragPosition: 'middle',
       onSizeChanged: (flexSize) => window.localStorage.setItem(SIDEBAR_SPLIT_KEY, String(flexSize)),
     });
-  // Table | inline log detail split (replaces the old overlay Drawer) — same persistence pattern.
-  const {
-    containerProps: detailSplitterProps,
-    primaryProps: tablePaneProps,
-    secondaryProps: detailPaneProps,
-    splitterProps: detailHandleProps,
-  } = useSplitter({
-    direction: 'row',
-    initialSize: readDetailSplit(),
-    dragPosition: 'middle',
-    onSizeChanged: (flexSize) => window.localStorage.setItem(DETAIL_SPLIT_KEY, String(flexSize)),
-  });
   const [showSqlInspect, setShowSqlInspect] = useState(false);
   const [showDiagnostics, setShowDiagnostics] = useState(false);
   // Grid display options (DISC-TABLE-01), remembered per viewer.
@@ -822,6 +811,33 @@ export function LogsExplorer({ tabId, tabStrip, onTitle }: LogsExplorerProps = {
   const fetchVolume = useCallback(async () => {
     if (!config.datasourceUid || !caps.hasTime) {
       setVolumeData([]);
+      if (config.datasourceUid && config.logsTable) {
+        // No time field: one count() for "Documents (N)" instead of a histogram.
+        const countSql = buildCountQuery(config, queryState, fieldIndexRef.current);
+        const countRun = ++volRunRef.current;
+        volAbortRef.current?.abort();
+        const countAbort = new AbortController();
+        volAbortRef.current = countAbort;
+        try {
+          const res = await runQueryRows({
+            datasourceUid: config.datasourceUid,
+            sql: countSql,
+            timeRange,
+            refId: 'count',
+            signal: countAbort.signal,
+            op: 'volume',
+            trace: actionRef.current ?? undefined,
+          });
+          if (volRunRef.current === countRun) {
+            setNoTimeCount({ sql: countSql, count: Number(res[0]?.['count'] ?? 0) });
+          }
+        } catch {
+          // The total is optional context: without it the footer keeps "rows loaded+".
+          if (volRunRef.current === countRun) {
+            setNoTimeCount(null);
+          }
+        }
+      }
       return;
     }
     const runId = ++volRunRef.current;
@@ -1475,7 +1491,9 @@ export function LogsExplorer({ tabId, tabStrip, onTitle }: LogsExplorerProps = {
   }, [searchParamsKey]);
 
   // Matching documents, from the histogram's count (no extra query); unknown for raw SQL / no time field.
-  const totalDocs = knownTotal({
+  const totalDocs = !caps.hasTime && !queryState.useRawSql && noTimeCount && noTimeCount.count >= rows.length
+    ? noTimeCount.count
+    : knownTotal({
     hasHistogram: caps.hasTime,
     rawSql: queryState.useRawSql,
     volLoading,
@@ -1745,6 +1763,16 @@ export function LogsExplorer({ tabId, tabStrip, onTitle }: LogsExplorerProps = {
 
         <QueryProgress active={loading || volLoading} onCancel={cancelQueries} />
 
+        {missingLinkView && (
+          <Alert
+            severity="warning"
+            title="This link's data view isn't available in this browser"
+            onRemove={() => setMissingLinkView(undefined)}
+          >
+            {`The link uses data view "${missingLinkView}". Personal data views are stored in the browser that created them, so this one can't be opened here. Showing "${activeView?.name ?? 'the default data view'}" instead; ask the sender to share the data view or use a shared one.`}
+          </Alert>
+        )}
+
         {/* Filter pills */}
         {queryState.filters.length > 0 && (
           <div className={styles.pills}>
@@ -1831,21 +1859,8 @@ export function LogsExplorer({ tabId, tabStrip, onTitle }: LogsExplorerProps = {
                 </div>
               </div>
             )}
-            <div
-              {...(selectedRow ? detailSplitterProps : {})}
-              className={cx(styles.tableDetailSplit, selectedRow && detailSplitterProps.className)}
-            >
-              <div
-                {...(selectedRow ? tablePaneProps : {})}
-                style={
-                  selectedRow && detailExpanded
-                    ? { ...tablePaneProps.style, flexGrow: 0, flexBasis: '12%' }
-                    : selectedRow
-                    ? tablePaneProps.style
-                    : undefined
-                }
-                className={cx(styles.tablePane, selectedRow && tablePaneProps.className)}
-              >
+            <div className={styles.tableDetailSplit}>
+              <div className={styles.tablePane}>
                 {/* Histogram + toolbar live inside the table pane (not the results pane as a
                     whole) so they shrink along with the table when the detail panel opens,
                     instead of spanning the full width behind it. */}
@@ -1972,12 +1987,7 @@ export function LogsExplorer({ tabId, tabStrip, onTitle }: LogsExplorerProps = {
               </div>
               {selectedRow && (
                 <>
-                  <div {...detailHandleProps} className={cx(detailHandleProps.className, styles.splitterHandle)} />
-                  <div
-                    {...detailPaneProps}
-                    style={detailExpanded ? { ...detailPaneProps.style, flexGrow: 1, flexBasis: '88%' } : detailPaneProps.style}
-                    className={cx(detailPaneProps.className, styles.detailPane)}
-                  >
+                  <div className={cx(styles.detailPane, detailExpanded && styles.detailPaneExpanded)}>
                     <LogDetailDrawer
                       row={selectedRow}
                       detailRow={detailRow}
@@ -2141,6 +2151,7 @@ const getStyles = (theme: GrafanaTheme2) => ({
     width: 100%;
     min-height: 0;
     display: flex;
+    position: relative;
   `,
   tablePane: css`
     flex: 1;
@@ -2149,11 +2160,24 @@ const getStyles = (theme: GrafanaTheme2) => ({
     flex-direction: column;
     gap: ${theme.spacing(1)};
   `,
+  // The document panel overlays the right side of the grid (Kibana's flyout) instead of squeezing
+  // it: the grid keeps its rows, columns and pager at full size underneath.
   detailPane: css`
-    /* Same min-content override as sidebarPane — otherwise the panel's own content floors how
-     * far it can be dragged. Floored at a width where field names and values stay readable. */
-    min-width: ${DETAIL_MIN_WIDTH}px !important;
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 5;
+    width: 45%;
+    min-width: ${DETAIL_MIN_WIDTH}px;
+    max-width: 100%;
     overflow: hidden;
+    background: ${theme.colors.background.primary};
+    border-left: 1px solid ${theme.colors.border.medium};
+    box-shadow: ${theme.shadows.z3};
+  `,
+  detailPaneExpanded: css`
+    width: 88%;
   `,
   sidebarRail: css`
     width: 28px;

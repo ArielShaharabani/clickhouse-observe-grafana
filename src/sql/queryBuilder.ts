@@ -741,6 +741,22 @@ function volumeQuerySettings(config: SourceConfig): string[] {
   return queryTimeoutFragments(config);
 }
 
+/**
+ * Number of documents matching the search and filters: one cheap `count()`, no bucketing. Used for
+ * data views without a time field (no histogram to take the total from). Empty without a table.
+ */
+export function buildCountQuery(config: SourceConfig, state: LogsQueryState, index?: FieldIndex): string {
+  const conditions = buildWhereConditions(config, state, index);
+  return withSettings(
+    [
+      `SELECT count() AS count`,
+      `FROM ${tableRef(config, config.logsTable)}`,
+      conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : null,
+    ],
+    [...volumeQuerySettings(config), ...configSettingsFragments(config)]
+  );
+}
+
 export interface VolumeQueryOpts {
   /**
    * Fixed bucket width, or `{ macro: true }` to defer bucketing to the CH datasource's
