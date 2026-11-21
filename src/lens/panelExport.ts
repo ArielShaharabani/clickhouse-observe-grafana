@@ -6,7 +6,7 @@
  * transformations into what the matching core panel draws. Pure: unit-tested on the JSON.
  */
 import { createTheme, TimeRange } from '@grafana/data';
-import { chDatasourceRef, ExportedPanel, FORMAT_TABLE, GridPos } from '../data/panelExport';
+import { chDatasourceRef, EXPORT_VOLUME_POINTS, ExportedPanel, FORMAT_TABLE, GridPos } from '../data/panelExport';
 import { SourceConfig } from '../types';
 import { bucketAlias, compileLens, kindAlias, metricAlias, uniqueMetricLabels } from './compile';
 import { dimLabelIn, LensState } from './state';
@@ -192,6 +192,9 @@ function baseLensPanel(
     ...(opts.description?.trim() ? { description: opts.description.trim() } : {}),
     gridPos: opts.gridPos,
     datasource,
+    // Auto date buckets: ~60 per range, like Visualize's auto interval. Grafana's default (the
+    // panel width in pixels) gave ~1-minute buckets and hairline bars.
+    ...(state.buckets.some((b) => b.kind === 'date_histogram') ? { maxDataPoints: EXPORT_VOLUME_POINTS } : {}),
     targets: [
       {
         refId: 'A',

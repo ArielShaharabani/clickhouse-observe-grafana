@@ -48,6 +48,11 @@ const panel = (s: LensState) =>
 const ids = (p: ReturnType<typeof panel>) => (p.transformations ?? []).map((t) => t.id);
 
 describe('LENS-SAVE-01 dashboard SQL', () => {
+  it('R4-DASH: a date-histogram panel asks for ~60 buckets (Visualize auto interval), others do not', () => {
+    expect(panel(lens('bar', [date])).maxDataPoints).toBe(60);
+    expect(panel(lens('bar', [service])).maxDataPoints).toBeUndefined();
+  });
+
   it('date buckets use the $__timeInterval macro (follows the dashboard time), app mode unchanged', () => {
     const s = lens('bar', [date, level], 'stacked');
     const dash = compileLens(s, config, conds, range, 'dashboard').sql;

@@ -74,6 +74,14 @@ export function SaveActions({ paramsKey, disabled, defaultTitle, buildPanel, tim
   useEffect(() => {
     paramsRef.current = paramsKey;
   }, [paramsKey]);
+  // Fallback baseline from the URL the panel opened with: when the dashboard can't be loaded (no
+  // target, so no baseline below) Cancel must still ask about changes.
+  const openedWith = useRef<{ key: string; chart: string } | null>(null);
+  useEffect(() => {
+    if (retKey && openedWith.current?.key !== retKey) {
+      openedWith.current = { key: retKey, chart: chartStateKey(paramsRef.current) };
+    }
+  }, [retKey]);
 
   useEffect(() => {
     if (!ret) {
@@ -103,7 +111,12 @@ export function SaveActions({ paramsKey, disabled, defaultTitle, buildPanel, tim
     if (!ret) {
       return;
     }
-    const base = baseline.current?.key === retKey ? baseline.current.chart : undefined;
+    const base =
+      baseline.current?.key === retKey
+        ? baseline.current.chart
+        : openedWith.current?.key === retKey
+          ? openedWith.current.chart
+          : undefined;
     if (base !== undefined && base !== chartStateKey(paramsKey)) {
       setConfirmCancel(true);
     } else {

@@ -10,6 +10,7 @@ import {
   dashboardTime,
   escapeDollarInLiterals,
   EXPORT_TABLE_LIMIT,
+  tableDescription,
 } from '../panelExport';
 import { DISCOVER_SOURCE_KEY, discoverSourceOf, MAX_DISCOVER_SOURCE_LEN, openInDiscoverPath } from '../discoverSource';
 import { dashboardSaveError } from '../dashboards';
@@ -73,6 +74,17 @@ describe('Discover logs panel', () => {
     expect(p.description).toContain('1,000');
     expect(p.targets[0].rawSql).toContain(`LIMIT ${EXPORT_TABLE_LIMIT}`);
     expect(JSON.stringify(p.fieldConfig?.overrides)).toContain('"wrapText":true');
+  });
+
+  it('R4-DASH: a capped table says so with the true count, in its default title and description', () => {
+    expect(tableDescription(1207)).toContain('1,207 documents matched');
+    expect(tableDescription(1207)).toContain('newest 1,000');
+    expect(tableDescription(undefined)).toContain('newest 1,000');
+    const state = { ...DEFAULT_LOGS_QUERY_STATE, columns: defaultColumns(config) };
+    const gp = { x: 0, y: 0, w: 24, h: 12 };
+    expect(buildTablePanel(config, state, { id: 1, gridPos: gp, totalDocs: 1207 }).title).toBe('Logs (newest 1,000)');
+    expect(buildTablePanel(config, state, { id: 1, gridPos: gp, totalDocs: 40 }).title).toBe('Logs');
+    expect(buildTablePanel(config, state, { id: 1, gridPos: gp, title: 'Mine', totalDocs: 1207 }).title).toBe('Mine');
   });
 
   it('stores the Discover search for Open in Discover', () => {
@@ -174,10 +186,11 @@ describe('short links', () => {
   });
 
   it('accepts only /goto/ responses, rebuilt on this origin', () => {
-    expect(validShortUrl({ url: `${origin}/goto/abc_1?orgId=1` }, origin)).toBe(`${origin}/goto/abc_1?orgId=1`);
+    expect(validShortUrl({ url: `${origin}/goto/abc_1?orgId=1` }, origin)).toBe(`${origin}/goto/abc_1`);
     expect(validShortUrl({ url: `${origin}/goto/../admin` }, origin)).toBeUndefined();
     expect(validShortUrl({ url: `${origin}/goto/abc_1` }, origin)).toBe(`${origin}/goto/abc_1`);
-    expect(validShortUrl({ url: 'http://localhost:3000/goto/abc?orgId=1' }, origin)).toBe(`${origin}/goto/abc?orgId=1`);
+    expect(validShortUrl({ url: 'http://localhost:3000/goto/abc?orgId=1' }, origin)).toBe(`${origin}/goto/abc`);
+    expect(validShortUrl({ url: `${origin}/goto/abc?orgId=2` }, origin)).toBe(`${origin}/goto/abc?orgId=2`);
     expect(validShortUrl({ url: 'http://evil.example/admin' }, origin)).toBeUndefined();
     expect(validShortUrl({ url: 'javascript:alert(1)' }, origin)).toBeUndefined();
     expect(validShortUrl({}, origin)).toBeUndefined();
