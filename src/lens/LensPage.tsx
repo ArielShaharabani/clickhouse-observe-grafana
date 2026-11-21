@@ -23,11 +23,10 @@ import { buildFieldIndex } from '../sql/fields';
 import { buildWhereConditions } from '../sql/queryBuilder';
 import { filtersForViewSwitch, loadPinnedFilters, mergePinnedFilters, tableKey } from '../state/sharedSearch';
 import { hasSearchContext, rememberSearchContext, restoreSearchContext } from '../state/lastSearch';
-import { draftScopeOf, visualizeEntry } from './entry';
+import { visualizeEntry } from './entry';
 import { discoverBreakdownOf, discoverColumns, discoverIntervalOf, discoverUrl, lensContextFor } from './handoff';
 import { buildLensPanel, defaultPanelTitle } from './panelExport';
 import { SaveActions } from './SaveActions';
-import { loadLensDraft, saveLensDraft } from './draft';
 import { FilterPills } from '../components/FilterPills';
 import { QueryRow, withQuery } from './QueryRow';
 import { LoadedQuery } from '../components/QueryMenu/QueryMenu';
@@ -171,7 +170,8 @@ export function LensPage() {
   const paramsKey = searchParams.toString();
 
   // Entry (#16b / #16c): restore the tab's last context when the URL has none, apply the URL's
-  // data view, merge pins, restore the draft — computed once, applied in ONE URL update below.
+  // data view, merge pins — computed once, applied in ONE URL update below. The chart comes from
+  // the URL only: a fresh open starts empty (as Kibana), a reload keeps it.
   const [entry] = useState(() =>
     visualizeEntry({
       params: searchParams,
@@ -179,7 +179,6 @@ export function LensPage() {
       activeView,
       storedPins: loadPinnedFilters(),
       restoreContext: restoreSearchContext,
-      loadDraft: loadLensDraft,
     })
   );
   const [entered, setEntered] = useState(false);
@@ -224,7 +223,6 @@ export function LensPage() {
       activeView,
       storedPins: loadPinnedFilters(),
       restoreContext: restoreSearchContext,
-      loadDraft: loadLensDraft,
     });
     if (again.params.toString() !== sp.toString()) {
       setSearchParams(again.params, { replace: true });
@@ -241,20 +239,12 @@ export function LensPage() {
   const search = urlState.search ?? '';
   const filters = useMemo(() => urlState.filters ?? [], [urlState]);
   const timeRange = useMemo(() => urlState.timeRange ?? resolveDefaultTimeRange(defaultTime), [urlState, defaultTime]);
-  // LENS-SAVE-01 draft, scoped to the datasource + table the chart was built on.
-  const draftScope = draftScopeOf(config);
   const urlLens = useMemo(() => decodeLens(new URLSearchParams(paramsKey).get('lens')) ?? EMPTY_LENS, [paramsKey]);
-  // Every chart shown (also one opened from a Discover link) becomes the draft; clearing happens in
-  // setLens. Only once this view's fields are in (the effect is declared below, after discovery):
-  // mid-switch the URL still holds the previous view's chart, which must not become this view's draft.
 
   const setLens = useCallback(
     (raw: LensState) => {
       // A rank metric that was removed goes back to ranking by count in the stored state too.
       const next = dropMissingRankMetric(raw);
-      if (isEmptyLens(next)) {
-        saveLensDraft(draftScope, next);
-      }
       setSearchParams(
         (prev) => {
           const sp = new URLSearchParams(prev);
@@ -268,7 +258,7 @@ export function LensPage() {
         { replace: true }
       );
     },
-    [setSearchParams, draftScope]
+    [setSearchParams]
   );
   const setTimeRange = useCallback(
     (r: TimeRange) => {
@@ -427,11 +417,6 @@ export function LensPage() {
     () => (fieldsLoading ? urlLens : sanitizeLens(urlLens, allowedFields)),
     [urlLens, allowedFields, fieldsLoading]
   );
-  useEffect(() => {
-    if (!fieldsLoading && !isEmptyLens(lens)) {
-      saveLensDraft(draftScope, lens);
-    }
-  }, [lens, draftScope, fieldsLoading]);
 
   // Data view switch on this page (#16b): the URL names the new view, query and time stay, filters
   // follow filtersForViewSwitch (D7 for pins; other pills disabled on a different table), and once

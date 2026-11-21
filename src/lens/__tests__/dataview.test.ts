@@ -8,7 +8,7 @@ import { decodeLogsState } from '../../data/urlState';
 import { DEFAULT_SOURCE_CONFIG, DataView, FilterPill } from '../../types';
 import { filtersForViewSwitch, StoredPin } from '../../state/sharedSearch';
 import { hasSearchContext, LAST_SEARCH_KEY, rememberSearchContext, restoreSearchContext } from '../../state/lastSearch';
-import { draftScopeOf, visualizeEntry, VisualizeEntryInput } from '../entry';
+import { visualizeEntry, VisualizeEntryInput } from '../entry';
 import { decodeLens, EMPTY_LENS, LensState, RECORDS_FIELD } from '../state';
 import { addField } from '../suggest';
 import { visualizeUrl } from '../handoff';
@@ -43,7 +43,6 @@ function entry(params: string, over: Partial<VisualizeEntryInput> = {}) {
     activeView: SPEC,
     storedPins: [],
     restoreContext: () => undefined,
-    loadDraft: () => undefined,
     ...over,
   });
 }
@@ -84,24 +83,16 @@ describe('#16b visualizeEntry: the data view Visualize opens on', () => {
     expect(linked).toEqual([]);
   });
 
-  it("restores the draft of the target view's datasource + table when the URL has no lens", () => {
-    const scopes: string[] = [];
-    const e = entry('ds=otel-demo&q=x', {
-      loadDraft: (s) => {
-        scopes.push(s);
-        return lensWithRecords;
-      },
-    });
-    expect(scopes).toEqual([draftScopeOf(OTEL)]);
-    expect(decodeLens(e.params.get('lens'))?.metrics).toHaveLength(1);
-    // A URL lens wins over the draft.
-    const own = entry('ds=otel-demo&q=x&lens=' + encodeURIComponent(e.params.get('lens')!), {
-      loadDraft: () => {
-        throw new Error('not read');
-      },
-    });
-    expect(own.params.get('lens')).toBe(e.params.get('lens'));
+  it('takes the chart from the URL only: an open without lens starts empty (round 3 #19)', () => {
+    // An earlier session's chart in this tab does not come back on a fresh open (Kibana starts empty).
+    window.sessionStorage.setItem('clickhouse-observe.lensDraft', JSON.stringify({ scope: 'x', lens: '{}' }));
+    expect(entry('ds=otel-demo&q=x').params.has('lens')).toBe(false);
+    expect(entry('').params.has('lens')).toBe(false);
+    // A URL lens (a reload, a shared link) is kept as is.
+    const lens = encodeURIComponent(JSON.stringify(lensWithRecords));
+    expect(decodeLens(entry(`ds=otel-demo&q=x&lens=${lens}`).params.get('lens'))?.metrics).toHaveLength(1);
   });
+
 });
 
 describe('#16c visualizeEntry: side-menu entry restores the last context', () => {

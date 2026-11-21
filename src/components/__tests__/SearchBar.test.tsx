@@ -131,7 +131,13 @@ describe('SearchBar — closing on submit (round 3 #20)', () => {
       const loadValues = jest.fn(async () => [{ value: 'error', count: 23 }]);
       render(
         <FieldsContext.Provider value={{ fields: [level], loading: false, error: null, refresh: () => {} }}>
-          <SearchBar value="" onChange={() => {}} onSearch={onSearch} loadValues={loadValues as never} />
+          <SearchBar
+            value=""
+            onChange={() => {}}
+            onSearch={onSearch}
+            loadValues={loadValues as never}
+            loadMapKeys={async () => ({ keys: [], total: 0 })}
+          />
         </FieldsContext.Provider>
       );
       const input = screen.getByPlaceholderText(/filter logs with kql/i) as HTMLInputElement;
