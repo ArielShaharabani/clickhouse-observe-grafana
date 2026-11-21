@@ -10,6 +10,13 @@ Versions track the plugin's release history. `Unreleased` collects commits not y
 
 ---
 
+## [0.69.1] — 2026-11-21
+
+### Fixed
+- Value suggestions no longer narrow to the value already in the query: with `ServiceName: "frontend"` in the search bar (or as a filter), typing a ServiceName value offers every service. Suggestions are scoped to the time range and the filters on other fields.
+
+---
+
 ## [0.69.0] — 2026-11-21
 
 ### Changed

@@ -45,6 +45,37 @@ describe('SHARED-AUTOCOMPLETE-01: value and key sources', () => {
     expect(opts.cacheKey).toContain('payments');
   });
 
+  it('leaves out the search text and filters on the field being completed', async () => {
+    const query = {
+      ...DEFAULT_LOGS_QUERY_STATE,
+      search: 'ServiceName: "frontend"',
+      filters: [
+        { id: 'a', field: 'ServiceName', op: '=' as const, value: 'checkout' },
+        { id: 'b', field: 'SeverityText', op: '=' as const, value: 'error' },
+        {
+          id: 'c',
+          field: '',
+          op: '=' as const,
+          value: '',
+          cond: { join: 'or' as const, items: [{ field: 'ServiceName', op: '=' as const, value: 'cart' }] },
+        },
+      ],
+    };
+    const sources = createAutocompleteSources({ config, query, timeRange });
+    await sources.loadValues('ServiceName');
+    const where = (loadFieldValues as jest.Mock).mock.calls[0][2].conditions.join(' AND ');
+    expect(where).not.toContain('frontend');
+    expect(where).not.toContain('checkout');
+    expect(where).not.toContain('cart');
+    expect(where).toContain('error');
+    // Another field keeps every filter, still without the search text.
+    await sources.loadValues('SeverityText');
+    const other = (loadFieldValues as jest.Mock).mock.calls[1][2].conditions.join(' AND ');
+    expect(other).toContain('checkout');
+    expect(other).toContain('cart');
+    expect(other).not.toContain('frontend');
+  });
+
   it('drops an unparsable search instead of rejecting (best-effort suggestions)', async () => {
     const query = { ...DEFAULT_LOGS_QUERY_STATE, search: 'level:(' };
     const sources = createAutocompleteSources({ config, query, timeRange });
