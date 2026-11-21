@@ -13,14 +13,17 @@ describe('LENS-TYPE-01 chart type switcher', () => {
   it('search matches names and descriptions', () => {
     expect(filterChartTypes('met')).toEqual(['metric']);
     expect(filterChartTypes('over time')).toEqual(['line']);
-    expect(filterChartTypes('')).toHaveLength(6);
+    expect(filterChartTypes('')).toHaveLength(10);
+    expect(filterChartTypes('horizontal')).toEqual(['bar_horizontal']);
+    expect(filterChartTypes('heat')).toEqual(['heatmap']);
+    expect(filterChartTypes('ring')).toEqual(['donut']);
   });
 
   it('one open + one selection switches the type; the current type is ticked', () => {
     const { onChange } = setup('metric');
     fireEvent.click(screen.getByRole('button', { name: 'Chart type: Metric' }));
     expect(screen.getByRole('option', { name: /Metric/ })).toHaveAttribute('aria-selected', 'true');
-    fireEvent.click(screen.getByRole('option', { name: /^Bar/ }));
+    fireEvent.click(screen.getByRole('option', { name: /^Bar Compare/ }));
     expect(onChange).toHaveBeenCalledWith('bar');
     expect(screen.queryByRole('listbox')).toBeNull();
   });
@@ -35,9 +38,9 @@ describe('LENS-TYPE-01 chart type switcher', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Chart type: Bar' }));
     const search2 = screen.getByRole('combobox', { name: 'Search visualizations' });
-    fireEvent.keyDown(search2, { key: 'ArrowDown' }); // bar → line
+    fireEvent.keyDown(search2, { key: 'ArrowDown' }); // bar → bar horizontal
     fireEvent.keyDown(search2, { key: 'Enter' });
-    expect(onChange).toHaveBeenLastCalledWith('line');
+    expect(onChange).toHaveBeenLastCalledWith('bar_horizontal');
 
     fireEvent.click(screen.getByRole('button', { name: 'Chart type: Bar' }));
     fireEvent.keyDown(screen.getByRole('combobox', { name: 'Search visualizations' }), { key: 'Escape' });

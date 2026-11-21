@@ -6,7 +6,8 @@ import { VisualizePage } from '../pages/VisualizePage';
 
 async function switchTo(page: import('@playwright/test').Page, from: string, to: string) {
   await page.getByRole('button', { name: `Chart type: ${from}` }).click();
-  await page.getByRole('option', { name: new RegExp(`^${to}`) }).click();
+  // "Bar" must not also match "Bar horizontal" (R3-CHARTS).
+  await page.getByRole('option', { name: new RegExp(`^${to}(?! horizontal)`) }).click();
 }
 
 test('Metric → Bar/Line and back: one open + one selection, query and time unchanged', async ({ page }) => {

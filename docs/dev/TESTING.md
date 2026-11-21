@@ -472,3 +472,26 @@ LENS-DATAVIEW acceptance:
 | Folder found / created once / General fallback (create denied, folder not writable); find by id; no stored time keeps range | jest | `src/data/__tests__/savedSearchesShared.test.ts` |
 | `ss` encode/decode, malformed dropped; counts as tab state | jest | `src/data/__tests__/urlState.test.ts`, `src/state/__tests__/discoverTabs.test.ts` |
 | Save: checkbox default on, tab named, `ss` in URL, folder, fresh load by id, edit clears `ss`, delete button name | e2e | `tests/features/feat-parity-minors.spec.ts` |
+
+### R3-QUERYBAR (PR 70)
+| Case | Status |
+| --- | --- |
+| Jest | `src/lens/__tests__/queryRow.test.tsx` (submit only on Enter, invalid query, Add filter opens, `withQuery` URL write) |
+| E2E | `tests/features/r3-querybar.spec.ts` — not run (coordinator) |
+| E2E | `tests/features/lens-dataview.spec.ts` (carried query read from the search bar) — not run (coordinator) |
+
+### R3-FUNCTIONS (PR 70)
+| Case | Status |
+| --- | --- |
+| Jest | `src/lens/__tests__/calc.test.tsx` — labels, URL sanitizers (window clamp, malformed / nested / non-additive inner metrics, extra keys, undiscovered inner field), SQL shape snapshots (app + saved panel), one-query shape, -OrNull inner aggregates, fill variants (unbound, empty rows off, month, 500 ms), drop partial before the window, time shift / Filter by on the inner metric, normalize after the calculation, no-date-histogram error, rankability and rank fallback, percent of total partitions, window SQL builders, numbers from the fixture ClickHouse (gaps for first-bucket values, cumulative totals per service), formula accept / reject / compile / quick → formula conversion, function switching, editor (disabled Calculations with reason, Moving average window, saved panel SQL) |
+| Jest | `dateHistogram.test.tsx`, `parityDashboards.test.ts` — calendar buckets / fill as DateTime |
+| SQL | Every compiled shape (cumulative sum with top values + Other, differences / moving average / counter rate / std dev / last value, percent of total, formula with time shift + kql, month + drop partial, top values ranked by cumulative sum, 500 ms + intervals breakdown unbound, overall over hourly series, Filters breakdown) run on the fixture ClickHouse 26.3 in app and dashboard mode; numbers checked (cumulative count ends at 41,520 / payments 9,264; overall_average − overall_min = 7.14 for payments hourly) |
+| E2E | `tests/features/r3-functions.spec.ts` — not run (coordinator) |
+
+### R3-CHARTS (PR 70)
+| Case | Status |
+| --- | --- |
+| Jest | `src/lens/__tests__/r3Charts.test.tsx` (26: cleanGauge / decode / sanitize incl. hostile gauge and parked metrics; switchChart remapping for heat map / gauge / donut incl. parking and restore; same SQL across switches; Bar horizontal kind, title, groups, axis width, truncation; suggestions; switcher list; donut / gauge panel specs, auto max, bands, grid columns; heat map helpers; HeatmapChart cells, empty vs zero, tooltip, click / keyboard select, legend; export of all four), `ChartTypeSwitcher.test.tsx` (10 entries, Bar horizontal by keyboard) |
+| E2E | `tests/features/r3-charts.spec.ts` (5 tests) — run once by the agent on its own container (all passed); coordinator: not run |
+| E2E | Updated `lens-type-01.spec.ts` (option regex excludes "Bar horizontal"), `lens-chart-01.spec.ts` (Maximum value parked on Metric → Bar), `parity-xychart.spec.ts` (Bar option) — run once by the agent with `lens-style-01` / `lens-save-01` (all passed); coordinator: not run |
+| IT | Chart switch to / from every new type sends no request when the SQL doesn't change (e2e heat map / bar horizontal / gauge tests count `/api/ds/query`) |

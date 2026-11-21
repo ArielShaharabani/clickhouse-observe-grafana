@@ -148,7 +148,8 @@ export function bucketStartSql(col: string, iv: LensInterval): string {
  */
 export function dashboardBucketSql(col: string, iv: LensInterval): string {
   if (isCalendarUnit(iv.unit) || iv.unit === 'w') {
-    return `toStartOfInterval(toDateTime(${col}), INTERVAL ${iv.n} ${UNIT_SQL[iv.unit]})`;
+    // toStartOfInterval returns a Date for these units; a DateTime keeps WITH FILL's types aligned.
+    return `toDateTime(toStartOfInterval(toDateTime(${col}), INTERVAL ${iv.n} ${UNIT_SQL[iv.unit]}))`;
   }
   const sec = Math.max(1, Math.ceil(intervalMs(iv) / 1000));
   return `toStartOfInterval(toDateTime(${col}), INTERVAL greatest(${sec}, $__interval_s) second)`;
@@ -167,10 +168,10 @@ export function dashboardFillSql(iv: LensInterval | null, bound = true): string 
       : iv
         ? `INTERVAL greatest(${Math.max(1, Math.ceil(intervalMs(iv) / 1000))}, $__interval_s) second`
         : 'INTERVAL $__interval_s second';
-  const step =
-    iv && (isCalendarUnit(iv.unit) || iv.unit === 'w') ? interval : interval.replace(/^INTERVAL (.*) second$/, '$1');
+  const calendar = !!iv && (isCalendarUnit(iv.unit) || iv.unit === 'w');
+  const step = calendar ? interval : interval.replace(/^INTERVAL (.*) second$/, '$1');
   return bound
-    ? `WITH FILL FROM toStartOfInterval($__fromTime, ${interval}) TO $__toTime STEP ${step}`
+    ? `WITH FILL FROM ${calendar ? `toDateTime(toStartOfInterval($__fromTime, ${interval}))` : `toStartOfInterval($__fromTime, ${interval})`} TO $__toTime STEP ${step}`
     : `WITH FILL STEP ${step}`;
 }
 

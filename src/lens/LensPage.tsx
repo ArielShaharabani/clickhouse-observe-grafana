@@ -12,7 +12,7 @@ import { dateTime, GrafanaTheme2, IconName, locationUtil, TimeRange } from '@gra
 import { locationService } from '@grafana/runtime';
 import { Alert, Button, Icon, IconButton, Input, LinkButton, Spinner, TimeRangePicker, useStyles2 } from '@grafana/ui';
 import { DataViewContext, SourceConfigContext } from '../components/App/App';
-import { discoveryKey, useFieldDiscovery } from '../components/FieldsContext';
+import { discoveryKey, FieldsContext, useFieldDiscovery } from '../components/FieldsContext';
 import { DataViewPicker } from '../components/DataViewPicker/DataViewPicker';
 import { FIELD_TYPE_ICONS } from '../components/FieldSidebar/fieldIcons';
 import { FIELD_DRAG_MIME } from '../constants';
@@ -21,7 +21,7 @@ import { runQueryRows } from '../data/runQuery';
 import { ResultCache } from './resultCache';
 import { buildFieldIndex } from '../sql/fields';
 import { buildWhereConditions } from '../sql/queryBuilder';
-import { filtersForViewSwitch, loadPinnedFilters, tableKey } from '../state/sharedSearch';
+import { filtersForViewSwitch, loadPinnedFilters, mergePinnedFilters, tableKey } from '../state/sharedSearch';
 import { hasSearchContext, rememberSearchContext, restoreSearchContext } from '../state/lastSearch';
 import { draftScopeOf, visualizeEntry } from './entry';
 import { discoverBreakdownOf, discoverColumns, discoverIntervalOf, discoverUrl, lensContextFor } from './handoff';
@@ -29,8 +29,11 @@ import { buildLensPanel, defaultPanelTitle } from './panelExport';
 import { SaveActions } from './SaveActions';
 import { loadLensDraft, saveLensDraft } from './draft';
 import { FilterPills } from '../components/FilterPills';
+import { QueryRow, withQuery } from './QueryRow';
+import { LoadedQuery } from '../components/QueryMenu/QueryMenu';
+import { parseKql } from '../sql/kql';
 import { useAutocompleteSources } from '../autocomplete/service';
-import { addFilterPill, makeFilter } from '../sql/filters';
+import { addFilterPill, makeFilter, sanitizeFilterPills } from '../sql/filters';
 import { FilterChoice, FilterChooser } from './FilterChooser';
 import { XySelection, xLabel } from './render/XyChart';
 import { DEFAULT_LOGS_QUERY_STATE, FilterPill } from '../types';
@@ -44,6 +47,7 @@ import { addBucket, addMetric, metricForField, nextBucketField, queryShape, repl
 import { withSeriesColor } from './style';
 import {
   BucketDim,
+  calculationError,
   decodeLens,
   dimLabelIn,
   dropMissingRankMetric,
@@ -56,7 +60,18 @@ import {
   RECORDS_FIELD,
   sanitizeLens,
 } from './state';
-import { addField, chartTitle, chooseChart, isLensField, isXy, LensContext, suggestions, switchChart } from './suggest';
+import {
+  addField,
+  chartKind,
+  chartTitle,
+  chooseChart,
+  isLensField,
+  isXy,
+  LensContext,
+  suggestions,
+  switchChart,
+  switchKind,
+} from './suggest';
 import { shiftTimeRange, zoomOutTimeRange } from '../utils/timeRangeNav';
 import { QueryProgress } from '../components/QueryProgress/QueryProgress';
 import { lensApproxNote } from './approx';
@@ -68,6 +83,8 @@ import { ExtraLayer } from './layers';
 import { useLayerData } from './useLayerData';
 import { DefaultTimeRangeContext, resolveDefaultTimeRange } from '../utils/defaultTimeRange';
 import { panelSourceOf } from './panelSource';
+import { gaugeAutoMax } from './render/gaugeSpec';
+import { GaugePanel } from './GaugePanel';
 
 interface Group {
   name: string;
@@ -87,12 +104,15 @@ export function dimensionGroups(s: LensState): Group[] {
   switch (s.chartType) {
     case 'line':
     case 'area':
-    case 'bar':
+    case 'bar': {
+      // Horizontal bars: the categories run down the vertical axis, the values along the horizontal one.
+      const flip = chartKind(s) === 'bar_horizontal';
       return [
-        { name: 'Horizontal axis', role: 'bucket', dims: opt(b0) },
-        { name: 'Vertical axis', role: 'metric', dims: s.metrics, multi: true },
+        { name: flip ? 'Vertical axis' : 'Horizontal axis', role: 'bucket', dims: opt(b0) },
+        { name: flip ? 'Horizontal axis' : 'Vertical axis', role: 'metric', dims: s.metrics, multi: true },
         { name: 'Breakdown', role: 'bucket', dims: b0 ? opt(b1) : [] },
       ];
+    }
     case 'table':
       return [
         { name: 'Rows', role: 'bucket', dims: s.buckets.filter((b) => !b.pivot), multi: true },
@@ -114,9 +134,27 @@ export function dimensionGroups(s: LensState): Group[] {
       ];
     }
     case 'pie':
+    case 'donut':
       return [
         { name: 'Slice by', role: 'bucket', dims: s.buckets },
         { name: 'Size by', role: 'metric', dims: s.metrics },
+      ];
+    case 'heatmap':
+      return [
+        { name: 'Horizontal axis', role: 'bucket', dims: opt(b0) },
+        { name: 'Vertical axis', role: 'bucket', dims: b0 ? opt(b1) : [] },
+        { name: 'Cell value', role: 'metric', dims: s.metrics.slice(0, 1) },
+      ];
+    case 'gauge':
+      return [
+        { name: 'Metric', role: 'metric', dims: s.metrics.filter((m) => m.role !== 'max').slice(0, 1) },
+        {
+          name: 'Maximum value',
+          role: 'metric',
+          dims: s.metrics.filter((m) => m.role === 'max').slice(0, 1),
+          tag: 'max',
+        },
+        { name: 'Break down by', role: 'bucket', dims: opt(b0) },
       ];
   }
 }
@@ -273,13 +311,97 @@ export function LensPage() {
     },
     [setSearchParams, defaultTime]
   );
+  // Query bar (R3-QUERYBAR): a submitted query goes to `q` the way filters go to `filters` (one
+  // history entry). `invalidQuery` is the bar's own parse error; a `q` that arrives by URL is
+  // checked here too, so neither ever reaches the query.
+  const [invalidQuery, setInvalidQuery] = useState<string | null>(null);
+  const urlQueryError = useMemo(() => {
+    if (!search.trim()) {
+      return null;
+    }
+    try {
+      parseKql(search.trim());
+      return null;
+    } catch (e) {
+      return e instanceof Error ? e.message : String(e);
+    }
+  }, [search]);
+  const queryError = invalidQuery ?? urlQueryError;
+  const setSearch = useCallback(
+    (next: string) => {
+      setSearchParams((prev) => withQuery(prev, next), { replace: false });
+    },
+    [setSearchParams]
+  );
   const addFilters = useCallback(
     (pills: FilterPill[]) => setFilters(pills.reduce(addFilterPill, filters)),
     [filters, setFilters]
   );
 
+  // Query menu: clear all / a saved query. One URL update, like a filter change.
+  const clearQuery = useCallback(() => {
+    setSearchParams(
+      (prev) => {
+        const sp = new URLSearchParams(prev);
+        sp.delete('q');
+        sp.delete('filters');
+        return sp;
+      },
+      { replace: false }
+    );
+  }, [setSearchParams]);
+  const onLoadQuery = useCallback(
+    ({ query, filters: loaded, timeRange: tr }: LoadedQuery) => {
+      setInvalidQuery(null);
+      const merged = loaded
+        ? mergePinnedFilters(
+            sanitizeFilterPills(loaded),
+            loadPinnedFilters(),
+            tableKey(config.database, config.logsTable)
+          )
+        : undefined;
+      const enc = encodeLogsState({
+        search: query,
+        filters: merged ?? [],
+        columns: [],
+        timeRange: tr ?? resolveDefaultTimeRange(defaultTime),
+      });
+      setSearchParams(
+        (prev) => {
+          const sp = new URLSearchParams(prev);
+          if (query.trim()) {
+            sp.set('q', query);
+          } else {
+            sp.delete('q');
+          }
+          if (merged) {
+            const f = enc.get('filters');
+            if (f) {
+              sp.set('filters', f);
+            } else {
+              sp.delete('filters');
+            }
+          }
+          if (tr) {
+            sp.set('from', enc.get('from') ?? '');
+            sp.set('to', enc.get('to') ?? '');
+          }
+          return sp;
+        },
+        { replace: false }
+      );
+    },
+    [setSearchParams, config.database, config.logsTable, defaultTime]
+  );
+  // A query that changes through the URL (Back / Forward, a saved query) replaces a typed-in error.
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setInvalidQuery(null);
+  }, [search]);
+
   // Fields of the active data view.
-  const { fields, loading: discovering, fieldsFor } = useFieldDiscovery(config, timeRange);
+  const discovery = useFieldDiscovery(config, timeRange);
+  const { fields, loading: discovering, fieldsFor } = discovery;
   // Fields are usable only when they are this view's: right after a view switch `fields` still
   // holds the previous table's until the new discovery publishes (#16b).
   const fieldsLoading = discovering || !viewSettled || fieldsFor !== discoveryKey(config);
@@ -352,7 +474,7 @@ export function LensPage() {
       }
     }
   }, [fieldsLoading, lens, urlLens, setLens]);
-  const { loadValues } = useAutocompleteSources({
+  const { loadValues, loadMapKeys } = useAutocompleteSources({
     config,
     query: { ...DEFAULT_LOGS_QUERY_STATE, search, filters },
     timeRange,
@@ -392,8 +514,10 @@ export function LensPage() {
   const queryKey = JSON.stringify([encodeLens(queryShape(lens)), ...queryContext]);
   const { chartType: _ct, subType: _st, ...lensBase } = queryShape(lens);
   const baseKey = JSON.stringify([JSON.stringify(lensBase), ...queryContext]);
+  // A time-series calculation without a date histogram (LENS-CALC-01): say why instead of querying.
+  const calcError = calculationError(lens);
   useEffect(() => {
-    if (isEmptyLens(lens) || !config.datasourceUid || fieldsLoading) {
+    if (isEmptyLens(lens) || !config.datasourceUid || fieldsLoading || queryError || calcError) {
       return;
     }
     let cancelled = false;
@@ -445,7 +569,7 @@ export function LensPage() {
     };
     // queryKey covers every input that changes the SQL.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [queryKey, fieldsLoading, refreshNonce]);
+  }, [queryKey, fieldsLoading, refreshNonce, !!queryError]);
   const current = result?.key === queryKey ? result : null;
   // A chart-type switch re-runs the query; until the new rows arrive keep drawing the previous chart
   // (same dimensions, filters and time) instead of a blank spinner frame. It is not interactive.
@@ -471,7 +595,7 @@ export function LensPage() {
     timeRange,
     index: fieldIndex,
     timeAxis,
-    enabled: xyChart && !fieldsLoading && !!lens.layers,
+    enabled: xyChart && !fieldsLoading && !queryError && !!lens.layers,
   });
   const setLayers = (layers: ExtraLayer[]) => setLens({ ...lens, layers: layers.length > 0 ? layers : undefined });
   const [layerItemRef, setLayerItem] = useState<LayerItemRef | null>(null);
@@ -494,7 +618,7 @@ export function LensPage() {
   const suggestedTime = Math.round((timeRange.from.valueOf() + timeRange.to.valueOf()) / 2);
   // SHARED-PERF-01: same running cue as Discover (no Cancel here: leaving the chart without a
   // result would need its own empty state).
-  const chartLoading = fieldsLoading || (!isEmptyLens(lens) && !!config.datasourceUid && !current);
+  const chartLoading = fieldsLoading || (!isEmptyLens(lens) && !!config.datasourceUid && !current && !queryError && !calcError);
   const approxNote = current?.data ? lensApproxNote(lens) : null;
 
   const onAdd = (f: LensField) => setLens(addField(lens, f, ctx));
@@ -511,8 +635,11 @@ export function LensPage() {
     // A removal must stick: line/area (and a bar left with nothing on X) would add the time axis
     // straight back, so re-pick the chart from what remains instead.
     const lostTime =
-      isXy(next.chartType) &&
-      (next.chartType === 'bar' ? next.buckets.length === 0 : !next.buckets.some((b) => b.kind === 'date_histogram'));
+      (next.chartType === 'heatmap' && next.buckets.length === 0) ||
+      (isXy(next.chartType) &&
+        (next.chartType === 'bar'
+          ? next.buckets.length === 0
+          : !next.buckets.some((b) => b.kind === 'date_histogram')));
     setLens(switchChart(next, lostTime ? chooseChart(next.buckets) : next.chartType, ctx));
   };
   const cards = useMemo(() => suggestions(lens, ctx), [lens, ctx]);
@@ -558,6 +685,7 @@ export function LensPage() {
         gridPos: { x: 0, y: 0, w: 12, h: 8 },
         title,
         description,
+        gaugeMax: lens.chartType === 'gauge' && current?.data ? gaugeAutoMax(lens, current.data) : undefined,
         series: (current?.data ?? stale?.data)?.series.map((x) => ({
           name: x.name,
           breakdown: x.breakdown,
@@ -702,14 +830,6 @@ export function LensPage() {
       <div className={styles.toolbar}>
         <span className={styles.title}>Visualize</span>
         <DataViewPicker />
-        {/* The picker already names the data view; only the carried query / filters are summarised. */}
-        {(search || filters.length > 0) && (
-          <span className={styles.context} data-testid="lens-context">
-            {[search, filters.length > 0 ? `${filters.length} filter${filters.length > 1 ? 's' : ''}` : '']
-              .filter(Boolean)
-              .join(' · ')}
-          </span>
-        )}
         <div className={styles.spacer} />
         <LinkButton href={exploreUrl} onClick={onExplore} variant="secondary" size="sm" icon="compass" fill="outline">
           Explore in Discover
@@ -725,7 +845,7 @@ export function LensPage() {
         </Button>
         <SaveActions
           paramsKey={paramsKey}
-          disabled={isEmptyLens(lens) || fieldsLoading}
+          disabled={isEmptyLens(lens) || fieldsLoading || !!queryError || !!calcError}
           defaultTitle={defaultPanelTitle(lens)}
           buildPanel={buildPanel}
           timeRange={timeRange}
@@ -748,6 +868,27 @@ export function LensPage() {
       </div>
 
       <QueryProgress active={chartLoading} />
+
+      <FieldsContext.Provider value={discovery}>
+        <QueryRow
+          search={search}
+          filters={filters}
+          timeRange={timeRange}
+          dataViewId={activeView?.id}
+          pinTable={tableKey(config.database, config.logsTable)}
+          loadValues={loadValues}
+          loadMapKeys={loadMapKeys}
+          onSearch={setSearch}
+          onInvalidQuery={setInvalidQuery}
+          onFiltersChange={setFilters}
+          onAddFilter={(pill) => addFilters([pill])}
+          onClearAll={() => {
+            setInvalidQuery(null);
+            clearQuery();
+          }}
+          onLoadQuery={onLoadQuery}
+        />
+      </FieldsContext.Provider>
 
       <FilterPills
         filters={filters}
@@ -815,7 +956,7 @@ export function LensPage() {
 
         <section className={styles.workspace} aria-label="Workspace">
           <div className={styles.chartHeader}>
-            <Icon name={CHART_ICONS[lens.chartType]} />
+            <Icon name={CHART_ICONS[chartKind(lens)]} />
             <span>{isEmptyLens(lens) ? 'No visualization' : chartTitle(lens)}</span>
             {!isEmptyLens(lens) && (
               <Button size="sm" variant="secondary" fill="text" icon="trash-alt" onClick={() => setLens(EMPTY_LENS)}>
@@ -853,6 +994,14 @@ export function LensPage() {
                   Visualize builds a chart from the fields you pick — no query editor needed.
                 </div>
               </div>
+            ) : queryError ? (
+              <Alert severity="error" title="The query is not valid" data-testid="lens-invalid-query">
+                {queryError}
+              </Alert>
+            ) : calcError ? (
+              <Alert severity="warning" title="This chart needs a date histogram">
+                {calcError}
+              </Alert>
             ) : current?.error ? (
               <Alert severity="error" title="The chart query failed">
                 {current.error}
@@ -915,7 +1064,7 @@ export function LensPage() {
                       aria-current={c.current || undefined}
                       onClick={() => !c.current && setLens(c.state)}
                     >
-                      <Icon name={CHART_ICONS[c.state.chartType]} size="xl" />
+                      <Icon name={CHART_ICONS[chartKind(c.state)]} size="xl" />
                       <span className={styles.cardTitle}>{c.title}</span>
                     </button>
                   ))}
@@ -949,9 +1098,9 @@ export function LensPage() {
         <section ref={dimsRef} className={styles.dims} aria-label="Dimensions">
           {!isEmptyLens(lens) && !editingDim && (
             <ChartTypeSwitcher
-              value={lens.chartType}
+              value={chartKind(lens)}
               subType={lens.subType}
-              onChange={(t) => setLens(switchChart(lens, t, ctx))}
+              onChange={(t) => setLens(switchKind(lens, t, ctx))}
               onSubTypeChange={(sub) => setLens(switchChart(lens, lens.chartType, ctx, sub))}
             />
           )}
@@ -1057,6 +1206,16 @@ export function LensPage() {
               suggestedTime={suggestedTime}
               onChange={setLayers}
               onEdit={setLayerItem}
+            />
+          )}
+          {!isEmptyLens(lens) && !editingDim && lens.chartType === 'gauge' && (
+            <GaugePanel
+              gauge={lens.gauge}
+              hasMaxMetric={lens.metrics.some((m) => m.role === 'max')}
+              onChange={(gauge) => {
+                const { gauge: _g, ...rest } = lens;
+                setLens(gauge ? { ...rest, gauge } : rest);
+              }}
             />
           )}
         </section>

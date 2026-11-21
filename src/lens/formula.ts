@@ -13,6 +13,18 @@ import { SourceConfig } from '../types';
 import { FieldIndex } from '../sql/fields';
 import { parseKql, kqlToSql } from '../sql/kql';
 import { quoteIdentifier } from '../sql/queryBuilder';
+import { timeExpr } from '../sql/timeExpr';
+import {
+  counterRateSql,
+  cumulativeSumSql,
+  DEFAULT_WINDOW,
+  differencesSql,
+  MAX_WINDOW,
+  movingAverageSql,
+  OverallFn,
+  overallSql,
+  WindowSql,
+} from './calc';
 
 export const MAX_FORMULA_LEN = 1000;
 const MAX_NODES = 200;
@@ -30,7 +42,11 @@ export interface FormulaFnArg {
 
 export interface FormulaFn {
   name: string;
-  kind: 'agg' | 'math';
+  /**
+   * agg: an aggregation of a field; math: a row-wise function; series: a time-series calculation
+   * over a metric (needs a date histogram); overall: one value per series (overall_*).
+   */
+  kind: 'agg' | 'math' | 'series' | 'overall';
   args: FormulaFnArg[];
   description: string;
   /** Aggregations: the field must be numeric. */
@@ -40,6 +56,7 @@ export interface FormulaFn {
 const KQL: FormulaFnArg = { name: 'kql', type: 'string', optional: true, named: true };
 const FIELD: FormulaFnArg = { name: 'field', type: 'field' };
 const X: FormulaFnArg = { name: 'value', type: 'expr' };
+const METRIC: FormulaFnArg = { name: 'metric', type: 'expr' };
 
 export const FORMULA_FUNCTIONS: FormulaFn[] = [
   {
@@ -66,6 +83,59 @@ export const FORMULA_FUNCTIONS: FormulaFn[] = [
     args: [FIELD, KQL],
     description: 'Number of distinct values of a field (approximate).',
   },
+  {
+    name: 'standard_deviation',
+    kind: 'agg',
+    numeric: true,
+    args: [FIELD, KQL],
+    description: 'How much the values of a number field vary (population standard deviation).',
+  },
+  {
+    name: 'last_value',
+    kind: 'agg',
+    numeric: true,
+    args: [FIELD, KQL],
+    description: 'Value of a number field in the newest document that has it (by the time field).',
+  },
+  {
+    name: 'cumulative_sum',
+    kind: 'series',
+    args: [METRIC],
+    description: 'Running total of a metric over time, per series. Needs a date histogram.',
+  },
+  {
+    name: 'differences',
+    kind: 'series',
+    args: [METRIC],
+    description: 'Change of a metric from the previous bucket, per series. Needs a date histogram.',
+  },
+  {
+    name: 'moving_average',
+    kind: 'series',
+    args: [METRIC, { name: 'window', type: 'number', optional: true, named: true }],
+    description: `Average of the previous buckets (window=${DEFAULT_WINDOW} by default; the current bucket is not included). Needs a date histogram.`,
+  },
+  {
+    name: 'counter_rate',
+    kind: 'series',
+    args: [METRIC],
+    description:
+      'Increase of an ever-growing counter per bucket (a drop counts as a reset), e.g. counter_rate(max(bytes)). Needs a date histogram.',
+  },
+  {
+    name: 'overall_sum',
+    kind: 'overall',
+    args: [METRIC],
+    description: 'Sum of a metric over the whole series, e.g. count() / overall_sum(count()) for % of total.',
+  },
+  {
+    name: 'overall_average',
+    kind: 'overall',
+    args: [METRIC],
+    description: 'Average of a metric over the whole series.',
+  },
+  { name: 'overall_min', kind: 'overall', args: [METRIC], description: 'Smallest value of a metric in the series.' },
+  { name: 'overall_max', kind: 'overall', args: [METRIC], description: 'Largest value of a metric in the series.' },
   { name: 'abs', kind: 'math', args: [X], description: 'Absolute value.' },
   {
     name: 'round',
@@ -384,6 +454,47 @@ export function formulaFieldNames(node: FormulaNode): string[] {
   return [...out];
 }
 
+/** Names of the window functions (time-series and overall_*) a parsed formula calls, in order. */
+function windowCalls(node: FormulaNode, kinds: ReadonlyArray<FormulaFn['kind']>): string[] {
+  const out: string[] = [];
+  const walk = (n: FormulaNode) => {
+    if (n.type === 'neg') {
+      walk(n.operand);
+    } else if (n.type === 'bin') {
+      walk(n.left);
+      walk(n.right);
+    } else if (n.type === 'call') {
+      const fn = FN_BY_NAME.get(n.fn);
+      if (fn && kinds.includes(fn.kind) && !out.includes(fn.name)) {
+        out.push(fn.name);
+      }
+      n.args.forEach(walk);
+    }
+  };
+  walk(node);
+  return out;
+}
+
+const parsedOrNull = (src: string): FormulaNode | null => {
+  try {
+    return parseFormula(src);
+  } catch {
+    return null;
+  }
+};
+
+/** Whether a formula uses a time-series calculation or overall_* (computed with window functions). */
+export function formulaUsesWindow(src: string): boolean {
+  const n = parsedOrNull(src);
+  return !!n && windowCalls(n, ['series', 'overall']).length > 0;
+}
+
+/** The time-series functions a formula uses (they need a date histogram). */
+export function formulaTimeSeriesFns(src: string): string[] {
+  const n = parsedOrNull(src);
+  return n ? windowCalls(n, ['series']) : [];
+}
+
 /**
  * All errors of a parsed formula against the fields it may use (the editor shows every one; the
  * compiler refuses a formula with any).
@@ -391,6 +502,8 @@ export function formulaFieldNames(node: FormulaNode): string[] {
 export function validateFormula(node: FormulaNode, fields: FormulaFields): FormulaError[] {
   const errors: FormulaError[] = [];
   let aggs = 0;
+  /** Inside a time-series / overall function (they cannot be nested). */
+  let inWindow: string | null = null;
   const walk = (n: FormulaNode, inAgg: boolean) => {
     switch (n.type) {
       case 'num':
@@ -434,6 +547,31 @@ export function validateFormula(node: FormulaNode, fields: FormulaFields): Formu
               n.pos
             )
           );
+          return;
+        }
+        if (fn.kind === 'series' || fn.kind === 'overall') {
+          if (inAgg) {
+            errors.push(new FormulaError(`${n.fn} cannot be used inside an aggregation`, n.pos));
+            return;
+          }
+          if (inWindow) {
+            errors.push(new FormulaError(`${n.fn} cannot be used inside ${inWindow}`, n.pos));
+            return;
+          }
+          if (n.named.window) {
+            const w = Number(n.named.window.value);
+            if (!Number.isInteger(w) || w < 1 || w > MAX_WINDOW) {
+              errors.push(new FormulaError(`window must be a whole number from 1 to ${MAX_WINDOW}`, n.pos));
+            }
+          }
+          const before = aggs;
+          const errorsBefore = errors.length;
+          inWindow = n.fn;
+          n.args.forEach((a) => walk(a, false));
+          inWindow = null;
+          if (aggs === before && errors.length === errorsBefore) {
+            errors.push(new FormulaError(`${n.fn} needs a metric, e.g. ${n.fn}(count())`, n.pos));
+          }
           return;
         }
         if (fn.kind === 'agg') {
@@ -519,6 +657,12 @@ const MATH_SQL: Record<string, (a: string[]) => string> = {
 
 export interface FormulaSqlContext {
   config: SourceConfig;
+  /**
+   * Window mode (LENS-CALC-01): the chart query is wrapped. Every aggregation is registered as a
+   * column of the inner grouped query (`inner` returns its alias) and the formula becomes a row
+   * expression of the outer SELECT, where the time-series / overall functions are window functions.
+   */
+  window?: WindowSql & { inner: (aggSql: string) => string };
   index?: FieldIndex;
   /**
    * SQL for a saved dashboard panel: `$` in a KQL filter is written as $ (inside string literals
@@ -581,9 +725,60 @@ function emit(n: FormulaNode, fields: FormulaFields, ctx: FormulaSqlContext): st
         const builder = MATH_SQL[fn.name];
         return builder(n.args.map((a) => emit(a, fields, ctx)));
       }
-      return emitAgg(n, fn, fields, ctx);
+      if (fn.kind === 'series' || fn.kind === 'overall') {
+        return emitWindow(n, fn, fields, ctx);
+      }
+      const agg = emitAgg(n, fn, fields, ctx);
+      return ctx.window ? ctx.window.inner(agg) : agg;
     }
   }
+}
+
+/** A time-series / overall function over its (outer) metric expression. */
+function emitWindow(
+  n: Extract<FormulaNode, { type: 'call' }>,
+  fn: FormulaFn,
+  fields: FormulaFields,
+  ctx: FormulaSqlContext
+): string {
+  const w = ctx.window;
+  if (!w) {
+    throw new Error('window function outside window mode');
+  }
+  const a = emit(n.args[0], fields, ctx);
+  if (fn.kind === 'overall') {
+    return overallSql(fn.name.slice('overall_'.length) as OverallFn, a, w.overall);
+  }
+  // Without a date histogram there is no series order: no value (the chart shows why instead).
+  if (w.series === null) {
+    return 'NULL';
+  }
+  switch (fn.name) {
+    case 'cumulative_sum':
+      return cumulativeSumSql(a, w.series);
+    case 'differences':
+      return differencesSql(a, w.series);
+    case 'moving_average':
+      // A number we parse and clamp, never the text.
+      return movingAverageSql(a, w.series, n.named.window ? Number(n.named.window.value) : DEFAULT_WINDOW);
+    case 'counter_rate':
+      return counterRateSql(a, w.series);
+  }
+  throw new Error('unknown window function');
+}
+
+/** Population standard deviation (as Elasticsearch's std_deviation); always OrNull: no values -> empty, never nan / 0. Shared by the quick function and the formula. */
+export function stdDevSql(x: string, cond?: string): string {
+  return cond ? `stddevPopIfOrNull(${x}, ${cond})` : `stddevPopOrNull(${x})`;
+}
+
+/** The newest document that has a value (Kibana: top hit by the time field where the field exists). Shared by the quick function and the formula. */
+export function lastValueSql(x: string, cond: string | undefined, config: SourceConfig): string {
+  if (!config.columns.timestamp) {
+    return 'NULL';
+  }
+  const c = [`${x} IS NOT NULL`, cond].filter(Boolean).join(' AND ');
+  return `argMaxIfOrNull(${x}, ${timeExpr(config)}, ${c})`;
 }
 
 function emitAgg(
@@ -604,6 +799,16 @@ function emitAgg(
   const cond = [ctx.rowCond, kqlCond].filter(Boolean).join(' AND ') || undefined;
   // Same cast the quick functions use for a field not typed as a number.
   const x = f && (ref!.numeric ? f : `toFloat64OrNull(toString(${f}))`);
+  // Window mode: an aggregate over no values is NULL (an empty bucket), not 0 / nan (Kibana's
+  // empty rows); count, sum and unique count of nothing stay 0.
+  const orNull = ctx.window ? 'OrNull' : '';
+
+  if (fn.name === 'standard_deviation') {
+    return stdDevSql(x!, cond);
+  }
+  if (fn.name === 'last_value') {
+    return lastValueSql(x!, cond, ctx.config);
+  }
 
   if (fn.name === 'count') {
     if (!f) {
@@ -616,11 +821,12 @@ function emitAgg(
       fn.name === 'median' ? 0.5 : Math.min(0.9999, Math.max(0.0001, Number(n.named.percentile?.value ?? 95) / 100));
     // A number we computed, printed by us.
     const q = Number(level.toFixed(4));
-    return cond ? `quantileIf(${q})(${x}, ${cond})` : `quantile(${q})(${x})`;
+    return cond ? `quantileIf${orNull}(${q})(${x}, ${cond})` : `quantile${orNull}(${q})(${x})`;
   }
   const agg = AGG_SQL[fn.name];
   const arg = fn.name === 'unique_count' ? f : x;
-  return cond ? `${agg}If(${arg}, ${cond})` : `${agg}(${arg})`;
+  const nul = fn.name === 'sum' || fn.name === 'unique_count' ? '' : orNull;
+  return cond ? `${agg}If${nul}(${arg}, ${cond})` : `${agg}${nul}(${arg})`;
 }
 
 // ── Helpers for the editor ───────────────────────────────────────────────────────────────────────
@@ -644,6 +850,11 @@ export function quickToFormula(op: string, fieldLabel?: string, percentile?: num
       return `average(${f})`;
     case 'unique':
       return `unique_count(${f})`;
+    case 'std_dev':
+      return `standard_deviation(${f})`;
+    case 'last_value':
+      return `last_value(${f})`;
+
     case 'percentile':
       return `percentile(${f}, percentile=${percentile ?? 95})`;
     case 'median':

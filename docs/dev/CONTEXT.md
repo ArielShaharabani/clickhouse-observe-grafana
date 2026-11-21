@@ -1,7 +1,7 @@
 # Context snapshot — read this to restart
 
 Saved after every feature (and every review-fix round). A new session can resume from this file plus `PROGRESS.md` alone.
-Last saved: 2026-11-20, #- R2-SAVED merged (PR 67, v0.65.0).
+Last saved: 2026-11-21, #- R3-CHARTS merged (PR 70, v0.68.0).
 
 ## Goal
 Bring Kibana Discover + Lens style exploration to Grafana on ClickHouse by extending the **ClickHouse Observe** app plugin.
@@ -73,6 +73,9 @@ Bring Kibana Discover + Lens style exploration to Grafana on ClickHouse by exten
 | - | R2-FILTER-GROUPS: Filter builder: OR / AND condition groups | 65 | src/components/AddFilter/FilterEditForm.tsx, src/sql/filters.ts |
 | - | R2-GRID: Discover grid: compact rows, totals in the pager | 66 | src/components/GridDisplayOptions.tsx, src/pages/_docNav.ts |
 | - | R2-SAVED: Saved searches: tab title, id in the URL, optional time, own folder | 67 | src/data/savedSearches.ts, src/pages/DiscoverTabsHost.tsx |
+| - | R3-QUERYBAR: Visualize query row | 70 | src/lens/QueryRow.tsx, src/lens/LensPage.tsx |
+| - | R3-FUNCTIONS: Visualize metric functions and calculations | 70 | src/lens/compile.ts, src/lens/formula.ts, src/lens/state.ts, src/lens/DimensionEditor.tsx |
+| - | R3-CHARTS: Visualize chart types: bar horizontal, donut, heat map, gauge | 70 | src/lens/render/HeatmapChart.tsx, src/lens/panelExport.ts, src/lens/suggest.ts, src/lens/ChartTypeSwitcher.tsx |
 
 ## Key decisions (details in DECISIONS.md)
 - Frontend-only; queries via grafana-clickhouse-datasource (`src/data/runQuery.ts`). Plain React + @grafana/ui, no Scenes.

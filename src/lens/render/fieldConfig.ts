@@ -24,7 +24,7 @@ function properties(m: MetricDim, state: LensState, xy: boolean): Array<{ id: st
     props.push({ id: 'decimals', value: decimals });
   }
   // A breakdown gives each value its own colour (as in Kibana), so a metric colour only applies without one.
-  const breakdown = state.chartType === 'pie' || (xy && state.buckets.length > 1);
+  const breakdown = state.chartType === 'pie' || state.chartType === 'donut' || (xy && state.buckets.length > 1);
   if (m.color && !breakdown) {
     props.push({ id: 'color', value: { mode: 'fixed', fixedColor: m.color } });
   }

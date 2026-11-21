@@ -7,38 +7,57 @@ import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { css, cx } from '@emotion/css';
 import { GrafanaTheme2, IconName } from '@grafana/data';
 import { Button, Icon, Input, Portal, RadioButtonGroup, useStyles2 } from '@grafana/ui';
-import { CHART_LABELS, ChartType, XySubType } from './state';
-import { isXy } from './suggest';
+import { XySubType } from './state';
+import { ChartKind, KIND_LABELS } from './suggest';
 
-export const CHART_ICONS: Record<ChartType, IconName> = {
+export const CHART_ICONS: Record<ChartKind, IconName> = {
   line: 'chart-line',
   area: 'chart-line',
   bar: 'graph-bar',
+  bar_horizontal: 'horizontal-align-left',
   metric: 'calculator-alt',
   table: 'table',
   pie: 'circle',
+  donut: 'circle-mono',
+  heatmap: 'apps',
+  gauge: 'tachometer-fast',
 };
 
 /** One-line descriptions, as in the spec's type list. */
-export const CHART_DESCRIPTIONS: Record<ChartType, string> = {
+export const CHART_DESCRIPTIONS: Record<ChartKind, string> = {
   bar: 'Compare categories or groups of data with bars',
+  bar_horizontal: 'Compare top values with long labels, largest on top',
   line: 'Reveal variations in data over time',
   area: 'Compare distributions of cumulative data trends',
   metric: 'Present individual key metrics or KPIs',
   table: 'Organize data in structured rows and columns',
   pie: 'Display parts of a whole in a circular format',
+  donut: 'Display parts of a whole in a ring',
+  heatmap: 'Spot which value lights up when, as colored cells',
+  gauge: 'Show a value against a range or a target',
 };
 
-const ORDER: ChartType[] = ['bar', 'line', 'area', 'metric', 'table', 'pie'];
+const ORDER: ChartKind[] = [
+  'bar',
+  'bar_horizontal',
+  'line',
+  'area',
+  'metric',
+  'table',
+  'pie',
+  'donut',
+  'heatmap',
+  'gauge',
+];
 
 /** Types matching a search (name or description, case-insensitive), in menu order. */
-export function filterChartTypes(query: string): ChartType[] {
+export function filterChartTypes(query: string): ChartKind[] {
   const q = query.trim().toLowerCase();
   if (!q) {
     return ORDER;
   }
   return ORDER.filter(
-    (t) => CHART_LABELS[t].toLowerCase().includes(q) || CHART_DESCRIPTIONS[t].toLowerCase().includes(q)
+    (t) => KIND_LABELS[t].toLowerCase().includes(q) || CHART_DESCRIPTIONS[t].toLowerCase().includes(q)
   );
 }
 
@@ -49,9 +68,9 @@ const SUB_TYPES: Array<{ label: string; value: XySubType }> = [
 ];
 
 interface Props {
-  value: ChartType;
+  value: ChartKind;
   subType?: XySubType;
-  onChange: (type: ChartType) => void;
+  onChange: (type: ChartKind) => void;
   onSubTypeChange: (sub: XySubType) => void;
 }
 
@@ -118,7 +137,7 @@ export function ChartTypeSwitcher({ value, subType, onChange, onSubTypeChange }:
     setOpen(false);
     buttonRef.current?.focus();
   };
-  const pick = (t: ChartType) => {
+  const pick = (t: ChartKind) => {
     setOpen(false);
     buttonRef.current?.focus();
     if (t !== value) {
@@ -147,9 +166,9 @@ export function ChartTypeSwitcher({ value, subType, onChange, onSubTypeChange }:
   };
 
   const listId = `${uid}-list`;
-  const optionId = (t: ChartType) => `${uid}-${t}`;
+  const optionId = (t: ChartKind) => `${uid}-${t}`;
   // Line has no stacking (Kibana): no sub-type control; the stored sub-type is kept for Bar / Area.
-  const showSubType = isXy(value) && value !== 'line';
+  const showSubType = value === 'bar' || value === 'bar_horizontal' || value === 'area';
 
   return (
     <div className={styles.wrap} ref={wrapRef}>
@@ -159,7 +178,7 @@ export function ChartTypeSwitcher({ value, subType, onChange, onSubTypeChange }:
         className={styles.trigger}
         aria-haspopup="listbox"
         aria-expanded={open}
-        aria-label={`Chart type: ${CHART_LABELS[value]}`}
+        aria-label={`Chart type: ${KIND_LABELS[value]}`}
         onClick={() => (open ? close() : openMenu())}
         onKeyDown={(e) => {
           if (open && e.key === 'Escape') {
@@ -170,7 +189,7 @@ export function ChartTypeSwitcher({ value, subType, onChange, onSubTypeChange }:
         }}
       >
         <Icon name={CHART_ICONS[value]} />
-        <span className={styles.triggerLabel}>{CHART_LABELS[value]}</span>
+        <span className={styles.triggerLabel}>{KIND_LABELS[value]}</span>
         <Icon name="angle-down" />
       </button>
       {showSubType && (
@@ -217,7 +236,7 @@ export function ChartTypeSwitcher({ value, subType, onChange, onSubTypeChange }:
                 >
                   <Icon name={CHART_ICONS[t]} size="lg" />
                   <div className={styles.optionText}>
-                    <span className={styles.optionName}>{CHART_LABELS[t]}</span>
+                    <span className={styles.optionName}>{KIND_LABELS[t]}</span>
                     <span className={styles.optionDesc}>{CHART_DESCRIPTIONS[t]}</span>
                   </div>
                   {t === value && <Icon name="check" aria-hidden />}

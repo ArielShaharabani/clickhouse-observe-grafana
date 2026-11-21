@@ -18,6 +18,8 @@ import { withReferenceThresholds } from './render/layerConfig';
 import { seriesColorOf } from './style';
 import { stableColors } from './render/seriesColors';
 import { VISUALIZE_SOURCE_KEY } from './panelSource';
+import { gaugeDefaults, gaugeMetrics, gaugeOptions } from './render/gaugeSpec';
+import { grafanaUnit } from './metricOptions';
 
 export interface LensPanelOpts {
   id: number;
@@ -28,6 +30,8 @@ export interface LensPanelOpts {
   source?: string;
   /** The series the chart currently shows: they get the same stable colours as in Visualize. */
   series?: Array<{ name: string; breakdown?: string; synthetic?: boolean }>;
+  /** Gauge without a Maximum value metric or a typed maximum: the automatic maximum Visualize drew. */
+  gaugeMax?: number;
 }
 
 export interface LensPanel extends ExportedPanel {
@@ -134,7 +138,8 @@ export function buildLensPanel(
 ): LensPanel {
   const panel = baseLensPanel(state, config, conditions, timeRange, opts);
   const xy = state.chartType === 'line' || state.chartType === 'area' || state.chartType === 'bar';
-  if (!panel.fieldConfig) {
+  if (!panel.fieldConfig || state.chartType === 'gauge') {
+    // A gauge's unit, decimals and colour are in its own field config (colour bands win).
     return panel;
   }
   // Split time series keep the metric aliases as field names (see splitSeriesNames), so their
@@ -267,19 +272,24 @@ function baseLensPanel(
         fieldConfig: { defaults: { custom }, overrides: [] },
       };
     }
+    case 'heatmap':
+      return heatmapPanel(state, base, names, opts.series);
+    case 'gauge':
+      return gaugePanel(state, base, opts.gaugeMax);
     case 'metric':
-    case 'pie': {
+    case 'pie':
+    case 'donut': {
       const byCategory = state.buckets.length > 0;
+      const pie = state.chartType !== 'metric';
       return {
         ...base,
-        type: state.chartType === 'pie' ? 'piechart' : 'stat',
+        type: pie ? 'piechart' : 'stat',
         transformations: [rename(names)],
-        options:
-          state.chartType === 'pie'
+        options: pie
             ? {
                 legend: { ...LEGEND, placement: 'right', values: ['value'] },
                 reduceOptions: { values: true, calcs: [], fields: '' },
-                pieType: 'pie',
+                pieType: state.chartType === 'donut' ? 'donut' : 'pie',
               }
             : {
                 reduceOptions: { values: byCategory, calcs: ['lastNotNull'], fields: '' },
@@ -313,4 +323,163 @@ function baseLensPanel(
         },
       };
   }
+}
+
+type PanelBase = Omit<LensPanel, 'type'>;
+
+/**
+ * Heat map (R3-CHARTS). A date histogram on X → Grafana's heatmap: the long rows (time, Y value,
+ * metric) pivoted into one column per Y value ("heatmap rows", ordinal Y labels), biggest on top.
+ * Categories on X have no core panel that draws them as cells, so the export is the same matrix
+ * as a table with colour-coded cells (rows = Y values, columns = X values).
+ */
+function heatmapPanel(
+  state: LensState,
+  base: PanelBase,
+  names: Record<string, string>,
+  series?: LensPanelOpts['series']
+): LensPanel {
+  const [x, y] = state.buckets;
+  const pivot: Transformation[] = y
+    ? [
+        {
+          id: 'groupingToMatrix',
+          options:
+            x?.kind === 'date_histogram'
+              ? {
+                  columnField: bucketAlias(1),
+                  rowField: bucketAlias(0),
+                  valueField: metricAlias(0),
+                  emptyValue: 'null',
+                }
+              : {
+                  columnField: bucketAlias(0),
+                  rowField: bucketAlias(1),
+                  valueField: metricAlias(0),
+                  emptyValue: 'null',
+                },
+        },
+      ]
+    : [];
+  const { unit, decimals } = grafanaUnit(state.metrics[0]?.format);
+  const units = { unit: unit ?? 'locale', ...(decimals !== undefined ? { decimals } : {}) };
+  if (x?.kind === 'date_histogram') {
+    return {
+      ...base,
+      type: 'heatmap',
+      // Rows in rank order (the biggest on top, as in Visualize): the pivot sorts its columns by value.
+      transformations: y
+        ? [
+            ...pivot,
+            {
+              id: 'organize',
+              options: {
+                renameByName: { [`${bucketAlias(0)}\\${bucketAlias(1)}`]: names[bucketAlias(0)] },
+                excludeByName: {},
+                indexByName: Object.fromEntries([
+                  [`${bucketAlias(0)}\\${bucketAlias(1)}`, 0],
+                  ...(series ?? []).filter((r) => !r.synthetic).map((r, i) => [r.breakdown ?? r.name, i + 1]),
+                ]),
+              },
+            },
+          ]
+        : [rename(names)],
+      options: {
+        calculate: false,
+        cellGap: 1,
+        color: {
+          mode: 'scheme',
+          scheme: 'Blues',
+          steps: 64,
+          exponent: 0.5,
+          scale: 'exponential',
+          reverse: false,
+          fill: 'dark-blue',
+        },
+        filterValues: { le: -1e-9 },
+        rowsFrame: { layout: 'auto' },
+        yAxis: { axisPlacement: 'left', reverse: true },
+        cellValues: units,
+        showValue: 'never',
+        legend: { show: true },
+        tooltip: { mode: 'single', yHistogram: false, showColorScale: false },
+        exemplars: { color: 'rgba(255,0,255,0.7)' },
+      },
+      fieldConfig: { defaults: { ...units }, overrides: [] },
+    };
+  }
+  return {
+    ...base,
+    type: 'table',
+    transformations: y
+      ? [...pivot, rename({ [`${bucketAlias(1)}\\${bucketAlias(0)}`]: names[bucketAlias(1)] })]
+      : [rename(names)],
+    options: { showHeader: true },
+    fieldConfig: {
+      defaults: {
+        ...units,
+        color: { mode: 'continuous-blues' },
+        custom: { align: 'auto', cellOptions: { type: 'color-background', mode: 'basic' }, wrapHeaderText: true },
+      },
+      overrides: y
+        ? [
+            {
+              matcher: { id: 'byName', options: names[bucketAlias(1)] },
+              properties: [{ id: 'custom.cellOptions', value: { type: 'auto' } }],
+            },
+          ]
+        : [],
+    },
+  };
+}
+
+/**
+ * Gauge (R3-CHARTS): Break down by → one gauge per row (Rows to fields: the value names the gauge,
+ * the Maximum value metric becomes that gauge's max); without a breakdown the max comes from the
+ * same row (Config from query results). Otherwise the typed or the automatic maximum.
+ */
+function gaugePanel(state: LensState, base: PanelBase, autoMax?: number): LensPanel {
+  const { value, max } = gaugeMetrics(state);
+  const { pluginId, options } = gaugeOptions(state);
+  const valueAlias = metricAlias(Math.max(0, value));
+  const maxAlias = max >= 0 ? metricAlias(max) : undefined;
+  const staticMax = state.gauge?.max ?? (maxAlias ? undefined : autoMax);
+  const transformations: Transformation[] =
+    state.buckets.length > 0
+      ? [
+          {
+            id: 'rowsToFields',
+            options: {
+              mappings: [
+                { fieldName: bucketAlias(0), handlerKey: 'field.name' },
+                { fieldName: valueAlias, handlerKey: 'field.value' },
+                ...(maxAlias ? [{ fieldName: maxAlias, handlerKey: 'max' }] : []),
+              ],
+            },
+          },
+        ]
+      : maxAlias
+        ? [
+            {
+              id: 'configFromData',
+              options: {
+                configRefId: 'A',
+                mappings: [{ fieldName: maxAlias, handlerKey: 'max', reducerId: 'lastNotNull' }],
+                applyTo: { id: 'byName', options: valueAlias },
+              },
+            },
+            { id: 'organize', options: { excludeByName: { [maxAlias]: true }, renameByName: {}, indexByName: {} } },
+            rename({ [valueAlias]: columnNames(state)[valueAlias] }),
+          ]
+        : [rename({ [valueAlias]: columnNames(state)[valueAlias] })];
+  return {
+    ...base,
+    type: pluginId,
+    transformations,
+    options,
+    fieldConfig: {
+      defaults: { ...gaugeDefaults(state), ...(staticMax !== undefined ? { max: staticMax } : {}) },
+      overrides: [],
+    },
+  };
 }
