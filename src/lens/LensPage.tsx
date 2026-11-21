@@ -47,6 +47,7 @@ import { addBucket, addMetric, metricForField, nextBucketField, queryShape, repl
 import { withSeriesColor } from './style';
 import {
   BucketDim,
+  calculationError,
   decodeLens,
   dimLabelIn,
   dropMissingRankMetric,
@@ -479,8 +480,10 @@ export function LensPage() {
   const queryKey = JSON.stringify([encodeLens(queryShape(lens)), ...queryContext]);
   const { chartType: _ct, subType: _st, ...lensBase } = queryShape(lens);
   const baseKey = JSON.stringify([JSON.stringify(lensBase), ...queryContext]);
+  // A time-series calculation without a date histogram (LENS-CALC-01): say why instead of querying.
+  const calcError = calculationError(lens);
   useEffect(() => {
-    if (isEmptyLens(lens) || !config.datasourceUid || fieldsLoading || queryError) {
+    if (isEmptyLens(lens) || !config.datasourceUid || fieldsLoading || queryError || calcError) {
       return;
     }
     let cancelled = false;
@@ -581,7 +584,7 @@ export function LensPage() {
   const suggestedTime = Math.round((timeRange.from.valueOf() + timeRange.to.valueOf()) / 2);
   // SHARED-PERF-01: same running cue as Discover (no Cancel here: leaving the chart without a
   // result would need its own empty state).
-  const chartLoading = fieldsLoading || (!isEmptyLens(lens) && !!config.datasourceUid && !current && !queryError);
+  const chartLoading = fieldsLoading || (!isEmptyLens(lens) && !!config.datasourceUid && !current && !queryError && !calcError);
   const approxNote = current?.data ? lensApproxNote(lens) : null;
 
   const onAdd = (f: LensField) => setLens(addField(lens, f, ctx));
@@ -956,6 +959,10 @@ export function LensPage() {
             ) : queryError ? (
               <Alert severity="error" title="The query is not valid" data-testid="lens-invalid-query">
                 {queryError}
+              </Alert>
+            ) : calcError ? (
+              <Alert severity="warning" title="This chart needs a date histogram">
+                {calcError}
               </Alert>
             ) : current?.error ? (
               <Alert severity="error" title="The chart query failed">

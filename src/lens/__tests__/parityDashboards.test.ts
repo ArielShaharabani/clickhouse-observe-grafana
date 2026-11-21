@@ -221,7 +221,7 @@ describe('Saved Lens panels: split series names and empty buckets', () => {
       'WITH FILL FROM toStartOfInterval($__fromTime, INTERVAL greatest(300, $__interval_s) second) TO $__toTime STEP greatest(300, $__interval_s)'
     );
     expect(dashboardFillSql({ n: 1, unit: 'M' })).toBe(
-      'WITH FILL FROM toStartOfInterval($__fromTime, INTERVAL 1 MONTH) TO $__toTime STEP INTERVAL 1 MONTH'
+      'WITH FILL FROM toDateTime(toStartOfInterval($__fromTime, INTERVAL 1 MONTH)) TO $__toTime STEP INTERVAL 1 MONTH'
     );
     expect(dashboardFillSql({ n: 2, unit: 'w' }, false)).toBe('WITH FILL STEP INTERVAL 2 WEEK');
   });

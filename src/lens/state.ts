@@ -8,7 +8,8 @@
  * (LENS-TYPE-01 remapping rules 1–2), never a rebuild.
  */
 import { FieldType } from '../sql/fieldModel';
-import { formulaErrors, FormulaFields, MAX_FORMULA_LEN } from './formula';
+import { formulaErrors, FormulaFields, formulaUsesWindow, formulaTimeSeriesFns, MAX_FORMULA_LEN } from './formula';
+import { BASE_OPS, BaseOp, clampWindow, CUMULATIVE_BASE_OPS, DEFAULT_WINDOW, isCalcOp, MetricRef } from './calc';
 import { cleanStyle, LensStyle } from './style';
 import { cleanLayers, ExtraLayer, sanitizeLayers } from './layers';
 import { isIntervalValue } from './interval';
@@ -17,7 +18,22 @@ import { cleanMetricOptions, MetricOptions, optionsLabelSuffix } from './metricO
 export type ChartType = 'line' | 'area' | 'bar' | 'metric' | 'table' | 'pie';
 export type XySubType = 'stacked' | 'percentage' | 'unstacked';
 
-export type MetricOp = 'count' | 'median' | 'avg' | 'sum' | 'min' | 'max' | 'unique' | 'percentile' | 'formula';
+export type MetricOp =
+  | 'count'
+  | 'median'
+  | 'avg'
+  | 'sum'
+  | 'min'
+  | 'max'
+  | 'unique'
+  | 'percentile'
+  | 'std_dev'
+  | 'last_value'
+  | 'cumulative_sum'
+  | 'differences'
+  | 'moving_average'
+  | 'counter_rate'
+  | 'formula';
 
 export interface DateHistogramDim {
   kind: 'date_histogram';
@@ -262,6 +278,13 @@ export interface MetricDim extends MetricOptions {
   numeric?: boolean;
   /** For `percentile`: 1–99 (default 95). */
   percentile?: number;
+  /**
+   * For Cumulative sum / Differences / Moving average (LENS-CALC-01): the metric calculated on
+   * (Counter rate keeps its field on the metric itself: it is always computed on the maximum).
+   */
+  ref?: MetricRef;
+  /** For Moving average: how many previous buckets are averaged (1–100, default 5). */
+  window?: number;
   /** For `formula` (LENS-DIM-03): the formula text, parsed and compiled by `formula.ts`. */
   formula?: string;
   /** For `formula`: the fields it may use (name as written → field SQL expression + numeric). */
@@ -488,6 +511,12 @@ const OP_NAMES: Record<MetricOp, string> = {
   max: 'Maximum',
   unique: 'Unique count',
   percentile: 'Percentile',
+  std_dev: 'Standard deviation',
+  last_value: 'Last value',
+  cumulative_sum: 'Cumulative sum',
+  differences: 'Differences',
+  moving_average: 'Moving average',
+  counter_rate: 'Counter rate',
   formula: 'Formula',
 };
 
@@ -520,7 +549,10 @@ export const autoLabel = (d: BucketDim | MetricDim): string => autoLabelIn(d);
 /** The automatic label, ignoring any user-edited name. */
 export function autoLabelIn(d: BucketDim | MetricDim, metrics?: MetricDim[]): string {
   if (d.kind === 'metric') {
-    return metricBaseLabel(d) + optionsLabelSuffix(d);
+    // Counter rate is always per unit of time (per second unless normalized otherwise).
+    return (
+      metricBaseLabel(d) + optionsLabelSuffix(d.op === 'counter_rate' ? { ...d, normalize: d.normalize ?? 's' } : d)
+    );
   }
   if (d.kind === 'terms') {
     const dir = rankDirOf(d);
@@ -528,7 +560,7 @@ export function autoLabelIn(d: BucketDim | MetricDim, metrics?: MetricDim[]): st
       return `${dir === 'asc' ? 'First' : 'Last'} ${d.size} values of ${d.label}`;
     }
     const lead = `${dir === 'asc' ? 'Bottom' : 'Top'} ${d.size} values of ${d.label}`;
-    const rm = d.rankBy === 'metric' ? metrics?.find((m) => m.id === d.rankMetric) : undefined;
+    const rm = d.rankBy === 'metric' ? metrics?.find((m) => m.id === d.rankMetric && isRankable(m)) : undefined;
     return rm ? `${lead} by ${autoLabelIn(rm)}` : lead;
   }
   if (d.kind === 'filters') {
@@ -548,10 +580,78 @@ function metricBaseLabel(d: MetricDim): string {
     const f = (d.formula ?? '').trim();
     return f.length > 60 ? `${f.slice(0, 57)}…` : f || 'Formula';
   }
+  if (d.op === 'cumulative_sum' || d.op === 'differences' || d.op === 'moving_average') {
+    return `${OP_NAMES[d.op]} of ${d.ref ? refLabel(d.ref) : 'Count of records'}`;
+  }
   const what = d.fieldLabel ?? d.field;
   return d.op === 'percentile'
     ? `${ordinal(clampPercentile(d.percentile))} percentile of ${what}`
     : `${OP_NAMES[d.op]} of ${what}`;
+}
+
+/** Label of a calculation's inner metric ("Count of records", "Median of duration"). */
+export function refLabel(r: MetricRef): string {
+  if (r.op === 'count') {
+    return 'Count of records';
+  }
+  const what = r.fieldLabel ?? r.field;
+  return r.op === 'percentile'
+    ? `${ordinal(clampPercentile(r.percentile))} percentile of ${what}`
+    : `${OP_NAMES[r.op]} of ${what}`;
+}
+
+/** The inner metric of a calculation as a metric of its own (same id and Filter by / time shift). */
+export function refMetric(m: MetricDim): MetricDim {
+  const r = m.ref ?? { op: 'count' as const };
+  const out: MetricDim = { kind: 'metric', id: m.id, op: r.op, filter: m.filter, shift: m.shift };
+  if (r.op !== 'count') {
+    out.field = r.field;
+    out.fieldLabel = r.fieldLabel;
+    out.numeric = r.numeric;
+  }
+  if (r.op === 'percentile') {
+    out.percentile = clampPercentile(r.percentile);
+  }
+  return out;
+}
+
+/** Whether a metric is a time-series calculation (quick function, or a formula using one / overall_*). */
+export function usesWindow(m: MetricDim): boolean {
+  return isCalcOp(m.op) || (m.op === 'formula' && formulaUsesWindow(m.formula ?? ''));
+}
+
+/** Whether a metric needs a date histogram (time-series calculations; overall_* does not). */
+export function needsDateHistogram(m: MetricDim): boolean {
+  return isCalcOp(m.op) || (m.op === 'formula' && formulaTimeSeriesFns(m.formula ?? '').length > 0);
+}
+
+/**
+ * Why the chart cannot be computed as configured, or null: a time-series calculation without a
+ * date histogram (e.g. after a switch to Metric parked it). Shown instead of the chart — never
+ * numbers that would be wrong.
+ */
+export function calculationError(s: Pick<LensState, 'buckets' | 'metrics'>): string | null {
+  if (s.buckets.some((b) => b.kind === 'date_histogram')) {
+    return null;
+  }
+  const m = s.metrics.find(needsDateHistogram);
+  if (!m) {
+    return null;
+  }
+  const what =
+    m.op === 'formula'
+      ? `The formula uses ${formulaTimeSeriesFns(m.formula ?? '').join(', ')}, which needs`
+      : `${dimLabelIn(m)} needs`;
+  return `${what} a date histogram dimension. Add a date histogram, or choose a function that is not a calculation.`;
+}
+
+/**
+ * Whether top values can be ranked by this metric: any plain metric, and Cumulative sum (ranked by
+ * its inner metric — the series total, i.e. its last value). Other calculations have no single value
+ * per top value to rank by.
+ */
+export function isRankable(m: MetricDim): boolean {
+  return m.op === 'cumulative_sum' || !usesWindow(m);
 }
 
 export const CHART_LABELS: Record<ChartType, string> = {
@@ -573,7 +673,55 @@ export function encodeLens(s: LensState): string {
 }
 
 const CHARTS: readonly ChartType[] = ['line', 'area', 'bar', 'metric', 'table', 'pie'];
-const OPS: readonly MetricOp[] = ['count', 'median', 'avg', 'sum', 'min', 'max', 'unique', 'percentile', 'formula'];
+const OPS: readonly MetricOp[] = [
+  'count',
+  'median',
+  'avg',
+  'sum',
+  'min',
+  'max',
+  'unique',
+  'percentile',
+  'std_dev',
+  'last_value',
+  'cumulative_sum',
+  'differences',
+  'moving_average',
+  'counter_rate',
+  'formula',
+];
+
+/** A calculation's inner metric from untrusted input (known op, string field, clamped percentile). */
+export function cleanRef(x: unknown, op: MetricOp): MetricRef | undefined {
+  if (!x || typeof x !== 'object' || Array.isArray(x)) {
+    return undefined;
+  }
+  const r = x as Record<string, unknown>;
+  const allowed = op === 'cumulative_sum' ? CUMULATIVE_BASE_OPS : BASE_OPS;
+  if (!allowed.includes(r.op as BaseOp)) {
+    return undefined;
+  }
+  const out: MetricRef = { op: r.op as BaseOp };
+  if (out.op === 'count') {
+    return out;
+  }
+  if (typeof r.field !== 'string' || r.field.length > 1000) {
+    return undefined;
+  }
+  out.field = r.field;
+  if (typeof r.fieldLabel === 'string') {
+    out.fieldLabel = r.fieldLabel.slice(0, 500);
+  }
+  out.numeric = r.numeric === true;
+  if (out.op === 'percentile') {
+    out.percentile = clampPercentile(r.percentile);
+  }
+  return out;
+}
+
+/** Calculations that wrap another metric (Counter rate keeps a field of its own). */
+export const hasRef = (op: MetricOp): boolean =>
+  op === 'cumulative_sum' || op === 'differences' || op === 'moving_average';
 
 /** Table / Metric chart options of a metric (LENS-CHART-01), from untrusted input. */
 function cleanChartOptions(m: MetricDim): Pick<MetricDim, 'role' | 'summary' | 'colorBy'> {
@@ -687,7 +835,9 @@ export function decodeLens(raw: string | null | undefined): LensState | undefine
           OPS.includes(m.op) &&
           (m.op === 'formula'
             ? str(m.formula) && (m.formula as string).length <= MAX_FORMULA_LEN
-            : m.op === 'count' || str(m.field)) &&
+            : hasRef(m.op)
+              ? cleanRef(m.ref, m.op) !== undefined
+              : m.op === 'count' || str(m.field)) &&
           okName(m.name) &&
           okPct(m.percentile)
       )
@@ -706,6 +856,13 @@ export function decodeLens(raw: string | null | undefined): LensState | undefine
           };
         }
         const out: MetricDim = { kind: 'metric', id: m.id, op: m.op, name: m.name, ...opts };
+        if (hasRef(m.op)) {
+          out.ref = cleanRef(m.ref, m.op);
+          if (m.op === 'moving_average') {
+            out.window = m.window === undefined ? DEFAULT_WINDOW : clampWindow(m.window);
+          }
+          return out;
+        }
         if (m.op !== 'count') {
           out.field = m.field;
           out.fieldLabel = typeof m.fieldLabel === 'string' ? m.fieldLabel.slice(0, 500) : undefined;
@@ -745,8 +902,11 @@ export function sanitizeLens(s: LensState, allowed: ReadonlySet<string>): LensSt
   const metrics = s.metrics.filter((m) =>
     m.op === 'formula'
       ? formulaAllowed(m, allowed)
-      : m.op === 'count' || (m.field !== undefined && allowed.has(m.field))
+      : hasRef(m.op)
+        ? !!m.ref && (m.ref.op === 'count' || (m.ref.field !== undefined && allowed.has(m.ref.field)))
+        : m.op === 'count' || (m.field !== undefined && allowed.has(m.field))
   );
+
   // A rank metric that no longer exists falls back to ranking by count.
   const ids = new Set(metrics.map((m) => m.id));
   // Computed reference lines (LENS-LAYER-01) follow the same field rule.

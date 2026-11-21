@@ -151,7 +151,7 @@ describe('date histogram SQL', () => {
       'toStartOfInterval(toDateTime("Timestamp"), INTERVAL greatest(300, $__interval_s) second) AS b0'
     );
     expect(sqlOf({ ...date, interval: '1M' }, 'dashboard').sql).toContain(
-      'toStartOfInterval(toDateTime("Timestamp"), INTERVAL 1 MONTH) AS b0'
+      'toDateTime(toStartOfInterval(toDateTime("Timestamp"), INTERVAL 1 MONTH)) AS b0'
     );
     expect(sqlOf(date, 'dashboard').sql).toContain('$__timeInterval("Timestamp") AS b0');
     expect(dashboardBucketSql('t', { n: 250, unit: 'ms' })).toContain('greatest(1, $__interval_s)');

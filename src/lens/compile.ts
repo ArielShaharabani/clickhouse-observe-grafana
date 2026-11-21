@@ -31,6 +31,7 @@ import {
   dashboardBucketSql,
   dashboardFillSql,
   intervalMs as ivMs,
+  isCalendarUnit,
   LensInterval,
   parseInterval,
   ResolvedLensInterval,
@@ -39,10 +40,21 @@ import {
 } from './interval';
 import { FieldIndex } from '../sql/fields';
 import { formulaToSql, FormulaSqlContext } from './formula';
+import {
+  clampWindow,
+  counterRateSql,
+  cumulativeSumSql,
+  differencesSql,
+  isCalcOp,
+  isNullableOp,
+  movingAverageSql,
+  WindowSql,
+} from './calc';
 import type { RefComputed } from './layers';
 import {
   BucketDim,
   clampPercentile,
+  DateHistogramDim,
   dimLabel,
   dimLabelIn,
   DEFAULT_GRANULARITY,
@@ -50,6 +62,10 @@ import {
   FiltersDim,
   GRANULARITY_TARGETS,
   hasKindColumn,
+  hasRef,
+  isRankable,
+  refMetric,
+  usesWindow,
   KIND_MISSING,
   KIND_OTHER,
   KIND_VALUE,
@@ -120,37 +136,79 @@ const MAP_ACCESSOR = /^("(?:[^"]|"")*"|[A-Za-z_][A-Za-z0-9_]*)\[(.+)\]$/;
 
 /**
  * A metric's aggregate. `cond` (our own SQL: the metric's Filter by / reduced range / time-shift copy
- * selector) turns it into the conditional form (`countIf`, `avgIf`, `quantileIf`, …).
+ * selector) turns it into the conditional form (`countIf`, `avgIf`, `quantileIf`, …). `orNull`
+ * (window mode, LENS-CALC-01): an aggregate over no values is NULL — an empty bucket — instead of
+ * 0 / nan; count, sum and unique count of nothing stay 0. A calculation's aggregate is its inner
+ * metric's (Counter rate: the maximum of its field); the calculation itself is applied by the
+ * outer SELECT (`calcSql`).
  */
-function metricSql(m: MetricDim, fctx: FormulaSqlContext, cond?: string): string {
+function metricSql(m: MetricDim, fctx: FormulaSqlContext, cond?: string, orNull = false): string {
   if (m.op === 'formula') {
     // Parsed, validated and compiled from the AST (formula.ts); an invalid formula yields no value.
     return formulaToSql(m.formula ?? '', m.formulaFields ?? {}, { ...fctx, rowCond: cond }) ?? 'NULL';
+  }
+  if (hasRef(m.op)) {
+    return metricSql(refMetric(m), fctx, cond, orNull);
   }
   if (m.op === 'count' || !m.field) {
     return cond ? `countIf(${cond})` : 'count()';
   }
   const f = quoteIdentifier(m.field);
   const x = m.numeric ? f : `toFloat64OrNull(toString(${f}))`;
-  const agg = (fn: string, arg: string) => (cond ? `${fn}If(${arg}, ${cond})` : `${fn}(${arg})`);
+  const nul = orNull ? 'OrNull' : '';
+  const agg = (fn: string, arg: string, n = nul) => (cond ? `${fn}If${n}(${arg}, ${cond})` : `${fn}${n}(${arg})`);
   switch (m.op) {
     case 'median':
-      return cond ? `quantileIf(0.5)(${x}, ${cond})` : `quantile(0.5)(${x})`;
+      return cond ? `quantileIf${nul}(0.5)(${x}, ${cond})` : `quantile${nul}(0.5)(${x})`;
     case 'avg':
       return agg('avg', x);
     case 'sum':
-      return agg('sum', x);
+      return agg('sum', x, '');
     case 'min':
       return agg('min', x);
     case 'max':
+    case 'counter_rate':
       return agg('max', x);
     case 'unique':
-      return agg('uniq', f);
+      return agg('uniq', f, '');
+    case 'std_dev':
+      // Population standard deviation, as Elasticsearch's std_deviation; no values → empty, never nan.
+      return agg('stddevPop', x, 'OrNull');
+    case 'last_value': {
+      // The newest document that has a value (Kibana: top hit by the time field where the field exists).
+      if (!fctx.config.columns.timestamp) {
+        return 'NULL';
+      }
+      const c = [`${x} IS NOT NULL`, cond].filter(Boolean).join(' AND ');
+      return `argMaxIfOrNull(${x}, ${timeExpr(fctx.config)}, ${c})`;
+    }
     case 'percentile': {
       // A number we produce (clamped 1–99), never text from the URL.
       const q = (clampPercentile(m.percentile) / 100).toFixed(2);
-      return cond ? `quantileIf(${q})(${x}, ${cond})` : `quantile(${q})(${x})`;
+      return cond ? `quantileIf${nul}(${q})(${x}, ${cond})` : `quantile${nul}(${q})(${x})`;
     }
+    default:
+      return 'NULL';
+  }
+}
+
+/** The outer-SELECT calculation of a quick-function calculation over its inner aggregate `a`. */
+function calcSql(m: MetricDim, a: string, w: WindowSql): string {
+  if (w.series === null) {
+    // No date histogram: no series order, so no value (the chart shows why instead).
+    return 'NULL';
+  }
+  switch (m.op) {
+    case 'cumulative_sum':
+      return cumulativeSumSql(a, w.series);
+    case 'differences':
+      return differencesSql(a, w.series);
+    case 'moving_average':
+      return movingAverageSql(a, w.series, clampWindow(m.window));
+    case 'counter_rate':
+      return counterRateSql(a, w.series);
+    default:
+      return a;
   }
 }
 
@@ -243,6 +301,14 @@ export function compileLens(
   let interval: ResolvedLensInterval | undefined;
   const ts = config.columns.timestamp ? timeExpr(config) : '';
   const hasDateHistogram = state.buckets.some((b) => b.kind === 'date_histogram');
+  // Window mode (LENS-CALC-01): a time-series calculation or overall_* wraps the grouped query in an
+  // outer SELECT (see `wrapWindow`). App mode then groups the series' date bucket as a DateTime
+  // (`__d`, gap-filled with WITH FILL) and converts it to epoch ms outside.
+  const wrapped = state.metrics.some(usesWindow);
+  const dateIdx = state.buckets.findIndex((b) => b.kind === 'date_histogram');
+  const appDate = wrapped && mode === 'app' && dateIdx >= 0;
+  /** The interval of the series' date bucket (window mode, app). */
+  let seriesIv: ResolvedLensInterval | undefined;
 
   // Time shift (LENS-DIM-02 Advanced): every row is read once per distinct shift (ARRAY JOIN over
   // the copy index `__s`); copy k moves the row's time forward by shift k, so "1d ago" data lands
@@ -367,7 +433,12 @@ export function compileLens(
       const iv = resolveLensInterval(b.interval, timeRange);
       interval = iv;
       intervalMs = ivMs(iv);
-      selects.push(`${bucketStartSql(dateSql(b.field), iv)} AS ${bucketAlias(i)}`);
+      if (appDate && i === dateIdx) {
+        seriesIv = iv;
+        selects.push(`${dateTimeBucketSql(dateSql(b.field), iv)} AS ${DATE_ALIAS}`);
+      } else {
+        selects.push(`${bucketStartSql(dateSql(b.field), iv)} AS ${bucketAlias(i)}`);
+      }
     } else if (b.kind === 'range') {
       rangeBucket(b, i);
     } else if (b.kind === 'filters') {
@@ -377,7 +448,9 @@ export function compileLens(
       const size = Math.max(1, Math.floor(b.size));
       const cte = `top${i}`;
       const dir = rankDirOf(b).toUpperCase();
-      const rankMetric = b.rankBy === 'metric' ? state.metrics.find((m) => m.id === b.rankMetric) : undefined;
+      // A calculation other than Cumulative sum has no single value to rank by: count instead.
+      const rankMetric =
+        b.rankBy === 'metric' ? state.metrics.find((m) => m.id === b.rankMetric && isRankable(m)) : undefined;
       const rank =
         b.rankBy === 'alpha'
           ? `v ${dir}`
@@ -421,22 +494,85 @@ export function compileLens(
       );
     }
   });
-  state.metrics.forEach((m, i) => {
-    let expr = metricSql(m, fctx, metricCond(m));
-    // Normalize by unit: value per second / minute / hour / day of the date bucket.
-    if (m.normalize && hasDateHistogram) {
-      const unitS = NORMALIZE_SECONDS[m.normalize];
-      const factor =
-        mode === 'dashboard'
-          ? `(${unitS} / $__interval_s)`
-          : intervalMs
-            ? String(Number(((unitS * 1000) / intervalMs).toPrecision(12)))
-            : null;
-      if (factor) {
-        expr = `(${expr}) * ${factor}`;
-      }
+  // Normalize by unit: value per second / minute / hour / day of the date bucket. Counter rate is
+  // always per unit of time (per second unless set otherwise).
+  const normalized = (m: MetricDim, expr: string): string => {
+    const unit = m.op === 'counter_rate' ? (m.normalize ?? 's') : m.normalize;
+    if (!unit || !hasDateHistogram) {
+      return expr;
     }
-    selects.push(`${expr} AS ${metricAlias(i)}`);
+    const unitS = NORMALIZE_SECONDS[unit];
+    const factor = mode === 'dashboard' ? dashboardPerUnit(unitS) : intervalMs ? perUnit(unitS, intervalMs) : null;
+    return factor ? `(${expr}) * ${factor}` : expr;
+  };
+  // Saved panels: the bucket is `$__interval_s` seconds (auto), at least the typed minimum (fixed
+  // units), or the calendar unit (approximated like in the app).
+  const dashboardPerUnit = (unitS: number): string => {
+    const d = state.buckets[dateIdx];
+    const iv = d?.kind === 'date_histogram' ? parseInterval(d.interval) : null;
+    if (!iv) {
+      return `(${unitS} / $__interval_s)`;
+    }
+    if (isCalendarUnit(iv.unit) || iv.unit === 'w') {
+      return perUnit(unitS, ivMs(iv));
+    }
+    return `(${unitS} / greatest(${Math.max(1, Math.ceil(ivMs(iv) / 1000))}, $__interval_s))`;
+  };
+
+  // Window mode: every aggregate goes to the inner query as `a<k>` (identical ones shared); the
+  // metric itself is an outer expression over them.
+  const inner: string[] = [];
+  const addInner = (sql: string): string => {
+    let k = inner.indexOf(sql);
+    if (k < 0) {
+      inner.push(sql);
+      k = inner.length - 1;
+    }
+    return `a${k}`;
+  };
+  const groupBy = state.buckets.flatMap((b, i) => {
+    const col = appDate && i === dateIdx ? DATE_ALIAS : bucketAlias(i);
+    return b.kind === 'terms' && hasKindColumn(b) ? [col, kindAlias(i)] : [col];
+  });
+  const dateRef = dateIdx < 0 ? null : appDate ? DATE_ALIAS : bucketAlias(dateIdx);
+  // Series: the breakdown columns (everything but the date bucket), in date order. Overall: one
+  // value per series — date histograms and intervals define the series, other buckets split them;
+  // without either, overall is over all rows (Kibana).
+  const partition = (cols: string[]) => (cols.length > 0 ? `PARTITION BY ${cols.join(', ')}` : '');
+  const seriesOrder = groupBy.filter((g) => g !== dateRef);
+  const overallCols = state.buckets.some((b) => b.kind === 'date_histogram' || b.kind === 'range')
+    ? state.buckets.flatMap((b, i) =>
+        b.kind === 'terms' || b.kind === 'filters'
+          ? b.kind === 'terms' && hasKindColumn(b)
+            ? [bucketAlias(i), kindAlias(i)]
+            : [bucketAlias(i)]
+          : []
+      )
+    : [];
+  const win: WindowSql = {
+    series: dateRef ? [partition(seriesOrder), `ORDER BY ${dateRef}`].filter(Boolean).join(' ') : null,
+    overall: partition(overallCols),
+  };
+  const outerMetrics: string[] = [];
+  state.metrics.forEach((m, i) => {
+    if (!wrapped) {
+      selects.push(`${normalized(m, metricSql(m, fctx, metricCond(m)))} AS ${metricAlias(i)}`);
+      return;
+    }
+    const cond = metricCond(m);
+    let expr: string;
+    if (m.op === 'formula') {
+      expr =
+        formulaToSql(m.formula ?? '', m.formulaFields ?? {}, {
+          ...fctx,
+          rowCond: cond,
+          window: { ...win, inner: addInner },
+        }) ?? 'NULL';
+    } else {
+      const a = addInner(metricSql(m, fctx, cond, isNullableOp(isCalcOp(m.op) ? (m.ref?.op ?? 'max') : m.op)));
+      expr = isCalcOp(m.op) ? calcSql(m, a, win) : a;
+    }
+    outerMetrics.push(`${normalized(m, expr)} AS ${metricAlias(i)}`);
   });
 
   // With shifts the plain time condition (and its coarse partition bound) is replaced by a
@@ -455,10 +591,25 @@ export function compileLens(
     ];
   }
   const allWhere = [...outer, ...restrictions].filter(Boolean).join(' AND ');
-  const groupBy = state.buckets.flatMap((b, i) =>
-    b.kind === 'terms' && hasKindColumn(b) ? [bucketAlias(i), kindAlias(i)] : [bucketAlias(i)]
-  );
   const first = state.buckets[0];
+  if (wrapped) {
+    const sql = wrapWindow({
+      state,
+      mode,
+      ctes,
+      innerSelects: [...selects, ...inner.map((s, k) => `${s} AS a${k}`)],
+      outerMetrics,
+      tbl,
+      arrayJoin: shifting ? `ARRAY JOIN [${[0, ...shifts.map((_x, k) => k + 1)].join(', ')}] AS ${SHIFT_ALIAS}` : null,
+      where: allWhere,
+      groupBy,
+      dateIdx,
+      seriesIv,
+      countSql: shifting ? `countIf(${SHIFT_ALIAS} = 0)` : 'count()',
+      settings: configSettingsFragments(config),
+    });
+    return { sql, intervalMs, interval };
+  }
   let orderBy: string | null = null;
   if (first?.kind === 'date_histogram' && mode === 'dashboard' && fillsEmptyBuckets(state)) {
     // Saved panels, Include empty rows: ClickHouse returns no row for an empty bucket, so Grafana
@@ -471,22 +622,7 @@ export function compileLens(
     orderBy = `ORDER BY ${groupBy.join(', ')}`;
   } else if (first) {
     // Ordered by the chosen rank; the synthetic Other / (missing) rows always come last.
-    const dir = rankDirOf(first).toUpperCase();
-    const rm = first.rankBy === 'metric' ? state.metrics.findIndex((m) => m.id === first.rankMetric) : -1;
-    const byCount =
-      state.metrics[0]?.op === 'count' && !state.metrics[0].shift
-        ? metricAlias(0)
-        : shifting
-          ? `countIf(${SHIFT_ALIAS} = 0)`
-          : 'count()';
-    const rank =
-      first.rankBy === 'alpha'
-        ? `${bucketAlias(0)} ${dir}`
-        : state.metrics.length === 0
-          ? bucketAlias(0)
-          : `${rm >= 0 ? metricAlias(rm) : byCount} ${dir}`;
-    const lead = hasKindColumn(first) ? `${kindAlias(0)}, ` : '';
-    orderBy = `ORDER BY ${lead}${rank}, ${groupBy.join(', ')}`;
+    orderBy = rankOrderBy(state, groupBy, shifting ? `countIf(${SHIFT_ALIAS} = 0)` : 'count()');
   }
 
   const sql = withSettings(
@@ -503,6 +639,185 @@ export function compileLens(
     configSettingsFragments(config)
   );
   return { sql, intervalMs, interval };
+}
+
+/** Inner alias of the series' date bucket in app window mode (a DateTime, converted to ms outside). */
+const DATE_ALIAS = '__d';
+/** Inner alias of the row count (ranking by count in window mode). */
+const COUNT_ALIAS = '__c';
+
+/** A number we computed: per-`unitS` factor of a bucket of `ms` milliseconds. */
+const perUnit = (unitS: number, ms: number): string => String(Number(((unitS * 1000) / ms).toPrecision(12)));
+
+/** The date bucket as a DateTime (DateTime64(3) for milliseconds), for WITH FILL on calendar steps. */
+function dateTimeBucketSql(col: string, iv: LensInterval): string {
+  return iv.unit === 'ms'
+    ? `toStartOfInterval(toDateTime64(${col}, 3), INTERVAL ${iv.n} MILLISECOND)`
+    : `toDateTime(toStartOfInterval(${col}, ${chIntervalOf(iv)}))`;
+}
+
+const CH_UNITS: Record<string, string> = {
+  ms: 'MILLISECOND',
+  s: 'SECOND',
+  m: 'MINUTE',
+  h: 'HOUR',
+  d: 'DAY',
+  w: 'WEEK',
+  M: 'MONTH',
+  y: 'YEAR',
+};
+/** `INTERVAL n UNIT` from an interval we parsed (integer + keyword from the table). */
+const chIntervalOf = (iv: LensInterval): string => `INTERVAL ${Math.max(1, Math.floor(iv.n))} ${CH_UNITS[iv.unit]}`;
+
+/**
+ * App window mode, Include empty rows: WITH FILL of the DateTime bucket over the time picker range
+ * (the bucket holding the start up to the end), or between buckets with data when not bound to it —
+ * the same buckets `shapeLensRows` would add, but before the window functions see the rows.
+ */
+function appFillSql(iv: LensInterval, bound: boolean): string {
+  const step = iv.unit === 'ms' ? `toIntervalMillisecond(${Math.max(1, Math.floor(iv.n))})` : chIntervalOf(iv);
+  if (!bound) {
+    return `WITH FILL STEP ${step}`;
+  }
+  return iv.unit === 'ms'
+    ? `WITH FILL FROM toStartOfInterval(toDateTime64($__fromTime, 3), ${chIntervalOf(iv)}) TO toDateTime64($__toTime, 3) STEP ${step}`
+    : `WITH FILL FROM toDateTime(toStartOfInterval($__fromTime, ${chIntervalOf(iv)})) TO $__toTime STEP ${step}`;
+}
+
+/**
+ * ORDER BY of a chart whose first bucket is top values: by the chosen rank (a rankable rank metric's
+ * column, else the row count `byCount`); the synthetic Other / (missing) rows always come last.
+ */
+function rankOrderBy(state: LensState, groupBy: string[], byCountSql: string): string {
+  const first = state.buckets[0] as TermsDim;
+  const dir = rankDirOf(first).toUpperCase();
+  const rm =
+    first.rankBy === 'metric' ? state.metrics.findIndex((m) => m.id === first.rankMetric && isRankable(m)) : -1;
+  const byCount = state.metrics[0]?.op === 'count' && !state.metrics[0].shift ? metricAlias(0) : byCountSql;
+  const rank =
+    first.rankBy === 'alpha'
+      ? `${bucketAlias(0)} ${dir}`
+      : state.metrics.length === 0
+        ? bucketAlias(0)
+        : `${rm >= 0 ? metricAlias(rm) : byCount} ${dir}`;
+  const lead = hasKindColumn(first) ? `${kindAlias(0)}, ` : '';
+  return `ORDER BY ${lead}${rank}, ${groupBy.join(', ')}`;
+}
+
+interface WrapParts {
+  state: LensState;
+  mode: 'app' | 'dashboard';
+  ctes: string[];
+  /** Bucket columns (the series date as `__d` in app mode) and the inner aggregates `a<k>`. */
+  innerSelects: string[];
+  /** The metrics as outer expressions (`… AS m<i>`). */
+  outerMetrics: string[];
+  tbl: string;
+  arrayJoin: string | null;
+  where: string;
+  /** Inner GROUP BY columns. */
+  groupBy: string[];
+  dateIdx: number;
+  seriesIv?: ResolvedLensInterval;
+  /** Row count of a group (time shift: of the unshifted copy). */
+  countSql: string;
+  settings: string[];
+}
+
+/**
+ * Window mode (LENS-CALC-01): the grouped query becomes a subquery, gap-filled with WITH FILL per
+ * series (before any window function sees the rows: an empty bucket is a row with count 0 and empty
+ * other aggregates), and the outer SELECT computes the calculations with window functions. App mode
+ * converts the DateTime bucket to epoch ms outside; saved panels keep their `$__timeInterval`
+ * DateTime bucket and the dashboard fill.
+ */
+function wrapWindow(p: WrapParts): string {
+  const { state, mode, groupBy, dateIdx } = p;
+  const date = dateIdx >= 0 ? (state.buckets[dateIdx] as DateHistogramDim) : undefined;
+  const appDate = mode === 'app' && !!date && !!p.seriesIv;
+  const dateRef = !date ? null : appDate ? DATE_ALIAS : bucketAlias(dateIdx);
+  const first = state.buckets[0];
+  const needsCount =
+    first?.kind === 'terms' &&
+    first.rankBy !== 'alpha' &&
+    state.metrics.length > 0 &&
+    !(state.metrics[0].op === 'count' && !state.metrics[0].shift);
+
+  // Gap filling, per series: every other group column (and an Intervals width, constant per bucket)
+  // leads the ORDER BY, so WITH FILL fills within each series and copies those columns.
+  let innerOrder: string | null = null;
+  if (date && dateRef && date.emptyRows !== false) {
+    const widths = state.buckets.flatMap((b, i) =>
+      mode === 'app' && b.kind === 'range' && !b.ranges ? [widthAlias(i)] : []
+    );
+    const fill =
+      appDate && p.seriesIv
+        ? appFillSql(p.seriesIv, !date.unbound)
+        : dashboardFillSql(parseInterval(date.interval), !date.unbound);
+    const lead = [...groupBy.filter((g) => g !== dateRef), ...widths];
+    innerOrder = `ORDER BY ${[...lead, `${dateRef} ${fill}`].join(', ')}`;
+  }
+
+  const innerSql = [
+    p.ctes.length > 0 ? `WITH ${p.ctes.join(',\n     ')}` : null,
+    `SELECT ${[...p.innerSelects, ...(needsCount ? [`${p.countSql} AS ${COUNT_ALIAS}`] : [])].join(', ')}`,
+    `FROM ${p.tbl}`,
+    p.arrayJoin,
+    p.where ? `WHERE ${p.where}` : null,
+    groupBy.length > 0 ? `GROUP BY ${groupBy.join(', ')}` : null,
+    innerOrder,
+  ]
+    .filter(Boolean)
+    .join('\n');
+
+  const outerCols = state.buckets.flatMap((b, i) => {
+    const cols: string[] = [];
+    if (b.kind === 'terms' && hasKindColumn(b)) {
+      cols.push(kindAlias(i));
+    }
+    if (appDate && i === dateIdx && p.seriesIv) {
+      cols.push(
+        p.seriesIv.unit === 'ms'
+          ? `toUnixTimestamp64Milli(${DATE_ALIAS}) AS ${bucketAlias(i)}`
+          : `toUnixTimestamp(${DATE_ALIAS}) * 1000 AS ${bucketAlias(i)}`
+      );
+    } else {
+      cols.push(bucketAlias(i));
+    }
+    if (mode === 'app' && b.kind === 'range' && !b.ranges) {
+      cols.push(widthAlias(i));
+    }
+    return cols;
+  });
+
+  // Drop partial intervals (app): before the window functions, so a running total starts at the
+  // first whole bucket (Kibana drops them from the rows the calculations run on).
+  const outerWhere =
+    appDate && date?.dropPartial && p.seriesIv
+      ? `WHERE ${DATE_ALIAS} >= $__fromTime AND ${DATE_ALIAS} + ${
+          p.seriesIv.unit === 'ms' ? `toIntervalMillisecond(${p.seriesIv.n})` : chIntervalOf(p.seriesIv)
+        } <= $__toTime`
+      : null;
+
+  const outerGroup = groupBy.map((g) => (g === DATE_ALIAS ? bucketAlias(dateIdx) : g));
+  let orderBy: string | null = null;
+  if (first?.kind === 'terms') {
+    orderBy = rankOrderBy(state, outerGroup, COUNT_ALIAS);
+  } else if (first) {
+    orderBy = `ORDER BY ${outerGroup.join(', ')}`;
+  }
+  return withSettings(
+    [
+      `SELECT ${[...outerCols, ...p.outerMetrics].join(', ')}`,
+      `FROM (`,
+      innerSql,
+      `)`,
+      outerWhere,
+      orderBy,
+      `LIMIT ${LENS_ROW_LIMIT}`,
+    ],
+    p.settings
+  );
 }
 
 /**
@@ -663,6 +978,15 @@ const num = (v: unknown): number => {
   return Number.isFinite(n) ? n : 0;
 };
 
+/** A metric value, or null when the query returned none (NULL / nan / inf). */
+const numOrNull = (v: unknown): number | null => {
+  if (v === null || v === undefined || v === '') {
+    return null;
+  }
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+};
+
 interface TermCell {
   /** Map key: real values as-is (a leading U+0000/U+0001 is escaped), synthetic buckets U+0000-prefixed. */
   key: string;
@@ -783,7 +1107,12 @@ export function shapeLensRows(
         };
         seriesMap.set(name, s);
       }
-      s.points.set(xv, num(r[metricAlias(i)]));
+      // An empty value (no data in the bucket, or a calculation without a previous bucket) is a gap,
+      // except for counts (0).
+      const v = numOrNull(r[metricAlias(i)]);
+      if (v !== null || s.zeroFill) {
+        s.points.set(xv, v ?? 0);
+      }
     });
   }
   if (xIsTime) {
@@ -850,7 +1179,7 @@ export function shapeLensRows(
       }
       return b.kind === 'date_histogram' ? toMs(v) : v === null || v === undefined ? null : String(v);
     }),
-    ...state.metrics.map((_, i) => num(r[metricAlias(i)])),
+    ...state.metrics.map((m, i) => (m.op === 'count' ? num(r[metricAlias(i)]) : numOrNull(r[metricAlias(i)]))),
   ]);
   const xLabels = xs.map((v) => (xIsTime ? String(v) : (xInfo.get(v)?.label ?? String(v))));
   const xSynthetic = xs.map((v) => xInfo.get(v)?.synthetic ?? false);
@@ -881,9 +1210,10 @@ export function orderSeries(state: LensState, series: LensSeries[]): LensSeries[
     b.rankBy === 'metric'
       ? Math.max(
           0,
-          state.metrics.findIndex((m) => m.id === b.rankMetric)
+          state.metrics.findIndex((m) => m.id === b.rankMetric && isRankable(m))
         )
       : 0;
+  const rankCumulative = state.metrics[rankIdx]?.op === 'cumulative_sum';
   // One group per breakdown value (its display label, the part every series of the value shares).
   const groupOf = (s: LensSeries) => `${s.synthetic ? '1' : '0'}${s.breakdown ?? ''}`;
   const totals = new Map<string, number>();
@@ -894,8 +1224,19 @@ export function orderSeries(state: LensState, series: LensSeries[]): LensSeries[
       firstSeen.set(g, i);
     }
     if (s.metricIndex === rankIdx) {
+      // A cumulative sum's total is its last value (the largest bucket); other metrics add up.
       let t = 0;
-      s.points.forEach((v) => (t += v));
+      if (rankCumulative) {
+        let lastX = -Infinity;
+        s.points.forEach((v, x) => {
+          if (Number(x) >= lastX) {
+            lastX = Number(x);
+            t = v;
+          }
+        });
+      } else {
+        s.points.forEach((v) => (t += v));
+      }
       totals.set(g, t);
     }
   });
