@@ -2,6 +2,7 @@
  * Dimension editing (spec LENS-DIM-01 / LENS-DIM-02): pure helpers behind the dimension editor.
  */
 import { metricOptionsOf } from './metricOptions';
+import { BaseOp, clampWindow, CUMULATIVE_BASE_OPS, DEFAULT_WINDOW, isCalcOp, MetricRef } from './calc';
 import {
   BucketDim,
   cleanDateHistogram,
@@ -13,6 +14,7 @@ import {
   RangeDim,
   clampPercentile,
   DEFAULT_PERCENTILE,
+  hasRef,
   LensField,
   LensState,
   MAX_NAME,
@@ -23,14 +25,40 @@ import {
 } from './state';
 import { addTimeBucket, isLensField, LensContext, switchChart } from './suggest';
 
-/** Quick functions, in the editor grid's order. */
-export const QUICK_FUNCTIONS: MetricOp[] = ['avg', 'count', 'max', 'median', 'min', 'percentile', 'sum', 'unique'];
+/** Quick functions, in the editor grid's order (alphabetical, as in Kibana). */
+export const QUICK_FUNCTIONS: MetricOp[] = [
+  'avg',
+  'count',
+  'last_value',
+  'max',
+  'median',
+  'min',
+  'percentile',
+  'std_dev',
+  'sum',
+  'unique',
+];
+/** Time-series calculations (LENS-CALC-01): the grid's "Calculations" group; they need a date histogram. */
+export const CALC_FUNCTIONS: MetricOp[] = ['counter_rate', 'cumulative_sum', 'differences', 'moving_average'];
 
-const NUMERIC_OPS: ReadonlySet<MetricOp> = new Set(['median', 'avg', 'sum', 'min', 'max', 'percentile']);
+const NUMERIC_OPS: ReadonlySet<MetricOp> = new Set([
+  'median',
+  'avg',
+  'sum',
+  'min',
+  'max',
+  'percentile',
+  'std_dev',
+  'last_value',
+  'counter_rate',
+]);
 
-/** Fields a function can use: none for count, numbers for numeric aggregates, any scalar for unique count. */
+/**
+ * Fields a function can use: none for count (and for the calculations that wrap another metric —
+ * their inner metric has the field), numbers for numeric aggregates, any scalar for unique count.
+ */
 export function compatibleFields(op: MetricOp, fields: LensField[]): LensField[] {
-  if (op === 'count') {
+  if (op === 'count' || hasRef(op) || op === 'formula') {
     return [];
   }
   const scalar = fields.filter((f) => f.type !== 'records' && isLensField(f));
@@ -58,8 +86,23 @@ export function withOp(m: MetricDim, op: MetricOp, fields: LensField[]): MetricD
   if (op === 'count') {
     return { kind: 'metric', id: m.id, op, name: m.name, ...metricOptionsOf(m) };
   }
+  if (hasRef(op)) {
+    // The metric so far becomes what is calculated on ("Median of x" → "Moving average of Median of x").
+    const ref = refForCalc(currentRef(m), op, fields);
+    return {
+      kind: 'metric',
+      id: m.id,
+      op,
+      ref,
+      ...(op === 'moving_average' ? { window: clampWindow(m.window ?? DEFAULT_WINDOW) } : {}),
+      name: m.name,
+      ...metricOptionsOf(m),
+    };
+  }
   const ok = compatibleFields(op, fields);
-  const keep = ok.find((f) => f.sqlExpr === m.field) ?? ok[0];
+  // Leaving a calculation: its inner metric's field is the one to keep.
+  const current = m.field ?? m.ref?.field;
+  const keep = ok.find((f) => f.sqlExpr === current) ?? ok[0];
   if (!keep) {
     return undefined;
   }
@@ -74,6 +117,69 @@ export function withOp(m: MetricDim, op: MetricOp, fields: LensField[]): MetricD
     name: m.name,
     ...metricOptionsOf(m),
   };
+}
+
+/** What a metric computes, as a calculation's inner metric (count for a formula / no field). */
+function currentRef(m: MetricDim): MetricRef {
+  if (m.ref) {
+    return m.ref;
+  }
+  if (m.op === 'counter_rate' && m.field) {
+    return { op: 'max', field: m.field, fieldLabel: m.fieldLabel, numeric: m.numeric };
+  }
+  if (m.op === 'formula' || m.op === 'count' || isCalcOp(m.op) || !m.field) {
+    return { op: 'count' };
+  }
+  const r: MetricRef = { op: m.op as BaseOp, field: m.field, fieldLabel: m.fieldLabel, numeric: m.numeric };
+  if (m.op === 'percentile') {
+    r.percentile = clampPercentile(m.percentile ?? DEFAULT_PERCENTILE);
+  }
+  return r;
+}
+
+/** The inner metric a calculation can use: Cumulative sum only adds counts or sums (of the same field). */
+function refForCalc(r: MetricRef, op: MetricOp, fields: LensField[]): MetricRef {
+  if (op !== 'cumulative_sum' || CUMULATIVE_BASE_OPS.includes(r.op)) {
+    return r;
+  }
+  const f = fields.find((x) => x.sqlExpr === r.field && x.type === 'number');
+  return f ? { op: 'sum', field: f.sqlExpr, fieldLabel: f.label, numeric: true } : { op: 'count' };
+}
+
+/**
+ * Changes the inner metric's function of a calculation, keeping its field where the function
+ * accepts it, else the first compatible one; undefined when none is compatible.
+ */
+export function withRefOp(m: MetricDim, op: BaseOp, fields: LensField[]): MetricDim | undefined {
+  if (op === 'count') {
+    return { ...m, ref: { op: 'count' } };
+  }
+  const ok = compatibleFields(op, fields);
+  const keep = ok.find((f) => f.sqlExpr === m.ref?.field) ?? ok[0];
+  if (!keep) {
+    return undefined;
+  }
+  const ref: MetricRef = { op, field: keep.sqlExpr, fieldLabel: keep.label, numeric: keep.type === 'number' };
+  if (op === 'percentile') {
+    ref.percentile = clampPercentile(m.ref?.percentile ?? DEFAULT_PERCENTILE);
+  }
+  return { ...m, ref };
+}
+
+/** Sets the inner metric's field of a calculation. */
+export function withRefField(m: MetricDim, field: LensField): MetricDim {
+  const ref = m.ref ?? { op: 'count' as const };
+  return { ...m, ref: { ...ref, field: field.sqlExpr, fieldLabel: field.label, numeric: field.type === 'number' } };
+}
+
+/** Sets the inner metric's percentile (1–99). */
+export function withRefPercentile(m: MetricDim, p: number): MetricDim {
+  return m.ref ? { ...m, ref: { ...m.ref, percentile: clampPercentile(p) } } : m;
+}
+
+/** Sets a Moving average's window (1–100). */
+export function withWindow(m: MetricDim, w: number): MetricDim {
+  return { ...m, window: clampWindow(w) };
 }
 
 /** Sets a metric's field (must be compatible with its function). */

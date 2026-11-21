@@ -22,9 +22,14 @@ import {
 } from '@grafana/ui';
 import {
   bucketFields,
+  CALC_FUNCTIONS,
   compatibleFields,
   dateFields,
   QUICK_FUNCTIONS,
+  withRefField,
+  withRefOp,
+  withRefPercentile,
+  withWindow,
   withBucketField,
   withDateOptions,
   withMetricField,
@@ -39,14 +44,26 @@ import {
   BucketDim,
   clampPercentile,
   DateHistogramDim,
+  hasRef,
+  isRankable,
   LensField,
   LensState,
   listError,
   MetricDim,
+  MetricOp,
   opName,
   rankDirOf,
   TermsRankBy,
 } from './state';
+import {
+  BASE_OPS,
+  BaseOp,
+  clampWindow,
+  CUMULATIVE_BASE_OPS,
+  FUNCTION_HELP,
+  hasDateHistogram,
+  MAX_WINDOW,
+} from './calc';
 import { uniqueMetricLabels } from './compile';
 import { BucketFunctions, FiltersEditor, RangeEditor } from './BucketEditors';
 import { FormulaEditor, formulaFieldsOf, formulaMetric } from './FormulaEditor';
@@ -101,8 +118,14 @@ export function DimensionEditor({
   const { dialogProps, hint } = usePopoverDialog(panelRef, { onClose, returnFocus, escapeFromPage: false });
   const fieldId = useId();
   const fnLabelId = useId();
+  const calcLabelId = useId();
+  const calcNoteId = useId();
   const rankMetricId = useId();
   const metricLabels = uniqueMetricLabels(metrics);
+  // Calculations need a date histogram (Kibana); without one the group is disabled with the reason.
+  const calcAllowed = chart ? hasDateHistogram(chart) : true;
+  // Top values cannot be ranked by a calculation other than Cumulative sum.
+  const rankable = metrics.map((m, i) => ({ m, label: metricLabels[i] })).filter((x) => isRankable(x.m));
   const fieldOptions = (list: LensField[]) => list.map((f) => ({ label: f.label, value: f.sqlExpr }));
 
   return (
@@ -150,14 +173,20 @@ export function DimensionEditor({
           <div className={styles.grid} role="group" aria-labelledby={fnLabelId}>
             {QUICK_FUNCTIONS.map((op) => {
               const next = withOp(dim, op, fields);
+              const noTime = op === 'last_value' && !timeField;
+              const reason = noTime
+                ? 'Needs a time field in this data view'
+                : next
+                  ? FUNCTION_HELP[op as Exclude<MetricOp, 'formula'>]
+                  : 'No compatible field in this data view';
               return (
                 <button
                   key={op}
                   type="button"
                   className={cx(styles.fn, dim.op === op && styles.fnActive)}
                   aria-pressed={dim.op === op}
-                  disabled={!next}
-                  title={next ? undefined : 'No compatible field in this data view'}
+                  disabled={!next || noTime}
+                  title={reason}
                   onClick={() => next && dim.op !== op && onChange(next)}
                 >
                   {opName(op)}
@@ -165,7 +194,50 @@ export function DimensionEditor({
               );
             })}
           </div>
-          {dim.op !== 'count' && (
+          <div className={styles.label} id={calcLabelId}>
+            Calculations
+          </div>
+          <div
+            className={styles.grid}
+            role="group"
+            aria-labelledby={calcLabelId}
+            aria-describedby={calcAllowed ? undefined : calcNoteId}
+          >
+            {CALC_FUNCTIONS.map((op) => {
+              const next = withOp(dim, op, fields);
+              return (
+                <button
+                  key={op}
+                  type="button"
+                  className={cx(styles.fn, dim.op === op && styles.fnActive)}
+                  aria-pressed={dim.op === op}
+                  disabled={!next || !calcAllowed}
+                  title={
+                    !calcAllowed
+                      ? CALC_NEEDS_DATE
+                      : next
+                        ? FUNCTION_HELP[op as Exclude<MetricOp, 'formula'>]
+                        : 'No number field in this data view'
+                  }
+                  onClick={() => next && dim.op !== op && onChange(next)}
+                >
+                  {opName(op)}
+                </button>
+              );
+            })}
+          </div>
+          {!calcAllowed && (
+            <div className={styles.note} id={calcNoteId}>
+              {CALC_NEEDS_DATE}
+            </div>
+          )}
+          <div className={styles.help} role="note" aria-label="About this function">
+            {FUNCTION_HELP[dim.op]}
+          </div>
+          {hasRef(dim.op) && (
+            <CalcOfEditor dim={dim} fields={fields} timeField={timeField} onChange={onChange} />
+          )}
+          {dim.op !== 'count' && !hasRef(dim.op) && (
             <Field label="Field" htmlFor={fieldId}>
               <Combobox
                 id={fieldId}
@@ -235,17 +307,26 @@ export function DimensionEditor({
                 {
                   label: 'Custom metric',
                   value: 'metric',
-                  description: metrics.length ? undefined : 'Add a metric first',
+                  description: rankable.length
+                    ? undefined
+                    : metrics.length
+                      ? 'Calculations cannot rank values (except Cumulative sum)'
+                      : 'Add a metric first',
                 },
               ]}
               value={dim.rankBy ?? 'count'}
-              disabledOptions={metrics.length === 0 ? ['metric'] : []}
+              disabledOptions={rankable.length === 0 ? ['metric'] : []}
               onChange={(v) =>
                 onChange(
                   withTermsOptions(dim, {
                     rankBy: v,
                     rankDir: undefined,
-                    rankMetric: v === 'metric' ? (dim.rankMetric ?? metrics[0]?.id) : undefined,
+                    rankMetric:
+                      v === 'metric'
+                        ? rankable.some((x) => x.m.id === dim.rankMetric)
+                          ? dim.rankMetric
+                          : rankable[0]?.m.id
+                        : undefined,
                   })
                 )
               }
@@ -255,7 +336,7 @@ export function DimensionEditor({
             <Field label="Rank metric" htmlFor={rankMetricId}>
               <Combobox
                 id={rankMetricId}
-                options={metricLabels.map((l, i) => ({ label: l, value: metrics[i].id }))}
+                options={rankable.map((x) => ({ label: x.label, value: x.m.id }))}
                 value={dim.rankMetric}
                 onChange={(o) => o && onChange(withTermsOptions(dim, { rankMetric: o.value }))}
               />
@@ -338,6 +419,98 @@ export function DimensionEditor({
         </Button>
       </div>
     </div>
+  );
+}
+
+const CALC_NEEDS_DATE = 'Calculations need a date histogram dimension. Add one to use them.';
+
+/**
+ * What a Cumulative sum / Differences / Moving average is calculated on (LENS-CALC-01): the inner
+ * function (Cumulative sum: Count or Sum only), its field and percentile, and the Moving average
+ * window.
+ */
+function CalcOfEditor({
+  dim,
+  fields,
+  timeField,
+  onChange,
+}: {
+  dim: MetricDim;
+  fields: LensField[];
+  timeField?: string;
+  onChange: (d: MetricDim) => void;
+}) {
+  const ofId = useId();
+  const fieldId = useId();
+  const ref = dim.ref ?? { op: 'count' as const };
+  const ops = (dim.op === 'cumulative_sum' ? CUMULATIVE_BASE_OPS : BASE_OPS).filter(
+    (op) => (op !== 'last_value' || !!timeField) && withRefOp(dim, op, fields) !== undefined
+  );
+  return (
+    <>
+      <Field
+        label="Calculated on"
+        htmlFor={ofId}
+        description={dim.op === 'cumulative_sum' ? 'A running total only adds counts or sums' : undefined}
+      >
+        <Combobox<BaseOp>
+          id={ofId}
+          options={ops.map((op) => ({ label: opName(op), value: op, description: FUNCTION_HELP[op] }))}
+          value={ref.op}
+          onChange={(o) => {
+            const next = o && withRefOp(dim, o.value, fields);
+            if (next) {
+              onChange(next);
+            }
+          }}
+        />
+      </Field>
+      {ref.op !== 'count' && (
+        <Field label="Field" htmlFor={fieldId}>
+          <Combobox
+            id={fieldId}
+            options={withCurrent(compatibleFields(ref.op, fields), ref.field, fields).map((f) => ({
+              label: f.label,
+              value: f.sqlExpr,
+            }))}
+            value={ref.field}
+            onChange={(o) => {
+              const f = fields.find((x) => x.sqlExpr === o?.value);
+              if (f) {
+                onChange(withRefField(dim, f));
+              }
+            }}
+          />
+        </Field>
+      )}
+      {ref.op === 'percentile' && (
+        <Field label="Percentile">
+          <NumberInput
+            key={`rpct-${clampPercentile(ref.percentile)}`}
+            label="Percentile"
+            min={1}
+            max={99}
+            value={clampPercentile(ref.percentile)}
+            onCommit={(n) => onChange(withRefPercentile(dim, n))}
+          />
+        </Field>
+      )}
+      {dim.op === 'moving_average' && (
+        <Field
+          label="Window size"
+          description={`How many previous buckets are averaged (1–${MAX_WINDOW}); the current bucket is not included`}
+        >
+          <NumberInput
+            key={`win-${clampWindow(dim.window)}`}
+            label="Window size"
+            min={1}
+            max={MAX_WINDOW}
+            value={clampWindow(dim.window)}
+            onCommit={(n) => onChange(withWindow(dim, n))}
+          />
+        </Field>
+      )}
+    </>
   );
 }
 
@@ -521,13 +694,26 @@ function LinesInput({
  * Switching to Formula converts the quick function (spec LENS-DIM-03: `median(event.duration)`);
  * a function whose field the data view no longer offers starts from `count()`.
  */
-function toFormula(dim: MetricDim, fields: LensField[]): MetricDim {
+export function toFormula(dim: MetricDim, fields: LensField[]): MetricDim {
   const all = formulaFieldsOf(fields);
-  const label = fields.find((f) => f.sqlExpr === dim.field)?.label ?? dim.fieldLabel;
-  const text = quickToFormula(dim.op, label, dim.percentile);
+  const labelOf = (field?: string, fallback?: string) => fields.find((f) => f.sqlExpr === field)?.label ?? fallback;
+  let text: string;
+  if (hasRef(dim.op)) {
+    const r = dim.ref ?? { op: 'count' as const };
+    const inner = quickToFormula(r.op, labelOf(r.field, r.fieldLabel), r.percentile);
+    text =
+      dim.op === 'moving_average' ? `moving_average(${inner}, window=${clampWindow(dim.window)})` : `${dim.op}(${inner})`;
+  } else if (dim.op === 'counter_rate') {
+    text = `counter_rate(${quickToFormula('max', labelOf(dim.field, dim.fieldLabel))})`;
+  } else {
+    text = quickToFormula(dim.op, labelOf(dim.field, dim.fieldLabel), dim.percentile);
+  }
   const ok = formulaErrors(text, all).length === 0 ? text : 'count()';
-  return formulaMetric(dim, ok, all);
+  const out = formulaMetric(dim, ok, all);
+  // A formula's counter_rate is per bucket; the quick function's per-second rate stays a normalization.
+  return dim.op === 'counter_rate' && ok !== 'count()' ? { ...out, normalize: dim.normalize ?? 's' } : out;
 }
+
 
 /** Keeps a field set elsewhere (e.g. a shared link) selectable even if the function's list excludes it. */
 function withCurrent(list: LensField[], current: string | undefined, all: LensField[]): LensField[] {
@@ -658,6 +844,12 @@ const getStyles = (theme: GrafanaTheme2) => ({
   note: css`
     font-size: ${theme.typography.bodySmall.fontSize};
     color: ${theme.colors.text.secondary};
+  `,
+  help: css`
+    font-size: ${theme.typography.bodySmall.fontSize};
+    color: ${theme.colors.text.secondary};
+    border-left: 2px solid ${theme.colors.border.medium};
+    padding-left: ${theme.spacing(1)};
   `,
   footer: css`
     display: flex;
