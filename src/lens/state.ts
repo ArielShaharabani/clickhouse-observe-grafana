@@ -1044,6 +1044,21 @@ export function sanitizeLens(s: LensState, allowed: ReadonlySet<string>): LensSt
   return { ...rest, buckets, metrics, ...(layers ? { layers } : {}), ...(parked ? { parked } : {}) };
 }
 
+/**
+ * Whether the chart must still wait for field discovery (round 3 #8): until this view's columns are
+ * published, and — while the rest (JSON paths) is still loading — only if the chart uses a field
+ * not known yet, so a real field is never dropped for being "unknown" and a chart on plain columns
+ * does not wait for the slower discovery steps.
+ */
+export function lensFieldsPending(
+  fieldsPublished: boolean,
+  discovering: boolean,
+  s: LensState,
+  allowed: ReadonlySet<string>
+): boolean {
+  return !fieldsPublished || (discovering && sanitizeLens(s, allowed) !== s);
+}
+
 /** Parked buckets / layers follow the same field rule as the visible ones. */
 function sanitizeParked(p: LensParked | undefined, allowed: ReadonlySet<string>): LensParked | undefined {
   if (!p) {

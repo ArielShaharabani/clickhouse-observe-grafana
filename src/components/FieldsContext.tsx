@@ -147,6 +147,42 @@ function fetchJsonPaths(config: SourceConfig, table: string, jsonColumn: string,
 
 // Text skip indexes per table (PERF-SEARCH), same lifetime as the metadata cache.
 const textIndexCache = new Map<string, TextIndexInfo[]>();
+/** Lookups in flight, so concurrent discoveries of one table share one request. */
+const textIndexInFlight = new Map<string, Promise<TextIndexInfo[]>>();
+
+/** The table's text skip indexes: cached, shared while in flight; a failure is [] and not cached. */
+function loadTextIndexes(
+  config: SourceConfig,
+  table: string,
+  timeRange: TimeRange,
+  cKey: string
+): Promise<TextIndexInfo[]> {
+  const cached = textIndexCache.get(cKey);
+  if (cached) {
+    return Promise.resolve(cached);
+  }
+  const pending = textIndexInFlight.get(cKey);
+  if (pending) {
+    return pending;
+  }
+  const p = runQueryRows({
+    datasourceUid: config.datasourceUid,
+    sql: buildSkipIndicesQuery(config, table),
+    timeRange,
+    op: 'columns',
+  })
+    .then(
+      (rows) => {
+        const parsed = parseTextIndexes(rows);
+        textIndexCache.set(cKey, parsed);
+        return parsed;
+      },
+      () => [] as TextIndexInfo[]
+    )
+    .finally(() => textIndexInFlight.delete(cKey));
+  textIndexInFlight.set(cKey, p);
+  return p;
+}
 
 interface FieldsContextValue {
   fields: FieldModel[];
@@ -183,6 +219,11 @@ export interface FieldDiscoveryOpts {
    * request through the metadata layer and owns the field lists.
    */
   columnsOnly?: boolean;
+  /**
+   * Look up the table's text skip indexes (default true). Visualize passes false: its queries do
+   * not use them, so the lookup would only add a query to every open (round 3 #8).
+   */
+  textIndexes?: boolean;
 }
 
 export interface FieldDiscoveryResult extends FieldsContextValue {
@@ -219,7 +260,7 @@ export function useFieldDiscovery(
   timeRange: TimeRange,
   opts: FieldDiscoveryOpts = {}
 ): FieldDiscoveryResult {
-  const { table, columnsOnly = false } = opts;
+  const { table, columnsOnly = false, textIndexes: wantTextIndexes = true } = opts;
   const resolvedTable = table ?? config.logsTable;
   const [fields, setFields] = useState<FieldModel[]>([]);
   // Starts true (not false): discovery always kicks off on mount once datasourceUid is known, so
@@ -257,6 +298,14 @@ export function useFieldDiscovery(
       clearKeysCacheForTable(config.datasourceUid, resolvedTable);
       clearValuesCacheForTable(config.datasourceUid, resolvedTable);
     }
+
+    // Text skip indexes (cached per table), looked up alongside the columns rather than after them:
+    // both are metadata reads, so a page waits one round trip instead of two. Best effort: an
+    // unreadable system table just means the plain ILIKE forms are used.
+    const textIdxPromise: Promise<TextIndexInfo[]> =
+      columnsOnly || !wantTextIndexes
+        ? Promise.resolve([])
+        : loadTextIndexes(config, resolvedTable, timeRange, cKey);
 
     // Top-level columns (time-independent, shared + cached per table by the metadata layer).
     let columns: FieldModel[];
@@ -317,25 +366,9 @@ export function useFieldDiscovery(
       return;
     }
 
-    // Text skip indexes (cached per table). Best effort: an unreadable system table just means
-    // the plain ILIKE forms are used.
-    let textIdx = textIndexCache.get(cKey);
-    if (!textIdx) {
-      try {
-        const idxRows = await runQueryRows({
-          datasourceUid: config.datasourceUid,
-          sql: buildSkipIndicesQuery(config, resolvedTable),
-          timeRange,
-          op: 'columns',
-        });
-        textIdx = parseTextIndexes(idxRows);
-        textIndexCache.set(cKey, textIdx);
-      } catch {
-        textIdx = [];
-      }
-      if (runRef.current !== runId) {
-        return;
-      }
+    const textIdx = await textIdxPromise;
+    if (runRef.current !== runId) {
+      return;
     }
     setTextIndexes(textIdx);
 

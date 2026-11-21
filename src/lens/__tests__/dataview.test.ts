@@ -9,7 +9,7 @@ import { DEFAULT_SOURCE_CONFIG, DataView, FilterPill } from '../../types';
 import { filtersForViewSwitch, StoredPin } from '../../state/sharedSearch';
 import { hasSearchContext, LAST_SEARCH_KEY, rememberSearchContext, restoreSearchContext } from '../../state/lastSearch';
 import { visualizeEntry, VisualizeEntryInput } from '../entry';
-import { decodeLens, EMPTY_LENS, LensState, RECORDS_FIELD } from '../state';
+import { decodeLens, EMPTY_LENS, LensState, lensFieldsPending, RECORDS_FIELD } from '../state';
 import { addField } from '../suggest';
 import { visualizeUrl } from '../handoff';
 
@@ -92,7 +92,6 @@ describe('#16b visualizeEntry: the data view Visualize opens on', () => {
     const lens = encodeURIComponent(JSON.stringify(lensWithRecords));
     expect(decodeLens(entry(`ds=otel-demo&q=x&lens=${lens}`).params.get('lens'))?.metrics).toHaveLength(1);
   });
-
 });
 
 describe('#16c visualizeEntry: side-menu entry restores the last context', () => {
@@ -206,5 +205,29 @@ describe('#16c Explore in Visualize link', () => {
     expect([sp.get('q'), sp.get('from'), sp.get('to'), sp.get('ds')]).toEqual(['a:b', 'now-7d', 'now', 'otel-demo']);
     expect(decodeLogsState(sp).filters).toEqual([pill('f')]);
     expect(sp.has('lens')).toBe(false);
+  });
+});
+
+describe('round 3 #8: when the chart can run during field discovery', () => {
+  const allowed = new Set(['Timestamp', 'ServiceName']);
+  const onColumns = addField(EMPTY_LENS, RECORDS_FIELD, {});
+  const onJsonPath: LensState = {
+    chartType: 'bar',
+    buckets: [{ kind: 'terms', id: 'b0', field: '"Payload"."user.id"', label: 'Payload.user.id', size: 5 }],
+    metrics: [{ kind: 'metric', id: 'm0', op: 'count' }],
+  };
+
+  it('waits until this view’s columns are published', () => {
+    expect(lensFieldsPending(false, true, onColumns, allowed)).toBe(true);
+    expect(lensFieldsPending(false, false, onColumns, allowed)).toBe(true);
+  });
+
+  it('runs on known columns without waiting for the rest of the discovery', () => {
+    expect(lensFieldsPending(true, true, onColumns, allowed)).toBe(false);
+  });
+
+  it('a chart on a field not known yet (a JSON path) waits for the whole discovery', () => {
+    expect(lensFieldsPending(true, true, onJsonPath, allowed)).toBe(true);
+    expect(lensFieldsPending(true, false, onJsonPath, allowed)).toBe(false);
   });
 });

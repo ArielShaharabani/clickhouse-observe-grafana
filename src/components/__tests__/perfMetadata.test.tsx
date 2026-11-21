@@ -86,6 +86,36 @@ describe('page bootstrap query counts', () => {
     expect(count('mapKeys')).toBe(3);
   });
 
+  it('looks up text indexes alongside the columns, not after them (round 3 #8)', async () => {
+    let releaseColumns: () => void = () => {};
+    const columnsGate = new Promise<void>((r) => (releaseColumns = r));
+    installSchema();
+    const base = mockRunQueryRows.getMockImplementation()!;
+    mockRunQueryRows.mockImplementation(async (a) => {
+      if (a.sql.includes('system.columns')) {
+        await columnsGate;
+      }
+      return base(a);
+    });
+    const other = { ...config, logsTable: 'perf_logs_10m' };
+    const { result } = renderHook(() => useFieldDiscovery(other, timeRange));
+    // Both metadata reads are in flight before the columns answer.
+    await waitFor(() => expect(count('data_skipping_indices')).toBe(1));
+    expect(count('system.columns')).toBe(1);
+    releaseColumns();
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(count('data_skipping_indices')).toBe(1);
+  });
+
+  it('Visualize skips the text-index lookup (its queries do not use it)', async () => {
+    installSchema();
+    const other = { ...config, logsTable: 'perf_logs_1m' };
+    const { result } = renderHook(() => useFieldDiscovery(other, timeRange, { textIndexes: false }));
+    await waitFor(() => expect(result.current.fields.some((f) => f.source === 'map')).toBe(true));
+    expect(count('data_skipping_indices')).toBe(0);
+    expect(count('system.columns')).toBe(1);
+  });
+
   it('refresh() invalidates the metadata so the next load re-queries', async () => {
     installSchema();
     const { result } = renderHook(() => useFieldDiscovery(config, timeRange));

@@ -53,6 +53,7 @@ import {
   EMPTY_LENS,
   encodeLens,
   isEmptyLens,
+  lensFieldsPending,
   LensField,
   LensState,
   MetricDim,
@@ -390,11 +391,13 @@ export function LensPage() {
   }, [search]);
 
   // Fields of the active data view.
-  const discovery = useFieldDiscovery(config, timeRange);
+  // No text-index lookup: Visualize's queries do not use it (one query less on every open).
+  const discovery = useFieldDiscovery(config, timeRange, { textIndexes: false });
   const { fields, loading: discovering, fieldsFor } = discovery;
   // Fields are usable only when they are this view's: right after a view switch `fields` still
   // holds the previous table's until the new discovery publishes (#16b).
-  const fieldsLoading = discovering || !viewSettled || fieldsFor !== discoveryKey(config);
+  const fieldsPublished = viewSettled && fieldsFor === discoveryKey(config);
+  const fieldsLoading = discovering || !fieldsPublished;
   const fieldIndex = useMemo(() => buildFieldIndex(fields), [fields]);
   const fieldIndexRef = useRef(fieldIndex);
   useLayoutEffect(() => {
@@ -413,9 +416,12 @@ export function LensPage() {
     () => new Set([...fields.map((f) => f.sqlExpr), ...(config.columns.timestamp ? [config.columns.timestamp] : [])]),
     [fields, config.columns.timestamp]
   );
+  // The chart runs as soon as this view's columns include every field it uses, without waiting for
+  // the JSON paths (one more round trip); a chart on a field not known yet still waits.
+  const chartFieldsLoading = lensFieldsPending(fieldsPublished, discovering, urlLens, allowedFields);
   const lens = useMemo(
-    () => (fieldsLoading ? urlLens : sanitizeLens(urlLens, allowedFields)),
-    [urlLens, allowedFields, fieldsLoading]
+    () => (chartFieldsLoading ? urlLens : sanitizeLens(urlLens, allowedFields)),
+    [urlLens, allowedFields, chartFieldsLoading]
   );
 
   // Data view switch on this page (#16b): the URL names the new view, query and time stay, filters
@@ -502,7 +508,7 @@ export function LensPage() {
   // A time-series calculation without a date histogram (LENS-CALC-01): say why instead of querying.
   const calcError = calculationError(lens);
   useEffect(() => {
-    if (isEmptyLens(lens) || !config.datasourceUid || fieldsLoading || queryError || calcError) {
+    if (isEmptyLens(lens) || !config.datasourceUid || chartFieldsLoading || queryError || calcError) {
       return;
     }
     let cancelled = false;
@@ -554,7 +560,7 @@ export function LensPage() {
     };
     // queryKey covers every input that changes the SQL.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [queryKey, fieldsLoading, refreshNonce, !!queryError]);
+  }, [queryKey, chartFieldsLoading, refreshNonce, !!queryError]);
   const current = result?.key === queryKey ? result : null;
   // A chart-type switch re-runs the query; until the new rows arrive keep drawing the previous chart
   // (same dimensions, filters and time) instead of a blank spinner frame. It is not interactive.
@@ -580,7 +586,7 @@ export function LensPage() {
     timeRange,
     index: fieldIndex,
     timeAxis,
-    enabled: xyChart && !fieldsLoading && !queryError && !!lens.layers,
+    enabled: xyChart && !chartFieldsLoading && !queryError && !!lens.layers,
   });
   const setLayers = (layers: ExtraLayer[]) => setLens({ ...lens, layers: layers.length > 0 ? layers : undefined });
   const [layerItemRef, setLayerItem] = useState<LayerItemRef | null>(null);
@@ -603,7 +609,7 @@ export function LensPage() {
   const suggestedTime = Math.round((timeRange.from.valueOf() + timeRange.to.valueOf()) / 2);
   // SHARED-PERF-01: same running cue as Discover (no Cancel here: leaving the chart without a
   // result would need its own empty state).
-  const chartLoading = fieldsLoading || (!isEmptyLens(lens) && !!config.datasourceUid && !current && !queryError && !calcError);
+  const chartLoading = chartFieldsLoading || (!isEmptyLens(lens) && !!config.datasourceUid && !current && !queryError && !calcError);
   const approxNote = current?.data ? lensApproxNote(lens) : null;
 
   const onAdd = (f: LensField) => setLens(addField(lens, f, ctx));
@@ -830,7 +836,7 @@ export function LensPage() {
         </Button>
         <SaveActions
           paramsKey={paramsKey}
-          disabled={isEmptyLens(lens) || fieldsLoading || !!queryError || !!calcError}
+          disabled={isEmptyLens(lens) || chartFieldsLoading || !!queryError || !!calcError}
           defaultTitle={defaultPanelTitle(lens)}
           buildPanel={buildPanel}
           timeRange={timeRange}

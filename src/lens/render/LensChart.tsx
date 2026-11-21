@@ -192,8 +192,7 @@ export function pieDisplayLabels(values: number[]): Array<'name' | 'percent'> {
 }
 
 /** Whether a pie / donut has slices to draw (one metric over categories). */
-const hasSlices = (result: LensResult) =>
-  result.xs.length > 0 && result.xs[0] !== '' && result.series.length === 1;
+const hasSlices = (result: LensResult) => result.xs.length > 0 && result.xs[0] !== '' && result.series.length === 1;
 
 /** Slice names, values and colours: the value's stable colour (as in the XY chart) or a legend pick. */
 function pieData(state: LensState, result: LensResult): { names: string[]; values: number[]; colors: string[] } {
