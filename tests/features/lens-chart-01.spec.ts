@@ -82,7 +82,10 @@ test('Metric: adding to Maximum value keeps the primary metric; switching to Bar
 
   await page.getByRole('button', { name: 'Chart type: Metric' }).click();
   await page.getByRole('option', { name: /^Bar Compare/ }).click();
-  expect(new URL(page.url()).searchParams.get('lens') ?? '').not.toContain('"role"');
+  // The maximum is parked (with its role) for a switch back to Metric / Gauge, not shown on the bar.
+  const lensState = JSON.parse(new URL(page.url()).searchParams.get('lens') ?? '{}');
+  expect(lensState.metrics.some((m: { role?: string }) => m.role)).toBe(false);
+  expect(lensState.parked.metrics.map((m: { role?: string }) => m.role)).toEqual(['max']);
 });
 
 test('a hostile summary / colour / role in a shared link is dropped', async ({ page }) => {
