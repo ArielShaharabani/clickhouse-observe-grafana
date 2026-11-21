@@ -59,7 +59,7 @@ interface AddToDashboardModalProps {
   timeRange: TimeRange;
 }
 
-const DEFAULT_DASHBOARD_TITLE = 'Logs Explorer export';
+const DEFAULT_DASHBOARD_TITLE = 'Discover export';
 const DEFAULT_TABLE_TITLE = 'Logs';
 const DEFAULT_HISTOGRAM_TITLE = 'Log volume';
 

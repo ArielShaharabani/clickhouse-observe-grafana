@@ -10,6 +10,13 @@ Versions track the plugin's release history. `Unreleased` collects commits not y
 
 ---
 
+## [0.68.1] — 2026-11-21
+
+### Changed
+- The Logs page is now called Discover (menu item, page title, default "Discover export" dashboard name). The URL stays `/logs`, so existing links keep working.
+
+---
+
 ## [0.68.0] — 2026-11-21
 
 ### Added
