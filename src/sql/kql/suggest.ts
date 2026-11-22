@@ -271,21 +271,26 @@ function fieldSuggestions(
       // trailing space. The next getSuggestions() call (fired right after, see SearchBar's
       // applySuggestion) then matches matchMapKeyPrefix and switches into mapkey suggestions.
       const isMapContainer = f.source === 'column' && f.type === 'map';
-      const displayed = isMapContainer ? `${f.displayName}.` : f.displayName;
+      // A native JSON column drills down the same way: "Payload." lists its discovered paths (they
+      // are ordinary fields, so the next call's field ranking on "Payload." finds them). Inserting
+      // "Payload " used to lead to `Payload : value`, which compares a whole JSON object.
+      const isJsonContainer = f.source === 'column' && f.type === 'json';
+      const isContainer = isMapContainer || isJsonContainer;
+      const displayed = isContainer ? `${f.displayName}.` : f.displayName;
       return {
         type: 'field',
         // Shown as-is to the user: for a Map/JSON key this is prefixed with its source column
         // ("ResourceAttributes.k8s.namespace.name") — same reasoning as the field sidebar, so this
         // never reads like a standalone top-level column that was made up.
         text: displayed,
-        description: isMapContainer ? 'map · browse keys' : f.type,
+        description: isMapContainer ? 'map · browse keys' : isJsonContainer ? 'json · browse paths' : f.type,
         // Insert exactly what's shown — the displayName, escaped so it round-trips through the
         // lexer as one token (see _escape.ts). Previously this inserted the bare leaf key (or, for
         // Map fields, the bracket-accessor sqlExpr) instead of the prefixed name the user typed and
         // saw highlighted, silently deleting the "ResourceAttributes." / "Payload." prefix on
         // accept. resolveField (fields.ts) now resolves a full displayName directly — including for
         // Map fields, via its byDisplayName index — so no accessor rewrite is needed here anymore.
-        insertText: isMapContainer ? escapeKqlIdent(f.displayName) + '.' : escapeKqlIdent(f.displayName) + ' ',
+        insertText: isContainer ? escapeKqlIdent(f.displayName) + '.' : escapeKqlIdent(f.displayName) + ' ',
         replaceStart,
         replaceEnd,
       };

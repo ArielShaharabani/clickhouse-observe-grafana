@@ -67,7 +67,10 @@ const IDENT = `(?:${BARE_IDENT}|${QUOTED_IDENT})`;
 const SAFE_STRING_LITERAL = `'(?:[^'\\\\]|\\\\.)*'`;
 
 const MAP_ACCESSOR_RE = new RegExp(`^${IDENT}\\[${SAFE_STRING_LITERAL}\\]$`);
-const DOTTED_PATH_RE = new RegExp(`^${IDENT}(\\.${IDENT})+$`);
+/** Optional typed-subcolumn suffix of a dynamic JSON path (`.:Int64`, `` .:`Array(Nullable(String))` ``,
+ *  see sql/jsonPaths.ts): a bare type name, or a backticked one of letters, digits and parentheses only. */
+const TYPED_SUBCOLUMN = '(?:\\.:(?:[A-Za-z][A-Za-z0-9]*|`[A-Za-z0-9()]+`))?';
+const DOTTED_PATH_RE = new RegExp(`^${IDENT}(\\.${IDENT})+${TYPED_SUBCOLUMN}$`);
 
 /**
  * Recognizes a `name` that is a well-formed Map accessor (`Col['key']`, with a properly escaped
@@ -279,7 +282,10 @@ function buildFilterClause(filter: FilterPill, config: SourceConfig, index?: Fie
     return `notEmpty(toString(${quoteIdentifier(sqlExprRaw)}))`;
   }
   if (filter.op === 'not_exists') {
-    return `empty(toString(${quoteIdentifier(sqlExprRaw)}))`;
+    // A typed JSON subcolumn is NULL where the path is missing; empty(NULL) is NULL, not true.
+    return resolved?.kind === 'json'
+      ? `empty(ifNull(toString(${quoteIdentifier(sqlExprRaw)}), ''))`
+      : `empty(toString(${quoteIdentifier(sqlExprRaw)}))`;
   }
 
   // one_of / not_one_of — use IN (...) / NOT IN (...)
@@ -306,7 +312,8 @@ function buildFilterClause(filter: FilterPill, config: SourceConfig, index?: Fie
   //    On that path the negative ops (lt, not_between) are NOT ifNull(positive, 0), so a row whose
   //    key is missing or non-numeric lands on exactly one side of an include / exclude pair.
   if (filter.op === 'gte' || filter.op === 'lt' || filter.op === 'between' || filter.op === 'not_between') {
-    const mapValue = resolved?.kind === 'map';
+    // JSON paths compare the same way: a Dynamic / Nullable value, missing on some rows.
+    const mapValue = resolved?.kind === 'map' || resolved?.kind === 'json';
     const isPair = filter.op === 'between' || filter.op === 'not_between';
     const bounds = (isPair ? (filter.values ?? []).slice(0, 2) : [value]).map((v) => v.trim());
     const validBound = (v: string) => (mapValue ? isNumericBound(v) : isNumericBound(v) || isDateBound(v));
@@ -354,8 +361,19 @@ function buildFilterClause(filter: FilterPill, config: SourceConfig, index?: Fie
 
   const col = quoteIdentifier(sqlExpr);
   const op = filterOpToSql(filter.op);
+  if (resolved.array) {
+    // A JSON array path: any element matches (`arr = 'x'` itself fails in ClickHouse).
+    const el =
+      op === 'ILIKE' || op === 'NOT ILIKE'
+        ? `toString(x) ILIKE ${quoteString('%' + value + '%')}`
+        : `toString(x) = ${quoteString(value)}`;
+    const any = `arrayExists(x -> ${el}, ${col})`;
+    return negate ? `NOT ${any}` : any;
+  }
   if (op === 'ILIKE' || op === 'NOT ILIKE') {
-    return `${col} ${op} ${quoteString('%' + value + '%')}`;
+    // A JSON path can be numeric / boolean, which ILIKE refuses.
+    const lhs = kind === 'json' ? `toString(${col})` : col;
+    return `${lhs} ${op} ${quoteString('%' + value + '%')}`;
   }
   return `${col} ${op} ${quoteString(value)}`;
 }

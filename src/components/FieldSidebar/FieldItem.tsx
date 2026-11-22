@@ -3,7 +3,7 @@ import { css } from '@emotion/css';
 import { GrafanaTheme2, TimeRange } from '@grafana/data';
 import { Icon, useStyles2, useTheme2, Portal } from '@grafana/ui';
 import { FieldModel } from '../../sql/fieldModel';
-import { FIELD_TYPE_ICONS } from './fieldIcons';
+import { FIELD_TYPE_ICONS, fieldSourceBadge, fieldTypeTooltip } from './fieldIcons';
 import { fieldTypeColor } from './fieldTypeColors';
 import { FieldStatsPopover } from './FieldStatsPopover';
 import { FieldKeysPopover } from './FieldKeysPopover';
@@ -51,6 +51,9 @@ export function FieldItem({
   const previewRef = useRef<HTMLButtonElement>(null);
 
   const icon = FIELD_TYPE_ICONS[field.type] ?? 'question-circle';
+  // R5-JSON (#7): Map vs JSON columns and their keys / paths are labelled, and the row's hover text
+  // carries the ClickHouse type.
+  const sourceBadge = fieldSourceBadge(field);
   // Map *container* columns get the on-demand key-browse popover instead of top-values — there's
   // nothing to show "top values" of for a container column itself. JSON containers are not
   // browsable here: their paths are discovered up front (FieldsContext Phase C) and rendered as
@@ -100,7 +103,7 @@ export function FieldItem({
       <div
         ref={rowRef}
         className={`${styles.row} field-item-row ${isSelected ? styles.rowSelected : ''}`}
-        title={field.sqlExpr}
+        title={fieldTypeTooltip(field)}
         onClick={openPopover}
         draggable
         onDragStart={(e) => {
@@ -125,6 +128,11 @@ export function FieldItem({
         >
           {field.displayName}
         </button>
+        {sourceBadge && (
+          <span className={`${styles.sourceBadge} field-item-source`} data-source={sourceBadge}>
+            {sourceBadge}
+          </span>
+        )}
         <div className={`${styles.actions} field-item-actions`}>
           {existsActions.map((a) => (
             <button
@@ -308,6 +316,19 @@ const getStyles = (theme: GrafanaTheme2) => ({
   `,
   typeIcon: css`
     flex-shrink: 0;
+  `,
+  sourceBadge: css`
+    flex-shrink: 0;
+    font-size: 10px;
+    line-height: 14px;
+    padding: 0 4px;
+    border-radius: ${theme.shape.radius.default};
+    border: 1px solid ${theme.colors.border.medium};
+    color: ${theme.colors.text.secondary};
+    &[data-source='JSON'] {
+      border-color: ${theme.colors.primary.border};
+      color: ${theme.colors.primary.text};
+    }
   `,
   name: css`
     flex: 1;

@@ -115,6 +115,29 @@ describe('LogDetailDrawer blocking states', () => {
     expect(screen.queryByText(TRACE_ID)).not.toBeInTheDocument();
   });
 
+  // R5-JSON: "JSON fields sometimes fail when loading the full log" — one JSON column's path lookup
+  // failing (a timeout) used to replace the whole document with the discovery error.
+  it('renders the document, JSON flattened, when only a JSON column path discovery failed', () => {
+    const withPayload = { ...row, Payload: { request: { ms: 503 } } };
+    render(
+      <LogDetailDrawer
+        {...baseProps}
+        row={withPayload}
+        detailRow={withPayload}
+        fieldsLoading={false}
+        fieldsError="Field discovery failed for: Payload. Some JSON attribute fields may be missing."
+        fields={[
+          { id: 'col:TraceId', name: 'TraceId', displayName: 'TraceId', sqlExpr: 'TraceId', type: 'string', source: 'column' },
+          { id: 'col:Payload', name: 'Payload', displayName: 'Payload', sqlExpr: 'Payload', type: 'json', source: 'column' },
+        ]}
+      />
+    );
+
+    expect(screen.queryByText(/field discovery failed/i)).not.toBeInTheDocument();
+    expect(screen.getByText(TRACE_ID)).toBeInTheDocument();
+    expect(screen.getByText('503')).toBeInTheDocument();
+  });
+
   // Regression coverage for the perf plan's item 4 / the user's original "can't read a record"
   // complaint: fieldsLoading/fieldsError now reflect Phase A (system.columns) discovery only — the
   // dedicated Map-key/JSON-path scan (former Phase B/C) that used to also gate this render was

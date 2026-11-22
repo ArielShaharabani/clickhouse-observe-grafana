@@ -223,3 +223,30 @@ export function buildJsonPathsQuery(
     ['optimize_functions_to_subcolumns = 1', ...discoverySettings(config), ...configSettingsFragments(config)]
   );
 }
+
+/** Rows read by the dynamic-path type sample (buildJsonPathTypesSampleQuery). */
+export const JSON_TYPES_SAMPLE_SIZE = 1000;
+
+/**
+ * Types of the *dynamic* (undeclared) paths of a JSON column, from a bounded sample: the first
+ * `JSON_TYPES_SAMPLE_SIZE` rows read (no ORDER BY, so ClickHouse stops after a few granules), as
+ * one `toJSONString(distinctJSONPathsAndTypes(...))` cell — `{"path": ["Int64"], ...}`.
+ *
+ * Exists because a dynamic path read bare (`Payload.request.duration_ms`) is a `Dynamic` value,
+ * which ClickHouse refuses in GROUP BY and in numeric aggregates (avg/sum/max/quantile) and which
+ * casts a missing value to 0 in `toFloat64`. With the sampled type the path is read as a typed
+ * subcolumn instead (`Payload.request.duration_ms.:Int64`, see jsonPathField in FieldsContext).
+ * The bare buildJsonPathsQuery above stays the source of the path *list* (whole table, metadata
+ * only); this sample also lists paths, used as the fallback when that query fails (timeout on a
+ * server without the paths-only optimization).
+ */
+export function buildJsonPathTypesSampleQuery(config: SourceConfig, jsonColumn: string, opts: JsonPathDiscoveryOpts): string {
+  const tbl = `"${config.database}"."${opts.table}"`;
+  return withSettings(
+    [
+      `SELECT toJSONString(distinctJSONPathsAndTypes(${jsonColumn})) AS types`,
+      `FROM (SELECT ${jsonColumn} FROM ${tbl} LIMIT ${JSON_TYPES_SAMPLE_SIZE})`,
+    ],
+    [...discoverySettings(config), ...configSettingsFragments(config)]
+  );
+}
