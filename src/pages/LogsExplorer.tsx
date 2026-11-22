@@ -7,7 +7,7 @@ import { Alert, Button, Icon, LinkButton, RadioButtonGroup, Spinner, useStyles2,
 import { GridDisplay, GridDisplayOptions, loadGridDisplay, saveGridDisplay } from '../components/GridDisplayOptions';
 import { useSearchParams } from 'react-router-dom';
 import { QueryProgress } from '../components/QueryProgress/QueryProgress';
-import { SearchBar } from '../components/SearchBar';
+import { QueryBar } from '../components/QueryBar';
 import { NoResults } from '../components/NoResults';
 import { fetchTimeBounds } from '../sql/timeBounds';
 import { FilterPills } from '../components/FilterPills';
@@ -21,7 +21,6 @@ import { FieldSidebar, fieldToColumn } from '../components/FieldSidebar/FieldSid
 import { discoveryKey, FieldsContext, useFieldDiscovery } from '../components/FieldsContext';
 import { PaginationBar } from '../components/PaginationBar';
 import { FieldStatsTab } from '../components/FieldStatsTab/FieldStatsTab';
-import { DataViewPicker } from '../components/DataViewPicker/DataViewPicker';
 import { AddToDashboardModal } from '../components/AddToDashboard/AddToDashboardModal';
 import { SqlInspectorBar } from '../components/SqlInspectorBar';
 import { DiagnosticsDrawer } from '../components/Diagnostics/DiagnosticsDrawer';
@@ -35,8 +34,7 @@ import { buildCountQuery, buildLogsQuery, buildLogDetailQuery, buildVolumeQuery,
 import { buildFieldIndex } from '../sql/fields';
 import { isConvertedTimestamp } from '../sql/timeExpr';
 import { addFilterPill, makeFilter, sanitizeFilterPills } from '../sql/filters';
-import { AddFilterPopover } from '../components/AddFilter/AddFilterPopover';
-import { LoadedQuery, QueryMenu } from '../components/QueryMenu/QueryMenu';
+import { LoadedQuery } from '../components/QueryMenu/QueryMenu';
 import { SourceConfigContext, DataViewContext } from '../components/App/App';
 import { viewCapabilities } from '../sql/capabilities';
 import {
@@ -1703,35 +1701,24 @@ export function LogsExplorer({ tabId, tabStrip, onTitle }: LogsExplorerProps = {
             width the fixed-size controls around it don't need. `.header`'s existing flex-wrap
             still applies on narrow viewports — DOM order means TimeRangePicker/RefreshPicker (the
             last items) wrap to a second line first, not SearchBar. */}
-        <div className={styles.header}>
-          <DataViewPicker />
-          <AddFilterPopover loadValues={logsLoadValues} onAddFilter={onAddFilter} />
-          {/* SearchBar's own root has width:100% (right for its old standalone row), which alone
-              wouldn't grow to fill the remaining space in this shared flex row — wrap it so it
-              does, independent of SearchBar's internal styling. */}
-          <QueryMenu
-            query={queryState.search}
-            filters={queryState.filters}
-            timeRange={timeRange}
-            dataViewId={activeView?.id}
-            pinTable={tableKey(config.database, config.logsTable)}
-            onFiltersChange={(f) => dispatch({ type: 'SET_FILTERS', filters: f })}
-            onClearAll={() => {
-              dispatch({ type: 'SET_SEARCH', value: '' });
-              dispatch({ type: 'SET_FILTERS', filters: [] });
-            }}
-            onLoadQuery={onLoadQuery}
-          />
-          <div className={styles.headerSearchWrap}>
-            <SearchBar
-              value={queryState.search}
-              onChange={(v) => dispatch({ type: 'SET_SEARCH', value: v })}
-              onSearch={() => {}}
-              onInvalidQuery={setInvalidQuery}
-              loadValues={logsLoadValues}
-              loadMapKeys={logsLoadMapKeys}
-            />
-          </div>
+        <QueryBar
+          search={queryState.search}
+          filters={queryState.filters}
+          timeRange={timeRange}
+          dataViewId={activeView?.id}
+          pinTable={tableKey(config.database, config.logsTable)}
+          loadValues={logsLoadValues}
+          loadMapKeys={logsLoadMapKeys}
+          onSearch={(v) => dispatch({ type: 'SET_SEARCH', value: v })}
+          onInvalidQuery={setInvalidQuery}
+          onFiltersChange={(f) => dispatch({ type: 'SET_FILTERS', filters: f })}
+          onAddFilter={onAddFilter}
+          onClearAll={() => {
+            dispatch({ type: 'SET_SEARCH', value: '' });
+            dispatch({ type: 'SET_FILTERS', filters: [] });
+          }}
+          onLoadQuery={onLoadQuery}
+        >
           <LinkButton href={exploreInVisualizeUrl} size="sm" variant="secondary" fill="outline" icon="chart-line">
             Explore in Visualize
           </LinkButton>
@@ -1763,7 +1750,7 @@ export function LogsExplorer({ tabId, tabStrip, onTitle }: LogsExplorerProps = {
               isOnCanvas
             />
           </div>
-        </div>
+        </QueryBar>
 
         <QueryProgress active={loading || volLoading} onCancel={cancelQueries} />
 
@@ -2083,19 +2070,8 @@ const getStyles = (theme: GrafanaTheme2) => ({
     gap: ${theme.spacing(1)};
     background: ${theme.colors.background.canvas};
   `,
-  header: css`
-    display: flex;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: ${theme.spacing(1)};
-    row-gap: ${theme.spacing(0.5)};
-  `,
   headerSpacer: css`
     flex: 1;
-  `,
-  headerSearchWrap: css`
-    flex: 1 1 260px;
-    min-width: 200px;
   `,
   headerTimeGroup: css`
     display: flex;
