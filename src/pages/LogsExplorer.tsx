@@ -2175,7 +2175,7 @@ const getStyles = (theme: GrafanaTheme2) => ({
     background: transparent;
     border: none;
     cursor: pointer;
-    padding: 4px;
+    padding: ${theme.spacing(0.5)};
     color: ${theme.colors.text.secondary};
     border-radius: ${theme.shape.radius.default};
     display: flex;

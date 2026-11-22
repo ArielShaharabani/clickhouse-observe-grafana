@@ -612,7 +612,7 @@ const getStyles = (theme: GrafanaTheme2) => ({
   itemBadge: css`
     font-size: 10px;
     font-weight: ${theme.typography.fontWeightMedium};
-    padding: 1px 6px;
+    padding: 1px ${theme.spacing(0.75)};
     border-radius: 3px;
     flex-shrink: 0;
     min-width: 40px;

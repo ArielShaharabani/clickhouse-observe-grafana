@@ -1129,7 +1129,7 @@ const getStyles = (theme: GrafanaTheme2) => ({
     background: transparent;
     border: none;
     cursor: pointer;
-    padding: 2px 0;
+    padding: ${theme.spacing(0.25, 0)};
     border-radius: ${theme.shape.radius.default};
     text-align: left;
     &:hover { background: ${theme.colors.action.hover}; }

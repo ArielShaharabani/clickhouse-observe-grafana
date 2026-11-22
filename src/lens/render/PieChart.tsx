@@ -458,7 +458,7 @@ const getStyles = (theme: GrafanaTheme2) => ({
     display: flex;
     align-items: center;
     gap: ${theme.spacing(1)};
-    padding: 2px 0;
+    padding: ${theme.spacing(0.25, 0)};
   `,
   legendName: css`
     flex: 1;
