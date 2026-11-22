@@ -8,9 +8,9 @@ Lens lets a user build a chart by adding fields, then corrects the guess through
 | --- | --- |
 | Top nav (right) | Explore in Discover · Inspect · ⤓ Export (PDF, PNG, CSV) · Share · Settings (`Auto-apply visualization changes`) · **Save** (primary, disabled while empty) |
 | Search bar | Same unified search as Discover: Data view, ⊕ filter, ⋮ query menu, KQL, time picker, Refresh |
-| Left (\~290 px) | Field list: `Records` pseudo-field first, Selected fields, Available fields, Empty, Meta; same field popovers as Discover; only aggregatable fields can be added |
+| Left (drag-resizable, default ~20%, min 160 px; width remembered) | Field list: `Records` pseudo-field first, Selected fields, Available fields, Empty, Meta; same field popovers as Discover; only aggregatable fields can be added |
 | Centre | Workspace (chart) with chart title; below it a collapsible `Suggestions` strip of thumbnail cards |
-| Right (\~390 px) | Toolbar: `Legend`, `Style` (XY) or chart-specific; Layer panel: chart-type switcher, sub-type (`Stacked`), ⚙ layer settings, ⌫ Clear layer, ⧉ Duplicate layer, data view per layer, then dimension groups; `+` Add layer |
+| Right (drag-resizable, min 220 px; width remembered) | Toolbar: `Legend`, `Style` (XY) or chart-specific; Layer panel: chart-type switcher, sub-type (`Stacked`), ⚙ layer settings, ⌫ Clear layer, ⧉ Duplicate layer, data view per layer, then dimension groups; `+` Add layer |
 
 ### LENS-QUERY-01 Query row (R3-QUERYBAR)
 

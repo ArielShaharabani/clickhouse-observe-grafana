@@ -1689,7 +1689,7 @@ export function LogsExplorer({ tabId, tabStrip, onTitle }: LogsExplorerProps = {
 
   return (
     <FieldsContext.Provider value={fieldsState}>
-      <PluginPage layout={PageLayoutType.Custom} pageNav={{ text: 'Discover' }}>
+      <PluginPage layout={PageLayoutType.Custom}>
       <div ref={containerRef} className={styles.container} style={{ height: availableHeight }}>
         {tabStrip}
         {/* Row 1: view picker + add filter + search (left/center) + saved/dashboard/time/refresh

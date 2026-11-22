@@ -330,7 +330,7 @@ function baseLensPanel(
         ...base,
         type: 'table',
         transformations: [rename(names)],
-        options: { showHeader: true },
+        options: { showHeader: true, enablePagination: true },
         fieldConfig: {
           defaults: { unit: 'locale', custom: { wrapHeaderText: true } },
           overrides: tableOverrides(
@@ -436,7 +436,7 @@ function heatmapPanel(
     transformations: y
       ? [...pivot, rename({ [`${bucketAlias(1)}\\${bucketAlias(0)}`]: names[bucketAlias(1)] })]
       : [rename(names)],
-    options: { showHeader: true },
+    options: { showHeader: true, enablePagination: true },
     fieldConfig: {
       defaults: {
         ...units,

@@ -64,6 +64,11 @@ describe('Table: Split metrics by (pivot)', () => {
     expect(spec.pluginId).toBe('table');
     expect(spec.frames[0].fields.map((f) => f.name)).toHaveLength(3);
   });
+
+  it('the table paginates instead of overflowing its footer (R5-VIZ-LAYOUT)', () => {
+    const spec = panelSpec(state, shapeLensRows(state, rows));
+    expect(spec.options).toMatchObject({ enablePagination: true });
+  });
 });
 
 describe('Table: summary row and colour by value', () => {
