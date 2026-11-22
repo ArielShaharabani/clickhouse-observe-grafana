@@ -13,7 +13,7 @@ import { locationService } from '@grafana/runtime';
 import { Alert, Button, Icon, IconButton, Input, LinkButton, Spinner, TimeRangePicker, useSplitter, useStyles2 } from '@grafana/ui';
 import { DataViewContext, SourceConfigContext } from '../components/App/App';
 import { discoveryKey, FieldsContext, useFieldDiscovery } from '../components/FieldsContext';
-import { FIELD_TYPE_ICONS } from '../components/FieldSidebar/fieldIcons';
+import { FIELD_TYPE_ICONS, fieldSourceBadge, fieldTypeTooltip } from '../components/FieldSidebar/fieldIcons';
 import { FIELD_DRAG_MIME } from '../constants';
 import { decodeLogsState, encodeLogsState } from '../data/urlState';
 import { runQueryRows } from '../data/runQuery';
@@ -418,7 +418,18 @@ export function LensPage() {
   const lensFields = useMemo<LensField[]>(
     () => [
       RECORDS_FIELD,
-      ...fields.map((f) => ({ id: f.id, sqlExpr: f.sqlExpr, label: f.displayName, type: f.type })).filter(isLensField),
+      ...fields
+        .map((f) => ({
+          id: f.id,
+          sqlExpr: f.sqlExpr,
+          label: f.displayName,
+          type: f.type,
+          source: f.source,
+          rawType: f.rawType,
+          mapColumn: f.mapColumn,
+          jsonColumn: f.jsonColumn,
+        }))
+        .filter(isLensField),
     ],
     [fields]
   );
@@ -938,7 +949,14 @@ export function LensPage() {
                   }
                   size="sm"
                 />
-                <span className={styles.fieldName}>{f.label}</span>
+                <span className={styles.fieldName} title={fieldTypeTooltip({ ...f, displayName: f.label })}>
+                  {f.label}
+                </span>
+                {fieldSourceBadge(f) && (
+                  <span className={styles.fieldSource} data-source={fieldSourceBadge(f)}>
+                    {fieldSourceBadge(f)}
+                  </span>
+                )}
                 <button
                   type="button"
                   className={cx(styles.dragHandle, kbDrag.isLifted(f) && styles.dragHandleLifted)}
@@ -1378,6 +1396,19 @@ const getStyles = (theme: GrafanaTheme2) => ({
   slotTarget: css`
     border-color: ${theme.colors.primary.border} !important;
     background: ${theme.colors.primary.transparent};
+  `,
+  fieldSource: css`
+    flex-shrink: 0;
+    font-size: 10px;
+    line-height: 14px;
+    padding: 0 4px;
+    border-radius: ${theme.shape.radius.default};
+    border: 1px solid ${theme.colors.border.medium};
+    color: ${theme.colors.text.secondary};
+    &[data-source='JSON'] {
+      border-color: ${theme.colors.primary.border};
+      color: ${theme.colors.primary.text};
+    }
   `,
   fieldName: css`
     flex: 1;

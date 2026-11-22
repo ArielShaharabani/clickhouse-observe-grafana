@@ -131,7 +131,7 @@ export function FieldKeysPopover({ field, queryState, timeRange, onSelectKey, on
         <div className={styles.list}>
           {keys.map((k) => (
             <div key={k.key} className={styles.keyRow}>
-              <button className={styles.row} onClick={() => onSelectKey(buildMapKeyField(field.name, k))}>
+              <button className={styles.row} onClick={() => onSelectKey(buildMapKeyField(field.name, k, field.rawType))}>
                 <span className={styles.keyName}>{k.key}</span>
                 <Icon name="angle-right" size="xs" className={styles.rowChevron} />
               </button>
@@ -141,7 +141,7 @@ export function FieldKeysPopover({ field, queryState, timeRange, onSelectKey, on
                   className={styles.addBtn}
                   title="Add as column"
                   aria-label={`Add ${field.displayName}.${k.key} as column`}
-                  onClick={() => onAddColumn(buildMapKeyField(field.name, k))}
+                  onClick={() => onAddColumn(buildMapKeyField(field.name, k, field.rawType))}
                 >
                   <Icon name="plus" size="xs" />
                 </button>

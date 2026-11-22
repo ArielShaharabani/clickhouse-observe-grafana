@@ -531,9 +531,9 @@ describe('kqlToSql', () => {
     expect(result).not.toContain("LogAttributes['Payload.user.id']");
   });
 
-  it('numeric range on a JSON field casts to Float64, like Map fields do', () => {
+  it('numeric range on a JSON field casts to Float64, NULL-safely (R5-JSON: missing / text never match)', () => {
     const result = kqlToSql(parseKql('user.id > 100'), config, indexWithJson);
-    expect(result).toContain('toFloat64(Payload.user.id)');
+    expect(result).toContain('toFloat64OrNull(toString(Payload.user.id))');
     expect(result).toContain('> 100');
   });
 

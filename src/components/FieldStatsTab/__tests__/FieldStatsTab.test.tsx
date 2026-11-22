@@ -189,3 +189,20 @@ describe('R5-SAMPLING: Scan full range', () => {
     expect(await screen.findByText(/hit the 10 s time limit/)).toBeInTheDocument();
   });
 });
+
+it('R5-JSON: a missing JSON path counts as absent, not as a blank value', async () => {
+  mockRun.mockResolvedValue([{ total: 10, d0: 0, u0: 0, tv0: [], tc0: [], nn0: 0 }]);
+  const path: FieldModel = {
+    id: 'json:Payload:request.ms',
+    name: 'request.ms',
+    displayName: 'Payload.request.ms',
+    sqlExpr: 'Payload.request.ms.:Int64',
+    type: 'number',
+    source: 'json',
+    jsonColumn: 'Payload',
+    jsonPath: 'request.ms',
+  };
+  renderTab([path]);
+  await waitFor(() => expect(mockRun).toHaveBeenCalled());
+  expect(mockRun.mock.calls[0][0].sql).toContain("ifNull(toString(Payload.request.ms.:Int64), '') AS v0");
+});

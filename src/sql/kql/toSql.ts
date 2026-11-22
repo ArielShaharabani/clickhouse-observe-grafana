@@ -9,7 +9,7 @@
 import { KqlNode, KqlIs, KqlRange } from './ast';
 import { WILDCARD_STAR, WILDCARD_RE } from './_lexer';
 import { SourceConfig } from '../../types';
-import { resolveField, FieldIndex, FieldKind } from '../fields';
+import { resolveField, FieldIndex, FieldKind, ResolvedField } from '../fields';
 import { FieldModel } from '../fieldModel';
 import { quoteString, quoteIdentifier, escapeLike } from '../queryBuilder';
 import { indexedIlike } from '../textIndex';
@@ -58,8 +58,7 @@ function kqlIsToSql(node: KqlIs, config: SourceConfig, index?: FieldIndex): stri
     const resolved = resolveField(node.field, config, index);
     // Unresolved → direct column reference, same fallback kqlIsToSql/kqlRangeToSql use below.
     const expr = resolved?.sqlExpr ?? node.field;
-    // notEmpty(toString(expr)) works for String, Map, JSON, numeric, etc.
-    return `notEmpty(toString(${maybeQuote(expr)}))`;
+    return existsSql(maybeQuote(expr), resolved);
   }
 
   // ── Named field ──────────────────────────────────────────────────────────
@@ -82,7 +81,26 @@ function kqlIsToSql(node: KqlIs, config: SourceConfig, index?: FieldIndex): stri
     return valueSql(node, node.field, 'exact', index);
   }
 
-  return valueSql(node, resolved.sqlExpr, resolved.kind, index);
+  return valueSql(node, resolved.sqlExpr, resolved.kind, index, resolved);
+}
+
+/**
+ * `field:*`. notEmpty(toString(expr)) works for String, Map, numeric and JSON paths (a missing
+ * typed JSON subcolumn is NULL); an array is present when it has an element, and a whole JSON
+ * column when it has any path (its text is never empty: `{}`).
+ */
+function existsSql(expr: string, resolved: ResolvedField | null | undefined): string {
+  if (resolved?.jsonContainer) {
+    return `notEmpty(JSONAllPaths(${expr}))`;
+  }
+  if (resolved?.array) {
+    return `notEmpty(${expr})`;
+  }
+  if (resolved?.kind === 'json') {
+    // NULL-safe, so `not field:*` matches the rows without the path (NOT NULL is NULL, not true).
+    return `notEmpty(ifNull(toString(${expr}), ''))`;
+  }
+  return `notEmpty(toString(${expr}))`;
 }
 
 /**
@@ -90,13 +108,29 @@ function kqlIsToSql(node: KqlIs, config: SourceConfig, index?: FieldIndex): stri
  * path and field-wildcard expansion below — both need the same wildcard/phrase/typed-literal
  * handling per matched column.
  */
-function valueSql(node: KqlIs, sqlExpr: string, kind: FieldKind, index?: FieldIndex): string {
+function valueSql(node: KqlIs, sqlExpr: string, kind: FieldKind, index?: FieldIndex, resolved?: ResolvedField): string {
   const val = node.value;
+
+  // A whole JSON column has no single value to compare (`Payload: x` used to fail parsing 'x' as
+  // JSON): like an object field in Kibana, a value query on it matches nothing.
+  if (resolved?.jsonContainer) {
+    return '0';
+  }
+  // A JSON path holding an array matches when any element does (Kibana's multi-value semantics);
+  // `arr = 'x'` itself fails in ClickHouse ("Array does not start with '['").
+  if (resolved?.array) {
+    const el = node.isWildcard
+      ? `toString(x) ILIKE ${quoteString(wildcardLike(val))}`
+      : `toString(x) = ${quoteString(val)}`;
+    return `arrayExists(x -> ${el}, ${maybeQuote(sqlExpr)})`;
+  }
 
   // Wildcard — applies to all field kinds (text, exact, map).
   // Check before isPhrase so "err*" with quotes can't override.
   if (node.isWildcard) {
-    return ilikeSql(maybeQuote(sqlExpr), wildcardLike(val), index);
+    // A JSON path can be numeric / boolean, which ILIKE refuses ("Illegal type UInt32").
+    const lhs = kind === 'json' ? `toString(${maybeQuote(sqlExpr)})` : maybeQuote(sqlExpr);
+    return ilikeSql(lhs, wildcardLike(val), index);
   }
 
   // Phrase — behavior is field-kind-dependent:
@@ -146,11 +180,11 @@ function fieldWildcardSql(node: KqlIs, field: string, config: SourceConfig, inde
     return '1=0';
   }
   const clauses = Array.from(matched.values()).map((f) => {
-    if (node.isExists) {
-      return `notEmpty(toString(${maybeQuote(f.sqlExpr)}))`;
-    }
     const resolved = resolveField(f.sqlExpr, config, index);
-    return valueSql(node, f.sqlExpr, resolved?.kind ?? 'exact', index);
+    if (node.isExists) {
+      return existsSql(maybeQuote(f.sqlExpr), resolved);
+    }
+    return valueSql(node, f.sqlExpr, resolved?.kind ?? 'exact', index, resolved ?? undefined);
   });
   return clauses.length === 1 ? clauses[0] : clauses.map((c) => `(${c})`).join(' OR ');
 }
@@ -182,9 +216,16 @@ function kqlRangeToSql(node: KqlRange, config: SourceConfig, index?: FieldIndex)
   // guaranteed to compare correctly against a numeric literal either. For numeric range
   // comparisons on either kind, cast to Float64 so the comparison works correctly.
   // (e.g. LogAttributes['response_time_ms'] > 1000 would fail without cast.)
-  const lhs = ((kind === 'map' || kind === 'json') && isNumeric)
-    ? `toFloat64(${maybeQuote(sqlExpr)})`
-    : maybeQuote(sqlExpr);
+  // A JSON path goes through toFloat64OrNull(toString(...)): a missing path (NULL, or '' for a bare
+  // Dynamic) or a non-numeric value then never matches — `toFloat64` read a missing Dynamic value
+  // as 0 (so `< 100` matched every row without the path) and threw on text like 'dave'.
+  const lhs = !isNumeric
+    ? maybeQuote(sqlExpr)
+    : kind === 'json'
+      ? `toFloat64OrNull(toString(${maybeQuote(sqlExpr)}))`
+      : kind === 'map'
+        ? `toFloat64(${maybeQuote(sqlExpr)})`
+        : maybeQuote(sqlExpr);
   return `${lhs} ${op} ${sqlVal}`;
 }
 

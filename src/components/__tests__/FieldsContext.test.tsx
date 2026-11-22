@@ -193,6 +193,47 @@ describe('useFieldDiscovery — JSON paths', () => {
     expect(result.current.fields.map((f) => f.name)).toEqual(['Body', 'Payload']);
   });
 
+  it('R5-JSON: reads a single-typed dynamic path as its typed subcolumn, from the bounded type sample', async () => {
+    mockRunQueryRows.mockImplementation(async ({ sql }) => {
+      if (sql.includes('system.columns')) {
+        return [{ name: 'Payload', type: 'JSON(user.id UInt32)' }];
+      }
+      if (sql.includes('distinctJSONPathsAndTypes(Payload)')) {
+        expect(sql).toContain('LIMIT 1000');
+        return [{ types: JSON.stringify({ 'user.id': ['UInt32'], 'req.ms': ['Int64'], mixed: ['Int64', 'String'] }) }];
+      }
+      if (sql.includes('distinctJSONPaths(Payload)')) {
+        return [{ paths: JSON.stringify(['mixed', 'req.ms', 'user.id']) }];
+      }
+      return [];
+    });
+    const { result } = renderHook(() => useFieldDiscovery({ ...config, logsTable: 'json_types_table' }, timeRange));
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    const byPath = new Map(result.current.fields.filter((f) => f.source === 'json').map((f) => [f.jsonPath, f]));
+    expect(byPath.get('req.ms')).toMatchObject({ sqlExpr: 'Payload.req.ms.:Int64', type: 'number', rawType: 'Int64' });
+    expect(byPath.get('user.id')).toMatchObject({ sqlExpr: 'Payload.user.id', type: 'number', rawType: 'UInt32' });
+    expect(byPath.get('mixed')).toMatchObject({ sqlExpr: 'Payload.mixed', type: 'string' });
+  });
+
+  it('R5-JSON: falls back to the sampled paths when the whole-table path query fails, without an error', async () => {
+    mockRunQueryRows.mockImplementation(async ({ sql }) => {
+      if (sql.includes('system.columns')) {
+        return [{ name: 'Payload', type: 'JSON' }];
+      }
+      if (sql.includes('distinctJSONPathsAndTypes(Payload)')) {
+        return [{ types: JSON.stringify({ b: ['String'], a: ['Int64'] }) }];
+      }
+      throw new Error('Timeout exceeded: max_execution_time = 25');
+    });
+    const { result } = renderHook(() => useFieldDiscovery({ ...config, logsTable: 'json_fallback_table' }, timeRange));
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.error).toBeNull();
+    expect(result.current.fields.filter((f) => f.source === 'json').map((f) => f.sqlExpr)).toEqual([
+      'Payload.a.:Int64',
+      'Payload.b.:String',
+    ]);
+  });
+
   it('does not re-query paths when the time range changes (the query is time-independent)', async () => {
     mockSchema([{ name: 'Payload', type: 'JSON' }], { Payload: ['a'] });
 
@@ -212,7 +253,7 @@ describe('useFieldDiscovery — JSON paths', () => {
     });
     await waitFor(() => expect(result.current.loading).toBe(false));
 
-    expect(mockRunQueryRows.mock.calls.filter((c) => c[0].sql.includes('distinctJSONPaths'))).toHaveLength(1);
+    expect(mockRunQueryRows.mock.calls.filter((c) => c[0].sql.includes('distinctJSONPaths(')).length).toBe(1);
     expect(mockRunQueryRows.mock.calls.length).toBe(callsAfterFirstLoad);
   });
 });

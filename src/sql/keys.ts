@@ -25,7 +25,7 @@ import { buildMapKeysQuery, KeyDiscoveryOpts } from './introspection';
 import { runQueryRows } from '../data/runQuery';
 import { coarseTimeBucket } from './timeBucket';
 import { quoteString } from './queryBuilder';
-import { FieldModel } from './fieldModel';
+import { FieldModel, mapValueType } from './fieldModel';
 import { SourceConfig } from '../types';
 
 /** Keys per Map column published as first-class fields (FieldsContext Phase D) and listed in the
@@ -174,8 +174,11 @@ export function clearKeysCacheForTable(uid: string, table: string): void {
  * dotted-map-key fallback (sql/fields.ts), so all three converge on the same field identity for the
  * same key instead of each inventing their own.
  */
-export function buildMapKeyField(mapColumnName: string, entry: KeyEntry): FieldModel {
+export function buildMapKeyField(mapColumnName: string, entry: KeyEntry, mapType?: string): FieldModel {
+  // The value type of the parent Map, for the field's type tooltip (e.g. `String`).
+  const rawType = mapValueType(mapType);
   return {
+    ...(rawType ? { rawType } : {}),
     id: `map:${mapColumnName}:${entry.key}`,
     name: entry.key,
     displayName: `${mapColumnName}.${entry.key}`,

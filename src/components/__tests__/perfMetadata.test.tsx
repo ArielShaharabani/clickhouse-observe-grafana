@@ -69,10 +69,11 @@ describe('page bootstrap query counts', () => {
     await waitFor(() => expect(app.result.current.loading).toBe(false));
 
     expect(count('system.columns')).toBe(1);
-    expect(count('distinctJSONPaths')).toBe(1);
+    expect(count('distinctJSONPaths(')).toBe(1);
+    expect(count('distinctJSONPathsAndTypes(')).toBe(1); // bounded type sample (R5-JSON)
     expect(count('mapKeys')).toBe(3); // one per map column
     expect(count('data_skipping_indices')).toBe(1); // text-index lookup (PERF-SEARCH), page only
-    expect(mockRunQueryRows).toHaveBeenCalledTimes(6);
+    expect(mockRunQueryRows).toHaveBeenCalledTimes(7);
   });
 
   it('two full discoveries of the same table still share every query', async () => {
@@ -82,7 +83,8 @@ describe('page bootstrap query counts', () => {
     await waitFor(() => expect(a.result.current.fields.some((f) => f.source === 'map')).toBe(true));
     await waitFor(() => expect(b.result.current.fields.some((f) => f.source === 'map')).toBe(true));
     expect(count('system.columns')).toBe(1);
-    expect(count('distinctJSONPaths')).toBe(1);
+    expect(count('distinctJSONPaths(')).toBe(1);
+    expect(count('distinctJSONPathsAndTypes(')).toBe(1); // bounded type sample (R5-JSON)
     expect(count('mapKeys')).toBe(3);
   });
 
