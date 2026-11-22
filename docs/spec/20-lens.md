@@ -14,6 +14,7 @@ Lens lets a user build a chart by adding fields, then corrects the guess through
 
 ### LENS-QUERY-01 Query row (R3-QUERYBAR)
 
+- **Shared component (R5-QUERYBAR):** Discover and Visualize render one `QueryBar`: data view picker, `Schema` button (modal of the view's columns and ClickHouse types), Add filter, query menu, KQL bar. The Visualize toolbar has no title.
 - **Row:** under the toolbar, the same controls and components as Discover's header: Add filter, the query menu (Clear all, Load / Save query, pin / negate / disable all), the KQL search bar with autocomplete (values and Map keys from this view's own fields), then the filter pills. Wraps at narrow widths; the old read-only query summary in the toolbar is gone.
 - **Shared context:** the bar edits the URL `q` (same params as Discover). Typing changes nothing until Enter / Search; the submit writes `q` in one history entry (push, like filters) and the chart re-runs once. Back / Forward restore the previous query.
 - **Invalid KQL:** the bar shows its error; the chart area shows `The query is not valid` instead of a chart, no query is sent, Save is disabled. A `q` that arrives in the URL and does not parse is treated the same.

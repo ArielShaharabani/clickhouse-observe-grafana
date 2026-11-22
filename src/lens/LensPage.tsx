@@ -13,7 +13,6 @@ import { locationService } from '@grafana/runtime';
 import { Alert, Button, Icon, IconButton, Input, LinkButton, Spinner, TimeRangePicker, useStyles2 } from '@grafana/ui';
 import { DataViewContext, SourceConfigContext } from '../components/App/App';
 import { discoveryKey, FieldsContext, useFieldDiscovery } from '../components/FieldsContext';
-import { DataViewPicker } from '../components/DataViewPicker/DataViewPicker';
 import { FIELD_TYPE_ICONS } from '../components/FieldSidebar/fieldIcons';
 import { FIELD_DRAG_MIME } from '../constants';
 import { decodeLogsState, encodeLogsState } from '../data/urlState';
@@ -819,8 +818,6 @@ export function LensPage() {
   return (
     <div className={styles.page}>
       <div className={styles.toolbar}>
-        <span className={styles.title}>Visualize</span>
-        <DataViewPicker />
         <div className={styles.spacer} />
         <LinkButton href={exploreUrl} onClick={onExplore} variant="secondary" size="sm" icon="compass" fill="outline">
           Explore in Discover
@@ -1238,10 +1235,6 @@ const getStyles = (theme: GrafanaTheme2) => ({
     align-items: center;
     gap: ${theme.spacing(1)};
     flex-wrap: wrap;
-  `,
-  title: css`
-    font-size: ${theme.typography.h4.fontSize};
-    font-weight: ${theme.typography.fontWeightMedium};
   `,
   context: css`
     color: ${theme.colors.text.secondary};
