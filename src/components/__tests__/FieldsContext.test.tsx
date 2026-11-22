@@ -357,3 +357,29 @@ describe('useFieldDiscovery — fieldsFor (#16b view switch)', () => {
     expect(discoveryKey(config, 'x')).toBe(discoveryKey({ ...config, logsTable: 'x' }));
   });
 });
+
+describe('useFieldDiscovery — unmount (R5-TABS)', () => {
+  beforeEach(() => {
+    mockRunQueryRows.mockReset();
+  });
+
+  it('starts no Map-key samples once the page is gone (a Discover tab switch)', async () => {
+    let answerColumns: (rows: Array<Record<string, unknown>>) => void = () => undefined;
+    mockRunQueryRows.mockImplementation(({ sql }) => {
+      if (sql.includes('system.columns')) {
+        return new Promise((resolve) => (answerColumns = resolve));
+      }
+      return Promise.resolve([]);
+    });
+    const cfg = { ...config, logsTable: 'otel_logs_unmount' };
+    const { unmount } = renderHook(() => useFieldDiscovery(cfg, timeRange));
+    await waitFor(() => expect(mockRunQueryRows.mock.calls.some(([o]) => o.sql.includes('system.columns'))).toBe(true));
+    unmount();
+    answerColumns([
+      { name: 'Body', type: 'String' },
+      { name: 'LogAttributes', type: 'Map(LowCardinality(String), String)' },
+    ]);
+    await new Promise((r) => setTimeout(r, 0));
+    expect(mockRunQueryRows.mock.calls.some(([o]) => o.sql.includes('mapKeys'))).toBe(false);
+  });
+});

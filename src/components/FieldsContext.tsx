@@ -449,7 +449,7 @@ export function useFieldDiscovery(
       .filter((c) => c.type === 'map')
       .map((c) => c.name)
       .slice(0, MAX_MAP_COLUMNS);
-    if (mapCols.length === 0) {
+    if (mapCols.length === 0 || runRef.current !== runId) {
       return;
     }
     const windows = buildDiscoveryWindows(config, timeRange.to.valueOf() - timeRange.from.valueOf());
@@ -489,6 +489,12 @@ export function useFieldDiscovery(
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     loadFields();
+    // R5-TABS: a page gone (a Discover tab switch) must not keep starting Map-key samples after its
+    // earlier phases settle. The next run bumps the id itself, so this only matters on unmount.
+    const run = runRef;
+    return () => {
+      run.current++;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [config.datasourceUid, config.database, resolvedTable, bucket, config.columns.timestamp]);
 

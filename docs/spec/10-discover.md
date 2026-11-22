@@ -18,6 +18,7 @@ Discover is a three-region page: field sidebar (left, \~295 px, resizable and co
 - **Placement:** row 1, left. Each tab shows its title; hover shows a ⋮ menu. `+` creates a tab. A ⌄ button at the right of the tab strip lists all tabs.
 - **Interaction:** tab ⋮ → Rename, Duplicate, Inspect, Switch to ES|QL. Tab strip menu → Opened tabs, Recently closed (with relative times such as ‘17 seconds ago’) and Clear. Tabs are drag-reorderable.
 - **Side effects:** each tab has its own query, filters, columns and time state; `_tab=(tabId:…)` is in the URL.
+- **Concurrency (R5-TABS):** only the active tab is mounted and queries. Leaving a tab (switch, close, another page) aborts its in-flight queries, so a slow or stuck tab never holds Grafana's concurrent data-query slots (5 without HTTP/2) and the next tab or Visualize answers normally; field discovery of a gone tab starts no further queries. ClickHouse may still finish an abandoned query (HTTP protocol, no `KILL QUERY`).
 - **Acceptance:** a duplicated tab starts with identical state; closing a tab lists it under Recently closed for restore.
 - **Grafana:** missing. Build as Scenes app state: an array of `ExploreTabState` persisted to URL + local storage.
 
