@@ -15,6 +15,7 @@ import { SessionActions, SessionActionsProps } from './SessionActions/SessionAct
 import { useDiagnostics } from '../diag/DiagContext';
 import { formatDurationMs } from '../diag/formatDuration';
 import { computeWarnings } from '../diag/warnings';
+import { expandTimeMacros } from '../sql/expandMacros';
 
 interface SqlInspectorBarProps {
   queryState: LogsQueryState;
@@ -33,8 +34,10 @@ interface SqlInspectorBarProps {
   onRawSqlDraftChange: (sql: string) => void;
   onRunRawSql: () => void;
 
-  /** Builder-generated SQL — always current, used both for the "Inspect SQL" preview/copy and as
-   *  the caller's seed value when switching into raw-SQL mode. */
+  /** Builder-generated SQL in its macro form ($__fromTime / $__toTime) — always current. The
+   *  "Inspect SQL" preview shows it with the time macros expanded (the values actually queried);
+   *  "Copy" keeps the macro form, the same text "Edit as SQL" starts from, so it stays re-runnable
+   *  for any range; "Copy as shown" copies the expanded text. */
   builderSql: string;
 
   /** Opens the diagnostics drawer (see components/Diagnostics/DiagnosticsDrawer.tsx) — additive to
@@ -161,16 +164,27 @@ export function SqlInspectorBar({
       )}
       {showSqlInspect && !queryState.useRawSql && (
         <div className={styles.sqlInspect}>
-          <pre className={styles.sqlInspectPre}>{builderSql}</pre>
-          <ClipboardButton
-            className={styles.sqlCopyBtn}
-            size="sm"
-            variant="secondary"
-            icon="clipboard-alt"
-            getText={() => builderSql}
-          >
-            Copy
-          </ClipboardButton>
+          <pre className={styles.sqlInspectPre}>{expandTimeMacros(builderSql, timeRange)}</pre>
+          <div className={styles.sqlCopyGroup}>
+            <ClipboardButton
+              className={styles.sqlCopyBtn}
+              size="sm"
+              variant="secondary"
+              icon="clipboard-alt"
+              tooltip="Copies the SQL with the time-range macros, as Edit as SQL uses it"
+              getText={() => builderSql}
+            >
+              Copy
+            </ClipboardButton>
+            <ClipboardButton
+              size="sm"
+              variant="secondary"
+              className={styles.sqlCopyBtn}
+              getText={() => expandTimeMacros(builderSql, timeRange)}
+            >
+              Copy as shown
+            </ClipboardButton>
+          </div>
         </div>
       )}
     </div>
@@ -237,10 +251,14 @@ const getStyles = (theme: GrafanaTheme2) => ({
     word-break: break-all;
     padding-right: ${theme.spacing(7)};
   `,
-  sqlCopyBtn: css`
+  sqlCopyGroup: css`
     position: absolute;
     top: ${theme.spacing(1)};
     right: ${theme.spacing(1)};
+    display: flex;
+    gap: ${theme.spacing(0.5)};
+  `,
+  sqlCopyBtn: css`
     background: ${theme.colors.background.primary};
     border: 1px solid ${theme.colors.border.medium};
     border-radius: ${theme.shape.radius.default};

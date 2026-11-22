@@ -234,6 +234,40 @@ describe('useFieldDiscovery — JSON paths', () => {
     ]);
   });
 
+  it('R5-JSON: the sampled fallback path list is not cached, so the next load retries the full list', async () => {
+    let fullCalls = 0;
+    mockRunQueryRows.mockImplementation(async ({ sql }) => {
+      if (sql.includes('system.columns')) {
+        return [{ name: 'Payload', type: 'JSON' }];
+      }
+      if (sql.includes('distinctJSONPathsAndTypes(Payload)')) {
+        return [{ types: JSON.stringify({ a: ['Int64'] }) }];
+      }
+      if (sql.includes('distinctJSONPaths(Payload)')) {
+        fullCalls += 1;
+        if (fullCalls === 1) {
+          throw new Error('Timeout exceeded: max_execution_time = 25');
+        }
+        return [{ paths: JSON.stringify(['a', 'rare.path']) }];
+      }
+      return [];
+    });
+    const cfg = { ...config, logsTable: 'json_partial_table' };
+    const first = renderHook(() => useFieldDiscovery(cfg, timeRange));
+    await waitFor(() => expect(first.result.current.loading).toBe(false));
+    expect(first.result.current.fields.filter((f) => f.source === 'json').map((f) => f.jsonPath)).toEqual(['a']);
+    first.unmount();
+
+    const second = renderHook(() => useFieldDiscovery(cfg, timeRange));
+    await waitFor(() =>
+      expect(second.result.current.fields.filter((f) => f.source === 'json').map((f) => f.jsonPath)).toEqual([
+        'a',
+        'rare.path',
+      ])
+    );
+    expect(fullCalls).toBe(2);
+  });
+
   it('does not re-query paths when the time range changes (the query is time-independent)', async () => {
     mockSchema([{ name: 'Payload', type: 'JSON' }], { Payload: ['a'] });
 

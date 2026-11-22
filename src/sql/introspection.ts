@@ -1,7 +1,7 @@
 import { SourceConfig } from '../types';
 import { configSettingsFragments, queryTimeoutFragments, withSettings } from './settings';
 import { timeExpr } from './timeExpr';
-import { coarsePrunePredicate, quoteString } from './queryBuilder';
+import { coarsePrunePredicate, quoteString, tableRef } from './queryBuilder';
 
 /**
  * Execution guardrail for field-discovery scans (Map keys / JSON paths) — these queries scan
@@ -145,7 +145,7 @@ export function buildMapKeysQuery(
   opts: KeyDiscoveryOpts
 ): string {
   const { table, conditions, sampleSize = MAP_KEYS_SAMPLE_SIZE } = opts;
-  const tbl = `"${config.database}"."${table}"`;
+  const tbl = tableRef(config, table);
   const tsCol = timeExpr(config);
   const condClause = conditions.length > 0 ? `  WHERE ${conditions.join(' AND ')}` : null;
   return withSettings(
@@ -214,7 +214,7 @@ export function buildJsonPathsQuery(
   jsonColumn: string,
   opts: JsonPathDiscoveryOpts
 ): string {
-  const tbl = `"${config.database}"."${opts.table}"`;
+  const tbl = tableRef(config, opts.table);
   return withSettings(
     [
       `SELECT toJSONString(distinctJSONPaths(${jsonColumn})) AS paths`,
@@ -241,7 +241,7 @@ export const JSON_TYPES_SAMPLE_SIZE = 1000;
  * server without the paths-only optimization).
  */
 export function buildJsonPathTypesSampleQuery(config: SourceConfig, jsonColumn: string, opts: JsonPathDiscoveryOpts): string {
-  const tbl = `"${config.database}"."${opts.table}"`;
+  const tbl = tableRef(config, opts.table);
   return withSettings(
     [
       `SELECT toJSONString(distinctJSONPathsAndTypes(${jsonColumn})) AS types`,

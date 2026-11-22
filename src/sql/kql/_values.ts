@@ -11,7 +11,7 @@
  */
 
 import { TimeRange } from '@grafana/data';
-import { buildFieldTopValuesQuery, buildNumericStatsQuery, isSafeColumnExpr } from '../queryBuilder';
+import { buildFieldTopValuesQuery, buildNumericStatsQuery, isQuotedIdentifier, isSafeColumnExpr } from '../queryBuilder';
 import { buildPrefixValuesQuery, normalizeValuePrefix } from '../fullScan';
 import { runQueryRows } from '../../data/runQuery';
 import { coarseTimeBucket } from '../timeBucket';
@@ -253,7 +253,7 @@ export async function loadPrefixValues(
   const prefix = normalizeValuePrefix(rawPrefix);
   // Only discovered column shapes (bare / Map accessor / dotted path / quoted identifier) — the KQL
   // bar can hand over an undiscovered field name verbatim, which must not reach a new SQL path.
-  if (!config.datasourceUid || prefix == null || !(isSafeColumnExpr(sqlExpr) || /^"(?:[^"\]|""|\[\s\S])*"$/.test(sqlExpr))) {
+  if (!config.datasourceUid || prefix == null || !(isSafeColumnExpr(sqlExpr) || isQuotedIdentifier(sqlExpr))) {
     return [];
   }
   const key = buildPrefixCacheKey(config.datasourceUid, sqlExpr, opts, prefix);

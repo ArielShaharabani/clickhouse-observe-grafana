@@ -69,15 +69,25 @@ describe('buildPrefixValuesQuery', () => {
 
   it('looks up the whole time range, no sample', () => {
     const sql = build('pay');
-    expect(sql).toContain("SELECT toString(LogAttributes['http.method']) AS value, count() AS count");
+    expect(sql).toContain('SELECT __pv AS value, __pc AS count FROM (');
+    expect(sql).toContain("SELECT toString(LogAttributes['http.method']) AS __pv, count() AS __pc");
     expect(sql).toContain('FROM "default"."spec_logs"');
-    expect(sql).toContain(`WHERE ${TIME} AND value ILIKE 'pay%'`);
-    expect(sql).toContain('GROUP BY value');
-    expect(sql).toContain('ORDER BY count DESC');
+    expect(sql).toContain(`WHERE ${TIME} AND toString(LogAttributes['http.method']) ILIKE 'pay%'`);
+    expect(sql).toContain('GROUP BY __pv');
+    expect(sql).toContain('ORDER BY __pc DESC');
     expect(sql).toContain('LIMIT 20');
     expect(sql).not.toContain('ORDER BY Timestamp');
     expect(sql).toContain('max_execution_time = 2');
     expect(sql).toContain("read_overflow_mode = 'break'");
+  });
+
+  it('never aliases the value as a name a real column (value / count) could carry', () => {
+    // A table with a `value` column and a pill on it: the alias used to shadow it in WHERE.
+    const sql = buildPrefixValuesQuery(config, 'value', { table: 'spec_logs', conditions: ["value = 'x'", 'count > 1'], prefix: 'pa' });
+    expect(sql).toContain("WHERE value = 'x' AND count > 1 AND toString(value) ILIKE 'pa%'");
+    expect(sql).not.toContain('toString(value) AS value');
+    expect(sql).toContain('toString(value) AS __pv, count() AS __pc');
+    expect(sql).not.toContain('GROUP BY value');
   });
 
   it('escapes LIKE metacharacters and quotes in the prefix', () => {

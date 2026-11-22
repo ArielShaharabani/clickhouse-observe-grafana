@@ -57,7 +57,6 @@ import { findSavedSearch, savedSearchTimeRange } from '../data/savedSearches';
 import { useAutocompleteSources } from '../autocomplete/service';
 import { compileColumnHighlighter, extractHighlightTerms } from '../sql/kql/highlight';
 import { errMsg } from '../errMsg';
-import { expandTimeMacros } from '../sql/expandMacros';
 import { useAvailableHeight } from '../utils/useAvailableHeight';
 import { lensContextFor, lensFieldOf, lensForField, lensForHistogram, visualizeUrl } from '../lens/handoff';
 import { defaultColumns, sanitizeColumns, stripColumnWidths } from '../data/columns';
@@ -1775,7 +1774,7 @@ export function LogsExplorer({ tabId, tabStrip, onTitle }: LogsExplorerProps = {
           rawSqlDraft={rawSqlDraft}
           onRawSqlDraftChange={setRawSqlDraft}
           onRunRawSql={runRawSql}
-          builderSql={expandTimeMacros(builderSql, timeRange)}
+          builderSql={builderSql}
           onOpenDiagnostics={() => setShowDiagnostics(true)}
           session={{ config, queryState: { ...queryState, columns: effectiveColumns }, rawColumns: queryState.columns, timeRange, index: fieldIndex, viewId: activeView?.id, viewName: activeView?.name }}
         />

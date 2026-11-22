@@ -97,15 +97,21 @@ export interface PrefixValuesOpts {
 export function buildPrefixValuesQuery(config: SourceConfig, sqlExpr: string, opts: PrefixValuesOpts): string {
   const limit = Math.max(1, Math.floor(opts.limit ?? PREFIX_LOOKUP_LIMIT));
   const pattern = quoteString(`${escapeLike(opts.prefix)}%`);
-  const where = [...opts.conditions, `value ILIKE ${pattern}`, `value NOT IN ('{}', '[]', 'null')`];
+  // The value is filtered by its expression, never by an alias: a SELECT alias shadows a real
+  // column of the same name (`value`, `count`) in WHERE, which would change the caller's conditions.
+  // The inner aliases are unlikely names; the outer SELECT (no WHERE) renames them for the reader.
+  const text = `toString(${sqlExpr})`;
+  const where = [...opts.conditions, `${text} ILIKE ${pattern}`, `${text} NOT IN ('{}', '[]', 'null')`];
   return withSettings(
     [
-      `SELECT toString(${sqlExpr}) AS value, count() AS count`,
+      `SELECT __pv AS value, __pc AS count FROM (`,
+      `SELECT ${text} AS __pv, count() AS __pc`,
       `FROM ${tableRef(config, opts.table)}`,
       `WHERE ${where.join(' AND ')}`,
-      `GROUP BY value`,
-      `ORDER BY count DESC`,
+      `GROUP BY __pv`,
+      `ORDER BY __pc DESC`,
       `LIMIT ${limit}`,
+      `) ORDER BY __pc DESC`,
     ],
     budgetSettingsFragments(config, opts.budget ?? PREFIX_LOOKUP_BUDGET)
   );

@@ -7,7 +7,8 @@
  * missing. When the bounded type sample (buildJsonPathTypesSampleQuery) saw exactly one type for
  * such a path, and that type is a plain scalar or an array of one, the path is read as the typed
  * subcolumn `Payload.request.duration_ms.:Int64` instead: Nullable(T), NULL when missing, and
- * usable everywhere a real column is. Anything else (mixed types, dates, decimals, not in the
+ * usable in GROUP BY and aggregates. A row whose value has another type reads NULL there, so scalar
+ * filters compare the bare path's text instead (sql/fieldPredicates.ts). Anything else (mixed types, dates, decimals, not in the
  * sample) stays bare and typed 'string', which every consumer stringifies first.
  */
 import { FieldModel, inferFieldType } from './fieldModel';
@@ -86,8 +87,17 @@ export function jsonPathField(column: string, path: string, declaredType?: strin
   };
 }
 
+/** A trailing `.:T` typed-subcolumn suffix, as typedSubcolumnSuffix() writes it. Anchored at the end so a
+ *  quoted path segment holding `.:` (`Payload."a.:b"`) is never cut. */
+const TYPED_SUFFIX_RE = /\.:(?:[A-Za-z][A-Za-z0-9]*|`[A-Za-z0-9()]+`)$/;
+
 /** The bare dotted path of a JSON field expression (drops a `.:T` typed-subcolumn suffix). */
 export function stripTypedSubcolumn(sqlExpr: string): string {
-  const i = sqlExpr.indexOf('.:');
-  return i >= 0 ? sqlExpr.slice(0, i) : sqlExpr;
+  return sqlExpr.replace(TYPED_SUFFIX_RE, '');
+}
+
+/** Whether `sqlExpr` ends in a scalar (non-array) `.:T` typed-subcolumn suffix. */
+export function hasScalarTypedSubcolumn(sqlExpr: string): boolean {
+  const m = TYPED_SUFFIX_RE.exec(sqlExpr);
+  return m !== null && !m[0].startsWith('.:`');
 }

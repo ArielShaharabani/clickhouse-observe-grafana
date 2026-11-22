@@ -13,6 +13,15 @@ import { resolveField, FieldIndex, FieldKind, ResolvedField } from '../fields';
 import { FieldModel } from '../fieldModel';
 import { quoteString, quoteIdentifier, escapeLike } from '../queryBuilder';
 import { indexedIlike } from '../textIndex';
+import {
+  anyElementPredicate,
+  comparesAsText,
+  equalsLhs,
+  existsPredicate,
+  likeLhs,
+  nullLhs,
+  numericLhs,
+} from '../fieldPredicates';
 
 export function kqlToSql(node: KqlNode, config: SourceConfig, index?: FieldIndex): string {
   switch (node.type) {
@@ -84,23 +93,9 @@ function kqlIsToSql(node: KqlIs, config: SourceConfig, index?: FieldIndex): stri
   return valueSql(node, resolved.sqlExpr, resolved.kind, index, resolved);
 }
 
-/**
- * `field:*`. notEmpty(toString(expr)) works for String, Map, numeric and JSON paths (a missing
- * typed JSON subcolumn is NULL); an array is present when it has an element, and a whole JSON
- * column when it has any path (its text is never empty: `{}`).
- */
+/** `field:*` � shared with filter pills (sql/fieldPredicates.ts). */
 function existsSql(expr: string, resolved: ResolvedField | null | undefined): string {
-  if (resolved?.jsonContainer) {
-    return `notEmpty(JSONAllPaths(${expr}))`;
-  }
-  if (resolved?.array) {
-    return `notEmpty(${expr})`;
-  }
-  if (resolved?.kind === 'json') {
-    // NULL-safe, so `not field:*` matches the rows without the path (NOT NULL is NULL, not true).
-    return `notEmpty(ifNull(toString(${expr}), ''))`;
-  }
-  return `notEmpty(toString(${expr}))`;
+  return existsPredicate(expr, resolved);
 }
 
 /**
@@ -119,18 +114,18 @@ function valueSql(node: KqlIs, sqlExpr: string, kind: FieldKind, index?: FieldIn
   // A JSON path holding an array matches when any element does (Kibana's multi-value semantics);
   // `arr = 'x'` itself fails in ClickHouse ("Array does not start with '['").
   if (resolved?.array) {
-    const el = node.isWildcard
-      ? `toString(x) ILIKE ${quoteString(wildcardLike(val))}`
-      : `toString(x) = ${quoteString(val)}`;
-    return `arrayExists(x -> ${el}, ${maybeQuote(sqlExpr)})`;
+    return anyElementPredicate(
+      maybeQuote(sqlExpr),
+      quoteString(node.isWildcard ? wildcardLike(val) : val),
+      node.isWildcard
+    );
   }
 
   // Wildcard — applies to all field kinds (text, exact, map).
   // Check before isPhrase so "err*" with quotes can't override.
   if (node.isWildcard) {
     // A JSON path can be numeric / boolean, which ILIKE refuses ("Illegal type UInt32").
-    const lhs = kind === 'json' ? `toString(${maybeQuote(sqlExpr)})` : maybeQuote(sqlExpr);
-    return ilikeSql(lhs, wildcardLike(val), index);
+    return ilikeSql(likeLhs(maybeQuote(sqlExpr), resolved ?? { kind }), wildcardLike(val), index);
   }
 
   // Phrase — behavior is field-kind-dependent:
@@ -141,7 +136,7 @@ function valueSql(node: KqlIs, sqlExpr: string, kind: FieldKind, index?: FieldIn
     if (kind === 'text') {
       return phraseMatch(maybeQuote(sqlExpr), val);
     }
-    return `${maybeQuote(sqlExpr)} = ${quoteString(val)}`;
+    return `${equalsLhs(maybeQuote(sqlExpr), resolved)} = ${quoteString(val)}`;
   }
 
   // Unquoted text column → substring contains (full-text behaviour).
@@ -152,7 +147,12 @@ function valueSql(node: KqlIs, sqlExpr: string, kind: FieldKind, index?: FieldIn
   // Unquoted exact / map / json column → equality, with true/false/null typed literals (the KQL
   // grammar's UnquotedLiteral converts these three exact-case sequences to typed nodes rather
   // than strings).
-  return equalsSql(maybeQuote(sqlExpr), val);
+  const col = maybeQuote(sqlExpr);
+  if (comparesAsText(col, resolved)) {
+    // A typed scalar JSON subcolumn compares as text, so true/false stay quoted literals.
+    return val === 'null' ? `${nullLhs(col, resolved)} IS NULL` : `${equalsLhs(col, resolved)} = ${quoteString(val)}`;
+  }
+  return equalsSql(col, val);
 }
 
 function equalsSql(sqlExpr: string, value: string): string {
@@ -222,7 +222,7 @@ function kqlRangeToSql(node: KqlRange, config: SourceConfig, index?: FieldIndex)
   const lhs = !isNumeric
     ? maybeQuote(sqlExpr)
     : kind === 'json'
-      ? `toFloat64OrNull(toString(${maybeQuote(sqlExpr)}))`
+      ? numericLhs(maybeQuote(sqlExpr), resolved)
       : kind === 'map'
         ? `toFloat64(${maybeQuote(sqlExpr)})`
         : maybeQuote(sqlExpr);

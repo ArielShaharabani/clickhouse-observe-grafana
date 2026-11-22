@@ -278,6 +278,15 @@ function ConditionRow({
     return () => clearTimeout(t);
   }, [typedValue]);
   const { field: selectedFieldExpr, op: selectedOp } = draft;
+  // A new field or operator starts a new value lookup: text typed for the previous one must not
+  // narrow it (adjusting state during render, React's pattern for resetting on a prop change).
+  const valueKey = `${selectedFieldExpr ?? ''} ${selectedOp ?? ''}`;
+  const [valueKeySeen, setValueKeySeen] = useState(valueKey);
+  if (valueKeySeen !== valueKey) {
+    setValueKeySeen(valueKey);
+    setTypedValue('');
+    setValuePrefix('');
+  }
   const name = (base: string) => (label ? `${base} ${label}` : base);
 
   const fieldOptions: Array<SelectableValue<string>> = fields.map((f) => ({

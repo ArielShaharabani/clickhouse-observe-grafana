@@ -141,13 +141,20 @@ describe('buildJsonPathTypesSampleQuery', () => {
 
 describe('KQL on JSON paths', () => {
   it('compares numerically through toFloat64OrNull, so a missing path never matches', () => {
-    expect(kql('Payload.request.duration_ms < 100')).toBe('toFloat64OrNull(toString(Payload.request.duration_ms.:Int64)) < 100');
+    // The bare path, not the typed subcolumn: a row holding "503" (another type) still compares.
+    expect(kql('Payload.request.duration_ms < 100')).toBe('toFloat64OrNull(toString(Payload.request.duration_ms)) < 100');
     // A text value no longer throws "Cannot parse string 'dave' as Float64".
-    expect(kql('Payload.user.name > 1')).toBe('toFloat64OrNull(toString(Payload.user.name.:String)) > 1');
+    expect(kql('Payload.user.name > 1')).toBe('toFloat64OrNull(toString(Payload.user.name)) > 1');
   });
 
-  it('resolves the plain dotted name to the typed subcolumn', () => {
-    expect(kql('Payload.request.duration_ms : 503')).toBe("Payload.request.duration_ms.:Int64 = '503'");
+  it('compares a typed dynamic path as its bare path as text, so other-typed rows are not dropped', () => {
+    // `Payload.request.duration_ms.:Int64 = '503'` was NULL for a row holding "503" and threw on 'abc'.
+    expect(kql('Payload.request.duration_ms : 503')).toBe("toString(Payload.request.duration_ms) = '503'");
+    expect(kql('Payload.request.duration_ms : abc')).toBe("toString(Payload.request.duration_ms) = 'abc'");
+    expect(kql('Payload.request.duration_ms : "503"')).toBe("toString(Payload.request.duration_ms) = '503'");
+    expect(kql('Payload.request.duration_ms : null')).toBe('Payload.request.duration_ms IS NULL');
+    // Declared paths keep their typed comparison.
+    expect(kql('Payload.user.id : 14')).toBe("Payload.user.id = '14'");
   });
 
   it('stringifies before a wildcard (ILIKE refuses numbers)', () => {
@@ -180,13 +187,13 @@ describe('filter pills on JSON paths', () => {
 
   it('ranges compare numerically, like Map values', () => {
     expect(pill('Payload.request.duration_ms', 'gte', '100')).toBe(
-      "toFloat64OrNull(toString(Payload.request.duration_ms.:Int64)) >= toFloat64OrNull('100')"
+      "toFloat64OrNull(toString(Payload.request.duration_ms)) >= toFloat64OrNull('100')"
     );
   });
 
   it('"does not exist" counts a missing (NULL) typed path', () => {
     expect(pill('Payload.request.duration_ms', 'not_exists')).toBe(
-      "empty(ifNull(toString(Payload.request.duration_ms.:Int64), ''))"
+      "empty(ifNull(toString(Payload.request.duration_ms), ''))"
     );
   });
 
@@ -251,7 +258,7 @@ describe('field source badge and type tooltip (#7)', () => {
 describe('exists on a typed JSON path is NULL-safe', () => {
   it('so its negation matches the rows without the path', () => {
     expect(buildSearchClause('not Payload.request.duration_ms:*', config, index)).toBe(
-      "NOT (notEmpty(ifNull(toString(Payload.request.duration_ms.:Int64), '')))"
+      "NOT (notEmpty(ifNull(toString(Payload.request.duration_ms), '')))"
     );
   });
 });

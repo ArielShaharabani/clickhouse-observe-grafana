@@ -74,6 +74,8 @@ export async function runWithConcurrencyLimit<T, R>(
 export interface JsonPathsResult {
   paths: string[];
   types: Map<string, string[]>;
+  /** The path list came from the bounded type sample (the whole-table query failed): not cached. */
+  partial?: boolean;
 }
 
 /** Parses a `toJSONString(<array>)` cell into its non-empty strings; a malformed/absent cell throws. */
@@ -121,7 +123,7 @@ async function fetchJsonPathsUncached(
     return { paths: full.value, types };
   }
   if (sample.status === 'fulfilled') {
-    return { paths: [...types.keys()].sort(), types };
+    return { paths: [...types.keys()].sort(), types, partial: true };
   }
   throw full.reason;
 }
@@ -169,7 +171,8 @@ async function fetchColumns(config: SourceConfig, table: string, timeRange: Time
 function fetchJsonPaths(config: SourceConfig, table: string, jsonColumn: string, timeRange: TimeRange): Promise<JsonPathsResult> {
   return loadMetadata(
     { datasourceUid: config.datasourceUid, database: config.database, table, kind: 'jsonPaths', detail: jsonColumn },
-    () => fetchJsonPathsUncached(config, table, jsonColumn, timeRange)
+    () => fetchJsonPathsUncached(config, table, jsonColumn, timeRange),
+    (r) => !r.partial
   );
 }
 
