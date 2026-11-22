@@ -282,7 +282,7 @@ function AppRoutes() {
         element={
           <React.Suspense fallback={<LoadingPlaceholder text="Loading Visualize…" />}>
             {/* PluginPage ties the page to its nav entry, so the side menu always marks Visualize active (as Discover does). */}
-            <PluginPage layout={PageLayoutType.Custom} pageNav={{ text: 'Visualize' }}>
+            <PluginPage layout={PageLayoutType.Custom}>
               <LensPage />
             </PluginPage>
           </React.Suspense>
