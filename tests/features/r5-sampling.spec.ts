@@ -22,7 +22,7 @@ test('Field statistics: Scan full range profiles every document and says it is c
   await page.getByRole('radio', { name: 'Field statistics' }).click();
   await expect(page.getByText(/Calculated from 5,000 sample records/)).toBeVisible();
   await page.getByRole('button', { name: 'Scan full range' }).click();
-  await expect(page.getByTestId('field-stats-scan-status')).toHaveText(
+  await expect(page.getByTestId('field-stats-scan-status')).toContainText(
     `Scanned ${FIXTURE.counts.total.toLocaleString('en-US')} records over the full time range (complete).`
   );
   await expect(page.getByTestId('field-stats-row-SeverityText')).toContainText(

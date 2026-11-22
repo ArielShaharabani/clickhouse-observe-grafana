@@ -258,7 +258,11 @@ export function SearchBar({
       // Reposition caret after the inserted text
       const newCaret = s.replaceStart + s.insertText.length;
       requestAnimationFrame(() => {
-        inputRef.current?.setSelectionRange(newCaret, newCaret);
+        // Only while the text is still what was inserted: a fast typist may already have added
+        // characters, and moving the caret back would put the next ones before them.
+        if (inputRef.current && inputRef.current.value === next) {
+          inputRef.current.setSelectionRange(newCaret, newCaret);
+        }
         inputRef.current?.focus();
       });
       // Re-compute suggestions from the new position
@@ -497,6 +501,7 @@ const getStyles = (theme: GrafanaTheme2) => ({
   `,
   inputWrapper: css`
     flex: 1;
+    min-width: 0;
     display: flex;
     align-items: center;
     background: ${theme.colors.background.secondary};
@@ -516,6 +521,7 @@ const getStyles = (theme: GrafanaTheme2) => ({
   `,
   input: css`
     flex: 1;
+    min-width: 0;
     background: transparent;
     border: none;
     outline: none;

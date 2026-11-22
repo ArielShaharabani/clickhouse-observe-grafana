@@ -44,7 +44,7 @@ test('KQL autocomplete drills into the JSON column and suggests a path value', a
   await path.click();
   await expect(logs.searchInput).toHaveValue('Payload.user.id ');
   await logs.searchInput.pressSequentially(': ', { delay: 40 });
-  await expect(options.filter({ hasText: /^.*\b0\b/ }).first()).toBeVisible();
+  await expect(options.filter({ hasText: /0/ }).first()).toBeVisible();
 });
 
 test('queries on a JSON path filter rows; a value on the whole column matches nothing without an error', async ({

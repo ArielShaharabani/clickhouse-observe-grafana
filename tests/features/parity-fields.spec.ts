@@ -14,7 +14,7 @@ test('Map keys appear as ordinary fields in the sidebar and the Add filter picke
   await expect(page.getByRole('button', { name: /^Preview ResourceAttributes\.host\.name/ })).toBeVisible();
   await page.getByRole('button', { name: 'Add a structured filter' }).or(page.getByText('Add filter')).first().click();
   await page.getByRole('combobox', { name: 'Field' }).fill('host');
-  await expect(page.getByText('ResourceAttributes.host.name').first()).toBeVisible();
+  await expect(page.getByRole('option', { name: /^ResourceAttributes\.host\.name/ })).toBeVisible();
 });
 
 test('zero results show help and "Search entire time range" widens the range', async ({ page }) => {

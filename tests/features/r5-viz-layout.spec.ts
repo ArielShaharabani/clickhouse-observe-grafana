@@ -12,8 +12,10 @@ test.describe('Visualize layout', () => {
     const handle = page.getByRole('separator').first();
     const before = (await viz.fields.boundingBox())!.width;
     await handle.focus();
-    await page.keyboard.press('ArrowRight');
-    await page.keyboard.press('ArrowRight');
+    // The splitter moves while the key is held (time-based), so a tap does nothing.
+    await page.keyboard.down('ArrowRight');
+    await page.waitForTimeout(400);
+    await page.keyboard.up('ArrowRight');
     await expect.poll(async () => (await viz.fields.boundingBox())!.width).toBeGreaterThan(before);
     const resized = (await viz.fields.boundingBox())!.width;
     await page.reload();

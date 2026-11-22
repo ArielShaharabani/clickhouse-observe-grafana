@@ -29,6 +29,12 @@ test('Cumulative sum of Count of records ends at the fixture total', async ({ pa
     lens: lensOf('table', [dateDim], [{ kind: 'metric', id: 'm0', op: 'cumulative_sum', ref: { op: 'count' } }]),
   });
   await expect(viz.dimensions).toContainText('Cumulative sum of Count of records');
+  // The table is paginated (R5-VIZ-LAYOUT); the last bucket, which holds the total, is on the last page.
+  await expect(viz.chart).toBeVisible();
+  const next = viz.chart.getByRole('button', { name: 'next page' });
+  if (await next.isEnabled().catch(() => false)) {
+    await next.click();
+  }
   await expect(
     viz.chart.getByText(FIXTURE.counts.total.toLocaleString('en-US'), { exact: true }).first()
   ).toBeVisible();

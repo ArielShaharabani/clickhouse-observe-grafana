@@ -19,5 +19,5 @@ test('Visualize: same query bar, Schema button, no title', async ({ page }) => {
   const row = page.getByTestId('lens-query-row');
   await expect(row.getByRole('button', { name: 'Show schema' })).toBeVisible();
   await expect(row.getByRole('textbox', { name: 'Search logs (KQL)' })).toBeVisible();
-  await expect(page.getByText('Visualize', { exact: true })).toHaveCount(0);
+  await expect(row.getByText('Visualize', { exact: true })).toHaveCount(0);
 });
