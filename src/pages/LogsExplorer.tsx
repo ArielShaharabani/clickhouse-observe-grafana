@@ -3,11 +3,11 @@ import { css, cx } from '@emotion/css';
 import { AppEvents, dateTime, GrafanaTheme2, PageLayoutType, rangeUtil, TimeRange } from '@grafana/data';
 import { getAppEvents, locationService, PluginPage } from '@grafana/runtime';
 import { buildContextUrl, buildSingleDocUrl, resolveContextAnchor } from '../data/surrounding';
-import { Alert, Button, Icon, LinkButton, RadioButtonGroup, Spinner, useStyles2, TimeRangePicker, RefreshPicker, useSplitter } from '@grafana/ui';
+import { Alert, Button, Icon, LinkButton, RadioButtonGroup, Spinner, useStyles2, RefreshPicker, useSplitter } from '@grafana/ui';
 import { GridDisplay, GridDisplayOptions, loadGridDisplay, saveGridDisplay } from '../components/GridDisplayOptions';
 import { useSearchParams } from 'react-router-dom';
 import { QueryProgress } from '../components/QueryProgress/QueryProgress';
-import { QueryBar } from '../components/QueryBar';
+import { QueryBar, QueryTimeControls } from '../components/QueryBar';
 import { NoResults } from '../components/NoResults';
 import { fetchTimeBounds } from '../sql/timeBounds';
 import { FilterPills } from '../components/FilterPills';
@@ -57,8 +57,6 @@ import { findSavedSearch, savedSearchTimeRange } from '../data/savedSearches';
 import { useAutocompleteSources } from '../autocomplete/service';
 import { compileColumnHighlighter, extractHighlightTerms } from '../sql/kql/highlight';
 import { errMsg } from '../errMsg';
-import { TimeShorthandInput } from '../components/TimeShorthandInput';
-import { shiftTimeRange, zoomOutTimeRange } from '../utils/timeRangeNav';
 import { expandTimeMacros } from '../sql/expandMacros';
 import { useAvailableHeight } from '../utils/useAvailableHeight';
 import { lensContextFor, lensFieldOf, lensForField, lensForHistogram, visualizeUrl } from '../lens/handoff';
@@ -1719,39 +1717,24 @@ export function LogsExplorer({ tabId, tabStrip, onTitle }: LogsExplorerProps = {
             dispatch({ type: 'SET_FILTERS', filters: [] });
           }}
           onLoadQuery={onLoadQuery}
-        >
-          <LinkButton href={exploreInVisualizeUrl} size="sm" variant="secondary" fill="outline" icon="chart-line">
-            Explore in Visualize
-          </LinkButton>
-          {/* Grouped so they wrap together as one atomic unit when the row runs out of width —
-              without this, flex-wrap can strand RefreshPicker alone on its own line while
-              TimeRangePicker (which fit) stays on line 1, separating a control from the time
-              range it refreshes. */}
-          <div className={styles.headerTimeGroup}>
-            {caps.hasTime && <TimeShorthandInput range={timeRange} onApply={setTimeRange} />}
-            {caps.hasTime && (
-              <TimeRangePicker
-                value={timeRange}
-                onChange={(range) => setTimeRange(range)}
-                onChangeTimeZone={() => {}}
-                onChangeFiscalYearStartMonth={() => {}}
-                onMoveBackward={() => setTimeRange(shiftTimeRange(timeRange, -1))}
-                onMoveForward={() => setTimeRange(shiftTimeRange(timeRange, 1))}
-                onZoom={() => setTimeRange(zoomOutTimeRange(timeRange))}
-                timeZone="browser"
-                fiscalYearStartMonth={0}
+          explore={
+            <LinkButton href={exploreInVisualizeUrl} size="sm" variant="secondary" fill="outline" icon="chart-line">
+              Explore in Visualize
+            </LinkButton>
+          }
+          time={
+            caps.hasTime ? (
+              <QueryTimeControls
+                timeRange={timeRange}
+                onTimeChange={setTimeRange}
+                onRefresh={() => executeQuery('Refresh')}
+                refreshInterval={refreshInterval}
+                onIntervalChanged={setRefreshInterval}
+                loading={loading}
               />
-            )}
-            <RefreshPicker
-              onRefresh={() => executeQuery('Refresh')}
-              onIntervalChanged={setRefreshInterval}
-              value={refreshInterval}
-              isLoading={loading}
-              tooltip="Refresh"
-              isOnCanvas
-            />
-          </div>
-        </QueryBar>
+            ) : undefined
+          }
+        />
 
         <QueryProgress active={loading || volLoading} onCancel={cancelQueries} />
 

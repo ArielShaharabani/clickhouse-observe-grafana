@@ -18,7 +18,7 @@ export function withQuery(prev: URLSearchParams, next: string): URLSearchParams 
   return sp.toString() === prev.toString() ? prev : sp;
 }
 
-type Props = Omit<QueryBarProps, 'children' | 'data-testid'>;
+type Props = Omit<QueryBarProps, 'data-testid'>;
 
 export function QueryRow(p: Props) {
   return <QueryBar {...p} data-testid="lens-query-row" />;

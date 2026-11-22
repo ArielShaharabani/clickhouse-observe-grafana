@@ -32,7 +32,7 @@ test('switching Bar -> Line -> Area sends no new query; Refresh does', async ({ 
   }
   await page.waitForTimeout(500);
   expect(queries).toBe(0);
-  await page.getByRole('button', { name: 'Refresh' }).click();
+  await page.getByRole('button', { name: 'Refresh', exact: true }).click();
   await expect.poll(() => queries).toBeGreaterThan(0);
 });
 

@@ -8,12 +8,12 @@
 import React, { useCallback, useContext, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { css, cx } from '@emotion/css';
-import { dateTime, GrafanaTheme2, IconName, locationUtil, TimeRange } from '@grafana/data';
+import { dateTime, GrafanaTheme2, IconName, locationUtil, rangeUtil, TimeRange } from '@grafana/data';
 import { locationService } from '@grafana/runtime';
-import { Alert, Button, Icon, IconButton, Input, LinkButton, Spinner, TimeRangePicker, useSplitter, useStyles2 } from '@grafana/ui';
+import { Alert, Button, Icon, IconButton, Input, LinkButton, RefreshPicker, Spinner, useSplitter, useStyles2 } from '@grafana/ui';
 import { DataViewContext, SourceConfigContext } from '../components/App/App';
 import { discoveryKey, FieldsContext, useFieldDiscovery } from '../components/FieldsContext';
-import { FIELD_TYPE_ICONS, fieldSourceBadge, fieldTypeTooltip } from '../components/FieldSidebar/fieldIcons';
+import { fieldMarkerIcon, fieldSourceBadge, fieldTypeTooltip } from '../components/FieldSidebar/fieldIcons';
 import { FIELD_DRAG_MIME } from '../constants';
 import { decodeLogsState, encodeLogsState } from '../data/urlState';
 import { runQueryRows } from '../data/runQuery';
@@ -28,6 +28,7 @@ import { buildLensPanel, defaultPanelTitle } from './panelExport';
 import { SaveActions } from './SaveActions';
 import { FilterPills } from '../components/FilterPills';
 import { QueryRow, withQuery } from './QueryRow';
+import { QueryActionsRow, QueryActionToggle, QueryTimeControls } from '../components/QueryBar';
 import { LoadedQuery } from '../components/QueryMenu/QueryMenu';
 import { parseKql } from '../sql/kql';
 import { useAutocompleteSources } from '../autocomplete/service';
@@ -71,7 +72,6 @@ import {
   switchChart,
   switchKind,
 } from './suggest';
-import { shiftTimeRange, zoomOutTimeRange } from '../utils/timeRangeNav';
 import { QueryProgress } from '../components/QueryProgress/QueryProgress';
 import { lensApproxNote } from './approx';
 import { LensInspector } from './Inspector';
@@ -503,6 +503,16 @@ export function LensPage() {
 
   // Run the chart query. `refreshNonce` bumps on an explicit Refresh and bypasses the row cache.
   const [refreshNonce, setRefreshNonce] = useState(0);
+  // Auto-refresh (the shared time controls' interval picker): bump the nonce on a timer.
+  const [refreshInterval, setRefreshInterval] = useState<string>(RefreshPicker.offOption.value ?? '');
+  useEffect(() => {
+    if (!refreshInterval || refreshInterval === RefreshPicker.offOption.value) {
+      return undefined;
+    }
+    const ms = rangeUtil.intervalToMs(refreshInterval);
+    const t = window.setInterval(() => setRefreshNonce((n) => n + 1), ms);
+    return () => window.clearInterval(t);
+  }, [refreshInterval]);
   const bypassRef = useRef(0);
   const [result, setResult] = useState<{
     key: string;
@@ -845,47 +855,10 @@ export function LensPage() {
 
   return (
     <div className={styles.page}>
-      <div className={styles.toolbar}>
-        <div className={styles.spacer} />
-        <LinkButton href={exploreUrl} onClick={onExplore} variant="secondary" size="sm" icon="compass" fill="outline">
-          Explore in Discover
-        </LinkButton>
-        <Button
-          size="sm"
-          variant="secondary"
-          icon="info-circle"
-          onClick={() => setInspectOpen(true)}
-          disabled={blankChart}
-        >
-          Inspect
-        </Button>
-        <SaveActions
-          paramsKey={paramsKey}
-          disabled={blankChart || chartFieldsLoading || !!queryError || !!calcError}
-          defaultTitle={defaultPanelTitle(lens)}
-          buildPanel={buildPanel}
-          timeRange={timeRange}
-        />
-        <IconButton
-          name="sync"
-          aria-label="Refresh"
-          tooltip="Refresh (re-runs the query)"
-          onClick={() => setRefreshNonce((n) => n + 1)}
-        />
-        {/* A view without a time field has no time range (same as Discover). */}
-        {ctx.timeField && (
-          <TimeRangePicker
-            value={timeRange}
-            onChange={setTimeRange}
-            onChangeTimeZone={() => undefined}
-            onMoveBackward={() => setTimeRange(shiftTimeRange(timeRange, -1))}
-            onMoveForward={() => setTimeRange(shiftTimeRange(timeRange, 1))}
-            onZoom={() => setTimeRange(zoomOutTimeRange(timeRange))}
-            timeZone="browser"
-          />
-        )}
+      {/* Same band as Discover's tab strip, so the header below sits at the same height on both pages. */}
+      <div className={styles.tabBand}>
+        <span className={styles.tabLabel}>Visualization</span>
       </div>
-
       <QueryProgress active={chartLoading} />
 
       <FieldsContext.Provider value={discovery}>
@@ -906,6 +879,23 @@ export function LensPage() {
             clearQuery();
           }}
           onLoadQuery={onLoadQuery}
+          explore={
+            <LinkButton href={exploreUrl} onClick={onExplore} variant="secondary" size="sm" icon="compass" fill="outline">
+              Explore in Discover
+            </LinkButton>
+          }
+          time={
+            ctx.timeField ? (
+              <QueryTimeControls
+                timeRange={timeRange}
+                onTimeChange={setTimeRange}
+                onRefresh={() => setRefreshNonce((n) => n + 1)}
+                refreshInterval={refreshInterval}
+                onIntervalChanged={setRefreshInterval}
+                loading={chartLoading}
+              />
+            ) : undefined
+          }
         />
       </FieldsContext.Provider>
 
@@ -914,6 +904,23 @@ export function LensPage() {
         onChange={setFilters}
         loadValues={loadValues}
         pinTable={tableKey(config.database, config.logsTable)}
+      />
+
+      <QueryActionsRow
+        left={
+          <QueryActionToggle icon="info-circle" onClick={() => setInspectOpen(true)} disabled={blankChart}>
+            Inspect
+          </QueryActionToggle>
+        }
+        right={
+          <SaveActions
+            paramsKey={paramsKey}
+            disabled={blankChart || chartFieldsLoading || !!queryError || !!calcError}
+            defaultTitle={defaultPanelTitle(lens)}
+            buildPanel={buildPanel}
+            timeRange={timeRange}
+          />
+        }
       />
 
       <div {...outerSplit.containerProps} className={cx(outerSplit.containerProps.className, styles.body)}>
@@ -944,19 +951,15 @@ export function LensPage() {
                 title={f.sqlExpr || f.label}
               >
                 <Icon
-                  name={
-                    (f.type === 'records' ? 'list-ul' : (FIELD_TYPE_ICONS[f.type] ?? 'question-circle')) as IconName
-                  }
+                  name={fieldMarkerIcon(f) as IconName}
                   size="sm"
+                  className="lens-field-marker"
+                  data-source={fieldSourceBadge(f) ?? undefined}
+                  title={fieldTypeTooltip({ ...f, displayName: f.label })}
                 />
                 <span className={styles.fieldName} title={fieldTypeTooltip({ ...f, displayName: f.label })}>
                   {f.label}
                 </span>
-                {fieldSourceBadge(f) && (
-                  <span className={styles.fieldSource} data-source={fieldSourceBadge(f)}>
-                    {fieldSourceBadge(f)}
-                  </span>
-                )}
                 <button
                   type="button"
                   className={cx(styles.dragHandle, kbDrag.isLifted(f) && styles.dragHandleLifted)}
@@ -1288,9 +1291,30 @@ const getStyles = (theme: GrafanaTheme2) => ({
   page: css`
     display: flex;
     flex-direction: column;
+    box-sizing: border-box;
+    width: 100%;
     gap: ${theme.spacing(1)};
-    height: calc(100vh - 120px);
+    padding: ${theme.spacing(2)};
+    background: ${theme.colors.background.canvas};
+    height: calc(100vh - 48px);
     min-height: 480px;
+  `,
+  tabBand: css`
+    display: flex;
+    align-items: center;
+    min-height: ${theme.spacing(4)};
+    border-bottom: 1px solid ${theme.colors.border.weak};
+    margin-bottom: ${theme.spacing(1)};
+    flex-shrink: 0;
+  `,
+  tabLabel: css`
+    padding: ${theme.spacing(0.25, 1)};
+    color: ${theme.colors.text.primary};
+    background: ${theme.colors.background.primary};
+    border: 1px solid ${theme.colors.border.weak};
+    border-bottom: none;
+    border-radius: ${theme.shape.radius.default} ${theme.shape.radius.default} 0 0;
+    box-shadow: inset 0 2px 0 ${theme.colors.primary.main};
   `,
   approxNote: css`
     display: flex;
@@ -1396,19 +1420,6 @@ const getStyles = (theme: GrafanaTheme2) => ({
   slotTarget: css`
     border-color: ${theme.colors.primary.border} !important;
     background: ${theme.colors.primary.transparent};
-  `,
-  fieldSource: css`
-    flex-shrink: 0;
-    font-size: 10px;
-    line-height: 14px;
-    padding: 0 4px;
-    border-radius: ${theme.shape.radius.default};
-    border: 1px solid ${theme.colors.border.medium};
-    color: ${theme.colors.text.secondary};
-    &[data-source='JSON'] {
-      border-color: ${theme.colors.primary.border};
-      color: ${theme.colors.primary.text};
-    }
   `,
   fieldName: css`
     flex: 1;
@@ -1530,7 +1541,7 @@ const getStyles = (theme: GrafanaTheme2) => ({
     flex-direction: column;
     gap: ${theme.spacing(2)};
     border-left: 1px solid ${theme.colors.border.weak};
-    padding-left: ${theme.spacing(1)};
+    padding: 0 ${theme.spacing(1)};
     overflow-y: auto;
   `,
   group: css`

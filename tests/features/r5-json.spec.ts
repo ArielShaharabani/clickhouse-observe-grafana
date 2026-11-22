@@ -14,7 +14,7 @@ test('sidebar labels JSON paths and Map keys, and shows the ClickHouse type on h
   await page.getByRole('textbox', { name: 'Search field names' }).fill('Payload');
   const jsonRow = available.getByTitle('Payload.user.id', { exact: true });
   await expect(jsonRow).toBeVisible();
-  await expect(jsonRow.locator('.field-item-source')).toHaveText('JSON');
+  await expect(jsonRow.locator('.field-item-source')).toHaveAttribute('data-source', 'JSON');
   await expect(jsonRow.getByRole('button', { name: 'Preview Payload.user.id: number' })).toHaveAttribute(
     'title',
     'Payload.user.id\nPath in JSON column Payload\nClickHouse type: UInt32'
@@ -22,7 +22,7 @@ test('sidebar labels JSON paths and Map keys, and shows the ClickHouse type on h
 
   await page.getByRole('textbox', { name: 'Search field names' }).fill('http.method');
   const mapRow = available.getByTitle("LogAttributes['http.method']", { exact: true });
-  await expect(mapRow.locator('.field-item-source')).toHaveText('Map');
+  await expect(mapRow.locator('.field-item-source')).toHaveAttribute('data-source', 'Map');
   await expect(mapRow.getByRole('button', { name: /^Preview LogAttributes\.http\.method/ })).toHaveAttribute(
     'title',
     /Key of Map column LogAttributes\nClickHouse type: String/
@@ -79,7 +79,7 @@ test('Visualize charts a JSON path and labels it in the field list', async ({ pa
   const viz = new VisualizePage(page);
   await viz.open();
   await viz.fields.getByRole('textbox', { name: 'Search field names' }).fill('Payload');
-  await expect(viz.fields.getByText('JSON', { exact: true }).first()).toBeVisible();
+  await expect(viz.fields.locator('[data-source="JSON"]').first()).toBeVisible();
   await expect(viz.fields.getByTitle(/ClickHouse type: UInt32/)).toBeVisible();
   await viz.fields.getByRole('textbox', { name: 'Search field names' }).fill('');
   await viz.addField('Payload.user.id');

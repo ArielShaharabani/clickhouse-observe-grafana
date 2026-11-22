@@ -40,6 +40,18 @@ export function fieldSourceBadge(f: Pick<FieldTypeInfo, 'type' | 'source'>): 'Ma
   return null;
 }
 
+/**
+ * Left-hand marker icon of a field row: the Map / JSON container icon for a Map / JSON column and
+ * its keys / paths (replacing the value-type icon), otherwise the icon of the field's own type.
+ */
+export function fieldMarkerIcon(f: Pick<FieldTypeInfo, 'type' | 'source'>): string {
+  const badge = fieldSourceBadge(f);
+  if (badge) {
+    return badge === 'Map' ? FIELD_TYPE_ICONS.map : FIELD_TYPE_ICONS.json;
+  }
+  return f.type === 'records' ? 'list-ul' : (FIELD_TYPE_ICONS[f.type] ?? 'question-circle');
+}
+
 /** Hover text of a field row: its name, where it comes from, and its ClickHouse type. */
 export function fieldTypeTooltip(f: FieldTypeInfo): string {
   if (f.type === 'records') {

@@ -139,6 +139,7 @@ export function DimensionEditor({
         <IconButton name="times" tooltip="Close editor" onClick={onClose} />
       </div>
 
+      <div className={styles.body}>
       {dim.kind !== 'metric' && <BucketFunctions dim={dim} fields={fields} onChange={onChange} />}
 
       {dim.kind === 'metric' && (
@@ -423,6 +424,8 @@ export function DimensionEditor({
           onChange={(e) => onChange(withName(dim, e.currentTarget.value))}
         />
       </Field>
+
+      </div>
 
       <div className={styles.footer}>
         <Button variant="destructive" fill="text" size="sm" icon="trash-alt" onClick={onRemove}>
@@ -810,6 +813,8 @@ const getStyles = (theme: GrafanaTheme2) => ({
   // child may shrink to the panel's width instead of being clipped, and a checkbox label keeps
   // its text next to its box.
   panel: css`
+    flex: 1;
+    min-height: 0;
     display: flex;
     flex-direction: column;
     gap: ${theme.spacing(1)};
@@ -883,16 +888,27 @@ const getStyles = (theme: GrafanaTheme2) => ({
     border-left: 2px solid ${theme.colors.border.medium};
     padding-left: ${theme.spacing(1)};
   `,
+  // The fields scroll here, so the footer below never covers them.
+  body: css`
+    display: flex;
+    flex-direction: column;
+    gap: ${theme.spacing(1)};
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    padding-right: ${theme.spacing(0.5)};
+    & > * {
+      min-width: 0;
+      max-width: 100%;
+    }
+  `,
   footer: css`
     display: flex;
+    flex-shrink: 0;
     justify-content: space-between;
-    margin-top: ${theme.spacing(1)};
-    /* Pinned to the bottom of the scrolling dimensions column so Remove / Close stay visible. */
-    position: sticky;
-    bottom: 0;
-    z-index: 1;
-    padding: ${theme.spacing(1, 0)};
-    background: ${theme.colors.background.primary};
+    align-items: center;
+    gap: ${theme.spacing(1)};
+    padding: ${theme.spacing(1, 0.5, 0, 0)};
     border-top: 1px solid ${theme.colors.border.weak};
   `,
 });
