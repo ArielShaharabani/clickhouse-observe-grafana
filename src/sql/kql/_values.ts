@@ -11,7 +11,8 @@
  */
 
 import { TimeRange } from '@grafana/data';
-import { buildFieldTopValuesQuery, buildNumericStatsQuery } from '../queryBuilder';
+import { buildFieldTopValuesQuery, buildNumericStatsQuery, isSafeColumnExpr } from '../queryBuilder';
+import { buildPrefixValuesQuery, normalizeValuePrefix } from '../fullScan';
 import { runQueryRows } from '../../data/runQuery';
 import { coarseTimeBucket } from '../timeBucket';
 import { SourceConfig } from '../../types';
@@ -221,4 +222,67 @@ export async function fetchNumericStats(
       ? counts.slice(0, 10).map((c, i) => ({ from: min + i * width, to: i === 9 ? max : min + (i + 1) * width, count: c }))
       : counts.slice(0, 10).map((c, i) => ({ from: min, to: max, count: i === 0 ? c : 0 }));
   return { min, max, median: Number(row['med']), count, buckets };
+}
+
+// ── Full-range prefix lookup (R5-SAMPLING) ──────────────────────────────────────────────────────
+// The sampled list above only sees the 500 newest rows, so a rare value is never suggested. Once
+// a value prefix is typed, loadPrefixValues runs a budgeted whole-range `ILIKE 'prefix%'` lookup
+// (sql/fullScan.ts) through the same cache + in-flight dedupe; mergeValueLists puts its results
+// first. Additive: nothing above changes behaviour.
+
+/** Cache key of a prefix lookup: the sampled key with the sample size replaced by the prefix
+ *  (lower-cased, since the lookup is case-insensitive), so clearValuesCacheForTable drops both. */
+export function buildPrefixCacheKey(uid: string, sqlExpr: string, opts: LoadFieldValuesOpts, prefix: string): string {
+  const bucket = coarseTimeBucket(opts.timeRange);
+  return `${uid}:${sqlExpr}:${opts.table}:${bucket}:${opts.cacheKey}:prefix=${prefix.toLowerCase()}`;
+}
+
+const prefixInFlight = new Map<string, Promise<FieldValue[]>>();
+
+/**
+ * Top values of `sqlExpr` starting with `prefix` over the whole time range (budgeted, cached).
+ * Never rejects; resolves [] when the prefix is too short / a wildcard, the expression is not a
+ * plain column reference, or the lookup fails or hits its time limit.
+ */
+export async function loadPrefixValues(
+  config: SourceConfig,
+  sqlExpr: string,
+  opts: LoadFieldValuesOpts,
+  rawPrefix: string
+): Promise<FieldValue[]> {
+  const prefix = normalizeValuePrefix(rawPrefix);
+  // Only discovered column shapes (bare / Map accessor / dotted path / quoted identifier) — the KQL
+  // bar can hand over an undiscovered field name verbatim, which must not reach a new SQL path.
+  if (!config.datasourceUid || prefix == null || !(isSafeColumnExpr(sqlExpr) || /^"(?:[^"\]|""|\[\s\S])*"$/.test(sqlExpr))) {
+    return [];
+  }
+  const key = buildPrefixCacheKey(config.datasourceUid, sqlExpr, opts, prefix);
+  const cached = valuesCache.get(key);
+  if (cached && isValuesCacheEntryFresh(cached)) {
+    return cached.values;
+  }
+  const existing = prefixInFlight.get(key);
+  if (existing) {
+    return existing;
+  }
+  const sql = buildPrefixValuesQuery(config, sqlExpr, { table: opts.table, conditions: opts.conditions, prefix });
+  const promise = runQueryRows({ datasourceUid: config.datasourceUid, sql, timeRange: opts.timeRange, op: 'fieldValues' })
+    .then((rows) => {
+      const values = rows.map((r) => ({ value: String(r['value'] ?? ''), count: Number(r['count'] ?? 0) }));
+      valuesCache.set(key, { values, total: 0, fetchedAt: Date.now() });
+      return values;
+    })
+    .catch(() => [] as FieldValue[])
+    .finally(() => {
+      prefixInFlight.delete(key);
+    });
+  prefixInFlight.set(key, promise);
+  return promise;
+}
+
+/** Full-range prefix matches first (by count, as returned), then sampled values not already
+ *  listed; deduped by exact value. A value in both keeps the full-range count. */
+export function mergeValueLists(full: FieldValue[], sampled: FieldValue[]): FieldValue[] {
+  const seen = new Set(full.map((v) => v.value));
+  return [...full, ...sampled.filter((v) => !seen.has(v.value))];
 }
