@@ -10,7 +10,7 @@ import { useSearchParams } from 'react-router-dom';
 import { css, cx } from '@emotion/css';
 import { dateTime, GrafanaTheme2, IconName, locationUtil, TimeRange } from '@grafana/data';
 import { locationService } from '@grafana/runtime';
-import { Alert, Button, Icon, IconButton, Input, LinkButton, Spinner, TimeRangePicker, useStyles2 } from '@grafana/ui';
+import { Alert, Button, Icon, IconButton, Input, LinkButton, Spinner, TimeRangePicker, useSplitter, useStyles2 } from '@grafana/ui';
 import { DataViewContext, SourceConfigContext } from '../components/App/App';
 import { discoveryKey, FieldsContext, useFieldDiscovery } from '../components/FieldsContext';
 import { DataViewPicker } from '../components/DataViewPicker/DataViewPicker';
@@ -164,6 +164,19 @@ const lensRowCache = new ResultCache<Awaited<ReturnType<typeof runQueryRows>>>()
 
 export function LensPage() {
   const styles = useStyles2(getStyles);
+  // Fields | (workspace | dimensions): two nested splitters, drag handles like Discover's sidebar.
+  const outerSplit = useSplitter({
+    direction: 'row',
+    initialSize: readSplit(FIELDS_SPLIT_KEY, DEFAULT_FIELDS_SPLIT),
+    dragPosition: 'middle',
+    onSizeChanged: (v) => saveSplit(FIELDS_SPLIT_KEY, v),
+  });
+  const innerSplit = useSplitter({
+    direction: 'row',
+    initialSize: readSplit(DIMS_SPLIT_KEY, DEFAULT_WORKSPACE_SPLIT),
+    dragPosition: 'middle',
+    onSizeChanged: (v) => saveSplit(DIMS_SPLIT_KEY, v),
+  });
   const config = useContext(SourceConfigContext);
   const defaultTime = useContext(DefaultTimeRangeContext);
   const { activeView, views, setActiveViewId } = useContext(DataViewContext);
@@ -891,7 +904,8 @@ export function LensPage() {
         pinTable={tableKey(config.database, config.logsTable)}
       />
 
-      <div className={styles.body}>
+      <div {...outerSplit.containerProps} className={cx(outerSplit.containerProps.className, styles.body)}>
+        <div {...outerSplit.primaryProps} className={cx(outerSplit.primaryProps.className, styles.fieldsPane)}>
         <section className={styles.fields} aria-label="Fields">
           <Input
             prefix={<Icon name="search" />}
@@ -947,7 +961,11 @@ export function LensPage() {
             ))}
           </div>
         </section>
-
+        </div>
+        <div {...outerSplit.splitterProps} className={cx(outerSplit.splitterProps.className, styles.splitterHandle)} />
+        <div {...outerSplit.secondaryProps} className={cx(outerSplit.secondaryProps.className, styles.restPane)}>
+        <div {...innerSplit.containerProps} className={cx(innerSplit.containerProps.className, styles.inner)}>
+        <div {...innerSplit.primaryProps} className={cx(innerSplit.primaryProps.className, styles.workspacePane)}>
         <section className={styles.workspace} aria-label="Workspace">
           <div className={styles.chartHeader}>
             <Icon name={CHART_ICONS[chartKind(lens)]} />
@@ -1067,6 +1085,7 @@ export function LensPage() {
             </div>
           )}
         </section>
+        </div>
 
         {inspectOpen && (
           <LensInspector
@@ -1089,6 +1108,8 @@ export function LensPage() {
             onCancel={() => setChooser(null)}
           />
         )}
+        <div {...innerSplit.splitterProps} className={cx(innerSplit.splitterProps.className, styles.splitterHandle)} />
+        <div {...innerSplit.secondaryProps} className={cx(innerSplit.secondaryProps.className, styles.dimsPane)}>
         <section ref={dimsRef} className={styles.dims} aria-label="Dimensions">
           {!isEmptyLens(lens) && !editingDim && (
             <ChartTypeSwitcher
@@ -1213,9 +1234,37 @@ export function LensPage() {
             />
           )}
         </section>
+        </div>
+        </div>
+        </div>
       </div>
     </div>
   );
+}
+
+/** Resizable panes, widths remembered like Discover's field sidebar (a fraction of the pane's parent). */
+const FIELDS_SPLIT_KEY = 'clickhouse-observe.lens.fieldsSplit';
+const DIMS_SPLIT_KEY = 'clickhouse-observe.lens.dimsSplit';
+const DEFAULT_FIELDS_SPLIT = 0.2;
+const DEFAULT_WORKSPACE_SPLIT = 0.73;
+const FIELDS_MIN_WIDTH = 160;
+const DIMS_MIN_WIDTH = 220;
+
+function readSplit(key: string, fallback: number): number {
+  try {
+    const raw = Number(window.localStorage.getItem(key));
+    return raw > 0.05 && raw < 0.95 ? raw : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function saveSplit(key: string, v: number) {
+  try {
+    window.localStorage.setItem(key, String(v));
+  } catch {
+    // storage blocked: the widths just don't persist
+  }
 }
 
 const getStyles = (theme: GrafanaTheme2) => ({
@@ -1255,13 +1304,46 @@ const getStyles = (theme: GrafanaTheme2) => ({
     flex: 1;
   `,
   body: css`
-    display: grid;
-    grid-template-columns: 240px minmax(0, 1fr) 260px;
-    gap: ${theme.spacing(1)};
+    display: flex;
     flex: 1;
     min-height: 0;
   `,
+  // useSplitter sets inline min-width: min-content on its panes; !important keeps the floors usable.
+  fieldsPane: css`
+    min-width: ${FIELDS_MIN_WIDTH}px !important;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  `,
+  restPane: css`
+    min-width: 0 !important;
+    min-height: 0;
+    display: flex;
+  `,
+  inner: css`
+    flex: 1;
+    min-width: 0;
+    min-height: 0;
+  `,
+  workspacePane: css`
+    min-width: 0 !important;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    padding-left: ${theme.spacing(1)};
+  `,
+  dimsPane: css`
+    min-width: ${DIMS_MIN_WIDTH}px !important;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+  `,
+  splitterHandle: css`
+    flex-shrink: 0;
+  `,
   fields: css`
+    flex: 1;
+    min-width: 0;
     display: flex;
     flex-direction: column;
     gap: ${theme.spacing(1)};
@@ -1311,6 +1393,8 @@ const getStyles = (theme: GrafanaTheme2) => ({
     font-size: ${theme.typography.bodySmall.fontSize};
   `,
   workspace: css`
+    flex: 1;
+    min-width: 0;
     display: flex;
     flex-direction: column;
     gap: ${theme.spacing(1)};
@@ -1413,6 +1497,9 @@ const getStyles = (theme: GrafanaTheme2) => ({
     -webkit-box-orient: vertical;
   `,
   dims: css`
+    flex: 1;
+    min-height: 0;
+    min-width: 0;
     display: flex;
     flex-direction: column;
     gap: ${theme.spacing(2)};
