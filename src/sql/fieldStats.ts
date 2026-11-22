@@ -16,6 +16,14 @@ import { tableRef } from './queryBuilder';
 import { configSettingsFragments, withSettings } from './settings';
 import { timeExpr } from './timeExpr';
 import { runQueryRows } from '../data/runQuery';
+import {
+  budgetSettingsFragments,
+  buildRowEstimateQuery,
+  ScanBudget,
+  scanCompleteness,
+  ScanStatus,
+  STATS_SCAN_BUDGET,
+} from './fullScan';
 
 export interface FieldStatsTarget {
   sqlExpr: string;
@@ -205,4 +213,196 @@ export async function fetchFieldStatsBatch(
     signal: opts.signal,
   });
   return parseFieldStatsRow(rows[0], targets);
+}
+
+// ── Full-range scan (R5-SAMPLING) ────────────────────────────────────────────────────────────────
+// "Scan full range": the same per-field profile over EVERY matching row in the time range instead
+// of the newest `sampleSize`, under STATS_SCAN_BUDGET (sql/fullScan.ts). The sampled batch's
+// sumMap / groupArray would hold every distinct value / every number in memory — unbounded over
+// millions of rows — so the scan uses bounded aggregates instead:
+// - top values: topKIf(topN, 1000, 'counts') — exact while a field has ≤ topN×1000 distinct
+//   values; above that the counts carry an error bound and the field is marked `approximate`;
+// - distinct: uniqIf (approximate above ~65k distinct values, also marked `approximate`);
+// - numbers: exact min / max / count, quantileIf(0.5) median, and histogramIf(20) re-binned into
+//   10 equal-width buckets client side (rebinHistogram).
+// Output columns match the sampled batch where they can, so parseFieldStatsRow is reused.
+
+/** topK capacity factor: counts are exact up to topN × this many distinct values. */
+const TOPK_LOAD_FACTOR = 1000;
+/** uniq() is exact (no sampling) below this many distinct values. */
+const UNIQ_EXACT_BELOW = 65536;
+
+export type FieldStatsFullScanOpts = Omit<FieldStatsBatchOpts, 'sampleSize'> & { budget?: ScanBudget };
+
+export function buildFieldStatsFullScanQuery(
+  config: SourceConfig,
+  targets: FieldStatsTarget[],
+  opts: FieldStatsFullScanOpts
+): string {
+  if (targets.length === 0) {
+    return '';
+  }
+  const tbl = tableRef(config, opts.table);
+  const topN = Math.max(1, Math.floor(opts.topN ?? 10));
+  const condClause = opts.conditions.length > 0 ? `    WHERE ${opts.conditions.join(' AND ')}` : null;
+
+  const inner: string[] = [];
+  const mid: string[] = ['count() AS total'];
+  const outer: string[] = ['total'];
+  targets.forEach((t, i) => {
+    inner.push(t.blankIsValue ? `toString(${t.sqlExpr}) AS v${i}` : `ifNull(toString(${t.sqlExpr}), '') AS v${i}`);
+    const pr = present(`v${i}`, t.blankIsValue);
+    mid.push(
+      `countIf(${pr}) AS d${i}`,
+      `uniqIf(v${i}, ${pr}) AS u${i}`,
+      `topKIf(${topN}, ${TOPK_LOAD_FACTOR}, 'counts')(assumeNotNull(v${i}), ${pr}) AS k${i}`
+    );
+    outer.push(
+      `d${i}`,
+      `u${i}`,
+      `arrayMap(x -> x.1, k${i}) AS tv${i}`,
+      `arrayMap(x -> x.2, k${i}) AS tc${i}`,
+      `arraySum(arrayMap(x -> x.3, k${i})) AS te${i}`
+    );
+    if (t.time) {
+      mid.push(`minIf(v${i}, ${pr}) AS tmin${i}`, `maxIf(v${i}, ${pr}) AS tmax${i}`);
+      outer.push(`ifNull(tmin${i}, '') AS tlo${i}`, `ifNull(tmax${i}, '') AS thi${i}`);
+    }
+    if (t.numeric) {
+      const n = `toFloat64OrNull(v${i})`;
+      const has = `isNotNull(${n})`;
+      mid.push(
+        `countIf(${has}) AS nn${i}`,
+        `minIf(assumeNotNull(${n}), ${has}) AS lo${i}`,
+        `maxIf(assumeNotNull(${n}), ${has}) AS hi${i}`,
+        `quantileIf(0.5)(assumeNotNull(${n}), ${has}) AS med${i}`,
+        `histogramIf(20)(assumeNotNull(${n}), ${has}) AS h${i}`
+      );
+      outer.push(`nn${i}`, `lo${i}`, `hi${i}`, `med${i}`, `arrayMap(x -> [x.1, x.2, x.3], h${i}) AS hg${i}`);
+    }
+  });
+
+  return withSettings(
+    [
+      `SELECT ${outer.join(',\n  ')}`,
+      `FROM (`,
+      `  SELECT ${mid.join(',\n    ')}`,
+      `  FROM (`,
+      `    SELECT ${inner.join(', ')}`,
+      `    FROM ${tbl}`,
+      condClause,
+      `  )`,
+      `)`,
+    ],
+    budgetSettingsFragments(config, opts.budget ?? STATS_SCAN_BUDGET)
+  );
+}
+
+/**
+ * Spreads ClickHouse `histogram()` bins ([lower, upper, height], adaptive widths) over 10
+ * equal-width buckets from `min` to `max`, each bin's height split by overlap. A zero-width bin
+ * goes whole into the bucket holding its value. Approximate by nature (so is `histogram`).
+ */
+export function rebinHistogram(bins: number[][], min: number, max: number): number[] {
+  const out: number[] = new Array(10).fill(0);
+  const width = (max - min) / 10;
+  const bucketOf = (x: number) => (width > 0 ? Math.min(9, Math.max(0, Math.floor((x - min) / width))) : 0);
+  for (const [lo, hi, h] of bins) {
+    if (![lo, hi, h].every(Number.isFinite) || h <= 0) {
+      continue;
+    }
+    if (hi <= lo || width <= 0) {
+      out[bucketOf(lo)] += h;
+      continue;
+    }
+    for (let b = 0; b < 10; b++) {
+      const from = min + b * width;
+      const to = b === 9 ? max : from + width;
+      const overlap = Math.min(hi, to) - Math.max(lo, from);
+      if (overlap > 0) {
+        out[b] += (h * overlap) / (hi - lo);
+      }
+    }
+  }
+  return out.map((c) => Math.round(c));
+}
+
+export interface FullScanFieldStats extends FieldStats {
+  /** Counts / distinct values are estimates (see the section comment). */
+  approximate?: boolean;
+}
+
+export function parseFieldStatsFullScanRow(
+  row: Record<string, unknown> | undefined,
+  targets: FieldStatsTarget[],
+  topN = 10
+): FullScanFieldStats[] {
+  return parseFieldStatsRow(row, targets).map((stats, i) => {
+    if (!row) {
+      return stats;
+    }
+    const out: FullScanFieldStats = { ...stats };
+    // More distinct values than topK keeps = its counts may be off even when it reports no error.
+    if (Number(row[`te${i}`] ?? 0) > 0 || stats.distinct > topN * TOPK_LOAD_FACTOR || stats.distinct >= UNIQ_EXACT_BELOW) {
+      out.approximate = true;
+    }
+    if (targets[i].numeric && out.numeric && out.numeric.count > 0) {
+      const bins = arr(row[`hg${i}`]).map((b) => arr(b).map(Number));
+      out.numeric = { ...out.numeric, buckets: rebinHistogram(bins, out.numeric.min, out.numeric.max) };
+    }
+    return out;
+  });
+}
+
+export interface FullScanResult {
+  /** One entry per target; empty when the scan hit its time limit (no result at all). */
+  stats: FullScanFieldStats[];
+  status: ScanStatus;
+}
+
+/** Sum of EXPLAIN ESTIMATE `rows`, or undefined when the estimate can't be had. */
+async function estimateRows(
+  config: SourceConfig,
+  table: string,
+  conditions: string[],
+  timeRange: TimeRange,
+  signal?: AbortSignal
+): Promise<number | undefined> {
+  try {
+    const rows = await runQueryRows({
+      datasourceUid: config.datasourceUid,
+      sql: buildRowEstimateQuery(config, table, conditions),
+      timeRange,
+      op: 'fieldStats',
+      signal,
+    });
+    if (rows.length === 0 || !rows.every((r) => Number.isFinite(Number(r['rows'])))) {
+      return undefined;
+    }
+    return rows.reduce((sum, r) => sum + Number(r['rows']), 0);
+  } catch {
+    return undefined;
+  }
+}
+
+/** Runs the full-range scan and, alongside it, the row estimate that tells complete from partial.
+ *  Throws when the scan query itself fails. */
+export async function fetchFieldStatsFullScan(
+  config: SourceConfig,
+  targets: FieldStatsTarget[],
+  opts: FieldStatsFullScanOpts & { timeRange: TimeRange; signal?: AbortSignal }
+): Promise<FullScanResult> {
+  const budget = opts.budget ?? STATS_SCAN_BUDGET;
+  if (targets.length === 0) {
+    return { stats: [], status: { scanned: 0, complete: true, budget } };
+  }
+  const sql = buildFieldStatsFullScanQuery(config, targets, { ...opts, budget });
+  const [rows, estimatedRows] = await Promise.all([
+    runQueryRows({ datasourceUid: config.datasourceUid, sql, timeRange: opts.timeRange, op: 'fieldStats', signal: opts.signal }),
+    estimateRows(config, opts.table, opts.conditions, opts.timeRange, opts.signal),
+  ]);
+  // An aggregate without GROUP BY always returns one row; none means the time limit cut it off.
+  const row = rows[0];
+  const status = scanCompleteness({ scanned: row ? Number(row['total'] ?? 0) : 0, timedOut: !row, estimatedRows, budget });
+  return { stats: row ? parseFieldStatsFullScanRow(row, targets, opts.topN) : [], status };
 }

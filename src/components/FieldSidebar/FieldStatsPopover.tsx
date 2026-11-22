@@ -3,7 +3,7 @@ import { lensFieldOf } from '../../lens/handoff';
 import { isLensField } from '../../lens/suggest';
 import { css } from '@emotion/css';
 import { GrafanaTheme2, TimeRange } from '@grafana/data';
-import { Icon, RadioButtonGroup, useStyles2, useTheme2 } from '@grafana/ui';
+import { Button, Icon, RadioButtonGroup, useStyles2, useTheme2 } from '@grafana/ui';
 import { FieldModel, isBreakdownField } from '../../sql/fieldModel';
 import { FIELD_TYPE_ICONS } from './fieldIcons';
 import { fieldTypeColor } from './fieldTypeColors';
@@ -24,6 +24,8 @@ import { errMsg } from '../../errMsg';
 import { SourceConfigContext } from '../App/App';
 import { useFields } from '../FieldsContext';
 import { breakAtDots } from '../../utils/breakAtDots';
+import { fetchFieldStatsFullScan, FullScanResult } from '../../sql/fieldStats';
+import { scanCaption } from '../../sql/fullScan';
 
 interface TopValue {
   value: string;
@@ -185,6 +187,56 @@ export function FieldStatsPopover({
   }, [isNumeric, view, config, field.sqlExpr, queryState, timeRange, fieldIndex, numericKey]);
   const current = numericResult?.key === numericKey ? numericResult : null;
 
+  // "Scan full range" (R5-SAMPLING): the same stats over every matching row of the time range,
+  // budgeted; the caption says whether the scan was complete or partial. Tied to the request it
+  // answers (numericKey), so a new search / filter / time range falls back to the sample.
+  const [scan, setScan] = useState<{ key: string; result?: FullScanResult; error?: string } | null>(null);
+  const scanCurrent = scan?.key === numericKey ? scan : null;
+  const scanStats = scanCurrent?.result?.stats[0];
+  const runScan = () => {
+    if (!config.datasourceUid) {
+      return;
+    }
+    const key = numericKey;
+    setScan({ key });
+    const opts = toValuesOpts(config, queryState, timeRange, fieldIndex);
+    fetchFieldStatsFullScan(config, [{ sqlExpr: field.sqlExpr, numeric: isNumeric }], {
+      table: opts.table,
+      conditions: opts.conditions,
+      timeRange,
+    }).then(
+      (result) => mountedRef.current && setScan((prev) => (prev?.key === key ? { key, result } : prev)),
+      (e) => mountedRef.current && setScan((prev) => (prev?.key === key ? { key, error: errMsg(e) } : prev))
+    );
+  };
+  const scanApprox = scanStats?.approximate ? ' Counts are approximate.' : '';
+  const scanLine = scanCurrent?.result ? scanCaption(scanCurrent.result.status) + scanApprox : null;
+  const shownValues: TopValue[] = scanStats
+    ? scanStats.top.map((t) => ({ ...t, pct: scanStats.docs > 0 ? (t.count / scanStats.docs) * 100 : 0 }))
+    : values;
+  const num = scanStats?.numeric;
+  const scanNumeric: NumericStats | null = num
+    ? {
+        ...num,
+        buckets: num.buckets.map((c, i) => {
+          const w = (num.max - num.min) / 10;
+          return { from: num.min + i * w, to: i === 9 ? num.max : num.min + (i + 1) * w, count: c };
+        }),
+      }
+    : null;
+  const scanControls = (
+    <div className={styles.scanRow}>
+      {scanCurrent && !scanCurrent.result && !scanCurrent.error ? (
+        <span className={styles.caption}>Scanning the full time range…</span>
+      ) : (
+        <Button size="sm" variant="secondary" fill="text" icon="search" onClick={runScan}>
+          Scan full range
+        </Button>
+      )}
+      {scanCurrent?.error && <div className={styles.errorText}>{scanCurrent.error}</div>}
+    </div>
+  );
+
   const headerActions = useMemo(
     () =>
       fieldActions(
@@ -255,19 +307,28 @@ export function FieldStatsPopover({
       )}
 
       {view === 'distribution' && (
-        <NumericDistribution stats={current?.stats ?? null} error={current?.error ?? null} styles={styles} />
+        <>
+          <NumericDistribution
+            stats={scanNumeric ?? current?.stats ?? null}
+            error={current?.error ?? null}
+            styles={styles}
+            caption={scanNumeric && scanLine ? `${scanLine} Distribution is approximate.` : undefined}
+          />
+          {scanLine && !scanNumeric && <div className={styles.caption}>{scanLine}</div>}
+          {scanControls}
+        </>
       )}
 
       {view === 'top' && loading && <div className={styles.loading}>Loading…</div>}
       {view === 'top' && error && <div className={styles.errorText}>{error}</div>}
-      {view === 'top' && !loading && !error && values.length === 0 && (
+      {view === 'top' && !loading && !error && shownValues.length === 0 && (
         <div className={styles.empty}>No field data for the current search</div>
       )}
 
       {view === 'top' &&
         !loading &&
         !error &&
-        values.map((v) => (
+        shownValues.map((v) => (
           // Kibana layout: value, percentage and always-visible (+)/(−) filter buttons, with a bar
           // gauge of the share underneath.
           <div key={v.value} className={styles.valueRow} title={`${v.count.toLocaleString()} records`} data-testid="top-value-row">
@@ -293,9 +354,10 @@ export function FieldStatsPopover({
         ))}
 
       {/* "Calculated from N records" caption */}
-      {view === 'top' && !loading && !error && total > 0 && (
-        <div className={styles.caption}>{sampleCaption('Calculated', total, STATS_SAMPLE_SIZE)}</div>
+      {view === 'top' && !loading && !error && (scanLine || total > 0) && (
+        <div className={styles.caption}>{scanLine ?? sampleCaption('Calculated', total, STATS_SAMPLE_SIZE)}</div>
       )}
+      {view === 'top' && !loading && !error && scanControls}
     </div>
   );
 }
@@ -305,10 +367,13 @@ function NumericDistribution({
   stats,
   error,
   styles,
+  caption,
 }: {
   stats: NumericStats | null;
   error: string | null;
   styles: ReturnType<typeof getStyles>;
+  /** Replaces the sample caption (full-range scan). */
+  caption?: string;
 }) {
   if (error) {
     return <div className={styles.errorText}>{error}</div>;
@@ -339,7 +404,7 @@ function NumericDistribution({
           <span className={styles.pct}>{b.count.toLocaleString()}</span>
         </div>
       ))}
-      <div className={styles.caption}>{sampleCaption('Calculated', stats.count, STATS_SAMPLE_SIZE)}</div>
+      <div className={styles.caption}>{caption ?? sampleCaption('Calculated', stats.count, STATS_SAMPLE_SIZE)}</div>
     </div>
   );
 }
@@ -535,6 +600,9 @@ const getStyles = (theme: GrafanaTheme2) => ({
       color: ${theme.colors.text.primary};
       background: ${theme.colors.action.hover};
     }
+  `,
+  scanRow: css`
+    margin-top: ${theme.spacing(0.5)};
   `,
   caption: css`
     margin-top: ${theme.spacing(1)};

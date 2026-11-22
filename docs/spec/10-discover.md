@@ -99,6 +99,7 @@ Discover is a three-region page: field sidebar (left, \~295 px, resizable and co
 - **Acceptance:** stats reflect current filters; percentages are of sampled docs with a value; every value row has filter-for/out.
 - **Grafana:** missing. Highest-value feature to build first.
 - **Observe (PARITY-GRID):** every top-value row shows ⊕/⊖ filter buttons (always visible, not on hover) and a bar gauge under the value; the caption says `Calculated from N sample records.` only when the 5,000-row sample is full, else `Calculated from N records.` (same for the Map key list's `Discovered from …`). Map columns: the key list has a ⊕ `Add <column>.<key> as column` button per key (open the popover, one click); drilling into a key shows its stats with the back link inside the panel; long names wrap instead of truncating.
+- **Observe (R5-SAMPLING):** a `Scan full range` text button under the values (both views) reruns the stats over every matching document of the time range instead of the 5,000 newest, budgeted at 10 s and 20,000,000 rows read (bounded aggregates: `topK(…, 'counts')`, `uniq`, `quantile`, `histogram` re-binned to 10 buckets). The caption then reads `Scanned N records over the full time range (complete).`, `Scanned N records (partial: hit the 20,000,000-row read limit of about M).` (from `EXPLAIN ESTIMATE`), `… (completeness unknown: no row estimate).`, or, when the time limit cut the scan off (ClickHouse then returns no row), `Full-range scan hit the 10 s time limit before finishing — no result. …`; ` Counts are approximate.` is added when topK reported an error or the field has more distinct values than it tracks. A new search, filter or time range goes back to the sample.
 
 ### DISC-CHART-01 Hits histogram
 
@@ -184,6 +185,7 @@ Discover is a three-region page: field sidebar (left, \~295 px, resizable and co
 - **Mini distributions:** keyword → tiny bar strip + `3 categories` / `top 10 of 1012 categories`; number → density sparkline with min and max labels (`1,000,000 … 293,252,164`).
 - **Expanded row:** Documents stats (count, percentage, distinct values), Summary (min, median, max for numbers), Top values (value, count and %, ⊕/⊖), plus distribution chart.
 - **Grafana:** missing. Build as a panel that runs one sampler aggregation per field batch.
+- **Observe (R5-SAMPLING):** toolbar button `Scan full range` (tooltip explains the budget) profiles the current page of fields over the whole time range with the same budgeted query as the popover; it stays on across pages until `Back to sample` or a scope change (search, filters, time, data view). The footer (`data-testid=field-stats-scan-status`) shows the popover's scan caption; a time-limit hit replaces the table values with that message.
 
 ### DISC-ESQL-01 ES|QL mode
 

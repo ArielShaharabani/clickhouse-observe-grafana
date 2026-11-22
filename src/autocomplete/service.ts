@@ -15,7 +15,7 @@
 import { useMemo } from 'react';
 import { TimeRange } from '@grafana/data';
 import { buildWhereConditions } from '../sql/queryBuilder';
-import { loadFieldValues, FieldValue } from '../sql/kql/_values';
+import { loadFieldValues, loadPrefixValues, mergeValueLists, FieldValue } from '../sql/kql/_values';
 import { loadColumnKeys, KeysResult } from '../sql/keys';
 import { FieldIndex, resolveField } from '../sql/fields';
 import { FilterCondGroup, FilterCondition, FilterPill, LogsQueryState, SourceConfig } from '../types';
@@ -32,8 +32,10 @@ export interface AutocompleteScope {
 }
 
 export interface AutocompleteSources {
-  /** Top values of a field expression within the scope. Never rejects. */
-  loadValues: (sqlExpr: string) => Promise<FieldValue[]>;
+  /** Top values of a field expression within the scope. Never rejects. With a typed `prefix`
+   *  (≥ 2 chars), a budgeted full-time-range `ILIKE 'prefix%'` lookup is merged in first, so rare
+   *  values outside the 500-row sample are still suggested (R5-SAMPLING). */
+  loadValues: (sqlExpr: string, prefix?: string) => Promise<FieldValue[]>;
   /** Keys of a Map/JSON column within the scope. Never rejects. */
   loadMapKeys: (mapColumn: string) => Promise<KeysResult>;
 }
@@ -92,13 +94,17 @@ export function createAutocompleteSources(scope: AutocompleteScope): Autocomplet
     return byField.get(sqlExpr)!;
   };
   return {
-    loadValues: async (sqlExpr) => {
+    loadValues: async (sqlExpr, prefix) => {
       const opts = valueOpts(sqlExpr);
       if (!opts) {
         return [];
       }
       try {
-        return await loadFieldValues(scope.config, sqlExpr, opts);
+        const [sampled, full] = await Promise.all([
+          loadFieldValues(scope.config, sqlExpr, opts),
+          prefix ? loadPrefixValues(scope.config, sqlExpr, opts, prefix) : Promise.resolve([]),
+        ]);
+        return full.length > 0 ? mergeValueLists(full, sampled) : sampled;
       } catch {
         return [];
       }

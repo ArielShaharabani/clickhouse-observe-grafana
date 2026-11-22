@@ -39,7 +39,8 @@ interface SearchBarProps {
   onChange: (value: string) => void;
   onSearch: () => void;
   /** Page-supplied value lookup (bound to the page's own table/filters). */
-  loadValues: (sqlExpr: string) => Promise<FieldValue[]>;
+  /** `prefix` = the value text typed so far (full-range prefix lookup, R5-SAMPLING). */
+  loadValues: (sqlExpr: string, prefix?: string) => Promise<FieldValue[]>;
   /** Page-supplied Map key lookup (bound to the page's own table/filters) — same shared
    *  sql/keys.ts cache the field sidebar's FieldKeysPopover reads, so browsing a column from
    *  either surface warms the other. */
@@ -172,7 +173,7 @@ export function SearchBar({
           clearTimeout(debounceRef.current);
         }
         debounceRef.current = setTimeout(async () => {
-          const fetched = await loadValues(vctx.sqlExpr);
+          const fetched = await loadValues(vctx.sqlExpr, vctx.prefix);
           if (!mountedRef.current || requestSeqRef.current !== seq) {
             return;
           }

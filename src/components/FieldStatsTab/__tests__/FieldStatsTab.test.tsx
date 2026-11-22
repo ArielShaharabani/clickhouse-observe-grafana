@@ -148,3 +148,44 @@ it('isProfilableField excludes map / json / tuple containers only', () => {
   expect(isProfilableField({ ...sev, id: 'json:P:a', source: 'json' })).toBe(true);
   expect(isProfilableField(sev)).toBe(true);
 });
+
+describe('R5-SAMPLING: Scan full range', () => {
+  const scanRow = { ...row, total: 41520, d1: 41520, te0: 0, te1: 0, hg0: [[5, 17, 41520]] };
+  const answer = (estimate: number | null) =>
+    mockRun.mockImplementation(async ({ sql }) => {
+      if (sql.startsWith('EXPLAIN ESTIMATE')) {
+        return estimate == null ? [] : [{ database: 'default', table: 'spec_logs', parts: 1, rows: estimate }];
+      }
+      return sql.includes('topKIf') ? [scanRow] : [row];
+    });
+
+  it('reruns the batch over the full range and says it is complete', async () => {
+    answer(41520);
+    renderTab([sev, num]);
+    await screen.findAllByText('5,000 (100%)');
+    fireEvent.click(screen.getByRole('button', { name: /Scan full range/ }));
+    expect(await screen.findByTestId('field-stats-scan-status')).toHaveTextContent(
+      'Scanned 41,520 records over the full time range (complete).'
+    );
+    const scanSql = mockRun.mock.calls.map((c) => c[0].sql).find((s) => s.includes('topKIf'))!;
+    expect(scanSql).not.toContain('LIMIT 5000');
+    expect(scanSql).toContain("read_overflow_mode = 'break'");
+    expect(screen.getByRole('button', { name: /Back to sample/ })).toBeInTheDocument();
+  });
+
+  it('reports a partial scan when the estimate exceeds the row cap', async () => {
+    answer(50_000_000);
+    renderTab([sev, num]);
+    await screen.findAllByText('5,000 (100%)');
+    fireEvent.click(screen.getByRole('button', { name: /Scan full range/ }));
+    expect(await screen.findByTestId('field-stats-scan-status')).toHaveTextContent(/partial: hit the 20,000,000-row read limit/);
+  });
+
+  it('reports the time limit when the scan returns no row', async () => {
+    mockRun.mockImplementation(async ({ sql }) => (sql.includes('topKIf') || sql.startsWith('EXPLAIN') ? [] : [row]));
+    renderTab([sev, num]);
+    await screen.findAllByText('5,000 (100%)');
+    fireEvent.click(screen.getByRole('button', { name: /Scan full range/ }));
+    expect(await screen.findByText(/hit the 10 s time limit/)).toBeInTheDocument();
+  });
+});

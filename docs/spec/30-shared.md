@@ -128,6 +128,7 @@ Behaviour rules observed: VALUE\_CLICK with more than one dimension shows the `S
 - **Rules to implement:**
   1. Field suggestions always show the field type icon and are filtered to what is valid in that context.
   2. Value suggestions come from real data, scoped to the current time range (and current filters where cheap), and are quoted/escaped for the query syntax.
+     - **Observe (R5-SAMPLING):** the sampled list (500 newest rows) misses rare values, so once ≥ 2 characters of a value are typed (KQL bar and the filter editor's value box, 250 ms debounce) a full-range lookup also runs: `SELECT toString(expr) AS value, count() … WHERE <time + other filters> AND value ILIKE '<escaped prefix>%' GROUP BY value ORDER BY count DESC LIMIT 20` with `max_execution_time = 2, timeout_overflow_mode = 'break', max_rows_to_read = 20000000, read_overflow_mode = 'break'` (a view's extra settings can't lift it). Its matches come first (full-range counts), then sampled values not already listed. Cached like the sampled list (120 s, same key + prefix). Only discovered column expressions are looked up; a wildcard prefix is not. A time-limit hit returns nothing, leaving the sampled list.
   3. Suggestions appear while typing with a short debounce and never block input; keyboard: ↑/↓ to move, Enter/Tab to accept, Esc to close.
   4. Accepting a suggestion inserts it and places the cursor ready for the next token (field → `:`, value → space).
   5. Functions show their signature and a one-line description before the user commits.
