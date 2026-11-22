@@ -60,6 +60,7 @@ import { compileColumnHighlighter, extractHighlightTerms } from '../sql/kql/high
 import { errMsg } from '../errMsg';
 import { TimeShorthandInput } from '../components/TimeShorthandInput';
 import { shiftTimeRange, zoomOutTimeRange } from '../utils/timeRangeNav';
+import { expandTimeMacros } from '../sql/expandMacros';
 import { useAvailableHeight } from '../utils/useAvailableHeight';
 import { lensContextFor, lensFieldOf, lensForField, lensForHistogram, visualizeUrl } from '../lens/handoff';
 import { defaultColumns, sanitizeColumns, stripColumnWidths } from '../data/columns';
@@ -1800,7 +1801,7 @@ export function LogsExplorer({ tabId, tabStrip, onTitle }: LogsExplorerProps = {
           rawSqlDraft={rawSqlDraft}
           onRawSqlDraftChange={setRawSqlDraft}
           onRunRawSql={runRawSql}
-          builderSql={builderSql}
+          builderSql={expandTimeMacros(builderSql, timeRange)}
           onOpenDiagnostics={() => setShowDiagnostics(true)}
           session={{ config, queryState: { ...queryState, columns: effectiveColumns }, rawColumns: queryState.columns, timeRange, index: fieldIndex, viewId: activeView?.id, viewName: activeView?.name }}
         />

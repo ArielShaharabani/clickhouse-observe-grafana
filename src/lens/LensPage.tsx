@@ -507,8 +507,11 @@ export function LensPage() {
   const baseKey = JSON.stringify([JSON.stringify(lensBase), ...queryContext]);
   // A time-series calculation without a date histogram (LENS-CALC-01): say why instead of querying.
   const calcError = calculationError(lens);
+  // An axis chart whose horizontal axis was removed (or never filled): shown as an empty
+  // visualization, not re-picked as another chart type.
+  const blankChart = isEmptyLens(lens) || ((isXy(lens.chartType) || lens.chartType === 'heatmap') && lens.buckets.length === 0);
   useEffect(() => {
-    if (isEmptyLens(lens) || !config.datasourceUid || chartFieldsLoading || queryError || calcError) {
+    if (blankChart || !config.datasourceUid || chartFieldsLoading || queryError || calcError) {
       return;
     }
     let cancelled = false;
@@ -609,7 +612,7 @@ export function LensPage() {
   const suggestedTime = Math.round((timeRange.from.valueOf() + timeRange.to.valueOf()) / 2);
   // SHARED-PERF-01: same running cue as Discover (no Cancel here: leaving the chart without a
   // result would need its own empty state).
-  const chartLoading = chartFieldsLoading || (!isEmptyLens(lens) && !!config.datasourceUid && !current && !queryError && !calcError);
+  const chartLoading = chartFieldsLoading || (!blankChart && !!config.datasourceUid && !current && !queryError && !calcError);
   const approxNote = current?.data ? lensApproxNote(lens) : null;
 
   const onAdd = (f: LensField) => setLens(addField(lens, f, ctx));
@@ -623,14 +626,15 @@ export function LensPage() {
       setLens(EMPTY_LENS);
       return;
     }
-    // A removal must stick: line/area (and a bar left with nothing on X) would add the time axis
-    // straight back, so re-pick the chart from what remains instead.
-    const lostTime =
-      (next.chartType === 'heatmap' && next.buckets.length === 0) ||
-      (isXy(next.chartType) &&
-        (next.chartType === 'bar'
-          ? next.buckets.length === 0
-          : !next.buckets.some((b) => b.kind === 'date_histogram')));
+    // Removing the only horizontal axis leaves the chart type as it is, with an empty axis slot
+    // (an empty visualization), instead of becoming a Metric.
+    if ((isXy(next.chartType) || next.chartType === 'heatmap') && next.buckets.length === 0) {
+      setLens(next);
+      return;
+    }
+    // A removal must stick: line/area would add the time axis straight back, so re-pick the chart
+    // from what remains instead.
+    const lostTime = isXy(next.chartType) && next.chartType !== 'bar' && !next.buckets.some((b) => b.kind === 'date_histogram');
     setLens(switchChart(next, lostTime ? chooseChart(next.buckets) : next.chartType, ctx));
   };
   const cards = useMemo(() => suggestions(lens, ctx), [lens, ctx]);
@@ -830,13 +834,13 @@ export function LensPage() {
           variant="secondary"
           icon="info-circle"
           onClick={() => setInspectOpen(true)}
-          disabled={isEmptyLens(lens)}
+          disabled={blankChart}
         >
           Inspect
         </Button>
         <SaveActions
           paramsKey={paramsKey}
-          disabled={isEmptyLens(lens) || chartFieldsLoading || !!queryError || !!calcError}
+          disabled={blankChart || chartFieldsLoading || !!queryError || !!calcError}
           defaultTitle={defaultPanelTitle(lens)}
           buildPanel={buildPanel}
           timeRange={timeRange}
@@ -980,7 +984,7 @@ export function LensPage() {
               }
             }}
           >
-            {isEmptyLens(lens) ? (
+            {blankChart ? (
               <div className={styles.empty}>
                 <Icon name="chart-line" size="xxxl" />
                 <div className={styles.emptyTitle}>Drop some fields here to start</div>
@@ -1138,8 +1142,6 @@ export function LensPage() {
               onClose={() => setEditingId(null)}
               returnFocus={() => dimButton(editingDim.id)}
             />
-          ) : isEmptyLens(lens) ? (
-            <div className={styles.emptySub}>Dimensions appear here as you add fields.</div>
           ) : (
             dimensionGroups(lens).map((g) => (
               <div key={g.name} className={styles.group} role="group" aria-label={g.name}>
