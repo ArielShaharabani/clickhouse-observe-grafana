@@ -27,6 +27,7 @@ import { SqlInspectorBar } from '../components/SqlInspectorBar';
 import { DiagnosticsDrawer } from '../components/Diagnostics/DiagnosticsDrawer';
 import { canCreateDashboards } from '../utils/permissions';
 import { runQueryRows } from '../data/runQuery';
+import { useAbortOnUnmount } from '../data/abortOnUnmount';
 import { fetchNewestFirst, isNewestFirstSort, narrowTimeRange } from '../data/windowedSearch';
 import { startAction } from '../diag/tracer';
 import { SpanHandle } from '../diag/types';
@@ -928,6 +929,9 @@ export function LogsExplorer({ tabId, tabStrip, onTitle }: LogsExplorerProps = {
     setLoading(false);
     setVolLoading(false);
   }, []);
+  // R5-TABS: switching session tabs (or leaving Discover) remounts this page; stop its queries so
+  // a slow tab can't hold Grafana's few concurrent query slots and stall the next one.
+  useAbortOnUnmount([runAbortRef, volAbortRef], [runRef, volRunRef]);
 
   const executeQuery = useCallback(
     (actionName?: string) => {
