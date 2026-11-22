@@ -23,6 +23,18 @@ Versions track the plugin's release history. `Unreleased` collects commits not y
   and a refresh-interval picker.
 - Fixed: the Discover search bar overflowed when "Update" was shown, hiding it under the Explore link; fast typing after
   accepting an autocomplete suggestion moved the caret back.
+- Review fixes (batch 12): KQL and filter pills share one per-field predicate (`sql/fieldPredicates.ts`), so the
+  "exists" / "does not exist" pills now work on JSON array paths (`[]` counted as present) and whole JSON columns (`{}`),
+  and an is / is-not pill on a whole JSON column matches nothing instead of failing. Filters on a dynamic JSON path read
+  as a typed subcolumn (`.:Int64`, typed from a 1,000-row sample) now compare the bare path as text
+  (`toString(Payload.x)`, `toFloat64OrNull(toString(...))` for ranges): rows holding another type (e.g. `"503"`) are no
+  longer dropped as NULL, and a non-numeric value no longer fails the query; GROUP BY / aggregates and array paths keep the
+  typed read (required there), so a value of another type still reads as empty in charts and top values. A float compares
+  by its text (`1.5`, not `1.50`). The full-range value lookup no longer aliases its result as `value` / `count` (shadowed a
+  real column of that name in the caller's filters) and accepts quoted column names again. A JSON column's path list taken
+  from the 1,000-row sample after the whole-table query failed is no longer cached as complete. Inspect SQL shows the
+  expanded times but "Copy" copies the macro form ("Edit as SQL" also uses it), with "Copy as shown" for the expanded text.
+  The filter editor's value lookup forgets the text typed for a previous field or operator.
 
 ---
 
