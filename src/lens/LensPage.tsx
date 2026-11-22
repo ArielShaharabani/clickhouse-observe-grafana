@@ -926,7 +926,7 @@ export function LensPage() {
                   e.dataTransfer.setData(FIELD_DRAG_MIME, f.id);
                   e.dataTransfer.effectAllowed = 'copy';
                 }}
-                title={fieldTypeTooltip({ ...f, displayName: f.label })}
+                title={f.sqlExpr || f.label}
               >
                 <Icon
                   name={
@@ -934,7 +934,9 @@ export function LensPage() {
                   }
                   size="sm"
                 />
-                <span className={styles.fieldName}>{f.label}</span>
+                <span className={styles.fieldName} title={fieldTypeTooltip({ ...f, displayName: f.label })}>
+                  {f.label}
+                </span>
                 {fieldSourceBadge(f) && (
                   <span className={styles.fieldSource} data-source={fieldSourceBadge(f)}>
                     {fieldSourceBadge(f)}

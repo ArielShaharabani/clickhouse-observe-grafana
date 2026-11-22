@@ -106,7 +106,8 @@ export function FieldStatsTab({ queryState, timeRange, onAddFilter, onVisualize 
       sqlExpr: f.sqlExpr,
       numeric: f.type === 'number',
       time: f.type === 'time' && f.source !== 'map',
-      blankIsValue: f.source !== 'map',
+      // A missing Map key or JSON path reads as '' (bare Dynamic) / NULL: absent, not a blank value.
+      blankIsValue: f.source !== 'map' && f.source !== 'json',
     }));
     fetchFieldStatsBatch(config, targets, {
       table: config.logsTable,

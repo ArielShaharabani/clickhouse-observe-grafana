@@ -54,6 +54,8 @@ export function FieldItem({
   // R5-JSON (#7): Map vs JSON columns and their keys / paths are labelled, and the row's hover text
   // carries the ClickHouse type.
   const sourceBadge = fieldSourceBadge(field);
+  // On the icon, name and badge (the whole label), so the row keeps its sqlExpr title.
+  const typeTooltip = fieldTypeTooltip(field);
   // Map *container* columns get the on-demand key-browse popover instead of top-values — there's
   // nothing to show "top values" of for a container column itself. JSON containers are not
   // browsable here: their paths are discovered up front (FieldsContext Phase C) and rendered as
@@ -103,7 +105,7 @@ export function FieldItem({
       <div
         ref={rowRef}
         className={`${styles.row} field-item-row ${isSelected ? styles.rowSelected : ''}`}
-        title={fieldTypeTooltip(field)}
+        title={field.sqlExpr}
         onClick={openPopover}
         draggable
         onDragStart={(e) => {
@@ -116,6 +118,7 @@ export function FieldItem({
           size="xs"
           className={styles.typeIcon}
           style={{ color: fieldTypeColor(theme, field.type) }}
+          title={typeTooltip}
         />
         {/* SHARED-A11Y-01: the keyboard way into the field popover (a click bubbles to the row). */}
         <button
@@ -125,11 +128,12 @@ export function FieldItem({
           aria-label={`Preview ${field.displayName}: ${field.type}`}
           aria-haspopup="dialog"
           aria-expanded={popoverOpen}
+          title={typeTooltip}
         >
           {field.displayName}
         </button>
         {sourceBadge && (
-          <span className={`${styles.sourceBadge} field-item-source`} data-source={sourceBadge}>
+          <span className={`${styles.sourceBadge} field-item-source`} data-source={sourceBadge} title={typeTooltip}>
             {sourceBadge}
           </span>
         )}
