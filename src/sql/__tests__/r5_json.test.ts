@@ -255,3 +255,22 @@ describe('exists on a typed JSON path is NULL-safe', () => {
     );
   });
 });
+
+describe('value lookup refuses names that are not known fields (SQL injection guard)', () => {
+  it('an undiscovered typed name never becomes the sampled expression', () => {
+    for (const q of ['x) OR 1=1 -- : ', 'foo(bar) : ', 'Unknown.field : ', '"a"" OR 1" : ']) {
+      const r = getSuggestions(q, q.length, fields, [{ value: 'v', count: 1 }]);
+      expect(r.valueContext).toBeUndefined();
+      expect(r.suggestions).toEqual([]);
+    }
+    const typing = 'nope : ab';
+    expect(getSuggestions(typing, typing.length, fields).valueContext).toBeUndefined();
+  });
+
+  it('discovered fields and Map keys still get a (quoted) expression', () => {
+    const q1 = 'Payload.user.id : ';
+    expect(getSuggestions(q1, q1.length, fields).valueContext?.sqlExpr).toBe('Payload.user.id');
+    const q2 = "LogAttributes.it's : ";
+    expect(getSuggestions(q2, q2.length, fields).valueContext?.sqlExpr).toBe(`LogAttributes['it\\'s']`);
+  });
+});

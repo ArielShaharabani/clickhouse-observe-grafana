@@ -24,7 +24,7 @@ import { rankFields } from '../../autocomplete/rankFields';
 import { FieldModel } from '../fieldModel';
 import { FieldValue } from './_values';
 import { escapeKqlIdent } from './_escape';
-import { quoteString } from '../queryBuilder';
+import { isSafeColumnExpr, quoteIdentPart, quoteString } from '../queryBuilder';
 
 export type SuggestionType = 'field' | 'operator' | 'value' | 'mapkey' | 'conjunction';
 
@@ -126,6 +126,10 @@ export function getSuggestions(
   if (last.type === 'COLON' && prev?.type === 'IDENT') {
     const fieldName = prev.value;
     const sqlExpr = fieldSqlExpr(fieldName, fields);
+    if (sqlExpr === null) {
+      // Not a field we know: no value lookup (the typed name must never reach SQL).
+      return { suggestions: [] };
+    }
     const isNumeric = fieldTypeFor(fieldName, fields) === 'number';
     const valueCtx: ValueContext = { fieldName, sqlExpr, prefix: '', replaceStart: cursor, replaceEnd: cursor };
     const valueSugg = values
@@ -143,6 +147,9 @@ export function getSuggestions(
     const prefix = last.value;
     const fieldName = prev2.value;
     const sqlExpr = fieldSqlExpr(fieldName, fields);
+    if (sqlExpr === null) {
+      return { suggestions: [] };
+    }
     const isNumeric = fieldTypeFor(fieldName, fields) === 'number';
     const valueCtx: ValueContext = { fieldName, sqlExpr, prefix, replaceStart: last.start, replaceEnd: cursor };
     const lp = prefix.toLowerCase();
@@ -399,7 +406,13 @@ function valueToSuggestion(v: FieldValue, replaceStart: number, replaceEnd: numb
   };
 }
 
-function fieldSqlExpr(fieldName: string, fields: FieldModel[]): string {
+/**
+ * The SQL expression the value lookup samples for a typed field name, or null to refuse the lookup.
+ * Only discovered fields (their own expression, quoted unless it is already a trusted column shape)
+ * and `<MapColumn>.<key>` of a discovered Map column (key quoted) build SQL. Any other typed name
+ * used to be returned verbatim and spliced into the sampled value query — SQL injection.
+ */
+function fieldSqlExpr(fieldName: string, fields: FieldModel[]): string | null {
   // displayName is unique per discovered field (source-column-prefixed for nested Map/JSON
   // keys); bare `name` is not — two different Map/JSON columns can both surface a leaf key
   // like "id". Check displayName first so an exact match there can't be shadowed by an
@@ -407,7 +420,7 @@ function fieldSqlExpr(fieldName: string, fields: FieldModel[]): string {
   const found =
     fields.find((f) => f.displayName === fieldName) ?? fields.find((f) => f.name === fieldName);
   if (found) {
-    return found.sqlExpr;
+    return isSafeColumnExpr(found.sqlExpr) ? found.sqlExpr : quoteIdentPart(found.sqlExpr);
   }
   // Not a discovered field — a Map key never is (they're sample-scoped, not published into
   // `fields`; see sql/keys.ts). "ResourceAttributes.k8s.pod.name" reaches here whether it was
@@ -418,9 +431,11 @@ function fieldSqlExpr(fieldName: string, fields: FieldModel[]): string {
   // dropdown. Same longest-prefix rule as matchMapKeyPrefix's own callers.
   const mapMatch = matchMapKeyPrefix(fieldName, fields);
   if (mapMatch && mapMatch.keyPrefix !== '') {
-    return `${mapMatch.column}[${quoteString(mapMatch.keyPrefix)}]`;
+    const col = isSafeColumnExpr(mapMatch.column) ? mapMatch.column : quoteIdentPart(mapMatch.column);
+    const expr = `${col}[${quoteString(mapMatch.keyPrefix)}]`;
+    return isSafeColumnExpr(expr) ? expr : null;
   }
-  return fieldName;
+  return null;
 }
 
 /** Look up a typed field's FieldType by the same name-resolution order fieldSqlExpr uses, so the
