@@ -40,8 +40,12 @@ test('Discover load: each metadata query runs once, none is unbounded or a trace
   await page.waitForLoadState('networkidle');
 
   expect(countOf(sqls, 'FROM system.columns')).toBe(1);
-  expect(countOf(sqls, 'distinctJSONPaths')).toBeLessThanOrEqual(1);
+  expect(countOf(sqls, 'distinctJSONPaths(')).toBeLessThanOrEqual(1);
+  expect(countOf(sqls, 'distinctJSONPathsAndTypes(')).toBeLessThanOrEqual(1); // R5-JSON: one bounded (LIMIT) type sample
   expect(countOf(sqls, "SELECT '' AS traceID")).toBe(0);
+  for (const s of sqls.filter((q) => q.includes('distinctJSONPathsAndTypes('))) {
+    expect(s).toMatch(/LIMIT \d+/);
+  }
   for (const s of sqls.filter((q) => q.includes('mapKeys(m)'))) {
     // Time-bounded: the latest slice / the range itself, or the sparse-key fallback anchored on the range end.
     expect(s).toMatch(/\$__(fromTime|toTime)/);
@@ -56,6 +60,7 @@ test('Visualize load: each metadata query runs once', async ({ page }) => {
   await page.waitForLoadState('networkidle');
 
   expect(countOf(sqls, 'FROM system.columns')).toBe(1);
-  expect(countOf(sqls, 'distinctJSONPaths')).toBeLessThanOrEqual(1);
+  expect(countOf(sqls, 'distinctJSONPaths(')).toBeLessThanOrEqual(1);
+  expect(countOf(sqls, 'distinctJSONPathsAndTypes(')).toBeLessThanOrEqual(1); // R5-JSON: one bounded (LIMIT) type sample
   expect(sqls.length).toBeLessThanOrEqual(MAX_QUERIES_PER_LOAD);
 });

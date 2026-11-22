@@ -8,6 +8,10 @@ export type FieldKind = 'text' | 'exact' | 'map' | 'json';
 export interface ResolvedField {
   sqlExpr: string;
   kind: FieldKind;
+  /** Set for a discovered JSON path holding an array: compiled as "any element matches" (kql/toSql.ts). */
+  array?: boolean;
+  /** True for a whole native JSON column (not one of its paths). */
+  jsonContainer?: boolean;
 }
 
 /**
@@ -87,6 +91,18 @@ function matchMapKeyPath(rawField: string, mapColumns: FieldModel[]): { column: 
   return best;
 }
 
+/** ResolvedField of a discovered field. */
+function resolvedOf(field: FieldModel, config: SourceConfig): ResolvedField {
+  const out: ResolvedField = { sqlExpr: field.sqlExpr, kind: kindForField(field, config) };
+  if (field.source === 'json' && field.type === 'array') {
+    out.array = true;
+  }
+  if (field.source === 'column' && field.type === 'json') {
+    out.jsonContainer = true;
+  }
+  return out;
+}
+
 function kindForField(field: FieldModel, config: SourceConfig): FieldKind {
   if (field.source === 'json') {
     return 'json';
@@ -112,7 +128,7 @@ export function resolveField(rawField: string, config: SourceConfig, index?: Fie
   if (index) {
     const bySqlExpr = index.bySqlExpr.get(raw);
     if (bySqlExpr) {
-      return { sqlExpr: bySqlExpr.sqlExpr, kind: kindForField(bySqlExpr, config) };
+      return resolvedOf(bySqlExpr, config);
     }
     // Full displayName match ("ResourceAttributes.http.method") — unlike a bare key, this names
     // its source column explicitly, so it resolves for every source including Map. This is what
@@ -120,7 +136,7 @@ export function resolveField(rawField: string, config: SourceConfig, index?: Fie
     // suggestion always resolves back to the same field it showed.
     const byDisplayName = index.byDisplayName.get(f);
     if (byDisplayName) {
-      return { sqlExpr: byDisplayName.sqlExpr, kind: kindForField(byDisplayName, config) };
+      return resolvedOf(byDisplayName, config);
     }
     const byName = index.byName.get(f);
     // Map fields are deliberately excluded from bare-name resolution — typing a bare/dotted
@@ -130,7 +146,7 @@ export function resolveField(rawField: string, config: SourceConfig, index?: Fie
     // resolve a Map field. JSON/column fields keep name-based resolution — JSON's dotted sqlExpr
     // already matches what a user would naturally type, so it's not a guess in the same sense.
     if (byName && byName.source !== 'map') {
-      return { sqlExpr: byName.sqlExpr, kind: kindForField(byName, config) };
+      return resolvedOf(byName, config);
     }
 
     // `<mapColumn>.<key>` — the natural dotted form the search bar's dot-drilldown autocomplete

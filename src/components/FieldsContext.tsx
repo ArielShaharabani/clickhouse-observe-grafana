@@ -1,7 +1,8 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { TimeRange } from '@grafana/data';
 import { FieldModel, inferFieldType, parseJsonTypedPaths, parseTupleElements } from '../sql/fieldModel';
-import { buildColumnsQuery, buildDiscoveryWindows, buildJsonPathsQuery } from '../sql/introspection';
+import { buildColumnsQuery, buildDiscoveryWindows, buildJsonPathsQuery, buildJsonPathTypesSampleQuery } from '../sql/introspection';
+import { jsonPathField, parseJsonPathTypes } from '../sql/jsonPaths';
 import { hasFreshMetadata, invalidateMetadata, loadMetadata } from '../sql/metadataCache';
 import { quoteDottedPath } from '../sql/queryBuilder';
 import { buildSkipIndicesQuery, parseTextIndexes, TextIndexInfo } from '../sql/textIndex';
@@ -69,25 +70,16 @@ export async function runWithConcurrencyLimit<T, R>(
   return results;
 }
 
-/**
- * One JSON column's full path list, straight from `distinctJSONPaths`. The query returns a single
- * `toJSONString(...)` cell rather than an `Array(String)` (see buildJsonPathsQuery) so the result
- * doesn't depend on how the datasource marshals array columns into a DataFrame — hence the parse
- * here. A malformed/absent cell throws, and the caller turns that into a per-column error.
- */
-async function fetchJsonPathsUncached(
-  config: SourceConfig,
-  table: string,
-  jsonColumn: string,
-  timeRange: TimeRange
-): Promise<string[]> {
-  const rows = await runQueryRows({
-    datasourceUid: config.datasourceUid,
-    sql: buildJsonPathsQuery(config, jsonColumn, { table }),
-    timeRange,
-    op: 'jsonPaths',
-  });
-  const cell = rows.length > 0 ? String(rows[0]['paths'] ?? '') : '';
+/** One JSON column's discovered paths, plus the types the bounded sample saw for its dynamic paths. */
+export interface JsonPathsResult {
+  paths: string[];
+  types: Map<string, string[]>;
+  /** The path list came from the bounded type sample (the whole-table query failed): not cached. */
+  partial?: boolean;
+}
+
+/** Parses a `toJSONString(<array>)` cell into its non-empty strings; a malformed/absent cell throws. */
+function parsePathList(cell: string): string[] {
   if (!cell) {
     return [];
   }
@@ -96,6 +88,44 @@ async function fetchJsonPathsUncached(
     return [];
   }
   return parsed.map((p) => String(p)).filter((p) => p.length > 0);
+}
+
+/**
+ * One JSON column's full path list, straight from `distinctJSONPaths` (see buildJsonPathsQuery:
+ * one `toJSONString(...)` cell, so the result doesn't depend on how the datasource marshals array
+ * columns), run alongside the bounded type sample (buildJsonPathTypesSampleQuery). The sample gives
+ * the dynamic paths their types; it also stands in for the path list when the whole-table query
+ * fails (a timeout on a server without the paths-only optimization), so one slow query no longer
+ * leaves the column with no fields. Throws only when both fail.
+ */
+async function fetchJsonPathsUncached(
+  config: SourceConfig,
+  table: string,
+  jsonColumn: string,
+  timeRange: TimeRange
+): Promise<JsonPathsResult> {
+  const [full, sample] = await Promise.allSettled([
+    runQueryRows({
+      datasourceUid: config.datasourceUid,
+      sql: buildJsonPathsQuery(config, jsonColumn, { table }),
+      timeRange,
+      op: 'jsonPaths',
+    }).then((rows) => parsePathList(rows.length > 0 ? String(rows[0]['paths'] ?? '') : '')),
+    runQueryRows({
+      datasourceUid: config.datasourceUid,
+      sql: buildJsonPathTypesSampleQuery(config, jsonColumn, { table }),
+      timeRange,
+      op: 'jsonPaths',
+    }).then((rows) => parseJsonPathTypes(rows.length > 0 ? String(rows[0]['types'] ?? '') : '')),
+  ]);
+  const types = sample.status === 'fulfilled' ? sample.value : new Map<string, string[]>();
+  if (full.status === 'fulfilled') {
+    return { paths: full.value, types };
+  }
+  if (sample.status === 'fulfilled') {
+    return { paths: [...types.keys()].sort(), types, partial: true };
+  }
+  throw full.reason;
 }
 
 /** Fetches (shared, cached) the column list + prune-candidate rows of a table. */
@@ -138,10 +168,11 @@ async function fetchColumns(config: SourceConfig, table: string, timeRange: Time
 }
 
 /** Fetches (shared, cached) one JSON column's path list. */
-function fetchJsonPaths(config: SourceConfig, table: string, jsonColumn: string, timeRange: TimeRange): Promise<string[]> {
+function fetchJsonPaths(config: SourceConfig, table: string, jsonColumn: string, timeRange: TimeRange): Promise<JsonPathsResult> {
   return loadMetadata(
     { datasourceUid: config.datasourceUid, database: config.database, table, kind: 'jsonPaths', detail: jsonColumn },
-    () => fetchJsonPathsUncached(config, table, jsonColumn, timeRange)
+    () => fetchJsonPathsUncached(config, table, jsonColumn, timeRange),
+    (r) => !r.partial
   );
 }
 
@@ -387,12 +418,12 @@ export function useFieldDiscovery(
 
     const perCol = await runWithConcurrencyLimit(jsonCols, DISCOVERY_CONCURRENCY, async (col) => {
       try {
-        const paths = await fetchJsonPaths(config, resolvedTable, col.name, timeRange);
-        return { col, paths, error: null as string | null };
+        const { paths, types } = await fetchJsonPaths(config, resolvedTable, col.name, timeRange);
+        return { col, paths, types, error: null as string | null };
       } catch (e) {
         // One unreadable JSON column must not cost the user every other field — record it and
         // publish the rest, same as the pre-0.8.0 discovery did.
-        return { col, paths: [] as string[], error: errMsg(e) };
+        return { col, paths: [] as string[], types: new Map<string, string[]>(), error: errMsg(e) };
       }
     });
 
@@ -401,23 +432,12 @@ export function useFieldDiscovery(
     }
 
     const jsonFields: FieldModel[] = [];
-    for (const { col, paths } of perCol) {
+    for (const { col, paths, types } of perCol) {
       const declaredTypes = new Map(parseJsonTypedPaths(col.rawType ?? '').map((p) => [p.path, p.type]));
       for (const path of paths) {
-        const chType = declaredTypes.get(path);
-        jsonFields.push({
-          id: `json:${col.name}:${path}`,
-          name: path,
-          displayName: `${col.name}.${path}`,
-          sqlExpr: quoteDottedPath(col.name, path),
-          // Dynamic (undeclared) paths have no type here. 'string' is only cosmetic — generated SQL
-          // never reads FieldModel.type: equality always string-quotes (kql/toSql.ts's equalsSql)
-          // and numeric ranges cast on `kind === 'json'`, which comes from `source`, not `type`.
-          type: chType ? inferFieldType(chType) : 'string',
-          source: 'json',
-          jsonColumn: col.name,
-          jsonPath: path,
-        });
+        // Declared paths keep their declared type; dynamic ones are read as the typed subcolumn the
+        // sample saw (or stay a bare 'string' Dynamic) — see sql/jsonPaths.ts.
+        jsonFields.push(jsonPathField(col.name, path, declaredTypes.get(path), types.get(path)));
       }
     }
 
@@ -449,7 +469,8 @@ export function useFieldDiscovery(
       .filter((c) => c.type === 'map')
       .map((c) => c.name)
       .slice(0, MAX_MAP_COLUMNS);
-    if (mapCols.length === 0) {
+    const mapTypes = new Map(columns.map((c) => [c.name, c.rawType] as const));
+    if (mapCols.length === 0 || runRef.current !== runId) {
       return;
     }
     const windows = buildDiscoveryWindows(config, timeRange.to.valueOf() - timeRange.from.valueOf());
@@ -468,7 +489,7 @@ export function useFieldDiscovery(
           .map((k) => k.key)
           .sort((a, b) => a.localeCompare(b))
           .slice(0, MAX_MAP_KEY_FIELDS)
-          .map((key) => buildMapKeyField(name, { key }));
+          .map((key) => buildMapKeyField(name, { key }, mapTypes.get(name)));
       } catch {
         return [] as FieldModel[];
       }
@@ -489,6 +510,12 @@ export function useFieldDiscovery(
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     loadFields();
+    // R5-TABS: a page gone (a Discover tab switch) must not keep starting Map-key samples after its
+    // earlier phases settle. The next run bumps the id itself, so this only matters on unmount.
+    const run = runRef;
+    return () => {
+      run.current++;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [config.datasourceUid, config.database, resolvedTable, bucket, config.columns.timestamp]);
 

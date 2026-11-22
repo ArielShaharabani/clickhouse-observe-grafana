@@ -297,7 +297,10 @@ export function LogDetailDrawer({
   // plain columns (see jsonColumns/mapColumns below) until discovery finishes, so blocking only on
   // detailRow would flash unflattened attribute blobs for a moment on every fresh page load.
   const blocked = !detailRow || Boolean(fieldsLoading);
-  const failure = detailError ?? fieldsError ?? null;
+  // A discovery error only blocks the document when no field is known at all (the columns query
+  // failed). After a partial failure (one JSON column's path lookup) the columns, and so every
+  // Map / JSON column's type, are known: the document renders, its JSON flattened from the row.
+  const failure = detailError ?? ((fields ?? []).length === 0 ? fieldsError : null) ?? null;
   const c = config.columns;
   const jsonColumns = useMemo(
     () =>
@@ -317,10 +320,17 @@ export function LogDetailDrawer({
     [fields]
   );
   // sqlExpr -> discovered type, used to prefix each flat row with a type icon.
-  const typeByExpr = useMemo(
-    () => new Map((fields ?? []).map((f) => [f.sqlExpr, f.type] as const)),
-    [fields]
-  );
+  // Also keyed by display name: a JSON leaf row is named `Payload.request.duration_ms` while its
+  // discovered field may read the typed subcolumn (`….:Int64`, sql/jsonPaths.ts).
+  const typeByExpr = useMemo(() => {
+    const m = new Map((fields ?? []).map((f) => [f.sqlExpr, f.type] as const));
+    for (const f of fields ?? []) {
+      if (f.source === 'json' && !m.has(f.displayName)) {
+        m.set(f.displayName, f.type);
+      }
+    }
+    return m;
+  }, [fields]);
   // A converted time field (epoch / text, PLAN #16d): the raw column is an ordinary number / text
   // field; only the converted value (CORE_ALIAS.timestamp, in every projection) is the time.
   const rawTimeCol = isConvertedTimestamp(config) ? '' : c.timestamp;

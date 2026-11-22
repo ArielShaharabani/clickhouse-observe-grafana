@@ -101,6 +101,16 @@ function splitTopLevel(s: string): string[] {
   return parts;
 }
 
+/** Value type of a `Map(K, V)` type string (`Map(LowCardinality(String), String)` → `String`); undefined otherwise. */
+export function mapValueType(chType: string | undefined): string | undefined {
+  const match = /^Map\((.*)\)$/s.exec((chType ?? '').trim());
+  if (!match) {
+    return undefined;
+  }
+  const parts = splitTopLevel(match[1]);
+  return parts.length === 2 ? parts[1].trim() : undefined;
+}
+
 /** Parses exactly one Tuple(...) level into its element name/type pairs, without recursing into
  *  nested Tuple elements — the building block parseTupleElements recurses on top of. */
 function parseTupleLevel(chType: string): Array<{ name: string; type: string }> {

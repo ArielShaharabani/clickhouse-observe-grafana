@@ -1,12 +1,16 @@
 import { rangeUtil } from '@grafana/data';
 import { createAutocompleteSources, rankFields } from '../service';
-import { loadFieldValues } from '../../sql/kql/_values';
+import { loadFieldValues, loadPrefixValues } from '../../sql/kql/_values';
 import { loadColumnKeys } from '../../sql/keys';
 import { DEFAULT_LOGS_QUERY_STATE, OTEL_COLUMN_MAPPING, SourceConfig } from '../../types';
 import { FieldModel } from '../../sql/fieldModel';
 import { buildFieldIndex } from '../../sql/fields';
 
-jest.mock('../../sql/kql/_values', () => ({ loadFieldValues: jest.fn(async () => [{ value: 'error', count: 3 }]) }));
+jest.mock('../../sql/kql/_values', () => ({
+  loadFieldValues: jest.fn(async () => [{ value: 'error', count: 3 }]),
+  loadPrefixValues: jest.fn(async () => [{ value: 'errata', count: 1 }]),
+  mergeValueLists: jest.requireActual('../../sql/kql/_values').mergeValueLists,
+}));
 jest.mock('../../sql/keys', () => ({ loadColumnKeys: jest.fn(async () => ({ keys: [], total: 0 })) }));
 
 const config: SourceConfig = {
@@ -143,5 +147,23 @@ describe('SHARED-AUTOCOMPLETE-01: field suggestions', () => {
       'SeverityNumber',
       'Timestamp',
     ]);
+  });
+});
+
+describe('R5-SAMPLING: full-range prefix lookup', () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  it('merges the full-range prefix matches in first when a prefix is typed', async () => {
+    const sources = createAutocompleteSources({ config, query: DEFAULT_LOGS_QUERY_STATE, timeRange });
+    const values = await sources.loadValues('SeverityText', 'err');
+    expect((loadPrefixValues as jest.Mock).mock.calls[0][1]).toBe('SeverityText');
+    expect((loadPrefixValues as jest.Mock).mock.calls[0][3]).toBe('err');
+    expect(values.map((v) => v.value)).toEqual(['errata', 'error']);
+  });
+
+  it('runs only the sampled lookup without a prefix', async () => {
+    const sources = createAutocompleteSources({ config, query: DEFAULT_LOGS_QUERY_STATE, timeRange });
+    expect(await sources.loadValues('SeverityText')).toEqual([{ value: 'error', count: 3 }]);
+    expect(loadPrefixValues).not.toHaveBeenCalled();
   });
 });

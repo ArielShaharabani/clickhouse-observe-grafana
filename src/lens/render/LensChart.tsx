@@ -165,7 +165,7 @@ function basePanelSpec(state: LensState, result: LensResult): PanelSpec {
       return {
         pluginId: 'table',
         frames: [createDataFrame({ fields })],
-        options: { showHeader: true },
+        options: { showHeader: true, enablePagination: true },
         // Thousands separators (a metric's own value format overrides) and wrapped, not truncated, headers.
         fieldConfig: {
           defaults: { unit: 'locale', custom: { wrapHeaderText: true } },

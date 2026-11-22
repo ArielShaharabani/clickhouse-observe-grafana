@@ -41,8 +41,16 @@ test('keyword × keyword → stacked bar; Table suggestion shows exact counts', 
   await expect(viz.chart).toHaveAttribute('data-panel', 'table');
   await expect(viz.group('Rows')).toContainText('Top 9 values of ServiceName');
   await expect(viz.group('Rows')).toContainText('Top 9 values of SeverityText');
-  // payments × error in the fixture.
-  await expect(viz.chart.getByText(FIXTURE.counts.paymentsErrors.toLocaleString('en-US'), { exact: true })).toBeVisible();
+  // payments × error in the fixture. The table is paginated (R5-VIZ-LAYOUT): page until the cell shows.
+  const cell = viz.chart.getByText(FIXTURE.counts.paymentsErrors.toLocaleString('en-US'), { exact: true });
+  const next = viz.chart.getByRole('button', { name: 'next page' });
+  for (let i = 0; i < 10 && !(await cell.isVisible()); i++) {
+    if (!(await next.isEnabled().catch(() => false))) {
+      break;
+    }
+    await next.click();
+  }
+  await expect(cell).toBeVisible();
 });
 
 test('uses the shared query: a Discover search narrows the chart', async ({ page }) => {

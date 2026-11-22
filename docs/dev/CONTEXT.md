@@ -1,7 +1,7 @@
 # Context snapshot — read this to restart
 
 Saved after every feature (and every review-fix round). A new session can resume from this file plus `PROGRESS.md` alone.
-Last saved: 2026-11-21, #- R4-VIZ merged (PR 79, v0.72.0).
+Last saved: 2026-11-22, #- R5-PADDING merged (PR 82, v0.78.1).
 
 ## Goal
 Bring Kibana Discover + Lens style exploration to Grafana on ClickHouse by extending the **ClickHouse Observe** app plugin.
@@ -79,6 +79,13 @@ Bring Kibana Discover + Lens style exploration to Grafana on ClickHouse by exten
 | - | R4-DISCOVER: Discover round-3 fixes | 79 | src/components/LogsTable.tsx, src/pages/LogsExplorer.tsx, src/data/windowedSearch.ts, src/sql/keys.ts |
 | - | R4-DASH: Dashboards and sharing round-3 fixes | 79 | src/lens/panelExport.ts, src/data/panelExport.ts, src/components/AddToDashboard/AddToDashboardModal.tsx, src/data/shortUrl.ts |
 | - | R4-VIZ: Visualize round-3 fixes: percentile rank, pie labels, faster open | 79 | src/lens/calc.ts, src/lens/formula.ts, src/lens/render/PieChart.tsx, src/lens/LensPage.tsx, src/components/SearchBar.tsx |
+| - | R5-TABS: Stuck Discover tab no longer blocks other tabs | 82 | src/data/abortOnUnmount.ts, src/pages/LogsExplorer.tsx |
+| - | R5-VIZ-LAYOUT: Resizable Visualize panes, paginated table, breadcrumbs | 82 | src/lens/LensPage.tsx, src/lens/render/LensChart.tsx |
+| - | R5-VIZ-STATE: Empty visualization slots, nav highlight, expanded Inspect SQL | 82 | src/lens/LensPage.tsx, src/sql/expandMacros.ts |
+| - | R5-QUERYBAR: Shared Discover/Visualize header + Schema button | 82 | src/components/QueryBar.tsx, src/components/SchemaButton.tsx |
+| - | R5-JSON: JSON fields end to end + Map/JSON field markers | 82 | src/components/FieldsContext.tsx, src/sql/kql/toSql.ts, src/sql/queryBuilder.ts |
+| - | R5-SAMPLING: Rare values: full-range prefix autocomplete + Scan full range | 82 | src/sql/fullScan.ts, src/sql/kql/_values.ts |
+| - | R5-PADDING: Padding/spacing polish | 82 | src/lens/LensPage.tsx, src/lens/DimensionEditor.tsx |
 
 ## Key decisions (details in DECISIONS.md)
 - Frontend-only; queries via grafana-clickhouse-datasource (`src/data/runQuery.ts`). Plain React + @grafana/ui, no Scenes.
@@ -102,7 +109,7 @@ Bring Kibana Discover + Lens style exploration to Grafana on ClickHouse by exten
 41,520 rows, 2026-01-01..08 UTC; `SeverityNumber` uses OTel numbers (debug 5, info 9, warn 13, error 17); levels info 28,265 · warn 6,080 · debug 3,984 · error 3,191; services 8,064 each except payments 9,264; errors by service auth 384, checkout 445, frontend 373, inventory 414, payments 1,575; incident 2026-01-05 09:00–11:00 (1,200 payments rows, `http.status_code` 503). Latest-5,000 sample: info 3,483 · warn 792 · debug 487 · error 238 (payments-filtered: info 2,667 · error 1,370 · warn 569 · debug 394).
 
 ## Now / next
-Now (in progress on `feat/lens-save-01`): #16 LENS-SAVE-01 (save to dashboard) — exact notes in `PROGRESS.md`.
+2026-11-22: batch 12 (PR 82) merged; wait for the user. Deferred items in PROGRESS "Batch status".
 
 ## Parallel work (fan-out, from 2026-11-18)
 Agents work in git worktrees under `C:\Users\Ariel\co-wt\<id>` on `feat/<id>`, each with its own Grafana container (`co-<id>`, same image and docker network as the main stack, shared fixture ClickHouse) and `GRAFANA_URL` for e2e:

@@ -1521,7 +1521,7 @@ const getStyles = (theme: GrafanaTheme2) => ({
   colorGrid: css`
     display: grid;
     grid-template-columns: repeat(8, 16px);
-    gap: 4px;
+    gap: ${theme.spacing(0.5)};
     padding: ${theme.spacing(0, 0.5, 0.5)};
   `,
   colorSwatch: css`

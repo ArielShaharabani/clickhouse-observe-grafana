@@ -8,12 +8,13 @@ Lens lets a user build a chart by adding fields, then corrects the guess through
 | --- | --- |
 | Top nav (right) | Explore in Discover · Inspect · ⤓ Export (PDF, PNG, CSV) · Share · Settings (`Auto-apply visualization changes`) · **Save** (primary, disabled while empty) |
 | Search bar | Same unified search as Discover: Data view, ⊕ filter, ⋮ query menu, KQL, time picker, Refresh |
-| Left (\~290 px) | Field list: `Records` pseudo-field first, Selected fields, Available fields, Empty, Meta; same field popovers as Discover; only aggregatable fields can be added |
+| Left (drag-resizable, default ~20%, min 160 px; width remembered) | Field list: `Records` pseudo-field first, Selected fields, Available fields, Empty, Meta; same field popovers as Discover; only aggregatable fields can be added |
 | Centre | Workspace (chart) with chart title; below it a collapsible `Suggestions` strip of thumbnail cards |
-| Right (\~390 px) | Toolbar: `Legend`, `Style` (XY) or chart-specific; Layer panel: chart-type switcher, sub-type (`Stacked`), ⚙ layer settings, ⌫ Clear layer, ⧉ Duplicate layer, data view per layer, then dimension groups; `+` Add layer |
+| Right (drag-resizable, min 220 px; width remembered) | Toolbar: `Legend`, `Style` (XY) or chart-specific; Layer panel: chart-type switcher, sub-type (`Stacked`), ⚙ layer settings, ⌫ Clear layer, ⧉ Duplicate layer, data view per layer, then dimension groups; `+` Add layer |
 
 ### LENS-QUERY-01 Query row (R3-QUERYBAR)
 
+- **Shared component (R5-QUERYBAR):** Discover and Visualize render one `QueryBar`: data view picker, `Schema` button (modal of the view's columns and ClickHouse types), Add filter, query menu, KQL bar. The Visualize toolbar has no title.
 - **Row:** under the toolbar, the same controls and components as Discover's header: Add filter, the query menu (Clear all, Load / Save query, pin / negate / disable all), the KQL search bar with autocomplete (values and Map keys from this view's own fields), then the filter pills. Wraps at narrow widths; the old read-only query summary in the toolbar is gone.
 - **Shared context:** the bar edits the URL `q` (same params as Discover). Typing changes nothing until Enter / Search; the submit writes `q` in one history entry (push, like filters) and the chart re-runs once. Back / Forward restore the previous query.
 - **Invalid KQL:** the bar shows its error; the chart area shows `The query is not valid` instead of a chart, no query is sent, Save is disabled. A `q` that arrives in the URL and does not parse is treated the same.

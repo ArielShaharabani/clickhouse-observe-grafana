@@ -10,6 +10,7 @@ import { isCondGroup, isDateBound, isNumericBound } from './filters';
 import { BreakdownSel, FilterCondGroup, FilterPill, FilterOp, LogsQueryState, SelectedColumn, SourceConfig } from '../types';
 import { resolveField, FieldIndex } from './fields';
 import { parseKql, kqlToSql } from './kql';
+import { anyElementPredicate, equalsLhs, existsPredicate, likeLhs, missingPredicate, numericLhs } from './fieldPredicates';
 import { configSettingsFragments, queryTimeoutFragments, withSettings } from './settings';
 import { isConvertedTimestamp, timeExpr } from './timeExpr';
 
@@ -60,6 +61,12 @@ const BARE_IDENT = '[A-Za-z_][A-Za-z0-9_]*';
  *  backslash would end it early and let the rest pass as trusted SQL. */
 const QUOTED_IDENT = '"(?:[^"\\\\]|""|\\\\[\\s\\S])*"';
 const IDENT = `(?:${BARE_IDENT}|${QUOTED_IDENT})`;
+const QUOTED_IDENT_RE = new RegExp(`^${QUOTED_IDENT}$`);
+
+/** Whether `expr` is exactly one double-quoted identifier (as ClickHouse's lexer reads it). */
+export function isQuotedIdentifier(expr: string): boolean {
+  return QUOTED_IDENT_RE.test(expr);
+}
 /** A single-quoted SQL string literal using this file's own quoteString() escaping convention
  *  (backslash escaped first, then embedded single quotes) — matches what quoteString() actually
  *  produces, so this only recognizes a literal that really is safely escaped, not just "has quotes
@@ -67,7 +74,10 @@ const IDENT = `(?:${BARE_IDENT}|${QUOTED_IDENT})`;
 const SAFE_STRING_LITERAL = `'(?:[^'\\\\]|\\\\.)*'`;
 
 const MAP_ACCESSOR_RE = new RegExp(`^${IDENT}\\[${SAFE_STRING_LITERAL}\\]$`);
-const DOTTED_PATH_RE = new RegExp(`^${IDENT}(\\.${IDENT})+$`);
+/** Optional typed-subcolumn suffix of a dynamic JSON path (`.:Int64`, `` .:`Array(Nullable(String))` ``,
+ *  see sql/jsonPaths.ts): a bare type name, or a backticked one of letters, digits and parentheses only. */
+const TYPED_SUBCOLUMN = '(?:\\.:(?:[A-Za-z][A-Za-z0-9]*|`[A-Za-z0-9()]+`))?';
+const DOTTED_PATH_RE = new RegExp(`^${IDENT}(\\.${IDENT})+${TYPED_SUBCOLUMN}$`);
 
 /**
  * Recognizes a `name` that is a well-formed Map accessor (`Col['key']`, with a properly escaped
@@ -275,11 +285,12 @@ function buildFilterClause(filter: FilterPill, config: SourceConfig, index?: Fie
   // cosmetic: unlike every other branch below, this one used to interpolate sqlExprRaw directly
   // with no quoting at all, so a hostile filter.field reached raw SQL regardless of the
   // looksLikeTrustedExpr() fix elsewhere in this file (see C1 in the audit plan).
+  // Shapes per field kind (JSON array / whole JSON column / NULL-safe path) shared with KQL `field:*`.
   if (filter.op === 'exists') {
-    return `notEmpty(toString(${quoteIdentifier(sqlExprRaw)}))`;
+    return existsPredicate(quoteIdentifier(sqlExprRaw), resolved);
   }
   if (filter.op === 'not_exists') {
-    return `empty(toString(${quoteIdentifier(sqlExprRaw)}))`;
+    return missingPredicate(quoteIdentifier(sqlExprRaw), resolved);
   }
 
   // one_of / not_one_of — use IN (...) / NOT IN (...)
@@ -289,7 +300,7 @@ function buildFilterClause(filter: FilterPill, config: SourceConfig, index?: Fie
       // guard: empty value set → always false / always true
       return filter.op === 'one_of' ? '1=0' : '1=1';
     }
-    const col = quoteIdentifier(sqlExprRaw);
+    const col = equalsLhs(quoteIdentifier(sqlExprRaw), resolved);
     const list = vals.map(quoteString).join(', ');
     return filter.op === 'one_of'
       ? `${col} IN (${list})`
@@ -306,7 +317,8 @@ function buildFilterClause(filter: FilterPill, config: SourceConfig, index?: Fie
   //    On that path the negative ops (lt, not_between) are NOT ifNull(positive, 0), so a row whose
   //    key is missing or non-numeric lands on exactly one side of an include / exclude pair.
   if (filter.op === 'gte' || filter.op === 'lt' || filter.op === 'between' || filter.op === 'not_between') {
-    const mapValue = resolved?.kind === 'map';
+    // JSON paths compare the same way: a Dynamic / Nullable value, missing on some rows.
+    const mapValue = resolved?.kind === 'map' || resolved?.kind === 'json';
     const isPair = filter.op === 'between' || filter.op === 'not_between';
     const bounds = (isPair ? (filter.values ?? []).slice(0, 2) : [value]).map((v) => v.trim());
     const validBound = (v: string) => (mapValue ? isNumericBound(v) : isNumericBound(v) || isDateBound(v));
@@ -314,7 +326,7 @@ function buildFilterClause(filter: FilterPill, config: SourceConfig, index?: Fie
       return filter.op === 'not_between' ? '1=1' : '1=0';
     }
     const col = quoteIdentifier(sqlExprRaw);
-    const lhs = mapValue ? `toFloat64OrNull(toString(${col}))` : col;
+    const lhs = mapValue ? numericLhs(col, resolved) : col;
     const lit = (v: string) => (mapValue ? `toFloat64OrNull(${quoteString(v)})` : quoteString(v));
     const positive = isPair
       ? `${lhs} BETWEEN ${lit(bounds[0])} AND ${lit(bounds[1])}`
@@ -354,10 +366,21 @@ function buildFilterClause(filter: FilterPill, config: SourceConfig, index?: Fie
 
   const col = quoteIdentifier(sqlExpr);
   const op = filterOpToSql(filter.op);
-  if (op === 'ILIKE' || op === 'NOT ILIKE') {
-    return `${col} ${op} ${quoteString('%' + value + '%')}`;
+  const like = op === 'ILIKE' || op === 'NOT ILIKE';
+  if (resolved.jsonContainer) {
+    // A whole JSON column has no single value (`Payload = 'x'` fails parsing 'x' as JSON), as in KQL.
+    return negate ? 'NOT 0' : '0';
   }
-  return `${col} ${op} ${quoteString(value)}`;
+  if (resolved.array) {
+    // A JSON array path: any element matches (`arr = 'x'` itself fails in ClickHouse).
+    const any = anyElementPredicate(col, quoteString(like ? '%' + value + '%' : value), like);
+    return negate ? `NOT ${any}` : any;
+  }
+  if (like) {
+    // A JSON path can be numeric / boolean, which ILIKE refuses.
+    return `${likeLhs(col, resolved)} ${op} ${quoteString('%' + value + '%')}`;
+  }
+  return `${equalsLhs(col, resolved)} ${op} ${quoteString(value)}`;
 }
 
 /**

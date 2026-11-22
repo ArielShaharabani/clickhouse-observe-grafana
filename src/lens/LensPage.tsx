@@ -8,13 +8,12 @@
 import React, { useCallback, useContext, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { css, cx } from '@emotion/css';
-import { dateTime, GrafanaTheme2, IconName, locationUtil, TimeRange } from '@grafana/data';
+import { dateTime, GrafanaTheme2, IconName, locationUtil, rangeUtil, TimeRange } from '@grafana/data';
 import { locationService } from '@grafana/runtime';
-import { Alert, Button, Icon, IconButton, Input, LinkButton, Spinner, TimeRangePicker, useStyles2 } from '@grafana/ui';
+import { Alert, Button, Icon, IconButton, Input, LinkButton, RefreshPicker, Spinner, useSplitter, useStyles2 } from '@grafana/ui';
 import { DataViewContext, SourceConfigContext } from '../components/App/App';
 import { discoveryKey, FieldsContext, useFieldDiscovery } from '../components/FieldsContext';
-import { DataViewPicker } from '../components/DataViewPicker/DataViewPicker';
-import { FIELD_TYPE_ICONS } from '../components/FieldSidebar/fieldIcons';
+import { fieldMarkerIcon, fieldSourceBadge, fieldTypeTooltip } from '../components/FieldSidebar/fieldIcons';
 import { FIELD_DRAG_MIME } from '../constants';
 import { decodeLogsState, encodeLogsState } from '../data/urlState';
 import { runQueryRows } from '../data/runQuery';
@@ -29,6 +28,7 @@ import { buildLensPanel, defaultPanelTitle } from './panelExport';
 import { SaveActions } from './SaveActions';
 import { FilterPills } from '../components/FilterPills';
 import { QueryRow, withQuery } from './QueryRow';
+import { QueryActionsRow, QueryActionToggle, QueryTimeControls } from '../components/QueryBar';
 import { LoadedQuery } from '../components/QueryMenu/QueryMenu';
 import { parseKql } from '../sql/kql';
 import { useAutocompleteSources } from '../autocomplete/service';
@@ -72,7 +72,6 @@ import {
   switchChart,
   switchKind,
 } from './suggest';
-import { shiftTimeRange, zoomOutTimeRange } from '../utils/timeRangeNav';
 import { QueryProgress } from '../components/QueryProgress/QueryProgress';
 import { lensApproxNote } from './approx';
 import { LensInspector } from './Inspector';
@@ -164,6 +163,19 @@ const lensRowCache = new ResultCache<Awaited<ReturnType<typeof runQueryRows>>>()
 
 export function LensPage() {
   const styles = useStyles2(getStyles);
+  // Fields | (workspace | dimensions): two nested splitters, drag handles like Discover's sidebar.
+  const outerSplit = useSplitter({
+    direction: 'row',
+    initialSize: readSplit(FIELDS_SPLIT_KEY, DEFAULT_FIELDS_SPLIT),
+    dragPosition: 'middle',
+    onSizeChanged: (v) => saveSplit(FIELDS_SPLIT_KEY, v),
+  });
+  const innerSplit = useSplitter({
+    direction: 'row',
+    initialSize: readSplit(DIMS_SPLIT_KEY, DEFAULT_WORKSPACE_SPLIT),
+    dragPosition: 'middle',
+    onSizeChanged: (v) => saveSplit(DIMS_SPLIT_KEY, v),
+  });
   const config = useContext(SourceConfigContext);
   const defaultTime = useContext(DefaultTimeRangeContext);
   const { activeView, views, setActiveViewId } = useContext(DataViewContext);
@@ -406,7 +418,18 @@ export function LensPage() {
   const lensFields = useMemo<LensField[]>(
     () => [
       RECORDS_FIELD,
-      ...fields.map((f) => ({ id: f.id, sqlExpr: f.sqlExpr, label: f.displayName, type: f.type })).filter(isLensField),
+      ...fields
+        .map((f) => ({
+          id: f.id,
+          sqlExpr: f.sqlExpr,
+          label: f.displayName,
+          type: f.type,
+          source: f.source,
+          rawType: f.rawType,
+          mapColumn: f.mapColumn,
+          jsonColumn: f.jsonColumn,
+        }))
+        .filter(isLensField),
     ],
     [fields]
   );
@@ -480,6 +503,16 @@ export function LensPage() {
 
   // Run the chart query. `refreshNonce` bumps on an explicit Refresh and bypasses the row cache.
   const [refreshNonce, setRefreshNonce] = useState(0);
+  // Auto-refresh (the shared time controls' interval picker): bump the nonce on a timer.
+  const [refreshInterval, setRefreshInterval] = useState<string>(RefreshPicker.offOption.value ?? '');
+  useEffect(() => {
+    if (!refreshInterval || refreshInterval === RefreshPicker.offOption.value) {
+      return undefined;
+    }
+    const ms = rangeUtil.intervalToMs(refreshInterval);
+    const t = window.setInterval(() => setRefreshNonce((n) => n + 1), ms);
+    return () => window.clearInterval(t);
+  }, [refreshInterval]);
   const bypassRef = useRef(0);
   const [result, setResult] = useState<{
     key: string;
@@ -507,8 +540,11 @@ export function LensPage() {
   const baseKey = JSON.stringify([JSON.stringify(lensBase), ...queryContext]);
   // A time-series calculation without a date histogram (LENS-CALC-01): say why instead of querying.
   const calcError = calculationError(lens);
+  // An axis chart whose horizontal axis was removed (or never filled): shown as an empty
+  // visualization, not re-picked as another chart type.
+  const blankChart = isEmptyLens(lens) || ((isXy(lens.chartType) || lens.chartType === 'heatmap') && lens.buckets.length === 0);
   useEffect(() => {
-    if (isEmptyLens(lens) || !config.datasourceUid || chartFieldsLoading || queryError || calcError) {
+    if (blankChart || !config.datasourceUid || chartFieldsLoading || queryError || calcError) {
       return;
     }
     let cancelled = false;
@@ -609,7 +645,7 @@ export function LensPage() {
   const suggestedTime = Math.round((timeRange.from.valueOf() + timeRange.to.valueOf()) / 2);
   // SHARED-PERF-01: same running cue as Discover (no Cancel here: leaving the chart without a
   // result would need its own empty state).
-  const chartLoading = chartFieldsLoading || (!isEmptyLens(lens) && !!config.datasourceUid && !current && !queryError && !calcError);
+  const chartLoading = chartFieldsLoading || (!blankChart && !!config.datasourceUid && !current && !queryError && !calcError);
   const approxNote = current?.data ? lensApproxNote(lens) : null;
 
   const onAdd = (f: LensField) => setLens(addField(lens, f, ctx));
@@ -623,14 +659,15 @@ export function LensPage() {
       setLens(EMPTY_LENS);
       return;
     }
-    // A removal must stick: line/area (and a bar left with nothing on X) would add the time axis
-    // straight back, so re-pick the chart from what remains instead.
-    const lostTime =
-      (next.chartType === 'heatmap' && next.buckets.length === 0) ||
-      (isXy(next.chartType) &&
-        (next.chartType === 'bar'
-          ? next.buckets.length === 0
-          : !next.buckets.some((b) => b.kind === 'date_histogram')));
+    // Removing the only horizontal axis leaves the chart type as it is, with an empty axis slot
+    // (an empty visualization), instead of becoming a Metric.
+    if ((isXy(next.chartType) || next.chartType === 'heatmap') && next.buckets.length === 0) {
+      setLens(next);
+      return;
+    }
+    // A removal must stick: line/area would add the time axis straight back, so re-pick the chart
+    // from what remains instead.
+    const lostTime = isXy(next.chartType) && next.chartType !== 'bar' && !next.buckets.some((b) => b.kind === 'date_histogram');
     setLens(switchChart(next, lostTime ? chooseChart(next.buckets) : next.chartType, ctx));
   };
   const cards = useMemo(() => suggestions(lens, ctx), [lens, ctx]);
@@ -818,49 +855,10 @@ export function LensPage() {
 
   return (
     <div className={styles.page}>
-      <div className={styles.toolbar}>
-        <span className={styles.title}>Visualize</span>
-        <DataViewPicker />
-        <div className={styles.spacer} />
-        <LinkButton href={exploreUrl} onClick={onExplore} variant="secondary" size="sm" icon="compass" fill="outline">
-          Explore in Discover
-        </LinkButton>
-        <Button
-          size="sm"
-          variant="secondary"
-          icon="info-circle"
-          onClick={() => setInspectOpen(true)}
-          disabled={isEmptyLens(lens)}
-        >
-          Inspect
-        </Button>
-        <SaveActions
-          paramsKey={paramsKey}
-          disabled={isEmptyLens(lens) || chartFieldsLoading || !!queryError || !!calcError}
-          defaultTitle={defaultPanelTitle(lens)}
-          buildPanel={buildPanel}
-          timeRange={timeRange}
-        />
-        <IconButton
-          name="sync"
-          aria-label="Refresh"
-          tooltip="Refresh (re-runs the query)"
-          onClick={() => setRefreshNonce((n) => n + 1)}
-        />
-        {/* A view without a time field has no time range (same as Discover). */}
-        {ctx.timeField && (
-          <TimeRangePicker
-            value={timeRange}
-            onChange={setTimeRange}
-            onChangeTimeZone={() => undefined}
-            onMoveBackward={() => setTimeRange(shiftTimeRange(timeRange, -1))}
-            onMoveForward={() => setTimeRange(shiftTimeRange(timeRange, 1))}
-            onZoom={() => setTimeRange(zoomOutTimeRange(timeRange))}
-            timeZone="browser"
-          />
-        )}
+      {/* Same band as Discover's tab strip, so the header below sits at the same height on both pages. */}
+      <div className={styles.tabBand}>
+        <span className={styles.tabLabel}>Visualization</span>
       </div>
-
       <QueryProgress active={chartLoading} />
 
       <FieldsContext.Provider value={discovery}>
@@ -881,6 +879,23 @@ export function LensPage() {
             clearQuery();
           }}
           onLoadQuery={onLoadQuery}
+          explore={
+            <LinkButton href={exploreUrl} onClick={onExplore} variant="secondary" size="sm" icon="compass" fill="outline">
+              Explore in Discover
+            </LinkButton>
+          }
+          time={
+            ctx.timeField ? (
+              <QueryTimeControls
+                timeRange={timeRange}
+                onTimeChange={setTimeRange}
+                onRefresh={() => setRefreshNonce((n) => n + 1)}
+                refreshInterval={refreshInterval}
+                onIntervalChanged={setRefreshInterval}
+                loading={chartLoading}
+              />
+            ) : undefined
+          }
         />
       </FieldsContext.Provider>
 
@@ -891,7 +906,25 @@ export function LensPage() {
         pinTable={tableKey(config.database, config.logsTable)}
       />
 
-      <div className={styles.body}>
+      <QueryActionsRow
+        left={
+          <QueryActionToggle icon="info-circle" onClick={() => setInspectOpen(true)} disabled={blankChart}>
+            Inspect
+          </QueryActionToggle>
+        }
+        right={
+          <SaveActions
+            paramsKey={paramsKey}
+            disabled={blankChart || chartFieldsLoading || !!queryError || !!calcError}
+            defaultTitle={defaultPanelTitle(lens)}
+            buildPanel={buildPanel}
+            timeRange={timeRange}
+          />
+        }
+      />
+
+      <div {...outerSplit.containerProps} className={cx(outerSplit.containerProps.className, styles.body)}>
+        <div {...outerSplit.primaryProps} className={cx(outerSplit.primaryProps.className, styles.fieldsPane)}>
         <section className={styles.fields} aria-label="Fields">
           <Input
             prefix={<Icon name="search" />}
@@ -918,12 +951,15 @@ export function LensPage() {
                 title={f.sqlExpr || f.label}
               >
                 <Icon
-                  name={
-                    (f.type === 'records' ? 'list-ul' : (FIELD_TYPE_ICONS[f.type] ?? 'question-circle')) as IconName
-                  }
+                  name={fieldMarkerIcon(f) as IconName}
                   size="sm"
+                  className="lens-field-marker"
+                  data-source={fieldSourceBadge(f) ?? undefined}
+                  title={fieldTypeTooltip({ ...f, displayName: f.label })}
                 />
-                <span className={styles.fieldName}>{f.label}</span>
+                <span className={styles.fieldName} title={fieldTypeTooltip({ ...f, displayName: f.label })}>
+                  {f.label}
+                </span>
                 <button
                   type="button"
                   className={cx(styles.dragHandle, kbDrag.isLifted(f) && styles.dragHandleLifted)}
@@ -947,7 +983,11 @@ export function LensPage() {
             ))}
           </div>
         </section>
-
+        </div>
+        <div {...outerSplit.splitterProps} className={cx(outerSplit.splitterProps.className, styles.splitterHandle)} />
+        <div {...outerSplit.secondaryProps} className={cx(outerSplit.secondaryProps.className, styles.restPane)}>
+        <div {...innerSplit.containerProps} className={cx(innerSplit.containerProps.className, styles.inner)}>
+        <div {...innerSplit.primaryProps} className={cx(innerSplit.primaryProps.className, styles.workspacePane)}>
         <section className={styles.workspace} aria-label="Workspace">
           <div className={styles.chartHeader}>
             <Icon name={CHART_ICONS[chartKind(lens)]} />
@@ -980,7 +1020,7 @@ export function LensPage() {
               }
             }}
           >
-            {isEmptyLens(lens) ? (
+            {blankChart ? (
               <div className={styles.empty}>
                 <Icon name="chart-line" size="xxxl" />
                 <div className={styles.emptyTitle}>Drop some fields here to start</div>
@@ -1067,6 +1107,7 @@ export function LensPage() {
             </div>
           )}
         </section>
+        </div>
 
         {inspectOpen && (
           <LensInspector
@@ -1089,6 +1130,8 @@ export function LensPage() {
             onCancel={() => setChooser(null)}
           />
         )}
+        <div {...innerSplit.splitterProps} className={cx(innerSplit.splitterProps.className, styles.splitterHandle)} />
+        <div {...innerSplit.secondaryProps} className={cx(innerSplit.secondaryProps.className, styles.dimsPane)}>
         <section ref={dimsRef} className={styles.dims} aria-label="Dimensions">
           {!isEmptyLens(lens) && !editingDim && (
             <ChartTypeSwitcher
@@ -1138,8 +1181,6 @@ export function LensPage() {
               onClose={() => setEditingId(null)}
               returnFocus={() => dimButton(editingDim.id)}
             />
-          ) : isEmptyLens(lens) ? (
-            <div className={styles.emptySub}>Dimensions appear here as you add fields.</div>
           ) : (
             dimensionGroups(lens).map((g) => (
               <div key={g.name} className={styles.group} role="group" aria-label={g.name}>
@@ -1213,18 +1254,67 @@ export function LensPage() {
             />
           )}
         </section>
+        </div>
+        </div>
+        </div>
       </div>
     </div>
   );
+}
+
+/** Resizable panes, widths remembered like Discover's field sidebar (a fraction of the pane's parent). */
+const FIELDS_SPLIT_KEY = 'clickhouse-observe.lens.fieldsSplit';
+const DIMS_SPLIT_KEY = 'clickhouse-observe.lens.dimsSplit';
+const DEFAULT_FIELDS_SPLIT = 0.2;
+const DEFAULT_WORKSPACE_SPLIT = 0.73;
+const FIELDS_MIN_WIDTH = 160;
+const DIMS_MIN_WIDTH = 220;
+
+function readSplit(key: string, fallback: number): number {
+  try {
+    const raw = Number(window.localStorage.getItem(key));
+    return raw > 0.05 && raw < 0.95 ? raw : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function saveSplit(key: string, v: number) {
+  try {
+    window.localStorage.setItem(key, String(v));
+  } catch {
+    // storage blocked: the widths just don't persist
+  }
 }
 
 const getStyles = (theme: GrafanaTheme2) => ({
   page: css`
     display: flex;
     flex-direction: column;
+    box-sizing: border-box;
+    width: 100%;
     gap: ${theme.spacing(1)};
-    height: calc(100vh - 120px);
+    padding: ${theme.spacing(2)};
+    background: ${theme.colors.background.canvas};
+    height: calc(100vh - 48px);
     min-height: 480px;
+  `,
+  tabBand: css`
+    display: flex;
+    align-items: center;
+    min-height: ${theme.spacing(4)};
+    border-bottom: 1px solid ${theme.colors.border.weak};
+    margin-bottom: ${theme.spacing(1)};
+    flex-shrink: 0;
+  `,
+  tabLabel: css`
+    padding: ${theme.spacing(0.25, 1)};
+    color: ${theme.colors.text.primary};
+    background: ${theme.colors.background.primary};
+    border: 1px solid ${theme.colors.border.weak};
+    border-bottom: none;
+    border-radius: ${theme.shape.radius.default} ${theme.shape.radius.default} 0 0;
+    box-shadow: inset 0 2px 0 ${theme.colors.primary.main};
   `,
   approxNote: css`
     display: flex;
@@ -1239,10 +1329,6 @@ const getStyles = (theme: GrafanaTheme2) => ({
     gap: ${theme.spacing(1)};
     flex-wrap: wrap;
   `,
-  title: css`
-    font-size: ${theme.typography.h4.fontSize};
-    font-weight: ${theme.typography.fontWeightMedium};
-  `,
   context: css`
     color: ${theme.colors.text.secondary};
     font-family: ${theme.typography.fontFamilyMonospace};
@@ -1255,13 +1341,46 @@ const getStyles = (theme: GrafanaTheme2) => ({
     flex: 1;
   `,
   body: css`
-    display: grid;
-    grid-template-columns: 240px minmax(0, 1fr) 260px;
-    gap: ${theme.spacing(1)};
+    display: flex;
     flex: 1;
     min-height: 0;
   `,
+  // useSplitter sets inline min-width: min-content on its panes; !important keeps the floors usable.
+  fieldsPane: css`
+    min-width: ${FIELDS_MIN_WIDTH}px !important;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  `,
+  restPane: css`
+    min-width: 0 !important;
+    min-height: 0;
+    display: flex;
+  `,
+  inner: css`
+    flex: 1;
+    min-width: 0;
+    min-height: 0;
+  `,
+  workspacePane: css`
+    min-width: 0 !important;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    padding-left: ${theme.spacing(1)};
+  `,
+  dimsPane: css`
+    min-width: ${DIMS_MIN_WIDTH}px !important;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+  `,
+  splitterHandle: css`
+    flex-shrink: 0;
+  `,
   fields: css`
+    flex: 1;
+    min-width: 0;
     display: flex;
     flex-direction: column;
     gap: ${theme.spacing(1)};
@@ -1311,6 +1430,8 @@ const getStyles = (theme: GrafanaTheme2) => ({
     font-size: ${theme.typography.bodySmall.fontSize};
   `,
   workspace: css`
+    flex: 1;
+    min-width: 0;
     display: flex;
     flex-direction: column;
     gap: ${theme.spacing(1)};
@@ -1413,11 +1534,14 @@ const getStyles = (theme: GrafanaTheme2) => ({
     -webkit-box-orient: vertical;
   `,
   dims: css`
+    flex: 1;
+    min-height: 0;
+    min-width: 0;
     display: flex;
     flex-direction: column;
     gap: ${theme.spacing(2)};
     border-left: 1px solid ${theme.colors.border.weak};
-    padding-left: ${theme.spacing(1)};
+    padding: 0 ${theme.spacing(1)};
     overflow-y: auto;
   `,
   group: css`

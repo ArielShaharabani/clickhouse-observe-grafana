@@ -74,8 +74,10 @@ export interface RunQueryOptions {
    * `AbortController` on unsubscribe — only the separate streaming `chunked()` path is. So
    * ClickHouse keeps running an abandoned query regardless of this signal firing; a superseded
    * search still costs the server its full execution time. What aborting *does* buy: this promise
-   * settles immediately (as an `AbortError`) instead of waiting out the abandoned request, and the
-   * span this call produces is marked `cancelled` rather than left `running` forever. Real
+   * settles immediately (as an `AbortError`) instead of waiting out the abandoned request, the
+   * span this call produces is marked `cancelled` rather than left `running` forever, and the
+   * request's slot in Grafana's frontend fetch queue (at most 5 data queries in flight without
+   * HTTP/2; the rest wait) is freed — see data/abortOnUnmount.ts (R5-TABS). Real
    * server-side cancellation needs `KILL QUERY` against a `query_id`, which is a separate, larger
    * piece (see the diagnostics plan's Phase 2 addendum) — don't infer from this option's existence
    * that abandoned queries stop costing ClickHouse anything, because they don't.

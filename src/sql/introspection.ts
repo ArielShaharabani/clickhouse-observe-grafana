@@ -1,7 +1,7 @@
 import { SourceConfig } from '../types';
 import { configSettingsFragments, queryTimeoutFragments, withSettings } from './settings';
 import { timeExpr } from './timeExpr';
-import { coarsePrunePredicate, quoteString } from './queryBuilder';
+import { coarsePrunePredicate, quoteString, tableRef } from './queryBuilder';
 
 /**
  * Execution guardrail for field-discovery scans (Map keys / JSON paths) — these queries scan
@@ -145,7 +145,7 @@ export function buildMapKeysQuery(
   opts: KeyDiscoveryOpts
 ): string {
   const { table, conditions, sampleSize = MAP_KEYS_SAMPLE_SIZE } = opts;
-  const tbl = `"${config.database}"."${table}"`;
+  const tbl = tableRef(config, table);
   const tsCol = timeExpr(config);
   const condClause = conditions.length > 0 ? `  WHERE ${conditions.join(' AND ')}` : null;
   return withSettings(
@@ -214,12 +214,39 @@ export function buildJsonPathsQuery(
   jsonColumn: string,
   opts: JsonPathDiscoveryOpts
 ): string {
-  const tbl = `"${config.database}"."${opts.table}"`;
+  const tbl = tableRef(config, opts.table);
   return withSettings(
     [
       `SELECT toJSONString(distinctJSONPaths(${jsonColumn})) AS paths`,
       `FROM ${tbl}`,
     ],
     ['optimize_functions_to_subcolumns = 1', ...discoverySettings(config), ...configSettingsFragments(config)]
+  );
+}
+
+/** Rows read by the dynamic-path type sample (buildJsonPathTypesSampleQuery). */
+export const JSON_TYPES_SAMPLE_SIZE = 1000;
+
+/**
+ * Types of the *dynamic* (undeclared) paths of a JSON column, from a bounded sample: the first
+ * `JSON_TYPES_SAMPLE_SIZE` rows read (no ORDER BY, so ClickHouse stops after a few granules), as
+ * one `toJSONString(distinctJSONPathsAndTypes(...))` cell — `{"path": ["Int64"], ...}`.
+ *
+ * Exists because a dynamic path read bare (`Payload.request.duration_ms`) is a `Dynamic` value,
+ * which ClickHouse refuses in GROUP BY and in numeric aggregates (avg/sum/max/quantile) and which
+ * casts a missing value to 0 in `toFloat64`. With the sampled type the path is read as a typed
+ * subcolumn instead (`Payload.request.duration_ms.:Int64`, see jsonPathField in FieldsContext).
+ * The bare buildJsonPathsQuery above stays the source of the path *list* (whole table, metadata
+ * only); this sample also lists paths, used as the fallback when that query fails (timeout on a
+ * server without the paths-only optimization).
+ */
+export function buildJsonPathTypesSampleQuery(config: SourceConfig, jsonColumn: string, opts: JsonPathDiscoveryOpts): string {
+  const tbl = tableRef(config, opts.table);
+  return withSettings(
+    [
+      `SELECT toJSONString(distinctJSONPathsAndTypes(${jsonColumn})) AS types`,
+      `FROM (SELECT ${jsonColumn} FROM ${tbl} LIMIT ${JSON_TYPES_SAMPLE_SIZE})`,
+    ],
+    [...discoverySettings(config), ...configSettingsFragments(config)]
   );
 }

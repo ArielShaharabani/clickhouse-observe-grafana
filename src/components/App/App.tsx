@@ -1,6 +1,7 @@
 import React, { createContext, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { startAutoEnrichment } from '../../diag/autoEnrich';
-import { AppRootProps, getDefaultTimeRange } from '@grafana/data';
+import { AppRootProps, getDefaultTimeRange, PageLayoutType } from '@grafana/data';
+import { PluginPage } from '@grafana/runtime';
 import { LoadingPlaceholder } from '@grafana/ui';
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { prefixRoute } from '../../utils/utils.routing';
@@ -280,7 +281,10 @@ function AppRoutes() {
         path="visualize"
         element={
           <React.Suspense fallback={<LoadingPlaceholder text="Loading Visualize…" />}>
-            <LensPage />
+            {/* PluginPage ties the page to its nav entry, so the side menu always marks Visualize active (as Discover does). */}
+            <PluginPage layout={PageLayoutType.Custom}>
+              <LensPage />
+            </PluginPage>
           </React.Suspense>
         }
       />

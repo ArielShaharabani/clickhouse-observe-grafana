@@ -18,6 +18,7 @@ Discover is a three-region page: field sidebar (left, \~295 px, resizable and co
 - **Placement:** row 1, left. Each tab shows its title; hover shows a ⋮ menu. `+` creates a tab. A ⌄ button at the right of the tab strip lists all tabs.
 - **Interaction:** tab ⋮ → Rename, Duplicate, Inspect, Switch to ES|QL. Tab strip menu → Opened tabs, Recently closed (with relative times such as ‘17 seconds ago’) and Clear. Tabs are drag-reorderable.
 - **Side effects:** each tab has its own query, filters, columns and time state; `_tab=(tabId:…)` is in the URL.
+- **Concurrency (R5-TABS):** only the active tab is mounted and queries. Leaving a tab (switch, close, another page) aborts its in-flight queries, so a slow or stuck tab never holds Grafana's concurrent data-query slots (5 without HTTP/2) and the next tab or Visualize answers normally; field discovery of a gone tab starts no further queries. ClickHouse may still finish an abandoned query (HTTP protocol, no `KILL QUERY`).
 - **Acceptance:** a duplicated tab starts with identical state; closing a tab lists it under Recently closed for restore.
 - **Grafana:** missing. Build as Scenes app state: an array of `ExploreTabState` persisted to URL + local storage.
 
@@ -80,6 +81,7 @@ Discover is a three-region page: field sidebar (left, \~295 px, resizable and co
 - **Type filter:** popover `Filter by field type` with counts: Date 1, Geo point 1, IP address 1, Keyword 20, Number 3, Text 1.
 - **Data:** “Available” vs “Empty” is computed from a field-existence query over the current time range.
 - **Grafana:** missing. Build `FieldList` from datasource field metadata + existence sampling.
+- **Observe (R5-JSON):** Map and JSON columns, and every Map key / JSON path, carry a small `Map` / `JSON` badge after the name (sidebar and Visualize field list). Hovering the type icon, name or badge shows the field name, where it comes from (`Key of Map column LogAttributes`, `Path in JSON column Payload`) and its ClickHouse type (`UInt32`, the Map's value type, a sampled `Int64`, `Dynamic(Int64, String)`). JSON paths: the path list is the whole-table `distinctJSONPaths` (metadata only); the types of dynamic (undeclared) paths come from a bounded sample (`distinctJSONPathsAndTypes` over the first 1,000 rows read), run alongside. A dynamic path seen with exactly one plain type (integers, floats, `Bool`, `String`, arrays of these) is read as the typed subcolumn `Payload.path.:Int64` (Nullable, NULL when missing or holding another type), so it groups and aggregates like a column; filters (KQL and pills) on it compare the bare path's text (`toString(Payload.path)`), so rows holding another type are kept; mixed / unseen / other types stay a bare `Dynamic` string field. When the whole-table query fails, the sampled paths stand in (no error) and are not cached, so the next load retries. A JSON-path lookup failure no longer blocks the document flyout. KQL on JSON paths: numeric ranges use `toFloat64OrNull(toString(…))` (a missing or non-numeric value never matches), wildcards and `contains` stringify first, array paths match any element (`arrayExists`), `field:*` is NULL-safe (filter pills "exists" / "does not exist" use the same predicate, so an empty array or a JSON column without paths counts as missing), a value query on the whole JSON column matches nothing and `Payload:*` means "has any path"; the KQL bar drills into a JSON column like a Map (`Payload.` lists its paths).
 
 ### DISC-SIDEBAR-02 Field statistics popover
 
@@ -98,6 +100,7 @@ Discover is a three-region page: field sidebar (left, \~295 px, resizable and co
 - **Acceptance:** stats reflect current filters; percentages are of sampled docs with a value; every value row has filter-for/out.
 - **Grafana:** missing. Highest-value feature to build first.
 - **Observe (PARITY-GRID):** every top-value row shows ⊕/⊖ filter buttons (always visible, not on hover) and a bar gauge under the value; the caption says `Calculated from N sample records.` only when the 5,000-row sample is full, else `Calculated from N records.` (same for the Map key list's `Discovered from …`). Map columns: the key list has a ⊕ `Add <column>.<key> as column` button per key (open the popover, one click); drilling into a key shows its stats with the back link inside the panel; long names wrap instead of truncating.
+- **Observe (R5-SAMPLING):** a `Scan full range` text button under the values (both views) reruns the stats over every matching document of the time range instead of the 5,000 newest, budgeted at 10 s and 20,000,000 rows read (bounded aggregates: `topK(…, 'counts')`, `uniq`, `quantile`, `histogram` re-binned to 10 buckets). The caption then reads `Scanned N records over the full time range (complete).`, `Scanned N records (partial: hit the 20,000,000-row read limit of about M).` (from `EXPLAIN ESTIMATE`), `… (completeness unknown: no row estimate).`, or, when the time limit cut the scan off (ClickHouse then returns no row), `Full-range scan hit the 10 s time limit before finishing — no result. …`; ` Counts are approximate.` is added when topK reported an error or the field has more distinct values than it tracks. A new search, filter or time range goes back to the sample.
 
 ### DISC-CHART-01 Hits histogram
 
@@ -183,6 +186,7 @@ Discover is a three-region page: field sidebar (left, \~295 px, resizable and co
 - **Mini distributions:** keyword → tiny bar strip + `3 categories` / `top 10 of 1012 categories`; number → density sparkline with min and max labels (`1,000,000 … 293,252,164`).
 - **Expanded row:** Documents stats (count, percentage, distinct values), Summary (min, median, max for numbers), Top values (value, count and %, ⊕/⊖), plus distribution chart.
 - **Grafana:** missing. Build as a panel that runs one sampler aggregation per field batch.
+- **Observe (R5-SAMPLING):** toolbar button `Scan full range` (tooltip explains the budget) profiles the current page of fields over the whole time range with the same budgeted query as the popover; it stays on across pages until `Back to sample` or a scope change (search, filters, time, data view). The footer (`data-testid=field-stats-scan-status`) shows the popover's scan caption; a time-limit hit replaces the table values with that message.
 
 ### DISC-ESQL-01 ES|QL mode
 

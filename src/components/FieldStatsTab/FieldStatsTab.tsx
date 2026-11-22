@@ -1,11 +1,12 @@
 import React, { Fragment, useContext, useEffect, useMemo, useState } from 'react';
 import { css } from '@emotion/css';
 import { GrafanaTheme2, TimeRange } from '@grafana/data';
-import { Icon, IconButton, Input, Pagination, Switch, useStyles2, useTheme2 } from '@grafana/ui';
+import { Button, Icon, IconButton, Input, Pagination, Switch, useStyles2, useTheme2 } from '@grafana/ui';
 import { FieldModel } from '../../sql/fieldModel';
 import { buildFieldIndex } from '../../sql/fields';
 import { buildWhereConditions } from '../../sql/queryBuilder';
-import { fetchFieldStatsBatch, FieldStats } from '../../sql/fieldStats';
+import { fetchFieldStatsBatch, fetchFieldStatsFullScan, FieldStats } from '../../sql/fieldStats';
+import { scanCaption, ScanStatus } from '../../sql/fullScan';
 import { lensFieldOf } from '../../lens/handoff';
 import { isLensField } from '../../lens/suggest';
 import { copyToClipboard, valueActions } from '../../actions/registry';
@@ -49,6 +50,10 @@ interface BatchResult {
   key: string;
   stats?: Record<string, FieldStats>;
   error?: string;
+  /** Set for a full-range scan result (R5-SAMPLING). */
+  scan?: ScanStatus;
+  /** Full-range scan: some counts are estimates. */
+  approximate?: boolean;
 }
 
 /** DISC-FIELDSTATS-01: every field of the data view with its documents %, distinct values and a
@@ -82,18 +87,18 @@ export function FieldStatsTab({ queryState, timeRange, onAddFilter, onVisualize 
     () => buildWhereConditions(config, queryState, fieldIndex),
     [config, queryState, fieldIndex]
   );
-  const requestKey = useMemo(
+  // "Scan full range" (R5-SAMPLING): on for the scope (view, query, filters, time) it was pressed
+  // in, across pages; any scope change falls back to the sample.
+  const scopeKey = useMemo(
     () =>
-      JSON.stringify([
-        config.datasourceUid,
-        config.database,
-        config.logsTable,
-        conditions,
-        timeRange.from.valueOf(),
-        timeRange.to.valueOf(),
-        pageFields.map((f) => f.id),
-      ]),
-    [config, conditions, timeRange, pageFields]
+      JSON.stringify([config.datasourceUid, config.database, config.logsTable, conditions, timeRange.from.valueOf(), timeRange.to.valueOf()]),
+    [config, conditions, timeRange]
+  );
+  const [fullRangeScope, setFullRangeScope] = useState<string | null>(null);
+  const fullRange = fullRangeScope === scopeKey;
+  const requestKey = useMemo(
+    () => JSON.stringify([scopeKey, pageFields.map((f) => f.id), fullRange]),
+    [scopeKey, pageFields, fullRange]
   );
   const [result, setResult] = useState<BatchResult | null>(null);
 
@@ -106,26 +111,40 @@ export function FieldStatsTab({ queryState, timeRange, onAddFilter, onVisualize 
       sqlExpr: f.sqlExpr,
       numeric: f.type === 'number',
       time: f.type === 'time' && f.source !== 'map',
-      blankIsValue: f.source !== 'map',
+      // A missing Map key or JSON path reads as '' (bare Dynamic) / NULL: absent, not a blank value.
+      blankIsValue: f.source !== 'map' && f.source !== 'json',
     }));
-    fetchFieldStatsBatch(config, targets, {
-      table: config.logsTable,
-      conditions,
-      sampleSize: STATS_SAMPLE_SIZE,
-      timeRange,
-      signal: ctrl.signal,
-    }).then(
-      (list) => {
-        if (!ctrl.signal.aborted) {
-          const stats: Record<string, FieldStats> = {};
-          pageFields.forEach((f, i) => (stats[f.id] = list[i]));
-          setResult({ key: requestKey, stats });
-        }
-      },
-      (e) => !ctrl.signal.aborted && setResult({ key: requestKey, error: errMsg(e) })
-    );
+    const toRecord = (list: FieldStats[]) => {
+      const stats: Record<string, FieldStats> = {};
+      pageFields.forEach((f, i) => (stats[f.id] = list[i]));
+      return stats;
+    };
+    const onError = (e: unknown) => !ctrl.signal.aborted && setResult({ key: requestKey, error: errMsg(e) });
+    if (fullRange) {
+      fetchFieldStatsFullScan(config, targets, { table: config.logsTable, conditions, timeRange, signal: ctrl.signal }).then(
+        ({ stats, status }) =>
+          !ctrl.signal.aborted &&
+          setResult({
+            key: requestKey,
+            // Time limit hit = no result at all: say so instead of a table of zeros.
+            stats: stats.length > 0 ? toRecord(stats) : undefined,
+            error: stats.length > 0 ? undefined : scanCaption(status),
+            scan: status,
+            approximate: stats.some((x) => x.approximate),
+          }),
+        onError
+      );
+    } else {
+      fetchFieldStatsBatch(config, targets, {
+        table: config.logsTable,
+        conditions,
+        sampleSize: STATS_SAMPLE_SIZE,
+        timeRange,
+        signal: ctrl.signal,
+      }).then((list) => !ctrl.signal.aborted && setResult({ key: requestKey, stats: toRecord(list) }), onError);
+    }
     return () => ctrl.abort();
-  }, [config, conditions, timeRange, pageFields, requestKey]);
+  }, [config, conditions, timeRange, pageFields, requestKey, fullRange]);
 
   const current = result?.key === requestKey ? result : null;
   const sampled = current?.stats ? (Object.values(current.stats)[0]?.sampled ?? 0) : 0;
@@ -153,6 +172,22 @@ export function FieldStatsTab({ queryState, timeRange, onAddFilter, onVisualize 
         />
         <span className={styles.muted}>{listed.length.toLocaleString()} fields</span>
         <div className={styles.spacer} />
+        {fullRange ? (
+          <Button size="sm" variant="secondary" fill="text" icon="history" onClick={() => setFullRangeScope(null)}>
+            Back to sample
+          </Button>
+        ) : (
+          <Button
+            size="sm"
+            variant="secondary"
+            fill="text"
+            icon="search"
+            onClick={() => setFullRangeScope(scopeKey)}
+            tooltip="Profile every matching document of the time range instead of the newest 5,000 (budgeted: a large range may give a partial result)"
+          >
+            Scan full range
+          </Button>
+        )}
         <label className={styles.distToggle}>
           <Icon name={showDist ? 'eye' : 'eye-slash'} />
           <span>Distributions</span>
@@ -227,7 +262,14 @@ export function FieldStatsTab({ queryState, timeRange, onAddFilter, onVisualize 
       )}
 
       <div className={styles.footer}>
-        {sampled > 0 && (
+        {current?.scan && current.stats && (
+          <span className={styles.muted} data-testid="field-stats-scan-status">
+            {scanCaption(current.scan)}
+            {current.approximate && ' Counts of high-cardinality fields and distributions are approximate.'}
+          </span>
+        )}
+        {fullRange && !current && <span className={styles.muted}>Scanning the full time range…</span>}
+        {!current?.scan && sampled > 0 && (
           <span className={styles.muted}>
             {/* "sample" only when the cap was hit; fewer rows means every matching document was used. */}
             {sampleCaption('Calculated', sampled, STATS_SAMPLE_SIZE)}

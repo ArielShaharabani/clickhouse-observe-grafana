@@ -27,6 +27,7 @@ import {
   soleCondition,
 } from '../../sql/filters';
 import { FieldValue } from '../../sql/kql/_values';
+import { normalizeValuePrefix } from '../../sql/fullScan';
 import { useFields } from '../FieldsContext';
 
 interface OpDef {
@@ -237,7 +238,7 @@ export function pillFromDraftTree(
 interface ConditionRowProps {
   draft: DraftCondition;
   fields: FieldModel[];
-  loadValues: (sqlExpr: string) => Promise<FieldValue[]>;
+  loadValues: (sqlExpr: string, prefix?: string) => Promise<FieldValue[]>;
   onChange: (d: DraftCondition) => void;
   /** An edited single pill's own operator stays selectable. */
   keepOp?: FilterOp;
@@ -267,7 +268,25 @@ function ConditionRow({
   const rangeId = useId();
   const [valueOptions, setValueOptions] = useState<Array<SelectableValue<string>>>([]);
   const [loadingValues, setLoadingValues] = useState(false);
+  // Text typed in the value box, debounced into a full-range prefix lookup (R5-SAMPLING): values
+  // outside the 500-row sample are still offered once 2+ characters are typed.
+  const [typedValue, setTypedValue] = useState('');
+  const [valuePrefix, setValuePrefix] = useState('');
+  useEffect(() => {
+    const next = normalizeValuePrefix(typedValue) ?? '';
+    const t = setTimeout(() => setValuePrefix(next), 250);
+    return () => clearTimeout(t);
+  }, [typedValue]);
   const { field: selectedFieldExpr, op: selectedOp } = draft;
+  // A new field or operator starts a new value lookup: text typed for the previous one must not
+  // narrow it (adjusting state during render, React's pattern for resetting on a prop change).
+  const valueKey = `${selectedFieldExpr ?? ''} ${selectedOp ?? ''}`;
+  const [valueKeySeen, setValueKeySeen] = useState(valueKey);
+  if (valueKeySeen !== valueKey) {
+    setValueKeySeen(valueKey);
+    setTypedValue('');
+    setValuePrefix('');
+  }
   const name = (base: string) => (label ? `${base} ${label}` : base);
 
   const fieldOptions: Array<SelectableValue<string>> = fields.map((f) => ({
@@ -293,7 +312,7 @@ function ConditionRow({
     }
     let cancelled = false;
     setLoadingValues(true);
-    loadValues(selectedFieldExpr).then((vals) => {
+    loadValues(selectedFieldExpr, valuePrefix || undefined).then((vals) => {
       if (!cancelled) {
         setValueOptions(vals.map((v) => ({ label: v.value, value: v.value })));
         setLoadingValues(false);
@@ -302,7 +321,7 @@ function ConditionRow({
     return () => {
       cancelled = true;
     };
-  }, [selectedFieldExpr, selectedOp, loadValues]);
+  }, [selectedFieldExpr, selectedOp, loadValues, valuePrefix]);
 
   const rangeError = validateRange(selectedField, selectedOp, draft.single, draft.pair);
   const currentOp = selectedOp ? opDef(selectedOp) : null;
@@ -385,6 +404,7 @@ function ConditionRow({
                 allowCustomValue
                 options={valueOptions}
                 isLoading={loadingValues}
+                onInputChange={(v: string) => setTypedValue(v)}
                 value={draft.multi.map((v) => ({ label: v, value: v }))}
                 onChange={(opts) =>
                   onChange({ ...draft, multi: (opts as Array<SelectableValue<string>>).map((o) => o.value ?? '') })
@@ -399,6 +419,7 @@ function ConditionRow({
                 allowCustomValue
                 options={valueOptions}
                 isLoading={loadingValues}
+                onInputChange={(v: string) => setTypedValue(v)}
                 value={draft.single ? { label: draft.single, value: draft.single } : null}
                 onChange={(opt) => onChange({ ...draft, single: (opt as SelectableValue<string>).value ?? '' })}
                 placeholder={selectedFieldExpr ? 'Select or type a value…' : 'Select a field first'}
@@ -454,7 +475,7 @@ function ConditionRow({
 interface FilterEditFormProps {
   /** Existing pill to prefill (edit); omit for a blank "Add filter" form. */
   initial?: FilterPill;
-  loadValues: (sqlExpr: string) => Promise<FieldValue[]>;
+  loadValues: (sqlExpr: string, prefix?: string) => Promise<FieldValue[]>;
   onSubmit: (pill: FilterPill) => void;
   onCancel: () => void;
 }

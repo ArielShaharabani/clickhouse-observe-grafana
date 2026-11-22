@@ -1,5 +1,5 @@
 import React from 'react';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { FilterEditForm, isFilterComplete, operatorsFor, validateRange, OPERATORS } from '../AddFilter/FilterEditForm';
 import { FieldsContext } from '../FieldsContext';
 import { FilterPill } from '../../types';
@@ -174,6 +174,39 @@ describe('FilterEditForm', () => {
     renderForm({ id: 'p4', field: 'ServiceName', op: '=', value: 'x' });
     expect(screen.getByTestId('filter-preview')).toBeInTheDocument();
     expect(ids).not.toHaveBeenCalled();
+  });
+
+  it('a new operator drops the text typed for the previous one from the value lookup', async () => {
+    jest.useFakeTimers();
+    try {
+      const loadValues = jest.fn(async () => []);
+      const fields = [field('ServiceName', 'string')];
+      const ctx: any = { fields, loading: false, error: null, refresh: jest.fn() };
+      render(
+        <FieldsContext.Provider value={ctx}>
+          <FilterEditForm
+            initial={{ id: 'p5', field: 'ServiceName', op: '=', value: '' }}
+            loadValues={loadValues}
+            onSubmit={jest.fn()}
+            onCancel={jest.fn()}
+          />
+        </FieldsContext.Provider>
+      );
+      fireEvent.change(screen.getByLabelText('Value'), { target: { value: 'pay' } });
+      await act(async () => {
+        jest.advanceTimersByTime(300);
+      });
+      expect(loadValues).toHaveBeenLastCalledWith('ServiceName', 'pay');
+
+      fireEvent.keyDown(screen.getByLabelText('Operator'), { key: 'ArrowDown' });
+      fireEvent.click(await screen.findByText('is not'));
+      await act(async () => {
+        jest.advanceTimersByTime(300);
+      });
+      await waitFor(() => expect(loadValues).toHaveBeenLastCalledWith('ServiceName', undefined));
+    } finally {
+      jest.useRealTimers();
+    }
   });
 
   it('Cancel calls onCancel', () => {

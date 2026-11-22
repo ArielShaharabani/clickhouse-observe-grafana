@@ -7,7 +7,7 @@
  * by = buckets[0]; Pie: slices = buckets — so a chart-type switch is a re-cap of the same lists
  * (LENS-TYPE-01 remapping rules 1–2), never a rebuild.
  */
-import { FieldType } from '../sql/fieldModel';
+import { FieldModel, FieldType } from '../sql/fieldModel';
 import { formulaErrors, FormulaFields, formulaUsesWindow, formulaTimeSeriesFns, MAX_FORMULA_LEN } from './formula';
 import {
   BASE_OPS,
@@ -544,6 +544,11 @@ export interface LensField {
   sqlExpr: string;
   label: string;
   type: FieldType | 'records';
+  /** Display only (R5-JSON #7): where the field comes from and its ClickHouse type, for the field list's badge and tooltip. */
+  source?: FieldModel['source'];
+  rawType?: string;
+  mapColumn?: string;
+  jsonColumn?: string;
 }
 
 let idSeq = 0;

@@ -45,8 +45,10 @@ function keyString(k: MetadataKey): string {
   return `${tablePrefix(k.datasourceUid, k.database, k.table)}${k.kind}${SEP}${k.detail ?? ''}`;
 }
 
-/** Returns the cached or in-flight result for `key`, running `fetch` only when neither exists. */
-export function loadMetadata<T>(key: MetadataKey, fetch: () => Promise<T>): Promise<T> {
+/** Returns the cached or in-flight result for `key`, running `fetch` only when neither exists.
+ *  `keep(value) === false` marks a settled value as partial: it is shared while in flight but not
+ *  cached, so the next load asks again. */
+export function loadMetadata<T>(key: MetadataKey, fetch: () => Promise<T>, keep?: (value: T) => boolean): Promise<T> {
   const k = keyString(key);
   const existing = entries.get(k);
   if (existing && (existing.settledAt === undefined || Date.now() - existing.settledAt < METADATA_TTL_MS)) {
@@ -56,6 +58,9 @@ export function loadMetadata<T>(key: MetadataKey, fetch: () => Promise<T>): Prom
     promise: fetch().then(
       (value) => {
         entry.settledAt = Date.now();
+        if (keep && !keep(value) && entries.get(k) === entry) {
+          entries.delete(k);
+        }
         return value;
       },
       (err) => {

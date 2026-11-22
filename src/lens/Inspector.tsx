@@ -231,11 +231,12 @@ function RequestsView({ data, dataView, tableName }: LensInspectorProps) {
     ['Status', latest.status],
   ].filter(([k, v]) => v !== '-' || !SERVER_STATS.has(k));
   // The SQL laid out as text (not a JSON string with escaped quotes and newlines).
-  const requestText = [
-    '-- rawSql',
-    prettySql(sql),
-    ...(executedSql && executedSql !== sql ? ['', '-- executedSql', prettySql(executedSql)] : []),
-  ].join('\n');
+  // The values actually sent (macros expanded by the datasource) lead; the macro form follows.
+  const requestText = (
+    executedSql && executedSql !== sql
+      ? ['-- executedSql', prettySql(executedSql), '', '-- rawSql (macros)', prettySql(sql)]
+      : ['-- rawSql', prettySql(sql)]
+  ).join('\n');
   const responseJson = JSON.stringify(
     data
       ? {
