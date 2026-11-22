@@ -1,7 +1,7 @@
 # Context snapshot — read this to restart
 
 Saved after every feature (and every review-fix round). A new session can resume from this file plus `PROGRESS.md` alone.
-Last saved: 2026-11-21, #- R4-VIZ merged (PR 79, v0.72.0).
+Last saved: 2026-11-22, #- R5-PADDING merged (PR 82, v0.78.1).
 
 ## Goal
 Bring Kibana Discover + Lens style exploration to Grafana on ClickHouse by extending the **ClickHouse Observe** app plugin.
@@ -79,6 +79,13 @@ Bring Kibana Discover + Lens style exploration to Grafana on ClickHouse by exten
 | - | R4-DISCOVER: Discover round-3 fixes | 79 | src/components/LogsTable.tsx, src/pages/LogsExplorer.tsx, src/data/windowedSearch.ts, src/sql/keys.ts |
 | - | R4-DASH: Dashboards and sharing round-3 fixes | 79 | src/lens/panelExport.ts, src/data/panelExport.ts, src/components/AddToDashboard/AddToDashboardModal.tsx, src/data/shortUrl.ts |
 | - | R4-VIZ: Visualize round-3 fixes: percentile rank, pie labels, faster open | 79 | src/lens/calc.ts, src/lens/formula.ts, src/lens/render/PieChart.tsx, src/lens/LensPage.tsx, src/components/SearchBar.tsx |
+| - | R5-TABS: Stuck Discover tab no longer blocks other tabs | 82 | src/data/abortOnUnmount.ts, src/pages/LogsExplorer.tsx |
+| - | R5-VIZ-LAYOUT: Resizable Visualize panes, paginated table, breadcrumbs | 82 | src/lens/LensPage.tsx, src/lens/render/LensChart.tsx |
+| - | R5-VIZ-STATE: Empty visualization slots, nav highlight, expanded Inspect SQL | 82 | src/lens/LensPage.tsx, src/sql/expandMacros.ts |
+| - | R5-QUERYBAR: Shared Discover/Visualize header + Schema button | 82 | src/components/QueryBar.tsx, src/components/SchemaButton.tsx |
+| - | R5-JSON: JSON fields end to end + Map/JSON field markers | 82 | src/components/FieldsContext.tsx, src/sql/kql/toSql.ts, src/sql/queryBuilder.ts |
+| - | R5-SAMPLING: Rare values: full-range prefix autocomplete + Scan full range | 82 | src/sql/fullScan.ts, src/sql/kql/_values.ts |
+| - | R5-PADDING: Padding/spacing polish | 82 | src/lens/LensPage.tsx, src/lens/DimensionEditor.tsx |
 
 ## Key decisions (details in DECISIONS.md)
 - Frontend-only; queries via grafana-clickhouse-datasource (`src/data/runQuery.ts`). Plain React + @grafana/ui, no Scenes.

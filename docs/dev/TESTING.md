@@ -523,3 +523,44 @@ LENS-DATAVIEW acceptance:
 | E2E | `tests/features/lens-save-01.spec.ts` (fresh open empty, reload keeps the chart; replaces the session-draft test) — not run (coordinator) |
 | E2E | `tests/features/parity-charts2.spec.ts`, `tests/features/r3-charts.spec.ts` (pie / donut are `data-panel="pie"` now) — not run (coordinator) |
 | Manual | perf-50m Visualize load (`kibana-compare/round3/visualize/o-perf.js`): expect 6 queries, no `data_skipping_indices`, chart query issued right after `system.columns` — not run (coordinator) |
+
+### R5-TABS (PR 82)
+| Case | Status |
+| --- | --- |
+| Jest | `src/data/__tests__/abortOnUnmount.test.tsx` (a fake datasource with Grafana's 5-slot queue: a stuck tab's 6 queries hold every slot, switching tabs frees them and the next tab answers; the leaky variant stays blocked; the hook aborts only the latest controller, on unmount only), `src/components/__tests__/FieldsContext.test.tsx` (no Map-key samples after unmount) |
+| E2E | `tests/features/r5-tabs.spec.ts` (stuck tab held via `page.route`, New tab answers, stuck requests aborted) — not run (coordinator) |
+
+### R5-VIZ-LAYOUT (PR 82)
+| Case | Status |
+| --- | --- |
+| Table panelSpec enables pagination | jest (chartSpecifics) | pass |
+| Fields pane resize + persistence, dims handle, breadcrumb | e2e `tests/features/r5-viz-layout.spec.ts` | not run (coordinator) |
+
+### R5-VIZ-STATE (PR 82)
+| Case | Status |
+| --- | --- |
+
+### R5-QUERYBAR (PR 82)
+| Case | Status |
+| --- | --- |
+| jest `SchemaButton.test.tsx`, `queryRow.test.tsx` | pass |
+| e2e `tests/features/r5-querybar.spec.ts` (Discover schema, Visualize bar/title) | not run (coordinator) |
+
+### R5-JSON (PR 82)
+| Case | Status |
+| --- | --- |
+| Jest | `src/sql/__tests__/r5_json.test.ts` (typed path fields, type allowlist, safe-expression regex incl. injection, sample query, KQL ranges / wildcard / arrays / container / NULL-safe exists, filter pills, autocomplete drill-down and typed value context, badges / tooltips, `mapValueType`, unknown-name value lookup refused), `to_sql.test.ts` (JSON range cast), `FieldsContext.test.tsx` (typed subcolumn from the sample, fallback to sampled paths without error), `LogDetailDrawer.test.tsx` (partial discovery failure renders the document), `FieldStatsTab.test.tsx` (missing JSON path is absent), `perfMetadata.test.tsx` (counts: + one type-sample query) |
+| SQL | Every generated statement (KQL, pills, top values, numeric stats, field-stats batch, Lens terms / terms+Other+missing / avg / max / median / sum / unique / last value, grid with a JSON column) run against `default.otel_logs` (dynamic paths) on ClickHouse 26.3: no errors except deliberately wrong inputs (numeric aggregate forced on a text path, `100` compared with a Bool) |
+| E2E | `tests/features/r5-json.spec.ts` — not run (coordinator) |
+
+### R5-SAMPLING (PR 82)
+| Case | Status |
+| --- | --- |
+| Jest | `src/sql/__tests__/full_scan.test.ts` (budget settings + view can't override, timeout clamp, prefix normalisation, prefix SQL + LIKE / quote / backslash escaping, EXPLAIN ESTIMATE, completeness + captions, full-scan SQL shape, topK / histogram parsing + re-binning, merge order) |
+| Jest | `src/autocomplete/__tests__/service.test.ts` (prefix lookup merged first; none without a prefix), `src/components/FieldStatsTab/__tests__/FieldStatsTab.test.tsx` (scan complete / partial / time limit), `src/components/FieldSidebar/__tests__/FieldStatsPopoverScan.test.tsx` (popover scan replaces values + caption) |
+| E2E | `tests/features/r5-sampling.spec.ts` — not run (coordinator). Rare value `LogAttributes.duration_ms : 7505` (once, 2026-01-05); tab scan complete with 41,520; popover caption |
+
+### R5-PADDING (PR 82)
+| Case | Status |
+| --- | --- |
+

@@ -10,6 +10,81 @@ Versions track the plugin's release history. `Unreleased` collects commits not y
 
 ---
 
+## [0.78.1] — 2026-11-22
+
+- Replaced hard-coded px paddings/gaps with theme tokens in Emotion blocks:
+  LogsExplorer rail button padding, SearchBar item badge padding, XyChart color-grid gap,
+  PieChart legend item padding, VolumeHistogram legend row padding.
+- Map/JSON fields (and their keys/paths) show a Map/JSON marker in place of the type icon, left of the name, in the
+  Discover sidebar and the Visualize field list; the right-side badge (covered by the filter buttons) is gone.
+- Visualize dimension editor: fields scroll in their own area; the Remove/Close footer no longer overlaps the aggregation options.
+- Discover and Visualize share one header (data view, Schema, Add filter, search, Explore-in-other-app, time controls,
+  action row) at identical positions, so switching pages doesn't move anything. Visualize gained Discover's page padding
+  and a refresh-interval picker.
+- Fixed: the Discover search bar overflowed when "Update" was shown, hiding it under the Explore link; fast typing after
+  accepting an autocomplete suggestion moved the caret back.
+
+---
+
+## [0.78.0] — 2026-11-22
+
+### Added
+- **Rare values in value autocomplete.** After 2+ characters of a value in the KQL bar or the filter editor's value box, Observe also looks the prefix up over the whole time range (budgeted to 2 s and 20M rows read). Matches come first with their full-range counts, then the sampled values.
+- **Scan full range** in the field popover (Top values and Distribution) and on the Field statistics tab. It reruns the statistics over every matching document instead of the 5,000 newest (budgeted to 10 s and 20M rows read). The caption says whether the scan was complete, partial (hit the row-read limit, with the estimated total), unknown, or cut off by the time limit. Counts are marked approximate when they are estimates.
+
+---
+
+## [0.77.0] — 2026-11-22
+
+### Added
+- **Map / JSON field labels (round 5 #7).** Map and JSON columns and their keys / paths show a `Map` or `JSON` badge in the Discover sidebar and the Visualize field list; hovering a field's icon, name or badge shows where it comes from and its ClickHouse type.
+- **Typed JSON paths.** Dynamic (undeclared) JSON paths get their type from a small sample, so a numeric path is a number field: Visualize can average / sum / take percentiles of it, the field popover shows its distribution, and top values no longer count rows without the path as an empty value.
+
+### Changed
+- **KQL autocomplete drills into a JSON column** like a Map: accepting `Payload` inserts `Payload.` and lists its paths; values of a path are suggested from its typed column.
+
+### Fixed
+- **Security:** KQL value suggestions no longer run a lookup with an unknown typed field name spliced into SQL.
+- Visualize top values and metrics on a dynamic JSON path failed (`Data types Variant/Dynamic are not allowed in GROUP BY keys`, `Illegal type Dynamic of argument for aggregate function avg`).
+- `Payload.x < 100` matched every row without the path (a missing value read as 0); `Payload.name > 1` failed ("Cannot parse string as Float64").
+- `Payload.user.id : 1*` failed (ILIKE on a number); `Payload.tags : retry` on an array path failed; `Payload : x` failed parsing `x` as JSON (now matches nothing); `not Payload.x:*` matched nothing.
+- Filter pills on JSON paths: ranges compare numerically, "does not exist" counts rows without the path, "contains" works on numeric paths, array paths match any element.
+- The document panel no longer shows only an error when the JSON-path lookup of one column failed; the path list falls back to the sample when the whole-table lookup fails (e.g. times out).
+
+---
+
+## [0.76.0] — 2026-11-22
+
+- Discover and Visualize share one query bar component (`src/components/QueryBar.tsx`): data view picker, Schema button, Add filter, query menu, KQL search bar, with page-specific trailing controls. `lens/QueryRow.tsx` is now a thin wrapper.
+- Visualize: the "Visualize" title left of the data view picker is removed; the picker moved into the query bar row (same place as Discover).
+- New "Schema" button next to the data view picker (Discover and Visualize) opening a modal with the view's columns and ClickHouse types, with a filter box.
+
+---
+
+## [0.75.0] — 2026-11-22
+
+- Visualize is wrapped in `PluginPage` (as Discover is), so the side-menu entry is marked active whenever the page is open.
+- An empty Visualize workspace shows the dimension slots (Horizontal axis / Vertical axis / Breakdown) with add buttons.
+- Removing the only horizontal axis of a line/area/bar/heatmap keeps the chart type and shows an empty visualization instead of switching to Metric.
+- Inspect SQL shows the macro-expanded SQL: Discover expands `$__fromTime`/`$__toTime` with the time range; Visualize's Inspector leads with `executedSql` and keeps the macro form after it.
+
+---
+
+## [0.74.0] — 2026-11-22
+
+- Visualize: the Fields list and the Dimensions panel are resizable with drag handles (Grafana `useSplitter`, the same as Discover's sidebar); widths persist in localStorage (`clickhouse-observe.lens.fieldsSplit`, `clickhouse-observe.lens.dimsSplit`).
+- Visualize: the Table chart paginates (`enablePagination`), in the page and in the exported dashboard panel, so a large table no longer hides its bottom / summary row.
+- Discover: the breadcrumb no longer repeats the page name (`Discover > Discover`); the `PluginPage` `pageNav` child was removed so the nav entry is the last crumb.
+
+---
+
+## [0.73.0] — 2026-11-22
+
+### Fixed
+- **A slow or stuck Discover tab no longer stalls the other tabs or Visualize.** Leaving a tab (switching, closing, opening another page) stops waiting for its queries, which frees Grafana's few concurrent query slots and drops results nobody shows.
+
+---
+
 ## [0.72.0] — 2026-11-21
 
 ### Added

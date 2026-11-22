@@ -28,6 +28,62 @@ Grafana's time picker applies a range immediately (no pending state), so only th
 ## D10 — Action registry (SHARED-ACTION-01)
 `src/actions/registry.ts` defines each value/field action once (icon, short tooltip, specific accessible name, compatibility, behaviour): `valueActions(ctx, host, ids?)` → filter for / filter out / copy; `fieldActions` → exists / does not exist. A surface passes an `ActionHost` (`addFilter` omitted = read-only → copy only) and keeps its own layout. Grafana's `IconButton` uses `tooltip` as its accessible name, so icon surfaces use `ActionIconButton` (Tooltip wrapper) to keep names like "Filter for Service: payments". The field list's "filter out rows that have this field" is now a `not_exists` pill (same SQL as the old `= ''`).
 
+## D75 — Padding/spacing polish (R5-PADDING)
+- Only tokenize spacing where the value maps to a theme step (0.25 = 2px, 0.5 = 4px, 0.75 = 6px).
+  Sub-4px optical nudges (e.g. icon `margin-top: 2px/3px`) and dense-table 1-2px gaps are left as-is.
+- `LensChart.tsx` gauge/lone-name styles use a plain object with no theme, so their `8px`/`4px` values were not changed.
+- Waterfall `margin-left: 136px` is a column-width alignment and is left as-is.
+
+Deferred: - Inline-style `TraceViewPickerModal.tsx` padding (`8px 12px`, `marginBottom: 4`): not a css/getStyles block, left for a later pass.
+- Toolbar gap inconsistencies in LogsTable/FieldStatsTab (1-2px dense-table gaps): left as design density.
+
+## D74 — Rare values: full-range prefix autocomplete + Scan full range (R5-SAMPLING)
+User item 15, with both approved changes implemented. Measured on CH 26.3 against `perf_logs_50m`: with `timeout_overflow_mode = 'break'`, an aggregate returns **zero rows** when the time limit fires, with or without GROUP BY. Only `read_overflow_mode = 'break'` returns a partial aggregate. Consequences:
+- Autocomplete uses the approved budget (2 s / 20M, both `'break'`). A timed-out lookup returns nothing and only the sampled list shows. On this host a Map-value prefix over all 50M rows took 2–3 s and so returned nothing (`ServiceName` LowCardinality: 1.2 s, found). On a warmer or faster server, or a shorter range, it finds values.
+- Stats scan: an explicit click, so its wall clock is **10 s** instead of 2 s. On the perf fixture, reading one Map value column for 20M rows alone takes about 4 s, and a time-limit hit gives no result at all. The row cap stays at 20M. Completeness is decided like this: no row back means the time limit was hit. `scanned ≥ cap`, or an `EXPLAIN ESTIMATE` above the cap, means partial (rows). An estimate within the cap means complete. If the estimate is unavailable (for example, if the Grafana datasource refuses `EXPLAIN`, which I couldn't check without Grafana access), the caption says "completeness unknown". There is no X-ClickHouse-Summary path: the Grafana ClickHouse datasource doesn't expose rows_read in frame meta.
+- Exact-but-unbounded aggregates were replaced: top-value counts come from `topK(…, 'counts')`. They are exact while a field has ≤ 10,000 distinct values, and the field is flagged approximate otherwise (or when topK reports an error, or distinct ≥ 65,536 for `uniq`). Numeric distribution: `histogram(20)` re-binned client side into 10 equal-width buckets (approximate). For discrete integers this spreads counts across neighbouring buckets.
+- Merge order: full-range matches first (true counts), then sampled-only values. Minimum prefix length is 2 (the brief allowed 1–2), which is lighter on DB load. A KQL wildcard prefix (`pay*`) doesn't trigger a lookup. The prefix lookup reuses the value cache (120 s TTL, key = sampled key with `prefix=<lowercased>`), so `clearValuesCacheForTable` clears it too. Debounce: the KQL bar's existing 250 ms, plus a new 250 ms one on the filter editor's value input.
+- Tab scope: the button profiles the current page of fields (≤ 25) and stays on across pages until `Back to sample` or a scope change. It is not persisted in the URL.
+
+Deferred: - Pre-existing, not changed: `suggest.ts` `fieldSqlExpr` falls back to the raw typed field name as the SQL expression for the **sampled** value lookup (`toString(<typed text>)`). The new prefix path refuses such expressions. The sampled path should get the same `isSafeColumnExpr` guard, but that is left to the r5-json agent, who is editing that code.
+- The lens/ContextView filter editors get the prefix lookup automatically through the shared service. Lens field pickers don't (they don't list values).
+- Real `rows_read` from ClickHouse (X-ClickHouse-Summary) would replace the EXPLAIN-based estimate. It needs datasource support.
+- A smarter time budget for the stats scan (a progressive/sliced scan that keeps partial results when the time limit is hit).
+
+## D73 — JSON fields end to end + Map/JSON field markers (R5-JSON)
+Kibana-like behaviour where a product choice was needed: an array path matches when any element matches (Elasticsearch multi-value semantics); a value query on a whole object (JSON column) matches nothing, `Payload:*` is "has any path"; a field's type tooltip is shown on hover of its label (the sidebar row keeps its `title` = SQL expression, which existing specs and the row semantics rely on). Dynamic-path types: sampled from the first 1,000 rows read (no ORDER BY, so a few granules) rather than the newest rows, which would read the JSON column of the whole range on servers without lazy materialization; a path with several types, a date / decimal / other type, or not seen in the sample stays a bare `Dynamic` string field (stringified everywhere), so no query can hit the Dynamic restrictions. JSON array paths are type `array` and so, like other containers, not offered in Visualize. The typed expression replaces the bare one in `FieldModel.sqlExpr`; a filter / KQL / URL column using the bare dotted name still resolves to it through the display-name lookup. Root causes: (1) dynamic paths were published as bare `Dynamic` expressions typed 'string', which ClickHouse refuses in GROUP BY / numeric aggregates and casts NULL→0 in `toFloat64`; (2) the KQL bar offered the JSON column itself as a terminal field (`Payload : value` compares a whole object), not a drill-down; (3) the document panel treated any discovery error, including one JSON column's path-lookup failure, as fatal.
+
+Deferred: - Saved Visualize charts / URLs that reference a dynamic path by its old bare expression (`Payload.x`) are dropped by Visualize's field check now that the field reads `Payload.x.:Int64` (Discover filters and KQL still resolve the bare name). A remap in `sanitizeLens` would keep them.
+- The `spec_logs` fixture only has the declared `Payload.user.id` (always 0), so e2e covers declared paths only; dynamic-path behaviour is covered by jest and by running the SQL against `otel_logs`. Seeding a few dynamic paths into `04_spec_fixture.sql` would let e2e cover them (fixture change needs a reseed).
+- Histogram breakdown by a typed JSON path counts rows without the path under "Other".
+- A JSON path with several observed types (e.g. Int64 + String) stays a text field.
+
+## D72 — Shared Discover/Visualize header + Schema button (R5-QUERYBAR)
+- Kibana-like: data view picker leads the query row on both pages. Schema lists top-level columns only (not Map keys / JSON paths / tuple elements, which are not schema).
+- Accessible names unchanged (`Search logs (KQL)`, `Add filter`, `lens-query-row` testid). New: button `Show schema`, table `Schema columns`, textbox `Filter schema columns`.
+
+Deferred: - Schema modal shows no column comments/default expressions.
+
+## D71 — Empty visualization slots, nav highlight, expanded Inspect SQL (R5-VIZ-STATE)
+- The nav highlight bug is fixed by `PluginPage`; the Configuration entry is a Grafana core page (/plugins/<id>) and is not changed by the plugin.
+- Raw (macro) form kept in the Visualize Inspector only (one extra block); Discover shows expanded SQL only. Raw-SQL seeding still uses the macro form.
+- Adding a metric to an empty bar still adds the time axis automatically (existing rule 3).
+
+Deferred: - Configuration tab highlight inside Grafana's plugin page is core-owned; not reproducible/fixable from the plugin.
+
+## D70 — Resizable Visualize panes, paginated table, breadcrumbs (R5-VIZ-LAYOUT)
+- Fields | (workspace | dimensions) uses two nested splitters; widths are fractions (like Discover), min widths 160 px (fields) and 220 px (dimensions).
+- Visualize renders without `PluginPage`, so its crumb is the nav entry only; unchanged.
+- Kibana-like: tables paginate.
+
+Deferred: - Context / single-document pages keep their own child crumb (distinct names, not duplicates).
+
+## D69 — Stuck Discover tab no longer blocks other tabs (R5-TABS)
+R5-TABS (user item 4: "if the first tab in discover is stuck then all others are as well … same with visualize"). Only the active Discover tab is mounted (unchanged), so "inactive tabs must not query or hold results" already held; the gap was that the unmounted tab's in-flight requests kept running. `useAbortOnUnmount` (`src/data/abortOnUnmount.ts`) aborts the latest list / histogram controllers and bumps their run ids when `LogsExplorer` unmounts; `useFieldDiscovery` bumps its run id on unmount so a gone page starts no Map-key samples. Shared, deduped metadata reads (system.columns, JSON paths, skip indexes) are deliberately not aborted: another tab may be waiting on the same promise and they are cheap. Visualize already aborted its chart / layer queries on unmount. Memory was not the cause: one tab's rows are held at a time; the tab list stores URL params only. Not changed: ClickHouse keeps executing an abandoned query (HTTP protocol; probed `cancel_http_readonly_queries_on_client_close` as a query setting and a URL parameter, neither stopped a running `sleepEachRow` query).
+
+Deferred: - Server-side cancellation of abandoned queries (`KILL QUERY` by a tagged `query_id` / `log_comment`; needs the KILL grant).
+- On-demand popover queries (field top values, Map keys) and "Search entire time range" take no abort signal; they are LIMIT-sampled and short.
+
 ## D68 — Visualize round-3 fixes: percentile rank, pie labels, faster open (R4-VIZ)
 R4-VIZ (round 3 Visualize rows 8, 18, 19, 20, 22, 23).
 
