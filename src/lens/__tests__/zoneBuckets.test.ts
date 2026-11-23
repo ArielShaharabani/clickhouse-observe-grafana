@@ -4,6 +4,8 @@ import { FieldIndex } from '../../sql/fields';
 import { compileLens, shapeLensRows } from '../compile';
 import { LENS_MAX_BUCKETS, intervalMs, resolveLensInterval, stepBucket } from '../interval';
 import { quoteString } from '../../sql/queryBuilder';
+import { bucketPos, bucketTimeAt } from '../render/timeTicks';
+import { xLabel } from '../render/XyChart';
 import { LensState } from '../state';
 
 const config = {
@@ -73,6 +75,26 @@ describe('buckets in the user zone', () => {
     expect(res.xs.map((x) => new Date(Number(x)).toISOString().slice(5, 13))).toEqual([
       '03-06T05', '03-07T05', '03-08T05', '03-09T04', '03-10T04', '03-11T04',
     ]);
+  });
+});
+
+describe('drawing', () => {
+  it('ticks and events follow the real bucket lengths', () => {
+    const xs = ['2026-01-01', '2026-02-01', '2026-03-01'].map((d) => Date.parse(`${d}T00:00:00Z`));
+    const end = Date.parse('2026-04-01T00:00:00Z');
+    expect(xs.map((t) => bucketPos(xs, end, t))).toEqual([0, 1, 2]);
+    expect(bucketPos(xs, end, end)).toBe(3);
+    expect(bucketPos(xs, end, Date.parse('2026-02-15T00:00:00Z'))).toBe(1.5);
+    expect(bucketTimeAt(xs, end, 1.5)).toBe(Date.parse('2026-02-15T00:00:00Z'));
+    const r = shapeLensRows(state('1M'), xs.map((b0) => ({ b0, m0: 1 })), 1, { interval: { n: 1, unit: 'M' } });
+    expect(r.xEnd).toBe(end);
+  });
+
+  it('bucket names are not ambiguous (L6)', () => {
+    const t = Date.parse('2026-01-02T00:00:00Z');
+    expect(xLabel(t, true, 86_400_000)).toBe('01-02 00:00');
+    expect(xLabel(t, true, 365 * 86_400_000)).toBe('2026-01-02 00:00');
+    expect(xLabel(t, true, 3_600_000)).toBe('00:00');
   });
 });
 

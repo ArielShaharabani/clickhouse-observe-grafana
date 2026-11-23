@@ -999,6 +999,8 @@ export interface LensResult {
   /** Per X position: it is the synthetic "Other" / "(missing)" bucket, not a real value. */
   xSynthetic: boolean[];
   xIsTime: boolean;
+  /** Date X: the exact end of the last bucket (a month or a DST day is not a fixed number of ms). */
+  xEnd?: number;
   series: LensSeries[];
   /** Rows as returned (for the table), with readable column names. */
   table: { columns: string[]; rows: Array<Array<string | number | null>> };
@@ -1225,6 +1227,7 @@ export function shapeLensRows(
     xLabels,
     xSynthetic,
     xIsTime,
+    ...(xIsTime && canStep && xs.length > 0 ? { xEnd: step(Number(xs[xs.length - 1]), 1) } : {}),
     series: orderSeries(state, [...seriesMap.values()]),
     table: { columns, rows: tableRows },
   };

@@ -16,7 +16,7 @@ import { LensResult } from '../compile';
 import { MetricDim } from '../state';
 import { formatOf, formatValue } from '../metricOptions';
 import { formatAxisNumber, formatNumber } from '../../utils/axisNumber';
-import { fitTimeTicks, timeTicks, tooltipTime } from './timeTicks';
+import { bucketPos, fitTimeTicks, timeTicks, tooltipTime } from './timeTicks';
 import { useTimeZoneSettings } from '../../utils/timeZone';
 import { XySelection, xText } from './XyChart';
 import { truncateLabel } from './labels';
@@ -127,11 +127,12 @@ export function HeatmapChart({ result, metric, yTitle, metricLabel, bucketMs, on
   const gap = cw > 6 && ch > 6 ? 1 : 0;
   const spanMs = result.xIsTime && nx > 1 ? Number(result.xs[nx - 1]) - Number(result.xs[0]) : 0;
   const step = bucketMs ?? (nx > 1 ? spanMs / (nx - 1) : 0);
-  const xPosOfTime = (t: number) => left + (step > 0 ? ((t - Number(result.xs[0])) / step) * cw : 0);
+  const xEnd = result.xEnd ?? Number(result.xs[nx - 1]) + step;
+  const xPosOfTime = (t: number) => left + (step > 0 ? bucketPos(result.xs, xEnd, t) * cw : 0);
   const timeTickVals =
     result.xIsTime && nx > 0
       ? fitTimeTicks(
-          timeTicks(Number(result.xs[0]), Number(result.xs[nx - 1]) + step, Math.max(2, Math.floor(plotW / 80)), timeZone),
+          timeTicks(Number(result.xs[0]), xEnd, Math.max(2, Math.floor(plotW / 80)), timeZone),
           xPosOfTime,
           Math.max(0, W - 4)
         )

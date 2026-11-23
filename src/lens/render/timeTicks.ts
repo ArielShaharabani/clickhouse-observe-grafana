@@ -175,6 +175,42 @@ export function fitTimeTicks(ticks: TimeTick[], posOf: (t: number) => number, li
   return kept;
 }
 
+/**
+ * Position of instant `t` in bucket units (0 = the first bucket's left edge, 1.5 = the middle of the
+ * second): linear inside each bucket, so months and DST days of different length, drawn equally wide,
+ * keep their ticks and events in the right place. `end` is the last bucket's end.
+ */
+export function bucketPos(xs: Array<string | number>, end: number, t: number): number {
+  const n = xs.length;
+  if (n === 0) {
+    return 0;
+  }
+  let lo = 0;
+  let hi = n - 1;
+  while (lo < hi) {
+    const mid = Math.ceil((lo + hi) / 2);
+    if (Number(xs[mid]) <= t) {
+      lo = mid;
+    } else {
+      hi = mid - 1;
+    }
+  }
+  const a = Number(xs[lo]);
+  const len = (lo + 1 < n ? Number(xs[lo + 1]) : end) - a;
+  return len > 0 ? lo + (t - a) / len : lo;
+}
+
+/** Inverse of `bucketPos`. */
+export function bucketTimeAt(xs: Array<string | number>, end: number, pos: number): number {
+  const n = xs.length;
+  if (n === 0) {
+    return 0;
+  }
+  const i = Math.min(n - 1, Math.max(0, Math.floor(pos)));
+  const a = Number(xs[i]);
+  return a + (pos - i) * ((i + 1 < n ? Number(xs[i + 1]) : end) - a);
+}
+
 /** Tooltip header for a time bucket (Kibana: the full date and time). */
 export function tooltipTime(t: number, stepMs: number, tz?: TimeZone): string {
   return formatInZone(t, stepMs > 0 && stepMs < MIN ? 'MMM D, YYYY @ HH:mm:ss' : 'MMM D, YYYY @ HH:mm', tz);

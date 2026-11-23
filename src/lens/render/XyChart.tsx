@@ -31,7 +31,7 @@ import {
 } from '../style';
 import { dashArray, ResolvedEvent, ResolvedLine } from '../layers';
 import { assignColorSlots, SESSION_COLOR_SLOTS, seriesColorKey } from './seriesColors';
-import { fitTimeTicks, timeTicks, tooltipTime } from './timeTicks';
+import { bucketPos, bucketTimeAt, fitTimeTicks, timeTicks, tooltipTime } from './timeTicks';
 import { truncateLabel } from './labels';
 import { formatAxisNumber, formatNumber } from '../../utils/axisNumber';
 
@@ -107,7 +107,9 @@ export function xLabel(x: string | number, isTime: boolean, spanMs: number): str
   if (!isTime) {
     return String(x) === '' ? '(empty)' : String(x);
   }
-  return formatInZone(Number(x), spanMs > 2 * 86_400_000 ? 'MM-DD HH:mm' : 'HH:mm');
+  // The span is between bucket starts: from one day / one year on, shorter text would repeat.
+  const f = spanMs >= 365 * 86_400_000 ? 'YYYY-MM-DD HH:mm' : spanMs >= 86_400_000 ? 'MM-DD HH:mm' : 'HH:mm';
+  return formatInZone(Number(x), f);
 }
 
 /**
@@ -374,9 +376,8 @@ export function XyChart({
   // to pick a range. A press without movement stays a click (the mark's filter chooser).
   const brushable = result.xIsTime && !!onBrush && !horizontal;
   const pxToTime = (px: number) => {
-    const t0 = Number(result.xs[0]);
-    const tEnd = Number(result.xs[result.xs.length - 1]) + (bucketMs ?? 0);
-    return t0 + ((px - m.left) / plotW) * (tEnd - t0);
+    const end = result.xEnd ?? Number(result.xs[result.xs.length - 1]) + (bucketMs ?? 0);
+    return bucketTimeAt(result.xs, end, ((px - m.left) / plotW) * result.xs.length);
   };
   const onDown = (e: React.MouseEvent<SVGSVGElement>) => {
     suppressClick.current = false;
@@ -653,16 +654,17 @@ export function XyChart({
   // Annotation events: on a time X axis of a vertical chart, at their time within the buckets.
   const step =
     bucketMs ?? (result.xs.length > 1 ? (Number(result.xs[result.xs.length - 1]) - Number(result.xs[0])) / (n - 1) : 0);
-  const timePos = (t: number) => m.left + (step > 0 ? ((t - Number(result.xs[0])) / step) * band : band / 2);
+  const tEnd =
+    result.xs.length > 0 ? (result.xEnd ?? Number(result.xs[result.xs.length - 1]) + (step > 0 ? step : 0)) : 0;
+  const timePos = (t: number) => m.left + (step > 0 ? bucketPos(result.xs, tEnd, t) * band : band / 2);
   const inPlot = (px: number) => px >= m.left - 0.5 && px <= m.left + plotW + 0.5;
   const events = timeAxis ? (layers?.events ?? []) : [];
   const fmtTime = (t: number) => formatInZone(t, 'YYYY-MM-DD HH:mm:ss', timeZone);
   // Round-time ticks over the drawn time span (bucket starts sit on the band's left edge).
-  const tEnd = result.xs.length > 0 ? Number(result.xs[result.xs.length - 1]) + (step > 0 ? step : 0) : 0;
   const timeTickVals = timeAxis
     ? fitTimeTicks(
         timeTicks(Number(result.xs[0]), tEnd, Math.max(2, Math.floor(plotW / (catRot === 0 ? 80 : 28))), timeZone),
-        (t) => m.left + (step > 0 ? ((t - Number(result.xs[0])) / step) * band : band / 2),
+        timePos,
         // Labels start at the tick (left-anchored): a tick too close to the right edge would be clipped.
         catRot === 0 ? Math.max(0, W - 4) : Infinity
       )
@@ -674,7 +676,7 @@ export function XyChart({
     if (Number(result.xs[0]) < timeRange.from) {
       partial.push({ xi: 0, x: m.left, w: band });
     }
-    if (Number(result.xs[last]) + step > timeRange.to && (last > 0 || partial.length === 0)) {
+    if (tEnd > timeRange.to && (last > 0 || partial.length === 0)) {
       partial.push({ xi: last, x: m.left + band * last, w: band });
     }
   }
