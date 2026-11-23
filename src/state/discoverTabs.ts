@@ -18,9 +18,9 @@ export const TAB_PARAM = '_tab';
 export const MAX_TABS = 20;
 export const MAX_CLOSED = 10;
 export const MAX_TITLE_LENGTH = 80;
-const MAX_PARAMS_LENGTH = 16_384;
+export const MAX_PARAMS_LENGTH = 16_384;
 const ID_RE = /^[a-z0-9]{4,24}$/;
-const DEFAULT_TITLE = 'Untitled';
+export const DEFAULT_TITLE = 'Untitled';
 
 export interface DiscoverTab {
   id: string;
@@ -104,7 +104,21 @@ function cleanTitle(raw: unknown): string {
   return t || DEFAULT_TITLE;
 }
 
-function cleanTab(raw: unknown, viewIds?: string[]): DiscoverTab | undefined {
+/** What differs between the pages that have session tabs (Discover, Visualize). */
+export interface TabsStore {
+  key: string;
+  /** The URL carries this page's state (so it is a link, not the side-menu entry). */
+  hasState: (sp: URLSearchParams) => boolean;
+  sanitize: (raw: unknown, viewIds?: string[]) => string;
+}
+
+export const DISCOVER_TABS: TabsStore = {
+  key: DISCOVER_TABS_KEY,
+  hasState: hasDiscoverState,
+  sanitize: sanitizeTabParams,
+};
+
+function cleanTab(raw: unknown, viewIds: string[] | undefined, store: TabsStore): DiscoverTab | undefined {
   if (!raw || typeof raw !== 'object') {
     return undefined;
   }
@@ -112,7 +126,7 @@ function cleanTab(raw: unknown, viewIds?: string[]): DiscoverTab | undefined {
   if (!isTabId(r.id)) {
     return undefined;
   }
-  return { id: r.id, title: cleanTitle(r.title), params: sanitizeTabParams(r.params, viewIds) };
+  return { id: r.id, title: cleanTitle(r.title), params: store.sanitize(r.params, viewIds) };
 }
 
 /** A fresh state with one tab. */
@@ -121,7 +135,11 @@ export function initialTabsState(params = '', id = newTabId()): DiscoverTabsStat
 }
 
 /** Validates a parsed storage value; undefined when unusable. */
-export function parseTabsState(raw: unknown, viewIds?: string[]): DiscoverTabsState | undefined {
+export function parseTabsState(
+  raw: unknown,
+  viewIds?: string[],
+  store: TabsStore = DISCOVER_TABS
+): DiscoverTabsState | undefined {
   if (!raw || typeof raw !== 'object') {
     return undefined;
   }
@@ -129,7 +147,7 @@ export function parseTabsState(raw: unknown, viewIds?: string[]): DiscoverTabsSt
   const seen = new Set<string>();
   const tabs: DiscoverTab[] = [];
   for (const t of Array.isArray(r.tabs) ? r.tabs.slice(0, MAX_TABS) : []) {
-    const tab = cleanTab(t, viewIds);
+    const tab = cleanTab(t, viewIds, store);
     if (tab && !seen.has(tab.id)) {
       seen.add(tab.id);
       tabs.push(tab);
@@ -141,7 +159,7 @@ export function parseTabsState(raw: unknown, viewIds?: string[]): DiscoverTabsSt
   const closed: ClosedTab[] = [];
   for (const c of Array.isArray(r.closed) ? r.closed.slice(0, MAX_CLOSED) : []) {
     const cc = c as Record<string, unknown> | null;
-    const tab = cleanTab(cc?.tab, viewIds);
+    const tab = cleanTab(cc?.tab, viewIds, store);
     const closedAt = cc?.closedAt;
     if (tab && !seen.has(tab.id) && typeof closedAt === 'number' && Number.isFinite(closedAt)) {
       seen.add(tab.id);
@@ -152,18 +170,18 @@ export function parseTabsState(raw: unknown, viewIds?: string[]): DiscoverTabsSt
   return { tabs, activeId, closed };
 }
 
-export function loadTabsState(viewIds?: string[]): DiscoverTabsState | undefined {
+export function loadTabsState(viewIds?: string[], store: TabsStore = DISCOVER_TABS): DiscoverTabsState | undefined {
   try {
-    const raw = window.sessionStorage.getItem(DISCOVER_TABS_KEY);
-    return raw ? parseTabsState(JSON.parse(raw), viewIds) : undefined;
+    const raw = window.sessionStorage.getItem(store.key);
+    return raw ? parseTabsState(JSON.parse(raw), viewIds, store) : undefined;
   } catch {
     return undefined;
   }
 }
 
-export function saveTabsState(state: DiscoverTabsState): void {
+export function saveTabsState(state: DiscoverTabsState, store: TabsStore = DISCOVER_TABS): void {
   try {
-    window.sessionStorage.setItem(DISCOVER_TABS_KEY, JSON.stringify(state));
+    window.sessionStorage.setItem(store.key, JSON.stringify(state));
   } catch {
     // Private mode / blocked storage: tabs last until reload.
   }

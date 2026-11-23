@@ -164,7 +164,16 @@ export function dimensionGroups(s: LensState): Group[] {
 /** Rows of recent identical queries (PERF-QUERIES #5). */
 const lensRowCache = new ResultCache<Awaited<ReturnType<typeof runQueryRows>>>();
 
-export function LensPage() {
+export interface LensPageProps {
+  /** Session tab strip, rendered above the query row. */
+  tabStrip?: React.ReactNode;
+  /** Names the session tab (the dashboard panel that was opened). */
+  onTitle?: (title: string) => void;
+  /** Back to the dashboard (Cancel, Save and return): this tab is finished. */
+  onLeave?: () => void;
+}
+
+export function LensPage({ tabStrip, onTitle, onLeave }: LensPageProps = {}) {
   const styles = useStyles2(getStyles);
   // Fields | (workspace | dimensions): two nested splitters, drag handles like Discover's sidebar.
   const outerSplit = useSplitter({
@@ -881,10 +890,7 @@ export function LensPage() {
 
   return (
     <div className={styles.page}>
-      {/* Same band as Discover's tab strip, so the header below sits at the same height on both pages. */}
-      <div className={styles.tabBand}>
-        <span className={styles.tabLabel}>Visualization</span>
-      </div>
+      {tabStrip}
       <QueryProgress active={chartLoading} />
 
       <FieldsContext.Provider value={discovery}>
@@ -949,6 +955,8 @@ export function LensPage() {
             defaultTitle={defaultPanelTitle(lens)}
             buildPanel={buildPanel}
             timeRange={timeRange}
+            onTitle={onTitle}
+            onLeave={onLeave}
           />
         }
       />
@@ -1328,23 +1336,6 @@ const getStyles = (theme: GrafanaTheme2) => ({
     background: ${theme.colors.background.canvas};
     height: calc(100vh - 48px);
     min-height: 480px;
-  `,
-  tabBand: css`
-    display: flex;
-    align-items: center;
-    min-height: ${theme.spacing(4)};
-    border-bottom: 1px solid ${theme.colors.border.weak};
-    margin-bottom: ${theme.spacing(1)};
-    flex-shrink: 0;
-  `,
-  tabLabel: css`
-    padding: ${theme.spacing(0.25, 1)};
-    color: ${theme.colors.text.primary};
-    background: ${theme.colors.background.primary};
-    border: 1px solid ${theme.colors.border.weak};
-    border-bottom: none;
-    border-radius: ${theme.shape.radius.default} ${theme.shape.radius.default} 0 0;
-    box-shadow: inset 0 2px 0 ${theme.colors.primary.main};
   `,
   approxNote: css`
     display: flex;

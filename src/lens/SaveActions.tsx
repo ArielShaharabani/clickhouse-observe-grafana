@@ -37,6 +37,10 @@ interface Props {
   imported?: PanelImport;
   /** The page shows a chart (Open panel replaces it). */
   hasChart?: boolean;
+  /** The dashboard panel's title, once loaded. */
+  onTitle?: (title: string) => void;
+  /** Leaving for the dashboard: the panel's editing session is over. */
+  onLeave?: () => void;
 }
 
 /** Said in the replace warning once verified (e2e r6-panels): Grafana keeps the replaced version. */
@@ -81,7 +85,7 @@ function editsInVisualize(panel: Record<string, unknown>): boolean {
 /** Any other panel whose conversion isn't known (failed, or the link has no import marker) may lose everything. */
 const UNKNOWN_LOSS = ['The original query and panel settings (they were not read into Visualize)'];
 
-export function SaveActions({ paramsKey, disabled, defaultTitle, buildPanel, timeRange, imported, hasChart }: Props) {
+export function SaveActions({ paramsKey, disabled, defaultTitle, buildPanel, timeRange, imported, hasChart, onTitle, onLeave }: Props) {
   const ret = useMemo(() => readDashboardReturn(new URLSearchParams(paramsKey)), [paramsKey]);
   const retKey = ret ? `${ret.uid}:${ret.panelId}` : '';
   const [target, setTarget] = useState<{ key: string; value?: ReturnTarget; error?: string } | null>(null);
@@ -119,6 +123,9 @@ export function SaveActions({ paramsKey, disabled, defaultTitle, buildPanel, tim
         if (!cancelled) {
           baseline.current = { key: retKey, chart: chartStateKey(paramsRef.current) };
           setTarget({ key: retKey, value });
+          if (value.panelTitle.trim()) {
+            onTitle?.(value.panelTitle);
+          }
         }
       },
       (e) => !cancelled && setTarget({ key: retKey, error: errMsg(e) })
@@ -153,6 +160,7 @@ export function SaveActions({ paramsKey, disabled, defaultTitle, buildPanel, tim
     if (base !== undefined && base !== chartStateKey(paramsKey)) {
       setConfirmCancel(true);
     } else {
+      onLeave?.();
       locationService.push(dashboardReturnPath(ret));
     }
   };
@@ -169,6 +177,7 @@ export function SaveActions({ paramsKey, disabled, defaultTitle, buildPanel, tim
         returnTarget,
         buildPanel(returnTarget.panelTitle.trim() || defaultTitle, returnTarget.panelDescription)
       );
+      onLeave?.();
       locationService.push(path);
     } catch (e) {
       setReturnError(returnSaveError(e));
@@ -239,6 +248,7 @@ export function SaveActions({ paramsKey, disabled, defaultTitle, buildPanel, tim
         timeRange={timeRange}
         canSaveDashboards={canSave}
         returnTo={returnTarget}
+        onReturn={onLeave}
         startAsNew={saveOpen === 'new'}
         initialError={saveOpen === 'return' ? returnError : ''}
         confirmLoss={lossy ? loss : undefined}
@@ -296,6 +306,7 @@ export function SaveActions({ paramsKey, disabled, defaultTitle, buildPanel, tim
         onConfirm={() => {
           setConfirmCancel(false);
           if (ret) {
+            onLeave?.();
             locationService.push(dashboardReturnPath(ret));
           }
         }}

@@ -125,6 +125,8 @@ interface Props {
   canSaveDashboards: boolean;
   /** Opened from a dashboard panel: Save and return replaces it. */
   returnTo?: ReturnTarget;
+  /** The panel was saved back: leaving for its dashboard. */
+  onReturn?: () => void;
   /** Start on Save as new (the toolbar's "Save as new") instead of Save and return. */
   startAsNew?: boolean;
   /** Shown when the dialog opens (the toolbar's one-click Save and return failed). */
@@ -143,6 +145,7 @@ export function SaveLensModal({
   timeRange,
   canSaveDashboards,
   returnTo,
+  onReturn,
   startAsNew,
   initialError,
   confirmLoss,
@@ -225,6 +228,7 @@ export function SaveLensModal({
     try {
       const path = await saveAndReturn(returnTo, buildPanel(title.trim(), description));
       onDismiss();
+      onReturn?.();
       locationService.push(path);
     } catch (e) {
       setError(returnSaveError(e));

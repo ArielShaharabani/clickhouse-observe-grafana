@@ -127,7 +127,7 @@ export function OpenPanelModal({ isOpen, onDismiss, hasChart }: Props) {
 
   return (
     <Modal title="Open panel" isOpen={isOpen} onDismiss={onDismiss}>
-      {hasChart && <p className={styles.hint}>The chart you are editing is replaced by the panel you open.</p>}
+      {hasChart && <p className={styles.hint}>The panel opens in a new tab; the chart you are editing stays in its own.</p>}
       <Field label="Dashboard" htmlFor={`${ids}-dash`}>
         {loadError ? (
           <Alert title="Failed to load dashboards" severity="error">
