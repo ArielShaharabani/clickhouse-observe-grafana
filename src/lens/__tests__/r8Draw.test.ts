@@ -1,6 +1,9 @@
-import { LensResult } from '../compile';
-import { timeSlots, slotStarts } from '../render/XyChart';
-
+import { LensResult, uniqueMetricLabels } from '../compile';
+import { nothingFinite, slotStarts, stackValues, timeSlots } from '../render/XyChart';
+import { gaugeSpec } from '../render/gaugeSpec';
+import { formatMetricValue, metricTiles } from '../render/MetricTiles';
+import { truncateLabel } from '../render/labels';
+import { formatNumber } from '../../utils/axisNumber';
 const DAY = 86_400_000;
 const res = (xs: number[]): LensResult => ({ xs, xIsTime: true, xLabels: xs.map(String), series: [] }) as unknown as LensResult;
 
@@ -18,8 +21,6 @@ describe('R8 draw: M1 bars at their true time', () => {
   });
 });
 
-import { gaugeSpec } from '../render/gaugeSpec';
-import { metricTiles } from '../render/MetricTiles';
 
 describe('R8 draw: L1 / L6 empty first value', () => {
   const result = {
@@ -37,8 +38,6 @@ describe('R8 draw: L1 / L6 empty first value', () => {
   });
 });
 
-import { formatNumber } from '../../utils/axisNumber';
-import { formatMetricValue } from '../render/MetricTiles';
 
 describe('R8 draw: L3 / L5 numbers', () => {
   it('keeps significant digits of small numbers', () => {
@@ -57,7 +56,6 @@ describe('R8 draw: L3 / L5 numbers', () => {
   });
 });
 
-import { truncateLabel } from '../render/labels';
 
 describe('R8 draw: L4 ellipsis', () => {
   it('cuts with an ellipsis', () => {
@@ -66,7 +64,6 @@ describe('R8 draw: L4 ellipsis', () => {
   });
 });
 
-import { stackValues } from '../render/XyChart';
 
 describe('R8 draw: M6 log scale', () => {
   const r = {
@@ -84,7 +81,6 @@ describe('R8 draw: M6 log scale', () => {
   });
 });
 
-import { nothingFinite } from '../render/XyChart';
 
 describe('R8 draw: M9 nothing finite', () => {
   const mk = (v: number, zeroFill = false) =>
@@ -96,7 +92,6 @@ describe('R8 draw: M9 nothing finite', () => {
   });
 });
 
-import { uniqueMetricLabels } from '../compile';
 
 describe('R8 draw: L6 equal metric labels', () => {
   it('uses the filter to tell them apart', () => {

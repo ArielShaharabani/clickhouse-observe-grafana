@@ -21,7 +21,7 @@ import { stableColors } from './render/seriesColors';
 import { panelSignature, VISUALIZE_SIG_KEY, VISUALIZE_SOURCE_KEY } from './panelSource';
 import { gaugeDefaults, gaugeMetrics, gaugeOptions } from './render/gaugeSpec';
 import { formatOf, grafanaUnit } from './metricOptions';
-import { intervalMs, isCalendarUnit, parseInterval } from './interval';
+import { intervalMs, parseInterval } from './interval';
 
 export interface LensPanelOpts {
   id: number;
@@ -420,7 +420,7 @@ type PanelBase = Omit<LensPanel, 'type'>;
 function bucketEndShift(x: { interval?: string }): Transformation[] {
   const iv = x.interval && x.interval !== 'auto' ? parseInterval(x.interval) : null;
   // Month and year buckets have no fixed length: their mean length puts the cell in the right month.
-  const mean = iv && isCalendarUnit(iv.unit) ? Math.round(iv.n * (iv.unit === 'y' ? 365.25 : 30.4375) * 86400000) : undefined;
+  const mean = iv && (iv.unit === 'M' || iv.unit === 'y') ? Math.round(iv.n * (iv.unit === 'y' ? 365.25 : 30.4375) * 86400000) : undefined;
   const width = mean !== undefined ? String(mean) : iv ? String(intervalMs(iv)) : '${__interval_ms}';
   const t = bucketAlias(0);
   return [

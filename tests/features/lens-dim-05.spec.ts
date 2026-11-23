@@ -8,6 +8,9 @@ import { FIXTURE } from '../fixture';
 // LENS-DIM-05 date histogram editor (PLAN 16e; docs/spec/20-lens.md): custom minimum interval,
 // Include empty rows, Drop partial intervals, and the Discover hand-off keeping the interval.
 
+// Day buckets follow the user's time zone; the fixture is whole UTC days.
+test.use({ timezoneId: 'UTC' });
+
 const DAY = 86_400_000;
 const editor = (page: Page) => page.getByRole('dialog', { name: 'Edit Horizontal axis' });
 const bars = (viz: VisualizePage) => viz.chart.getByRole('group', { name: 'bar chart' }).getByRole('button');
