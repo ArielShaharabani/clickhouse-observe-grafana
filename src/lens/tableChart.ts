@@ -147,6 +147,8 @@ export function tableOverrides(columns: TableColumn[], metrics: MetricDim[]): un
         value: m.colorBy === 'cell' ? { type: 'color-background', mode: 'gradient' } : { type: 'color-text' },
       });
       properties.push({ id: 'color', value: { mode: 'continuous-GrYlRd' } });
+      // Min and max of this column, not of the whole table (a count and an average share no scale).
+      properties.push({ id: 'fieldMinMax', value: true });
     }
     if (properties.length > 0) {
       out.push({ matcher: { id: 'byName', options: c.name }, properties });

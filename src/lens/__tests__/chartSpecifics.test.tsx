@@ -89,6 +89,7 @@ describe('Table: summary row and colour by value', () => {
         { id: 'custom.footer.reducers', value: ['sum'] },
         { id: 'custom.cellOptions', value: { type: 'color-background', mode: 'gradient' } },
         { id: 'color', value: { mode: 'continuous-GrYlRd' } },
+        { id: 'fieldMinMax', value: true },
       ],
     });
   });

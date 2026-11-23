@@ -6,6 +6,7 @@
  * time axis are not configurable).
  */
 import { uniqueMetricLabels } from '../compile';
+import { sharesOneAxis } from './fieldConfig';
 import { dimLabelIn, LensState } from '../state';
 import { axisOf, axisTitle, legendOf, LensStyle, tickRotation } from '../style';
 
@@ -34,7 +35,9 @@ export function withLensStyle(
 ): PanelParts {
   const style = state.style;
   if (!style) {
-    return parts;
+    // Default bounds are Full (0 included): a Grafana time series would otherwise zoom to the data.
+    const c = { ...(parts.fieldConfig.defaults.custom as Record<string, unknown>), axisSoftMin: 0 };
+    return { options: parts.options, fieldConfig: { ...parts.fieldConfig, defaults: { ...parts.fieldConfig.defaults, custom: c } } };
   }
   const left = axisOf(style, 'left');
   const bottom = axisOf(style, 'bottom');
@@ -52,8 +55,13 @@ export function withLensStyle(
   if (left.scale === 'log') {
     custom.scaleDistribution = { type: 'log', log: 10 };
   }
-  if (left.bounds === 'full' && left.scale !== 'log') {
-    custom.axisSoftMin = 0;
+  if (left.bounds === 'full') {
+    // A log axis starts at 1 (a power of ten), as in Visualize; Grafana would pick the lowest value's decade.
+    if (left.scale === 'log') {
+      defaults.min = 1;
+    } else {
+      custom.axisSoftMin = 0;
+    }
   } else if (left.bounds === 'custom') {
     if (left.min !== undefined) {
       defaults.min = left.min;
@@ -67,7 +75,9 @@ export function withLensStyle(
   const options: Record<string, unknown> = { ...parts.options, legend: legendOptions(style) };
   if (panel === 'barchart') {
     options.orientation = style.orientation ?? 'auto';
-    options.showValue = style.barValues === 'show' ? 'auto' : 'never';
+    // Grafana prints a stacked bar's value on the next segment: no values rather than wrong ones.
+    const stacked = parts.options.stacking === 'normal' || parts.options.stacking === 'percent';
+    options.showValue = style.barValues === 'show' && !stacked ? 'auto' : 'never';
     options.xTickLabelRotation = tickRotation(bottom.orientation);
   }
   return { options, fieldConfig: { defaults, overrides: parts.fieldConfig.overrides } };
@@ -80,7 +90,7 @@ export function withLensStyle(
 export function autoAxisTitles(state: LensState): { left: string; bottom: string; right: string } {
   const labels = uniqueMetricLabels(state.metrics);
   const on = (sd: 'left' | 'right') =>
-    labels.filter((_l, i) => (state.metrics[i].axis === 'right' ? 'right' : 'left') === sd).join(', ');
+    labels.filter((_l, i) => (state.metrics[i].axis === 'right' && !sharesOneAxis(state) ? 'right' : 'left') === sd).join(', ');
   const x = state.buckets[0];
   // A time axis has no automatic title (Kibana: the dates are in the tick labels); Custom still applies.
   const bottom = !x || x.kind === 'date_histogram' ? '' : dimLabelIn(x, state.metrics);
