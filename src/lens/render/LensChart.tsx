@@ -127,14 +127,14 @@ function basePanelSpec(state: LensState, result: LensResult): PanelSpec {
       return { ...basePanelSpec({ ...state, chartType: 'table' }, result) };
     case 'pie':
     case 'donut':
-      if (hasSlices(result)) {
+      if (hasSlices(state, result)) {
         return pieSpec(state, result);
       }
     // falls through (no categories: the same panel as the Metric chart)
     case 'metric': {
-      const byCategory = result.xs.length > 0 && result.xs[0] !== '';
+      const byCategory = state.buckets.length > 0 && result.xs.length > 0;
       const fields = byCategory
-        ? [{ name: 'category', type: FieldType.string, values: result.xLabels }, ...numberFields(result)]
+        ? [{ name: 'category', type: FieldType.string, values: result.xLabels.map((l) => l || '(empty)') }, ...numberFields(result)]
         : numberFields(result);
       return {
         pluginId: isPieLike(state.chartType) ? 'piechart' : 'stat',
@@ -193,13 +193,13 @@ export function pieDisplayLabels(values: number[]): Array<'name' | 'percent'> {
 }
 
 /** Whether a pie / donut has slices to draw (one metric over categories). */
-const hasSlices = (result: LensResult) => result.xs.length > 0 && result.xs[0] !== '' && result.series.length === 1;
+const hasSlices = (state: LensState, result: LensResult) => state.buckets.length > 0 && result.xs.length > 0 && result.series.length === 1;
 
 /** Slice names, values and colours: the value's stable colour (as in the XY chart) or a legend pick. */
 function pieData(state: LensState, result: LensResult): { names: string[]; values: number[]; colors: string[] } {
   const theme = createTheme();
   const series = result.series[0];
-  const names = result.xLabels.map((l, i) => l ?? String(result.xs[i]));
+  const names = result.xLabels.map((l, i) => (l ?? String(result.xs[i])) || '(empty)');
   const colors = stableColors(
     names,
     result.xSynthetic,
@@ -310,7 +310,7 @@ export function LensChart({
       </div>
     );
   }
-  if (isPieLike(state.chartType) && hasSlices(result)) {
+  if (isPieLike(state.chartType) && hasSlices(state, result)) {
     // Custom-drawn: Kibana-like labels (decimals, inside or outside, no overlap) and click to filter.
     const { names, values, colors } = pieData(state, result);
     return (

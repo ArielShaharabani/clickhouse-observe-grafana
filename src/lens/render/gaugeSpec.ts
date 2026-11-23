@@ -130,7 +130,7 @@ export interface GaugeSpec {
 /** Visualize: one field per gauge (Break down by value), each with its own maximum. */
 export function gaugeSpec(state: LensState, result: LensResult): GaugeSpec {
   const { value, max } = gaugeMetrics(state);
-  const byCategory = result.xs.length > 0 && result.xs[0] !== '';
+  const byCategory = state.buckets.length > 0 && result.xs.length > 0;
   const valueSeries = result.series.find((s) => s.metricIndex === value);
   const maxSeries = max >= 0 ? result.series.find((s) => s.metricIndex === max) : undefined;
   const xs = result.xs.slice(0, MAX_GAUGES);

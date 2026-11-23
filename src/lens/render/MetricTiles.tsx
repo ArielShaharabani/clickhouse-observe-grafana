@@ -53,7 +53,7 @@ export function metricTiles(state: LensState, result: LensResult): MetricTile[] 
   return xs.map((x, k) => {
     const pv = primary ? valueOf(primary.i, x) : undefined;
     const tile: MetricTile = {
-      title: broken ? (result.xLabels[k] ?? String(x)) : primary ? labels[primary.i] : '',
+      title: broken ? (result.xLabels[k] ?? String(x)) || '(empty)' : primary ? labels[primary.i] : '',
       value: formatMetricValue(primary?.m, pv),
     };
     if (broken && primary) {
