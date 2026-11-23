@@ -4,7 +4,7 @@ import { shapeLensRows } from '../compile';
 import { seriesColorOverrides } from '../panelExport';
 import { addBucket } from '../dimensions';
 import { cleanTerms, LensState } from '../state';
-import { formatCell, inspectorTable, prettySql } from '../inspectorData';
+import { formatCell, inspectorTable } from '../inspectorData';
 
 jest.mock('@grafana/runtime', () => ({ ...jest.requireActual('@grafana/runtime'), PanelRenderer: () => null }));
 
@@ -67,10 +67,7 @@ describe('PARITY-CHARTS2', () => {
     expect(seriesColorOverrides(state, [{ name: 'Count of records' }])).toEqual([]);
   });
 
-  it('inspector: SQL laid out, metric value format in the data view', () => {
-    const sql = prettySql("SELECT a, 'x FROM y' AS s FROM t WHERE (SELECT 1 FROM u) GROUP BY a");
-    expect(sql).toContain("\nFROM t\nWHERE");
-    expect(sql).toContain("'x FROM y'");
+  it('inspector: metric value format in the data view', () => {
     const state: LensState = {
       chartType: 'table',
       buckets: [svc],

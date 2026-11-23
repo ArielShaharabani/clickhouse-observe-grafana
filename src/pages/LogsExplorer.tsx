@@ -93,6 +93,9 @@ function readSidebarSplit(): number {
 
 
 
+/** Numbers the document searches (tracer group ids), across tabs. */
+let listGroup = 0;
+
 export interface LogsExplorerProps {
   /** Session tab (DISC-NAV-01): kept as `_tab` in every URL this page writes. */
   tabId?: string;
@@ -680,7 +683,7 @@ export function LogsExplorer({ tabId, tabStrip, onTitle }: LogsExplorerProps = {
       state: LogsQueryState,
       opts: { refId?: string; signal?: AbortSignal; op: 'logs' | 'loadMore'; trace?: SpanHandle }
     ) => {
-      const base = { datasourceUid: config.datasourceUid, sql, ...opts };
+      const base = { datasourceUid: config.datasourceUid, sql, ...opts, group: `list-${++listGroup}` };
       if (!isNewestFirstSort(config, state)) {
         return runQueryRows({ ...base, timeRange });
       }

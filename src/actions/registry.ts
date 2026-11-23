@@ -7,6 +7,7 @@
  * field instead of hand-building its own buttons. Surfaces keep their own visual style; behaviour
  * and wording stay identical everywhere. Pure: no React.
  */
+import { pathLabel } from '../sql/pathLabel';
 import { AppEvents } from '@grafana/data';
 import { getAppEvents } from '@grafana/runtime';
 import { IconName } from '@grafana/ui';
@@ -40,9 +41,9 @@ export interface ValueContext {
 export type FieldContext = Omit<ValueContext, 'value' | 'filterable'>;
 
 /** One display name per field, derived from its SQL expression: `LogAttributes['http.method']`
- *  → `LogAttributes.http.method`; plain columns and JSON paths stay as they are. */
+ *  → `LogAttributes.http.method`; JSON paths as `pathLabel`; plain columns stay as they are. */
 export function fieldLabelFor(sqlExpr: string): string {
-  return sqlExpr.replace(/\['((?:[^'\\]|\\.)*)'\]/g, '.$1');
+  return pathLabel(sqlExpr).replace(/\['((?:[^'\\]|\\.)*)'\]/g, '.$1');
 }
 
 const CONTAINER_TYPES = new Set(['map', 'json', 'tuple', 'array']);

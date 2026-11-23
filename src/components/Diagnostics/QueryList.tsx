@@ -1,11 +1,6 @@
 /**
- * Queries tab: every ClickHouse query issued under the selected root, with both the builder SQL
- * (what runQuery.ts was asked to run) and the executed SQL (post-macro, from
- * frame.meta.executedQueryString — see runQuery.ts's fetchFrames) when it's landed and differs.
- * This is the tab that actually closes the plan's stated gap: SqlInspectorBar's "Inspect SQL" has
- * only ever shown the logs query, pre-expansion; every other query builder here (volume, sidebar
- * field discovery, detail hydration, load-more, the setup wizard) has never been inspectable
- * before this drawer.
+ * Queries tab: every ClickHouse query issued under the selected root, as executed (macros
+ * expanded, see runQuery.ts's fetchFrames), so each can be copied and run as it is.
  */
 import React, { useState } from 'react';
 import { css } from '@emotion/css';
@@ -44,10 +39,6 @@ export function QueryList({ root }: QueryListProps) {
       {spans.map((span) => {
         const sql = typeof span.attrs.sql === 'string' ? span.attrs.sql : '';
         const executedSql = typeof span.attrs.executedSql === 'string' ? span.attrs.executedSql : undefined;
-        // Only worth a separate "Executed SQL" block when it actually differs from the builder
-        // SQL — a raw-SQL-mode query or one with no macros will be byte-identical, and showing the
-        // same text twice is noise, not information.
-        const showExecuted = executedSql != null && executedSql.trim() !== sql.trim();
         return (
           <div key={span.id} className={styles.entry}>
             <div className={styles.entryHeader}>
@@ -55,8 +46,7 @@ export function QueryList({ root }: QueryListProps) {
               <span className={styles.entryName}>{labelForKind(span.kind, span.name)}</span>
               {span.error && <span className={styles.entryError}>{span.error}</span>}
             </div>
-            <SqlBlock label="SQL" sql={sql} styles={styles} />
-            {showExecuted && executedSql && <SqlBlock label="Executed (post-macro)" sql={executedSql} styles={styles} />}
+            <SqlBlock label="SQL as executed" sql={executedSql ?? sql} styles={styles} />
           </div>
         );
       })}

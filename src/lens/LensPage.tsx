@@ -546,6 +546,8 @@ export function LensPage({ tabStrip, onTitle, onLeave }: LensPageProps = {}) {
     baseKey: string;
     /** The chart state the rows were shaped for. */
     lens: LensState;
+    /** The chart's SQL (macro form). */
+    sql: string;
     data?: LensResult;
     error?: string;
     bucketMs?: number;
@@ -613,12 +615,13 @@ export function LensPage({ tabStrip, onTitle, onLeave }: LensPageProps = {}) {
           key: queryKey,
           baseKey,
           lens,
+          sql,
           data: shapeLensRows(lens, rows, intervalMs, { interval, range }),
           bucketMs: intervalMs,
           interval,
         }),
       (e) =>
-        !cancelled && setResult({ key: queryKey, baseKey, lens, error: e instanceof Error ? e.message : String(e) })
+        !cancelled && setResult({ key: queryKey, baseKey, lens, sql, error: e instanceof Error ? e.message : String(e) })
     );
     return () => {
       cancelled = true;
@@ -1155,6 +1158,7 @@ export function LensPage({ tabStrip, onTitle, onLeave }: LensPageProps = {}) {
             dataView={activeView}
             tableName={`${config.database}.${config.logsTable}`}
             addFilter={(pill) => addFilters([pill])}
+            chartSql={current?.sql}
             onClose={() => setInspectOpen(false)}
           />
         )}

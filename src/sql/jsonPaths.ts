@@ -12,6 +12,7 @@
  * sample) stays bare and typed 'string', which every consumer stringifies first.
  */
 import { FieldModel, inferFieldType } from './fieldModel';
+import { TYPED_SUFFIX_RE } from './pathLabel';
 import { quoteDottedPath } from './queryBuilder';
 
 /** Scalar types a dynamic path may be read as (exact spelling `distinctJSONPathsAndTypes` reports). */
@@ -87,17 +88,10 @@ export function jsonPathField(column: string, path: string, declaredType?: strin
   };
 }
 
-/** A trailing `.:T` typed-subcolumn suffix, as typedSubcolumnSuffix() writes it. Anchored at the end so a
- *  quoted path segment holding `.:` (`Payload."a.:b"`) is never cut. */
-const TYPED_SUFFIX_RE = /\.:(?:[A-Za-z][A-Za-z0-9]*|`[A-Za-z0-9()]+`)$/;
-
-/** The bare dotted path of a JSON field expression (drops a `.:T` typed-subcolumn suffix). */
-export function stripTypedSubcolumn(sqlExpr: string): string {
-  return sqlExpr.replace(TYPED_SUFFIX_RE, '');
-}
-
 /** Whether `sqlExpr` ends in a scalar (non-array) `.:T` typed-subcolumn suffix. */
 export function hasScalarTypedSubcolumn(sqlExpr: string): boolean {
   const m = TYPED_SUFFIX_RE.exec(sqlExpr);
   return m !== null && !m[0].startsWith('.:`');
 }
+
+export { stripTypedSubcolumn } from './pathLabel';

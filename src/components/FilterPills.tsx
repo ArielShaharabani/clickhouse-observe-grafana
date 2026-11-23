@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { pathLabel } from '../sql/pathLabel';
 import { css, cx } from '@emotion/css';
 import { GrafanaTheme2 } from '@grafana/data';
 import { useStyles2, Icon, Portal } from '@grafana/ui';
@@ -43,18 +44,20 @@ function pillText(f: FilterPill): { notPrefix: boolean; fieldPart: string | null
     return { notPrefix: false, fieldPart: null, rest: filterLabel(f) };
   }
   if (f.op === 'not_exists') {
-    return { notPrefix: true, fieldPart: f.field, rest: ' exists' };
+    return { notPrefix: true, fieldPart: pathLabel(f.field), rest: ' exists' };
   }
   if (f.op === 'not_one_of') {
     const vals = (f.values ?? [f.value]).filter(Boolean).join(', ');
-    return { notPrefix: true, fieldPart: f.field, rest: ` is one of [${vals}]` };
+    return { notPrefix: true, fieldPart: pathLabel(f.field), rest: ` is one of [${vals}]` };
   }
   if (f.op === 'not_between') {
     const [lo = '', hi = ''] = f.values ?? [];
-    return { notPrefix: true, fieldPart: f.field, rest: ` is between ${lo} and ${hi}` };
+    return { notPrefix: true, fieldPart: pathLabel(f.field), rest: ` is between ${lo} and ${hi}` };
   }
   const label = filterLabel(f);
-  const spaceIdx = label.indexOf(' ');
+  // The name itself may hold spaces (a JSON key).
+  const name = pathLabel(f.field);
+  const spaceIdx = label.startsWith(`${name} `) ? name.length : -1;
   return {
     notPrefix: false,
     fieldPart: spaceIdx > 0 ? label.slice(0, spaceIdx) : null,

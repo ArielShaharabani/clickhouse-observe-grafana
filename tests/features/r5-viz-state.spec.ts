@@ -38,5 +38,7 @@ test('inspect request shows the executed SQL first', async ({ page }) => {
   await page.getByRole('button', { name: 'Inspect' }).click();
   await page.getByRole('dialog', { name: /Inspector/ }).getByRole('radio', { name: 'Requests' }).click();
   await page.getByRole('tab', { name: 'Request' }).click();
-  await expect(page.getByText('-- executedSql')).toBeVisible();
+  const request = page.getByLabel('Inspector request');
+  await expect(request).toContainText('toDateTime(');
+  await expect(request).not.toContainText('$__');
 });

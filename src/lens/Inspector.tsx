@@ -33,7 +33,6 @@ import {
   cellFilterValue,
   csvFileName,
   formatCell,
-  prettySql,
   inspectorTable,
   InspectorSort,
   lensRequests,
@@ -58,6 +57,8 @@ export interface LensInspectorProps {
   /** `database.table` the chart reads. */
   tableName: string;
   addFilter: (pill: FilterPill) => void;
+  /** The shown chart's SQL (macro form), to find its request. */
+  chartSql?: string;
   onClose: () => void;
 }
 
@@ -201,11 +202,14 @@ const SERVER_STATS = new Set(['Rows read', 'Bytes read', 'Query time (ClickHouse
 const num = (v: unknown): number | undefined => (typeof v === 'number' && Number.isFinite(v) ? v : undefined);
 const str = (v: unknown): string | undefined => (typeof v === 'string' && v ? v : undefined);
 
-function RequestsView({ data, dataView, tableName }: LensInspectorProps) {
+function RequestsView({ data, dataView, tableName, chartSql }: LensInspectorProps) {
   const styles = useStyles2(getStyles);
   const { roots } = useDiagnostics();
   const requests = lensRequests(roots);
-  const latest: Span | undefined = requests[requests.length - 1];
+  // This chart's own request: its rows may have come from the cache after another chart ran.
+  const own = chartSql?.trimEnd();
+  const latest: Span | undefined =
+    (own && [...requests].reverse().find((r) => str(r.attrs.sql)?.startsWith(own))) || requests[requests.length - 1];
   const [tab, setTab] = useState<RequestTab>('stats');
 
   if (!latest) {
@@ -232,13 +236,8 @@ function RequestsView({ data, dataView, tableName }: LensInspectorProps) {
     ['Request timestamp', spanWallTime(latest.startMs).toISOString()],
     ['Status', latest.status],
   ].filter(([k, v]) => v !== '-' || !SERVER_STATS.has(k));
-  // The SQL laid out as text (not a JSON string with escaped quotes and newlines).
-  // The values actually sent (macros expanded by the datasource) lead; the macro form follows.
-  const requestText = (
-    executedSql && executedSql !== sql
-      ? ['-- executedSql', prettySql(executedSql), '', '-- rawSql (macros)', prettySql(sql)]
-      : ['-- rawSql', prettySql(sql)]
-  ).join('\n');
+  // Exactly what ran, so the copied text runs as it is.
+  const requestText = executedSql ?? sql;
   const responseJson = JSON.stringify(
     data
       ? {
