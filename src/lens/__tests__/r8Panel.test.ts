@@ -1,4 +1,5 @@
 import { dateTime } from '@grafana/data';
+import { autoAxisTitles } from '../render/styleConfig';
 import { buildLensPanel } from '../panelExport';
 import { LensState } from '../state';
 import { OTEL_COLUMN_MAPPING, SourceConfig } from '../../types';
@@ -94,5 +95,20 @@ describe('R8 M3', () => {
     for (const o of ov) {
       expect(o.properties).toContainEqual({ id: 'fieldMinMax', value: true });
     }
+  });
+});
+
+describe('R8 M9 axes', () => {
+  const right = { ...avg, axis: 'right' as const };
+  it('stacked charts: one axis, titled with every metric, no right axis in the panel', () => {
+    const s: LensState = { chartType: 'bar', subType: 'stacked', buckets: [date], metrics: [count, right] };
+    const p = panel(s);
+    expect((p.fieldConfig!.overrides as any[]).some((o) => JSON.stringify(o).includes('axisPlacement'))).toBe(false);
+    expect(autoAxisTitles(s)).toMatchObject({ left: 'Count of records, Average of SeverityNumber', right: '' });
+  });
+  it('unstacked charts keep the right axis', () => {
+    const s: LensState = { chartType: 'bar', subType: 'unstacked', buckets: [date], metrics: [count, right] };
+    expect(autoAxisTitles(s)).toMatchObject({ left: 'Count of records', right: 'Average of SeverityNumber' });
+    expect(JSON.stringify(panel(s).fieldConfig!.overrides)).toContain('axisPlacement');
   });
 });

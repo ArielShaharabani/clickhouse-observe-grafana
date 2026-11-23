@@ -6,6 +6,7 @@
  * time axis are not configurable).
  */
 import { uniqueMetricLabels } from '../compile';
+import { sharesOneAxis } from './fieldConfig';
 import { dimLabelIn, LensState } from '../state';
 import { axisOf, axisTitle, legendOf, LensStyle, tickRotation } from '../style';
 
@@ -84,7 +85,7 @@ export function withLensStyle(
 export function autoAxisTitles(state: LensState): { left: string; bottom: string; right: string } {
   const labels = uniqueMetricLabels(state.metrics);
   const on = (sd: 'left' | 'right') =>
-    labels.filter((_l, i) => (state.metrics[i].axis === 'right' ? 'right' : 'left') === sd).join(', ');
+    labels.filter((_l, i) => (state.metrics[i].axis === 'right' && !sharesOneAxis(state) ? 'right' : 'left') === sd).join(', ');
   const x = state.buckets[0];
   // A time axis has no automatic title (Kibana: the dates are in the tick labels); Custom still applies.
   const bottom = !x || x.kind === 'date_histogram' ? '' : dimLabelIn(x, state.metrics);
