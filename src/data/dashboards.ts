@@ -128,3 +128,21 @@ export async function createLibraryPanel(
 export async function deleteLibraryPanel(uid: string): Promise<void> {
   await getBackendSrv().delete(`/api/library-elements/${encodeURIComponent(uid)}`);
 }
+
+/** The model of a library panel (a dashboard only holds a reference to it). */
+export async function getLibraryPanelModel(uid: string): Promise<Record<string, unknown>> {
+  if (!isDashboardUid(uid)) {
+    throw new Error('Invalid library panel uid');
+  }
+  const res = await getBackendSrv().get<{ result?: { model?: unknown } }>(
+    `/api/library-elements/${uid}`,
+    undefined,
+    undefined,
+    { showErrorAlert: false }
+  );
+  const model = res?.result?.model;
+  if (!model || typeof model !== 'object' || Array.isArray(model)) {
+    throw new Error('Unexpected library panel response');
+  }
+  return model as Record<string, unknown>;
+}
