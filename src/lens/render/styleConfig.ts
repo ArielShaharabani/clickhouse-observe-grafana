@@ -34,7 +34,9 @@ export function withLensStyle(
 ): PanelParts {
   const style = state.style;
   if (!style) {
-    return parts;
+    // Default bounds are Full (0 included): a Grafana time series would otherwise zoom to the data.
+    const c = { ...(parts.fieldConfig.defaults.custom as Record<string, unknown>), axisSoftMin: 0 };
+    return { options: parts.options, fieldConfig: { ...parts.fieldConfig, defaults: { ...parts.fieldConfig.defaults, custom: c } } };
   }
   const left = axisOf(style, 'left');
   const bottom = axisOf(style, 'bottom');

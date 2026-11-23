@@ -391,7 +391,10 @@ describe('Grafana panels (exported dashboard panel)', () => {
 
   it('no style → panel unchanged; legend hide → showLegend false', () => {
     const parts = { options: { a: 1 }, fieldConfig: { defaults: {}, overrides: [] } };
-    expect(withLensStyle(parts, { ...state, style: undefined }, 'barchart', { left: '', bottom: '' })).toBe(parts);
+    expect(withLensStyle(parts, { ...state, style: undefined }, 'barchart', { left: '', bottom: '' })).toEqual({
+      options: parts.options,
+      fieldConfig: { defaults: { custom: { axisSoftMin: 0 } }, overrides: [] },
+    });
     expect(legendOptions({ legend: { visibility: 'hide' } })).toMatchObject({ showLegend: false });
     expect(autoAxisTitles(state)).toEqual({ left: 'Count of records', right: '', bottom: expect.any(String) });
   });
