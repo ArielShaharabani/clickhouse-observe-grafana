@@ -117,6 +117,16 @@ function withoutMaxMetrics(t: Transformation, state: LensState, keep: boolean): 
   return { ...t, options: { ...t.options, excludeByName: { ...o.excludeByName, ...Object.fromEntries(max.map((a) => [a, true])) } } };
 }
 
+/** Override that shows an empty text value as "(empty)" (slice and tile names come from it). */
+function emptyValueName(field: string) {
+  return {
+    matcher: { id: 'byName', options: field },
+    properties: [
+      { id: 'mappings', value: [{ type: 'special', options: { match: 'empty', result: { text: '(empty)', index: 0 } } }] },
+    ],
+  };
+}
+
 function rename(names: Record<string, string>): Transformation {
   return { id: 'organize', options: { renameByName: names, excludeByName: KIND_COLUMNS, indexByName: {} } };
 }
@@ -358,15 +368,18 @@ function baseLensPanel(
               },
         fieldConfig: {
           defaults: {},
-          overrides:
-            tiles && state.metrics.filter((m) => m.role !== 'max').length > 1
+          overrides: [
+            ...(tiles && state.metrics.filter((m) => m.role !== 'max').length > 1
               ? state.metrics.map((_, i) => ({
                   matcher: { id: 'byName', options: metricAlias(i) },
                   properties: [
                     { id: 'displayName', value: '${__data.fields[0]} · ' + labels[i].replace(/\$/g, '＄') },
                   ],
                 }))
-              : [],
+              : []),
+            // An empty value is named like Visualize names it, not left blank.
+            ...(tiles ? [emptyValueName(names[bucketAlias(0)])] : []),
+          ],
         },
       };
     }

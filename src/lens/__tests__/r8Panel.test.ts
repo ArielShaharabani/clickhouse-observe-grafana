@@ -122,6 +122,11 @@ describe('R8 E11', () => {
     expect((fmt.fieldConfig!.defaults as any).unit).not.toBe('locale');
   });
 
+  it('pie and stat names show an empty value as "(empty)"', () => {
+    const p = panel({ chartType: 'pie', buckets: [svc], metrics: [count] });
+    expect(JSON.stringify(p.fieldConfig!.overrides)).toContain('"match":"empty"');
+  });
+
   it('a log axis starts at 1, as in Visualize', () => {
     const p = panel({
       chartType: 'bar',
