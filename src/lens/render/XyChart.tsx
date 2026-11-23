@@ -155,6 +155,32 @@ export function stackValues(
   return { spans, max: mode === 'percentage' ? 100 : max, min: mode === 'percentage' ? Math.max(-100, min) : min };
 }
 
+/** Slot (whole buckets from the first) of each X when a time axis has gaps between fixed-length buckets, else null. */
+export function timeSlots(result: LensResult, bucketMs: number | undefined, horizontal: boolean): number[] | null {
+  const xs = result.xs;
+  if (!result.xIsTime || horizontal || !bucketMs || bucketMs > 7 * 86_400_000 || xs.length < 2) {
+    return null;
+  }
+  const t0 = Number(xs[0]);
+  const slots = xs.map((x) => Math.round((Number(x) - t0) / bucketMs));
+  const total = slots[slots.length - 1] + 1;
+  if (total === xs.length || total > 20_000 || slots.some((s, i) => i > 0 && s <= slots[i - 1])) {
+    return null;
+  }
+  return slots;
+}
+
+/** Index of the X whose slot is nearest to `slot`. */
+function nearestSlot(slots: number[], slot: number): number {
+  let best = 0;
+  slots.forEach((s, i) => {
+    if (Math.abs(s - slot) < Math.abs(slots[best] - slot)) {
+      best = i;
+    }
+  });
+  return best;
+}
+
 export function XyChart({
   chartType,
   subType,
@@ -340,11 +366,15 @@ export function XyChart({
   const ys = (si: number) => (sides[si] === 'right' ? yR : y);
   const leftFmt = (v: number) =>
     percent ? `${Math.round(v)}%` : firstOn('left') >= 0 ? axisFmtOf(firstOn('left'), v) : formatAxisNumber(v);
-  const n = Math.max(1, result.xs.length);
+  // A time axis with fixed-length buckets and gaps (Include empty rows off): each bucket sits at its true
+  // time slot, so axis, ticks, shading and brush agree and the gap is visible.
+  const tSlots = timeSlots(result, bucketMs, horizontal);
+  const n = Math.max(1, tSlots ? tSlots[tSlots.length - 1] + 1 : result.xs.length);
   const catLen = horizontal ? plotH : plotW;
   const band = catLen / n;
+  const slotOf = (xi: number) => (tSlots ? tSlots[xi] : xi);
   // Category centre along the category axis (x for vertical charts, y for horizontal bars).
-  const cx0 = (xi: number) => (horizontal ? m.top + band * xi + band / 2 : m.left + band * xi + band / 2);
+  const cx0 = (xi: number) => (horizontal ? m.top + band * slotOf(xi) + band / 2 : m.left + band * slotOf(xi) + band / 2);
   const spanMs =
     result.xIsTime && result.xs.length > 1 ? Number(result.xs[result.xs.length - 1]) - Number(result.xs[0]) : 0;
   const labelEvery = Math.max(
@@ -467,7 +497,8 @@ export function XyChart({
     }
     const along = horizontal ? py : px;
     const across = horizontal ? px : py;
-    const xi = Math.max(0, Math.min(n - 1, Math.floor((along - (horizontal ? m.top : m.left)) / band)));
+    const slot = Math.max(0, Math.min(n - 1, Math.floor((along - (horizontal ? m.top : m.left)) / band)));
+    const xi = tSlots ? nearestSlot(tSlots, slot) : slot;
     const si = seriesAt(xi, along, across);
     setHover((h) => (h && h.xi === xi && h.si === si && h.px === px && h.py === py ? h : { xi, si, px, py }));
   };
@@ -675,7 +706,7 @@ export function XyChart({
       partial.push({ xi: 0, x: m.left, w: band });
     }
     if (Number(result.xs[last]) + step > timeRange.to && (last > 0 || partial.length === 0)) {
-      partial.push({ xi: last, x: m.left + band * last, w: band });
+      partial.push({ xi: last, x: m.left + band * slotOf(last), w: band });
     }
   }
 
@@ -1094,7 +1125,7 @@ export function XyChart({
                 horizontal ? (
                   <rect
                     x={m.left}
-                    y={m.top + band * hover.xi}
+                    y={m.top + band * slotOf(hover.xi)}
                     width={plotW}
                     height={band}
                     className={styles.hoverBand}
@@ -1102,7 +1133,7 @@ export function XyChart({
                   />
                 ) : (
                   <rect
-                    x={m.left + band * hover.xi}
+                    x={m.left + band * slotOf(hover.xi)}
                     y={m.top}
                     width={band}
                     height={plotH}
