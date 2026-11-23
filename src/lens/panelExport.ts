@@ -399,15 +399,13 @@ type PanelBase = Omit<LensPanel, 'type'>;
 /**
  * Grafana's heat map draws a cell ending at its time stamp, but the query returns the bucket start
  * (Visualize draws [start, start + interval)). Move the time to the bucket end before pivoting.
- * Auto buckets are `$__interval` wide, custom ones their own width. Month and year buckets have no
- * fixed length, so they keep their start (shifted one bucket early in the panel).
+ * Auto buckets are `$__interval` wide, custom ones their own width.
  */
 function bucketEndShift(x: { interval?: string }): Transformation[] {
   const iv = x.interval && x.interval !== 'auto' ? parseInterval(x.interval) : null;
-  if (iv && isCalendarUnit(iv.unit)) {
-    return [];
-  }
-  const width = iv ? String(intervalMs(iv)) : '${__interval_ms}';
+  // Month and year buckets have no fixed length: their mean length puts the cell in the right month.
+  const mean = iv && isCalendarUnit(iv.unit) ? Math.round(iv.n * (iv.unit === 'y' ? 365.25 : 30.4375) * 86400000) : undefined;
+  const width = mean !== undefined ? String(mean) : iv ? String(intervalMs(iv)) : '${__interval_ms}';
   const t = bucketAlias(0);
   return [
     {

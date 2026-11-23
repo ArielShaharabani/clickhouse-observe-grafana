@@ -30,7 +30,7 @@ describe('R8 panel export', () => {
     const custom = panel({ chartType: 'heatmap', buckets: [{ ...date, interval: '6h' }, svc], metrics: [count] });
     expect(JSON.stringify(custom.transformations![0].options)).toContain('"fixed":"21600000"');
     const month = panel({ chartType: 'heatmap', buckets: [{ ...date, interval: '1M' }, svc], metrics: [count] });
-    expect(month.transformations![0].id).toBe('groupingToMatrix');
+    expect(JSON.stringify(month.transformations![0].options)).toContain('"fixed":"2629800000"');
   });
 });
 
