@@ -87,11 +87,12 @@ describe('QueryMenu (DISC-SEARCH-03)', () => {
     expect(h.onClearAll).toHaveBeenCalled();
   });
 
-  it('lists KQL as the language and Lucene as unsupported', async () => {
+  it('has no language switch (Lucene is not implemented)', async () => {
     setup({ filters: [] });
     await openMenu();
-    expect(screen.getByRole('menuitemradio', { name: 'KQL' })).toHaveAttribute('aria-checked', 'true');
-    expect(screen.getByRole('menuitemradio', { name: /Lucene/ })).toHaveAttribute('data-disabled', 'true');
+    expect(screen.queryByText('Language')).toBeNull();
+    expect(screen.queryByRole('menuitemradio')).toBeNull();
+    expect(screen.queryByText(/Lucene|KQL/)).toBeNull();
     // Nothing to apply on, nothing saved yet.
     expect(screen.queryByRole('menuitem', { name: 'Apply to all' })).toBeNull();
     await waitFor(() =>

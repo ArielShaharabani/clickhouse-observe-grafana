@@ -124,3 +124,19 @@ test('a tampered tab store never reaches the query', async ({ page }) => {
   await expect(new LogsPage(page).searchInput).toHaveValue('ServiceName:auth');
   await expect(page.getByText(/system\.users/)).toHaveCount(0);
 });
+
+test('tabs reorder by dragging anywhere on a tab, also past the last one', async ({ page }) => {
+  const logs = new LogsPage(page);
+  await logs.open();
+  await page.getByRole('button', { name: 'New tab' }).click();
+  await page.getByRole('button', { name: 'New tab' }).click();
+  const titles = () => tabs(page).getByRole('tab').allTextContents();
+  const box = (await page.getByTestId('discover-tab').first().boundingBox())!;
+  await page.mouse.move(box.x + 30, box.y + 18);
+  await page.mouse.down();
+  await page.mouse.move(box.x + 400, box.y + 60, { steps: 8 });
+  await page.mouse.up();
+  await expect.poll(titles).toEqual(['Untitled 2', 'Untitled 3', 'Untitled']);
+  // The drag did not select the dragged tab.
+  await expect(tab(page, 'Untitled 3')).toHaveAttribute('aria-selected', 'true');
+});

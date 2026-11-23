@@ -110,10 +110,10 @@ test('a hostile saved query in storage is sanitized on load', async ({ page }) =
   expect(new URL(page.url()).searchParams.get('from')).toBe(String(FIXTURE.from));
 });
 
-test('the language section shows KQL and Lucene as unsupported', async ({ page }) => {
+test('the menu has no language switch', async ({ page }) => {
   const logs = new LogsPage(page);
   await logs.open();
   await openMenu(page);
-  await expect(page.getByRole('menuitemradio', { name: 'KQL', exact: true })).toHaveAttribute('aria-checked', 'true');
-  await expect(page.getByRole('menuitemradio', { name: /Lucene/ })).toHaveAttribute('data-disabled', 'true');
+  await expect(page.getByRole('menuitemradio')).toHaveCount(0);
+  await expect(page.getByText(/Lucene/)).toHaveCount(0);
 });
