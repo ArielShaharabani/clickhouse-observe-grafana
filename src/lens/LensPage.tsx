@@ -794,6 +794,15 @@ export function LensPage({ tabStrip, onTitle, onLeave }: LensPageProps = {}) {
         pill: pillFor(breakdown.field, series.breakdown, 'for'),
       });
     }
+    // A date breakdown filters on its bucket (the time range is one, so not next to a time axis).
+    if (breakdown?.kind === 'date_histogram' && x?.kind !== 'date_histogram' && series?.breakdown !== undefined && bucketMs) {
+      const from = Number(series.breakdown);
+      const end = iv ? stepBucket(from, iv, 1) : from + bucketMs;
+      out.push({
+        label: `${breakdown.label}: ${formatInZone(from, 'YYYY-MM-DD HH:mm')} – ${formatInZone(end, 'YYYY-MM-DD HH:mm')}`,
+        time: [from, end],
+      });
+    }
     return out;
   };
   // Filters and time go into ONE URL update: two setSearchParams calls in a row each start from the

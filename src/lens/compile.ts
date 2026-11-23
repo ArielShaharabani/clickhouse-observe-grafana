@@ -24,6 +24,7 @@ import { SourceConfig } from '../types';
 import { coarsePrunePredicate, quoteIdentifier, quoteString, tableRef } from '../sql/queryBuilder';
 import { parseKql, kqlToSql } from '../sql/kql';
 import { chInterval, NORMALIZE_SECONDS, parseSpan, spanText, TimeSpan } from './metricOptions';
+import { formatInZone } from '../utils/timeZone';
 import { configSettingsFragments, withSettings } from '../sql/settings';
 import { isConvertedTimestamp, timeExpr } from '../sql/timeExpr';
 import {
@@ -384,7 +385,7 @@ export function compileLens(
   const restrictions: string[] = [];
   const selects: string[] = [];
 
-  // Intervals (LENS-DIM-05): custom ranges → the index of the first matching range; automatic →
+  // Intervals (LENS-DIM-05): custom ranges → the index of every range the value fits; automatic →
   // the bucket start, with a power-of-ten width sized from the data's span (`rng<i>` CTE).
   const rangeBucket = (b: RangeDim, i: number) => {
     const x = rangeValue(b);
@@ -394,8 +395,10 @@ export function compileLens(
         selects.push(`0 AS ${bucketAlias(i)}`);
         return;
       }
-      const idx = `multiIf(${b.ranges.map((r, k) => `${rangeCond(x, r)}, ${k}`).join(', ')}, -1)`;
-      restrictions.push(`${idx} >= 0`);
+      // Ranges may overlap: a record counts in every range it fits (as a Filters bucket).
+      const conds = b.ranges.map((r) => rangeCond(x, r));
+      restrictions.push(`(${conds.map((c) => `(${c})`).join(' OR ')})`);
+      const idx = `arrayJoin(arrayFilter(__r -> __r >= 0, [${conds.map((c, k) => `if(${c}, ${k}, -1)`).join(', ')}]))`;
       selects.push(
         mode === 'dashboard'
           ? `transform(${idx}, [${b.ranges.map((_, k) => k).join(', ')}], [${b.ranges.map((r) => lit(rangeLabel(r))).join(', ')}], '') AS ${bucketAlias(i)}`
@@ -447,8 +450,9 @@ export function compileLens(
       );
     } else if (b.kind === 'date_histogram') {
       const iv = resolveLensInterval(b.interval, timeRange);
-      interval = iv;
-      intervalMs = ivMs(iv);
+      // The horizontal axis' interval, when several buckets are date histograms.
+      interval ??= iv;
+      intervalMs ??= ivMs(iv);
       if (appDate && i === dateIdx) {
         seriesIv = iv;
         selects.push(`${dateTimeBucketSql(dateSql(b.field), iv)} AS ${DATE_ALIAS}`);
@@ -1047,10 +1051,19 @@ export interface ShapeOptions {
 const normNum = (n: number): number => Number(n.toPrecision(12));
 const fmtNum = (n: number): string => normNum(n).toLocaleString('en-US', { maximumFractionDigits: 6 });
 
-/** Cell of an Intervals / Filters bucket (top values: `termCell`; date histogram: none). */
+/** Label of a date bucket used as a breakdown: the bucket start, in the chosen zone. */
+function dateLabel(ms: number): string {
+  return formatInZone(ms, ms % 1000 ? 'YYYY-MM-DD HH:mm:ss.SSS' : ms % 60_000 ? 'YYYY-MM-DD HH:mm:ss' : 'YYYY-MM-DD HH:mm');
+}
+
+/** Cell of a bucket (a date histogram on the horizontal axis has none: its position is the time). */
 function bucketCell(b: BucketDim | undefined, r: Record<string, unknown>, i: number): TermCell | undefined {
-  if (!b || b.kind === 'date_histogram') {
+  if (!b || (b.kind === 'date_histogram' && i === 0)) {
     return undefined;
+  }
+  if (b.kind === 'date_histogram') {
+    const t = toMs(r[bucketAlias(i)]);
+    return { key: `\u0003${t}`, label: dateLabel(t), synthetic: false };
   }
   if (b.kind === 'terms') {
     return termCell(b, r, i);
@@ -1254,6 +1267,12 @@ export function shapeLensRows(
  */
 export function orderSeries(state: LensState, series: LensSeries[]): LensSeries[] {
   const b = state.buckets[1];
+  if (b?.kind === 'date_histogram') {
+    // Breakdown by date: in time order.
+    return [...series].sort(
+      (p, q) => Number(p.breakdown) - Number(q.breakdown) || p.metricIndex - q.metricIndex
+    );
+  }
   if (b?.kind !== 'terms' || series.length < 2) {
     return series;
   }

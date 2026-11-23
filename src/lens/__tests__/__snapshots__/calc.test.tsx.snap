@@ -38,5 +38,5 @@ GROUP BY b0, b1, k1
 ORDER BY b1, k1, b0 WITH FILL FROM toStartOfInterval($__fromTime, INTERVAL greatest(86400, $__interval_s) second) TO $__toTime STEP greatest(86400, $__interval_s)
 )
 ORDER BY b0, b1, k1
-LIMIT 50001"
+LIMIT 10000"
 `;

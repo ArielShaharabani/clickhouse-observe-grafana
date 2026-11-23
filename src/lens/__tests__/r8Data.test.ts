@@ -52,3 +52,31 @@ describe('W1: cut results', () => {
     expect(sqlOf(st([{ ...svc, size: 5000 }]))).toContain('LIMIT 1000)');
   });
 });
+
+describe('W2: date histogram as breakdown', () => {
+  it('one series per bucket, in time order, labelled with the date', () => {
+    const s = st([svc, date]);
+    const rows = [
+      { b0: 'a', b1: range.from + H, m0: 2 },
+      { b0: 'a', b1: range.from, m0: 1 },
+      { b0: 'b', b1: range.from, m0: 3 },
+    ];
+    const r = shapeLensRows(s, rows, H);
+    expect(r.series.map((x) => x.breakdown)).toEqual([String(range.from), String(range.from + H)]);
+    expect(r.series[0].name).toMatch(/^\d{4}-\d\d-\d\d \d\d:\d\d$/);
+    expect([...r.series[0].points.values()]).toEqual([1, 3]);
+    expect([...r.series[1].points.values()]).toEqual([2]);
+  });
+});
+
+describe('W3: overlapping ranges', () => {
+  it('a record is put in every range it fits', () => {
+    const b: RangeDim = { kind: 'range', id: 'r', field: 'SeverityNumber', label: 's', numeric: true, ranges: [{ to: 10 }, { to: 14 }, {}] };
+    const sql = sqlOf(st([b]));
+    expect(sql).not.toContain('multiIf');
+    expect(sql).toContain('arrayJoin(arrayFilter(__r -> __r >= 0');
+    if (process.env.R8_SQL) {
+      console.log(sql);
+    }
+  });
+});

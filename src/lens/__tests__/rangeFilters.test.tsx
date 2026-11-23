@@ -64,15 +64,15 @@ describe('Intervals SQL (LENS-DIM-05)', () => {
   it('custom ranges: first match wins, open ends, rows outside every range dropped', () => {
     const sql = sqlOf({ ...sev, ranges: [{ to: 9 }, { from: 9, to: 17 }, { from: 17 }] });
     expect(sql).toContain(
-      'multiIf(toFloat64("SeverityNumber") IS NOT NULL AND toFloat64("SeverityNumber") < 9, 0, toFloat64("SeverityNumber") IS NOT NULL AND toFloat64("SeverityNumber") >= 9 AND toFloat64("SeverityNumber") < 17, 1, toFloat64("SeverityNumber") IS NOT NULL AND toFloat64("SeverityNumber") >= 17, 2, -1) AS b0'
+      'arrayJoin(arrayFilter(__r -> __r >= 0, [if(toFloat64("SeverityNumber") IS NOT NULL AND toFloat64("SeverityNumber") < 9, 0, -1), if(toFloat64("SeverityNumber") IS NOT NULL AND toFloat64("SeverityNumber") >= 9 AND toFloat64("SeverityNumber") < 17, 1, -1), if(toFloat64("SeverityNumber") IS NOT NULL AND toFloat64("SeverityNumber") >= 17, 2, -1)])) AS b0'
     );
-    expect(sql).toMatch(/multiIf\(.*-1\) >= 0/);
+    expect(sql).toContain(' < 9) OR (toFloat64("SeverityNumber") IS NOT NULL');
     expect(sqlOf({ ...sev, ranges: [] })).toContain('WHERE Timestamp >= $__fromTime AND Timestamp <= $__toTime AND 0');
   });
 
   it('saved panels get the range labels as literals ($ written as \\x24)', () => {
     const sql = sqlOf({ ...sev, ranges: [{ from: 0, to: 9, label: "low' OR 1=1 $__timeFilter" }] }, 'dashboard');
-    expect(sql).toContain('transform(multiIf(');
+    expect(sql).toContain('transform(arrayJoin(');
     expect(sql).toContain("['low\\' OR 1=1 \\x24__timeFilter']");
     expect(sql).not.toContain('$__timeFilter');
   });
