@@ -117,7 +117,8 @@ export function xLabel(x: string | number, isTime: boolean, spanMs: number): str
 export function stackValues(
   result: LensResult,
   visible: boolean[],
-  mode: 'stacked' | 'percentage' | 'none'
+  mode: 'stacked' | 'percentage' | 'none',
+  positiveOnly = false
 ): { spans: Array<Array<[number, number] | null>>; max: number; min: number } {
   const spans: Array<Array<[number, number] | null>> = result.series.map(() => []);
   let max = 0;
@@ -135,6 +136,11 @@ export function stackValues(
         return;
       }
       const v = mode === 'percentage' ? (total > 0 ? (raw / total) * 100 : 0) : raw;
+      if (positiveOnly && !(v > 0)) {
+        // A log axis has no zero or negative: such a value is not drawn (the tooltip still gives it).
+        spans[si][xi] = null;
+        return;
+      }
       if (mode === 'none') {
         spans[si][xi] = [0, v];
         max = Math.max(max, v);
@@ -250,8 +256,10 @@ export function XyChart({
   const axisFmtOf = (si: number, v: number) => formatValue(v, formatOf(metricOf(si)), formatAxisNumber);
   const visible = result.series.map((s) => !hidden.has(s.name));
   // Line has no stacking (as in Kibana): a sub-type kept from Bar / Area doesn't change it.
+  // A log axis is not stacked (segment heights would say nothing): the series are drawn unstacked.
+  const logAxis = axisOf(style, 'left').scale === 'log' || axisOf(style, 'right').scale === 'log';
   const mode: 'stacked' | 'percentage' | 'none' =
-    chartType === 'line'
+    chartType === 'line' || (logAxis && subType !== 'percentage')
       ? 'none'
       : subType === 'percentage'
         ? 'percentage'
@@ -270,12 +278,14 @@ export function XyChart({
     left: stackValues(
       result,
       visible.map((v, i) => v && sides[i] !== 'right'),
-      mode
+      mode,
+      mode !== 'percentage' && axisOf(style, 'left').scale === 'log'
     ),
     right: stackValues(
       result,
       visible.map((v, i) => v && sides[i] === 'right'),
-      mode
+      mode,
+      mode !== 'percentage' && axisOf(style, 'right').scale === 'log'
     ),
   };
   const spans = result.series.map((_s, si) => stacked[sides[si]].spans[si]);
@@ -1027,12 +1037,12 @@ export function XyChart({
                       <text
                         x={c}
                         y={m.top + plotH + 16}
+                        aria-label={xText(result, xi, spanMs)}
                         textAnchor={catRot ? 'end' : 'middle'}
                         transform={rotated(c, m.top + plotH + 16, catRot)}
                         className={styles.tick}
                         data-testid="lens-category-tick"
                       >
-                        <title>{xText(result, xi, spanMs)}</title>
                         {catTick(xi)}
                       </text>
                     ))}

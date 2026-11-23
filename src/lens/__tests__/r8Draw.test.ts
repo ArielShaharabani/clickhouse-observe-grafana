@@ -65,3 +65,21 @@ describe('R8 draw: L4 ellipsis', () => {
     expect(truncateLabel('GET', 80)).toBe('GET');
   });
 });
+
+import { stackValues } from '../render/XyChart';
+
+describe('R8 draw: M6 log scale', () => {
+  const r = {
+    xs: ['a'],
+    xIsTime: false,
+    xLabels: ['a'],
+    series: [
+      { name: 's1', points: new Map([['a', -186]]), metricIndex: 0, zeroFill: false },
+      { name: 's2', points: new Map([['a', 5]]), metricIndex: 0, zeroFill: false },
+    ],
+  } as unknown as LensResult;
+  it('does not draw values <= 0 on a log axis', () => {
+    expect(stackValues(r, [true, true], 'none', true).spans.map((s) => s[0])).toEqual([null, [0, 5]]);
+    expect(stackValues(r, [true, true], 'none').spans[0][0]).toEqual([0, -186]);
+  });
+});
