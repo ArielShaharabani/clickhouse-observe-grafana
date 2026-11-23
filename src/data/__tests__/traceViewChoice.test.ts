@@ -97,6 +97,18 @@ describe('remembered-choice persistence', () => {
     expect(getRememberedView(DS_A)).toBeNull();
   });
 
+  it('SEC: a prototype-member datasource uid never resolves to an inherited value', () => {
+    expect(getRememberedView('constructor')).toBeNull();
+    expect(getRememberedView('__proto__')).toBeNull();
+  });
+
+  it('SEC: a non-object stored value is ignored', () => {
+    localStorage.setItem('poortuna-clickhouse-observe:trace-view-choice', '["a"]');
+    expect(getRememberedView('0')).toBeNull();
+    localStorage.setItem('poortuna-clickhouse-observe:trace-view-choice', JSON.stringify({ [DS_A]: { x: 1 } }));
+    expect(getRememberedView(DS_A)).toBeNull();
+  });
+
   it('keeps separate datasources independent', () => {
     rememberView(DS_A, 'otel_logs');
     rememberView(DS_B, 'other_view');

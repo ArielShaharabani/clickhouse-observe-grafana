@@ -56,7 +56,8 @@ export function resolveTraceLanding(
 function readRemembered(): Record<string, string> {
   try {
     const raw = localStorage.getItem(REMEMBERED_CHOICE_KEY);
-    return raw ? (JSON.parse(raw) as Record<string, string>) : {};
+    const parsed: unknown = raw ? JSON.parse(raw) : {};
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? (parsed as Record<string, string>) : {};
   } catch {
     return {};
   }
@@ -72,7 +73,10 @@ function writeRemembered(map: Record<string, string>): void {
 
 /** The Data View id previously chosen for this datasource uid, or null if never set/unavailable. */
 export function getRememberedView(dsUid: string): string | null {
-  return readRemembered()[dsUid] ?? null;
+  // Own string values only: a uid like "constructor" must not resolve to an inherited member.
+  const map = readRemembered();
+  const v = Object.prototype.hasOwnProperty.call(map, dsUid) ? map[dsUid] : undefined;
+  return typeof v === 'string' ? v : null;
 }
 
 export function rememberView(dsUid: string, viewId: string): void {
