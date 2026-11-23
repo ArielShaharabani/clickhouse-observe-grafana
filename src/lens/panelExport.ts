@@ -475,7 +475,7 @@ function heatmapPanel(
           reverse: false,
           fill: 'dark-blue',
         },
-        filterValues: { le: -1e-9 },
+        filterValues: { le: -1e300 },
         rowsFrame: { layout: 'auto' },
         yAxis: { axisPlacement: 'left', reverse: true },
         cellValues: units,

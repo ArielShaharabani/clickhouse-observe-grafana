@@ -42,3 +42,10 @@ describe('R8 E4', () => {
     expect((panel({ chartType: 'metric', buckets: [], metrics: [count] }).options as any).reduceOptions.limit).toBeUndefined();
   });
 });
+
+describe('R8 E5', () => {
+  it('heat map hides only empty cells: negative values and zeros pass the value filter', () => {
+    const p = panel({ chartType: 'heatmap', buckets: [date, svc], metrics: [count] });
+    expect((p.options as any).filterValues.le).toBeLessThan(-1e100);
+  });
+});
