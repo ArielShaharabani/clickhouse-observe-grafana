@@ -115,6 +115,15 @@ export function DiscoverTabs(props: DiscoverTabsProps) {
     edgeRaf.current = requestAnimationFrame(edgeScrollTick);
   };
 
+  // The handler is a new function every render: remove the one that was actually added.
+  const keyListener = useRef<((e: KeyboardEvent) => void) | null>(null);
+  const dropKeyListener = () => {
+    if (keyListener.current) {
+      window.removeEventListener('keydown', keyListener.current, true);
+      keyListener.current = null;
+    }
+  };
+
   const onWindowKey = (e: KeyboardEvent) => {
     if (e.key === 'Escape' && session.current) {
       e.preventDefault();
@@ -128,7 +137,7 @@ export function DiscoverTabs(props: DiscoverTabsProps) {
     session.current = null;
     cancelAnimationFrame(edgeRaf.current);
     edgeRaf.current = 0;
-    window.removeEventListener('keydown', onWindowKey, true);
+    dropKeyListener();
     if (d?.active) {
       // The click that follows the pointer-up belongs to the drag, not to a select.
       suppressClick.current = true;
@@ -189,6 +198,7 @@ export function DiscoverTabs(props: DiscoverTabsProps) {
       }
       d.active = true;
       d.el.setPointerCapture?.(e.pointerId);
+      keyListener.current = onWindowKey;
       window.addEventListener('keydown', onWindowKey, true);
       edgeRaf.current = requestAnimationFrame(edgeScrollTick);
     }
@@ -210,7 +220,7 @@ export function DiscoverTabs(props: DiscoverTabsProps) {
   useEffect(
     () => () => {
       cancelAnimationFrame(edgeRaf.current);
-      window.removeEventListener('keydown', onWindowKey, true);
+      dropKeyListener();
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
     []
