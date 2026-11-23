@@ -235,7 +235,7 @@ function baseLensPanel(
     case 'bar': {
       const custom =
         state.chartType === 'bar'
-          ? { fillOpacity: 80, lineWidth: 0 }
+          ? { fillOpacity: 80, lineWidth: 0, barAlignment: 1, barWidthFactor: 1 }
           : { fillOpacity: state.chartType === 'area' ? 50 : 0, lineWidth: 2 };
       if (x?.kind === 'date_histogram') {
         // Long rows (time, split value, metrics) → one series per split value.

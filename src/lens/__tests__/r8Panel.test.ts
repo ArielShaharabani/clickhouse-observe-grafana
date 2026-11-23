@@ -49,3 +49,12 @@ describe('R8 E5', () => {
     expect((p.options as any).filterValues.le).toBeLessThan(-1e100);
   });
 });
+
+describe('R8 E6', () => {
+  it('time bars start at their bucket start and fill it', () => {
+    const p = panel({ chartType: 'bar', subType: 'stacked', buckets: [date], metrics: [count] });
+    expect((p.fieldConfig!.defaults.custom as any)).toMatchObject({ barAlignment: 1, barWidthFactor: 1 });
+    const line = panel({ chartType: 'line', buckets: [date], metrics: [count] });
+    expect((line.fieldConfig!.defaults.custom as any).barAlignment).toBeUndefined();
+  });
+});
