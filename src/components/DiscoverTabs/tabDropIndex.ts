@@ -5,18 +5,19 @@ export interface TabSpan {
 }
 
 /**
- * Where a dragged tab lands: the number of OTHER tabs whose midpoint lies left of the dragged
- * tab's centre. It is the tab's index in the final order, so it is 0 anywhere left of the first
- * midpoint and `spans.length - 1` anywhere right of the last one, and dropping past either end
- * of the strip needs no special case. `spans` are the tabs in their original, unshifted layout.
+ * Where a tab dragged `dx` px lands: a neighbour gives way as soon as the dragged tab's leading
+ * edge passes its midpoint (about half a tab of travel, as in browsers). Dropping past either end
+ * needs no special case. `spans` are the tabs in their original, unshifted layout.
  */
-export function tabDropIndex(dragIndex: number, draggedCenter: number, spans: TabSpan[]): number {
-  if (dragIndex < 0 || dragIndex >= spans.length || !Number.isFinite(draggedCenter)) {
+export function tabDropIndex(dragIndex: number, dx: number, spans: TabSpan[]): number {
+  if (dragIndex < 0 || dragIndex >= spans.length || !Number.isFinite(dx)) {
     return Math.max(0, Math.min(spans.length - 1, dragIndex));
   }
+  const own = spans[dragIndex];
   let target = 0;
   spans.forEach((s, i) => {
-    if (i !== dragIndex && (s.left + s.right) / 2 < draggedCenter) {
+    const edge = i < dragIndex ? own.left + dx : own.right + dx;
+    if (i !== dragIndex && (s.left + s.right) / 2 < edge) {
       target++;
     }
   });

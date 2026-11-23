@@ -85,9 +85,7 @@ export function DiscoverTabs(props: DiscoverTabsProps) {
       return;
     }
     const dx = d.clientX - d.startX + (sc.scrollLeft - d.startScroll);
-    const own = d.spans[d.index];
-    const center = (own.left + own.right) / 2 + dx;
-    d.target = tabDropIndex(d.index, center, d.spans);
+    d.target = tabDropIndex(d.index, dx, d.spans);
     setDrag({ id: d.id, index: d.index, target: d.target, dx, slot: d.slot });
   };
 
@@ -222,7 +220,6 @@ export function DiscoverTabs(props: DiscoverTabsProps) {
       cancelAnimationFrame(edgeRaf.current);
       dropKeyListener();
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     []
   );
 

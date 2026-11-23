@@ -3,21 +3,19 @@ import { tabDropIndex, tabShift } from '../DiscoverTabs/tabDropIndex';
 const spans = [0, 1, 2, 3].map((i) => ({ left: i * 100, right: i * 100 + 96 }));
 
 describe('tabDropIndex', () => {
-  it('keeps the tab in place while its centre stays between the neighbours midpoints', () => {
-    expect(tabDropIndex(1, 148, spans)).toBe(1);
-    expect(tabDropIndex(1, 100, spans)).toBe(1);
-    expect(tabDropIndex(1, 190, spans)).toBe(1);
+  it('stays until the leading edge passes a neighbour midpoint (half a tab)', () => {
+    expect(tabDropIndex(1, 0, spans)).toBe(1);
+    expect(tabDropIndex(1, 51, spans)).toBe(1);
+    expect(tabDropIndex(1, -51, spans)).toBe(1);
   });
-  it('moves right past a neighbour midpoint', () => {
-    expect(tabDropIndex(0, 260, spans)).toBe(2);
-    expect(tabDropIndex(0, 360, spans)).toBe(3);
-  });
-  it('moves left', () => {
-    expect(tabDropIndex(3, 40, spans)).toBe(0);
-    expect(tabDropIndex(3, 140, spans)).toBe(1);
+  it('moves after about half a tab, either way', () => {
+    expect(tabDropIndex(1, 54, spans)).toBe(2);
+    expect(tabDropIndex(1, -54, spans)).toBe(0);
+    expect(tabDropIndex(0, 160, spans)).toBe(2);
+    expect(tabDropIndex(3, -160, spans)).toBe(1);
   });
   it('works past either end of the strip', () => {
-    expect(tabDropIndex(2, -500, spans)).toBe(0);
+    expect(tabDropIndex(2, -5000, spans)).toBe(0);
     expect(tabDropIndex(1, 9000, spans)).toBe(3);
   });
   it('is safe on bad input', () => {
