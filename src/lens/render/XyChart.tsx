@@ -525,7 +525,7 @@ export function XyChart({
   const valueTickVals = valueTicks(lo, hi, leftScale);
   const rightTickVals = valueTicks(loR, hiR, rightScale);
   const catTick = (xi: number) =>
-    horizontal ? truncateLabel(xText(result, xi, spanMs), catTicksDepth) : xText(result, xi, spanMs).slice(0, 14);
+    truncateLabel(xText(result, xi, spanMs), horizontal ? catTicksDepth : Math.max(60, band * labelEvery));
 
   const legendEl = showLegend ? (
     <div
@@ -1032,6 +1032,7 @@ export function XyChart({
                         className={styles.tick}
                         data-testid="lens-category-tick"
                       >
+                        <title>{xText(result, xi, spanMs)}</title>
                         {catTick(xi)}
                       </text>
                     ))}
