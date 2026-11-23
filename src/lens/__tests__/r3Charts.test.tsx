@@ -421,11 +421,12 @@ describe('R3-CHARTS dashboard export', () => {
     );
     expect(p.type).toBe('heatmap');
     expect(p.targets[0].rawSql).toContain('$__timeInterval');
-    expect(p.transformations?.[0]).toMatchObject({
+    expect(p.transformations?.[0]).toMatchObject({ id: 'calculateField' });
+    expect(p.transformations?.[3]).toMatchObject({
       id: 'groupingToMatrix',
       options: { columnField: 'b1', rowField: 'b0' },
     });
-    expect(p.transformations?.[1]).toMatchObject({
+    expect(p.transformations?.[4]).toMatchObject({
       id: 'organize',
       options: { indexByName: { 'b0\\b1': 0, payments: 1, auth: 2 }, renameByName: { 'b0\\b1': 'Timestamp' } },
     });

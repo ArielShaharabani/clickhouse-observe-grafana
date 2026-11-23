@@ -20,6 +20,7 @@ import { stableColors } from './render/seriesColors';
 import { panelSignature, VISUALIZE_SIG_KEY, VISUALIZE_SOURCE_KEY } from './panelSource';
 import { gaugeDefaults, gaugeMetrics, gaugeOptions } from './render/gaugeSpec';
 import { formatOf, grafanaUnit } from './metricOptions';
+import { intervalMs, isCalendarUnit, parseInterval } from './interval';
 
 export interface LensPanelOpts {
   id: number;
@@ -364,6 +365,37 @@ function baseLensPanel(
 type PanelBase = Omit<LensPanel, 'type'>;
 
 /**
+ * Grafana's heat map draws a cell ending at its time stamp, but the query returns the bucket start
+ * (Visualize draws [start, start + interval)). Move the time to the bucket end before pivoting.
+ * Auto buckets are `$__interval` wide, custom ones their own width. Month and year buckets have no
+ * fixed length, so they keep their start (shifted one bucket early in the panel).
+ */
+function bucketEndShift(x: { interval?: string }): Transformation[] {
+  const iv = x.interval && x.interval !== 'auto' ? parseInterval(x.interval) : null;
+  if (iv && isCalendarUnit(iv.unit)) {
+    return [];
+  }
+  const width = iv ? String(intervalMs(iv)) : '${__interval_ms}';
+  const t = bucketAlias(0);
+  return [
+    {
+      id: 'calculateField',
+      options: {
+        mode: 'binary',
+        alias: 'bucketEnd',
+        replaceFields: false,
+        binary: { left: { matcher: { id: 'byName', options: t } }, operator: '+', right: { fixed: width } },
+      },
+    },
+    { id: 'convertFieldType', options: { conversions: [{ targetField: 'bucketEnd', destinationType: 'time' }] } },
+    {
+      id: 'organize',
+      options: { excludeByName: { [t]: true }, renameByName: { bucketEnd: t }, indexByName: { bucketEnd: 0 } },
+    },
+  ];
+}
+
+/**
  * Heat map (R3-CHARTS). A date histogram on X → Grafana's heatmap: the long rows (time, Y value,
  * metric) pivoted into one column per Y value ("heatmap rows", ordinal Y labels), biggest on top.
  * Categories on X have no core panel that draws them as cells, so the export is the same matrix
@@ -406,6 +438,7 @@ function heatmapPanel(
       // Rows in rank order (the biggest on top, as in Visualize): the pivot sorts its columns by value.
       transformations: y
         ? [
+            ...bucketEndShift(x),
             ...pivot,
             {
               id: 'organize',
@@ -419,7 +452,7 @@ function heatmapPanel(
               },
             },
           ]
-        : [rename(names)],
+        : [...bucketEndShift(x), rename(names)],
       options: {
         calculate: false,
         cellGap: 1,
