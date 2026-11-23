@@ -90,7 +90,7 @@ export function ChartTypeSwitcher({ value, subType, onChange, onSubTypeChange }:
   const activeType = activeIndex >= 0 ? options[activeIndex] : undefined;
   // The menu renders in a portal (the dimension column scrolls and would clip it), placed under
   // the trigger in viewport coordinates.
-  const [pos, setPos] = useState<{ top: number; left: number; width: number } | null>(null);
+  const [pos, setPos] = useState<{ top: number; left: number; width: number; maxHeight: number } | null>(null);
   // Portal children mount after the click that opened the menu, so autoFocus doesn't stick: move
   // focus to the search box once the menu is in the DOM.
   useEffect(() => {
@@ -128,7 +128,11 @@ export function ChartTypeSwitcher({ value, subType, onChange, onSubTypeChange }:
   const openMenu = () => {
     // Measured here (not in an effect) so the menu and its autofocused search mount in one render.
     const r = buttonRef.current?.getBoundingClientRect();
-    setPos(r ? { top: r.bottom + 4, left: r.left, width: Math.max(r.width, 280) } : { top: 0, left: 0, width: 280 });
+    // Kept inside the window: shifted left when it would pass the right edge, list shortened to the space below.
+    const width = Math.min(Math.max(r?.width ?? 280, 280), window.innerWidth - 16);
+    const left = r ? Math.max(8, Math.min(r.left, window.innerWidth - width - 8)) : 0;
+    const top = r ? r.bottom + 4 : 0;
+    setPos({ top, left, width, maxHeight: Math.max(160, window.innerHeight - top - 8) });
     setQuery('');
     setActive(Math.max(0, ORDER.indexOf(value)));
     setOpen(true);
@@ -203,7 +207,7 @@ export function ChartTypeSwitcher({ value, subType, onChange, onSubTypeChange }:
       )}
       {open && pos && (
         <Portal>
-          <div ref={popRef} className={styles.popover} style={{ top: pos.top, left: pos.left, width: pos.width }}>
+          <div ref={popRef} className={styles.popover} style={{ top: pos.top, left: pos.left, width: pos.width, maxHeight: pos.maxHeight }}>
             <Input
               autoFocus
               ref={inputRef}
@@ -297,6 +301,7 @@ const getStyles = (theme: GrafanaTheme2) => ({
   `,
   list: css`
     max-height: 360px;
+    min-height: 0;
     overflow-y: auto;
   `,
   none: css`

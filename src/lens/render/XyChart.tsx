@@ -1577,6 +1577,17 @@ function LegendMenu({
       ?.querySelector<HTMLElement>('[role="menuitem"], [role="menuitemradio"]')
       ?.focus({ preventScroll: true });
   }, []);
+  // A press outside the legend entry (its ⋮ button toggles the menu itself) closes it.
+  useEffect(() => {
+    const onDown = (e: MouseEvent) => {
+      const entry = ref.current?.parentElement;
+      if (entry && e.target instanceof Node && !entry.contains(e.target)) {
+        onClose();
+      }
+    };
+    document.addEventListener('mousedown', onDown);
+    return () => document.removeEventListener('mousedown', onDown);
+  }, [onClose]);
   return (
     <div
       ref={ref}

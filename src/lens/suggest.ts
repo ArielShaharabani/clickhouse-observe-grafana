@@ -290,7 +290,7 @@ export interface Suggestion {
 
 /** Cards for the suggestions strip (LENS-SUGG-01), current visualization first, no duplicates. */
 export function suggestions(state: LensState, ctx: LensContext): Suggestion[] {
-  if (state.metrics.length === 0 && state.buckets.length === 0) {
+  if (state.metrics.length === 0) {
     return [];
   }
   const out: Suggestion[] = [{ title: 'Current visualization', state, current: true }];

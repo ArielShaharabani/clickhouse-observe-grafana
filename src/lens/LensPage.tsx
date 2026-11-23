@@ -549,7 +549,8 @@ export function LensPage() {
   const calcError = calculationError(lens);
   // An axis chart whose horizontal axis was removed (or never filled): shown as an empty
   // visualization, not re-picked as another chart type.
-  const blankChart = isEmptyLens(lens) || ((isXy(lens.chartType) || lens.chartType === 'heatmap') && lens.buckets.length === 0);
+  // No metric (the vertical axis was removed): nothing to draw either.
+  const blankChart = lens.metrics.length === 0 || ((isXy(lens.chartType) || lens.chartType === 'heatmap') && lens.buckets.length === 0);
   useEffect(() => {
     if (blankChart || !config.datasourceUid || chartFieldsLoading || queryError || calcError) {
       return;
@@ -664,6 +665,11 @@ export function LensPage() {
     };
     if (next.buckets.length === 0 && next.metrics.length === 0) {
       setLens(EMPTY_LENS);
+      return;
+    }
+    // Removing the last metric sticks too: back to the empty workspace, the other dimensions kept.
+    if (next.metrics.length === 0) {
+      setLens(next);
       return;
     }
     // Removing the only horizontal axis leaves the chart type as it is, with an empty axis slot
