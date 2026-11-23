@@ -121,6 +121,34 @@ export function mergePinnedFilters(filters: FilterPill[], stored: StoredPin[], t
 }
 
 /**
+ * Filters after a data view switch in Discover: every pill stays until the user removes it. A pill
+ * that applied on the old view is disabled (struck through) on the new one and remembers the view
+ * it belongs to, so going back there applies it again; one the user disabled stays disabled.
+ * Pinned pills follow the table they were pinned on.
+ */
+export function filtersForDiscoverSwitch(
+  filters: FilterPill[],
+  stored: StoredPin[],
+  fromView: string,
+  toView: string,
+  toTable: string
+): FilterPill[] {
+  const kept = filters.map((f) => {
+    const pin = stored.find((p) => samePill(p, f));
+    if (pin) {
+      const { disabled: _d, homeView: _h, ...rest } = f;
+      return pin.pinnedTable && pin.pinnedTable !== toTable ? { ...rest, disabled: true } : rest;
+    }
+    if (f.homeView === toView) {
+      const { disabled: _d, homeView: _h, ...rest } = f;
+      return rest;
+    }
+    return f.disabled ? f : { ...f, disabled: true, homeView: fromView };
+  });
+  return mergePinnedFilters(kept, stored, toTable);
+}
+
+/**
  * Filters after a data view switch on a page that keeps its filters (Visualize, #16b). Pinned
  * pills follow D7: enabled only on the table they were pinned on. Other pills are kept as they are
  * on a view of the same table and arrive disabled on a different table (their SQL expressions may

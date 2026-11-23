@@ -50,7 +50,7 @@ import {
 } from '../types';
 import type { FieldModel } from '../sql/fieldModel';
 import { BreakdownUrl, decodeLogsState, encodeLogsState, resolveBreakdownField } from '../data/urlState';
-import { loadPinnedFilters, mergePinnedFilters, normalizePinnedFlags, tableKey } from '../state/sharedSearch';
+import { loadPinnedFilters, filtersForDiscoverSwitch, mergePinnedFilters, normalizePinnedFlags, tableKey } from '../state/sharedSearch';
 import { rememberSearchContext } from '../state/lastSearch';
 import { TAB_PARAM } from '../state/discoverTabs';
 import { findSavedSearch, savedSearchTimeRange } from '../data/savedSearches';
@@ -364,13 +364,13 @@ export function LogsExplorer({ tabId, tabStrip, onTitle }: LogsExplorerProps = {
       pendingUrlViewRef.current = undefined;
     }
     if (prevViewId.current !== undefined && prevViewId.current !== viewId) {
-      // Pinned filters survive a data view switch, like Kibana's global filters — disabled when the
-      // new view reads a different table than the one they were pinned on.
+      // Filters stay (struck through, not applied) until the user removes them; pinned ones follow
+      // the table they were pinned on.
       const next = views.find((v) => v.id === viewId);
       const table = next ? tableKey(next.database, next.logsTable) : '';
       dispatch({
         type: 'LOAD_SAVED',
-        state: { ...DEFAULT_LOGS_QUERY_STATE, filters: mergePinnedFilters([], loadPinnedFilters(), table) },
+        state: { ...DEFAULT_LOGS_QUERY_STATE, filters: filtersForDiscoverSwitch(queryState.filters, loadPinnedFilters(), prevViewId.current, viewId ?? '', table) },
       });
       setBreakdown(null);
       setPendingBreakdownFieldId(undefined);
@@ -386,7 +386,8 @@ export function LogsExplorer({ tabId, tabStrip, onTitle }: LogsExplorerProps = {
       didReconcileForDiscoveryRef.current = false;
     }
     prevViewId.current = viewId;
-     
+    // Runs on a view change only; `filters` is read as it is at the switch.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeView?.id, views]);
 
   useEffect(() => {

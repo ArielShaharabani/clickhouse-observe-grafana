@@ -551,7 +551,10 @@ const getStyles = (theme: GrafanaTheme2) => ({
   `,
   pillDisabled: css`
     opacity: 0.6;
-    text-decoration: line-through;
+    /* On the button itself: a decoration does not reach into an inline-block child. */
+    & > button:first-of-type {
+      text-decoration: line-through;
+    }
   `,
   pillBody: css`
     background: transparent;

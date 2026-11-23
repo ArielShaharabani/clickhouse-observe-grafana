@@ -66,8 +66,16 @@ test('Discover: switching views with a filter runs no query with the old view co
   await expect(page.getByText(/^20 (rows loaded|of 20 loaded)/)).toBeVisible();
   await page.waitForTimeout(4000);
   await expect(page.getByText('Query error:')).toHaveCount(0);
+  // The filter is still there, struck through and not applied.
+  const kept = page.getByRole('button', { name: /^Filter actions: ServiceName = checkout \(disabled\)$/ });
+  await expect(kept).toHaveCSS('text-decoration-line', 'line-through');
+  await page.reload();
+  await expect(kept).toBeVisible();
 
+  // Back on its own view it applies again; only the user removes it.
   await pickView(page, 'R6 spec');
+  await logs.expectRowCount(8064);
+  await page.getByRole('button', { name: /^Remove filter/ }).click();
   await logs.expectRowCount(41520);
   expect(errors).toEqual([]);
 });
