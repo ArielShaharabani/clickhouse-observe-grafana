@@ -95,3 +95,16 @@ describe('R8 draw: M9 nothing finite', () => {
     expect(nothingFinite(mk(3))).toBe(false);
   });
 });
+
+import { uniqueMetricLabels } from '../compile';
+
+describe('R8 draw: L6 equal metric labels', () => {
+  it('uses the filter to tell them apart', () => {
+    const l = uniqueMetricLabels([
+      { kind: 'metric', id: 'a', op: 'count' },
+      { kind: 'metric', id: 'b', op: 'count', filter: 'level:error' },
+      { kind: 'metric', id: 'c', op: 'count' },
+    ] as never);
+    expect(l).toEqual(['Count of records', 'Count of records (level:error)', 'Count of records (2)']);
+  });
+});
