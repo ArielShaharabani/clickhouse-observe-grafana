@@ -2,7 +2,8 @@ import React, { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } f
 import { DialogHint } from './a11y/dialog';
 import { copyToClipboard, valueActions } from '../actions/registry';
 import { css, cx } from '@emotion/css';
-import { dateTime, GrafanaTheme2, TimeRange } from '@grafana/data';
+import { GrafanaTheme2, TimeRange } from '@grafana/data';
+import { useTimeZoneSettings, zonedDateTime } from '../utils/timeZone';
 import { Button, Icon, IconButton, Portal, Spinner, useStyles2 } from '@grafana/ui';
 import { FilterPill, VolumeDataPoint } from '../types';
 import { BucketActionsPopover, bucketEnd } from './BucketActionsPopover';
@@ -146,6 +147,7 @@ export function VolumeHistogram({
   calendarBuckets = false,
 }: VolumeHistogramProps) {
   const styles = useStyles2(getStyles);
+  const { timeZone } = useTimeZoneSettings();
   const svgRef = useRef<SVGSVGElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   // Legend interaction: click a series to isolate it (hide the rest); ctrl/cmd-
@@ -390,7 +392,7 @@ export function VolumeHistogram({
     }
     const n = bars.length;
     if (!calendarBuckets) {
-      return timeTicks(bars[0].time, bars[n - 1].time + bucketMs, containerWidth);
+      return timeTicks(bars[0].time, bars[n - 1].time + bucketMs, containerWidth, timeZone);
     }
     const approxCount = containerWidth > 0 ? Math.max(2, Math.floor(containerWidth / X_TICK_TARGET_PX)) : 5;
     const step = Math.max(1, Math.round(n / Math.min(n, approxCount)));
@@ -399,13 +401,13 @@ export function VolumeHistogram({
       ticks.push({
         time: bars[i].time,
         pct: (i / n) * 100,
-        label: dateTime(bars[i].time).format('MMM D'),
-        subLabel: i === 0 ? dateTime(bars[i].time).format('YYYY') : null,
+        label: zonedDateTime(bars[i].time, timeZone).format('MMM D'),
+        subLabel: i === 0 ? zonedDateTime(bars[i].time, timeZone).format('YYYY') : null,
         anchor: i === 0 ? 'start' : 'center',
       });
     }
     return ticks;
-  }, [bars, containerWidth, bucketMs, calendarBuckets]);
+  }, [bars, containerWidth, bucketMs, calendarBuckets, timeZone]);
   const axisBand = xTicks.some((t) => t.subLabel) ? X_AXIS_BAND_TWO_LINES : X_AXIS_BAND;
 
   // A hovered bucket index is only meaningful against the `bars` array it was computed from.
@@ -860,7 +862,7 @@ export function VolumeHistogram({
           }}
         >
           <div className={styles.tooltipTime}>
-            {dateTime(hoveredBar.time).format('MMM D, YYYY HH:mm:ss')}
+            {zonedDateTime(hoveredBar.time, timeZone).format('MMM D, YYYY HH:mm:ss')}
           </div>
           {hovered && isPartialBar(hovered.index) && (
             <div className={styles.tooltipHint}>Partial bucket: only part of it is in the time range</div>

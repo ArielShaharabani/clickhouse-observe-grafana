@@ -1,6 +1,7 @@
 import React, { useLayoutEffect, useRef, useState } from 'react';
 import { css } from '@emotion/css';
-import { dateTime, GrafanaTheme2, toUtc } from '@grafana/data';
+import { GrafanaTheme2, toUtc } from '@grafana/data';
+import { formatInZone, useTimeZoneSettings } from '../utils/timeZone';
 import { Button, Checkbox, Portal, useStyles2 } from '@grafana/ui';
 import { makeFilter } from '../sql/filters';
 import { FilterPill } from '../types';
@@ -55,6 +56,7 @@ export function seriesFilter(field: string, values: string[]): FilterPill {
  */
 export function BucketActionsPopover({ time, bucketMs, series, clientX, clientY, field, onAddFilter, onSelectRange, onClose }: Props) {
   const styles = useStyles2(getStyles);
+  const { timeZone } = useTimeZoneSettings();
   const ref = useRef<HTMLDivElement>(null);
   const [checked, setChecked] = useState<Set<string>>(() => new Set());
   const [pos, setPos] = useState({ left: clientX, top: clientY });
@@ -97,7 +99,7 @@ export function BucketActionsPopover({ time, bucketMs, series, clientX, clientY,
         style={pos}
       >
         {hint}
-        <div className={styles.time}>{dateTime(time).format('YYYY-MM-DD HH:mm:ss')}</div>
+        <div className={styles.time}>{formatInZone(time, 'YYYY-MM-DD HH:mm:ss', timeZone)}</div>
         {canFilterSeries &&
           series.map((s) => (
             <label key={s.name} className={styles.row}>

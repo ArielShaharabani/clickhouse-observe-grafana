@@ -7,7 +7,8 @@ import { ColumnHeaderMenu, ColumnMenuItem } from './ColumnHeaderMenu';
 import { MAX_COLUMN_WIDTH, MIN_COLUMN_WIDTH } from '../data/columns';
 import { DEFAULT_GRID_DISPLAY, GridDisplay } from './GridDisplayOptions';
 import { css, cx } from '@emotion/css';
-import { GrafanaTheme2, DateTime, dateTimeFormat, toUtc } from '@grafana/data';
+import { GrafanaTheme2, DateTime, toUtc } from '@grafana/data';
+import { formatInZone, useTimeZoneSettings } from '../utils/timeZone';
 import { Icon, IconButton, LoadingPlaceholder, EmptyState, useStyles2 } from '@grafana/ui';
 import { FilterPill, LogRow, SelectedColumn } from '../types';
 import { FIELD_DRAG_MIME, SEVERITY_COLORS } from '../constants';
@@ -80,7 +81,7 @@ export function severityColor(severity: unknown): string {
   return SEVERITY_COLORS[s] ?? SEVERITY_COLORS['unknown'];
 }
 
-const TS_FORMAT = { format: 'YYYY-MM-DD HH:mm:ss.SSS', timeZone: 'browser' } as const;
+const TS_FORMAT = 'YYYY-MM-DD HH:mm:ss.SSS';
 
 /** Shared with LogDetailDrawer's header summary. */
 export function formatTimestamp(ts: unknown): string {
@@ -88,15 +89,15 @@ export function formatTimestamp(ts: unknown): string {
     return '';
   }
   if (typeof ts === 'object' && ts !== null && 'valueOf' in ts) {
-    return dateTimeFormat((ts as DateTime).valueOf(), TS_FORMAT);
+    return formatInZone((ts as DateTime).valueOf(), TS_FORMAT);
   }
   if (typeof ts === 'number') {
-    return dateTimeFormat(ts, TS_FORMAT);
+    return formatInZone(ts, TS_FORMAT);
   }
   // Raw string from ClickHouse (e.g. "2026-06-29 06:00:00") — parse as UTC, display local.
   const ms = toUtc(String(ts)).valueOf();
   if (!isNaN(ms)) {
-    return dateTimeFormat(ms, TS_FORMAT);
+    return formatInZone(ms, TS_FORMAT);
   }
   return String(ts);
 }
@@ -199,6 +200,7 @@ export function LogsTable({
   onPageStep,
   anchorRow,
 }: LogsTableProps) {
+  useTimeZoneSettings(); // cells format in the chosen zone: re-render when it changes
   const columns = useMemo(() => (columnsProp.length === 0 ? [SUMMARY_COLUMN] : columnsProp), [columnsProp]);
   const wrap = display.bodyLines === 'auto';
   const bodyLines = display.bodyLines === 'auto' ? 0 : display.bodyLines;

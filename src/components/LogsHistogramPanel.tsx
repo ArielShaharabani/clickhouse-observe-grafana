@@ -10,7 +10,8 @@
  */
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { css } from '@emotion/css';
-import { dateTime, GrafanaTheme2, TimeRange } from '@grafana/data';
+import { GrafanaTheme2, TimeRange, TimeZone } from '@grafana/data';
+import { formatInZone, useTimeZoneSettings } from '../utils/timeZone';
 import { Icon, IconButton, LinkButton, useStyles2 } from '@grafana/ui';
 import { BreakdownSel, FilterPill, IntervalMode, VolumeDataPoint } from '../types';
 import { VolumeHistogram, ResolvedInterval, HistogramColorMode, isCalendarUnit } from './VolumeHistogram';
@@ -100,8 +101,8 @@ function storeHeight(height: number | null) {
 const CAPTION_FORMAT = 'MMM D, YYYY @ HH:mm:ss.SSS';
 
 /** "Jan 1, 2026 @ 00:00:00.000 - Jan 8, 2026 @ 00:00:00.000" (DISC-CHART-01 caption). */
-export function formatRangeCaption(range: TimeRange): string {
-  return `${dateTime(range.from.valueOf()).format(CAPTION_FORMAT)} - ${dateTime(range.to.valueOf()).format(CAPTION_FORMAT)}`;
+export function formatRangeCaption(range: TimeRange, tz?: TimeZone): string {
+  return `${formatInZone(range.from.valueOf(), CAPTION_FORMAT, tz)} - ${formatInZone(range.to.valueOf(), CAPTION_FORMAT, tz)}`;
 }
 
 export function LogsHistogramPanel({
@@ -190,6 +191,7 @@ export function LogsHistogramPanel({
     setStoredHeight(HISTOGRAM_DEFAULT_HEIGHT);
     storeHeight(null);
   };
+  const { timeZone } = useTimeZoneSettings();
 
   if (!hasTime) {
     return null;
@@ -255,7 +257,7 @@ export function LogsHistogramPanel({
             />
             {/* SHARED-A11Y-01: the new hit count is spoken after each search. */}
             <span className={styles.histogramMeta} role="status">
-              {totalEvents.toLocaleString()} rows (count) &middot; {formatRangeCaption(timeRange)} (interval:{' '}
+              {totalEvents.toLocaleString()} rows (count) &middot; {formatRangeCaption(timeRange, timeZone)} (interval:{' '}
               {resolvedInterval.label})
               {resolvedInterval.scaledTo && (
                 // Kibana's warning when a chosen interval is too fine for the range.

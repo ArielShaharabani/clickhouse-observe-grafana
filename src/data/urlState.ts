@@ -8,6 +8,7 @@
  * encodes/decodes values for us, so there's nothing base64 buys here beyond a longer URL.
  */
 import { dateMath, dateTime, rangeUtil, TimeRange } from '@grafana/data';
+import { resolveRange } from '../utils/timeZone';
 import { FilterPill, IntervalMode, SelectedColumn } from '../types';
 import { sanitizeFilterPills } from '../sql/filters';
 import { isSavedSearchId } from './savedSearches';
@@ -193,7 +194,7 @@ export function decodeLogsState(searchParams: URLSearchParams): DecodedLogsUrlSt
         }
         return dateTime(ms);
       };
-      result.timeRange = rangeUtil.convertRawToRange({ from: toRaw(from), to: toRaw(to) });
+      result.timeRange = resolveRange({ from: toRaw(from), to: toRaw(to) });
     } catch {
       // Malformed from/to — leave timeRange undefined, caller keeps its own default.
     }

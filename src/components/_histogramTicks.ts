@@ -5,9 +5,10 @@
  * collide at the chart's width, as Kibana's axis does. Sub-day ticks read "HH:mm" with the date as
  * a second line on the first tick and at each new day; day ticks read "1st", "2nd", … with
  * "January 2026" under the first tick and at each new month (Kibana's "1st … 7th / January 2026").
- * Times are in the browser's zone, like every other time in the app.
+ * Times are in the chosen time zone (utils/timeZone), like every other time in the app.
  */
-import { dateTime } from '@grafana/data';
+import { TimeZone } from '@grafana/data';
+import { zonedDateTime } from '../utils/timeZone';
 
 export interface AxisTick {
   time: number;
@@ -52,28 +53,28 @@ function mainFormat(step: number): string {
 }
 
 /** First tick at or after `t0` on a multiple of `step` in local time. */
-function firstTick(t0: number, step: number): number {
+function firstTick(t0: number, step: number, tz?: TimeZone): number {
   if (step >= DAY) {
-    const d = dateTime(t0).startOf('day');
+    const d = zonedDateTime(t0, tz).startOf('day');
     if (d.valueOf() < t0) {
       d.add(1, 'day');
     }
     return d.valueOf();
   }
-  const offset = dateTime(t0).utcOffset() * MIN;
+  const offset = zonedDateTime(t0, tz).utcOffset() * MIN;
   return Math.ceil((t0 + offset) / step) * step - offset;
 }
 
-function nextTick(t: number, step: number): number {
+function nextTick(t: number, step: number, tz?: TimeZone): number {
   // Whole days step by calendar days, so a DST change can't shift midnight ticks to 23:00.
-  return step >= DAY ? dateTime(t).add(step / DAY, 'day').valueOf() : t + step;
+  return step >= DAY ? zonedDateTime(t, tz).add(step / DAY, 'day').valueOf() : t + step;
 }
 
 /**
  * Ticks for a linear time axis from `t0` to `t1` drawn `widthPx` wide. Returns an empty list for
  * an empty domain. With an unknown width (0, before the first measure) 600 px is assumed.
  */
-export function timeTicks(t0: number, t1: number, widthPx: number): AxisTick[] {
+export function timeTicks(t0: number, t1: number, widthPx: number, tz?: TimeZone): AxisTick[] {
   const span = t1 - t0;
   if (!(span > 0)) {
     return [];
@@ -89,8 +90,8 @@ export function timeTicks(t0: number, t1: number, widthPx: number): AxisTick[] {
   const ticks: AxisTick[] = [];
   let prevSubPx = -Infinity;
   let prevKey = '';
-  for (let t = firstTick(t0, step); t <= t1 && ticks.length < 500; t = nextTick(t, step)) {
-    const d = dateTime(t);
+  for (let t = firstTick(t0, step, tz); t <= t1 && ticks.length < 500; t = nextTick(t, step, tz)) {
+    const d = zonedDateTime(t, tz);
     const pct = ((t - t0) / span) * 100;
     const px = (pct / 100) * width;
     // A second line marks a new day (sub-day steps) or a new month (day steps).

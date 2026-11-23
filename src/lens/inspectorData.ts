@@ -3,7 +3,7 @@
  * view's table (columns, cell filter values, sorting, CSV) and the Requests view's latest chart
  * query, read from the diagnostics tracer (the same spans the Discover Diagnostics drawer shows).
  */
-import { dateTime } from '@grafana/data';
+import { formatInZone } from '../utils/timeZone';
 import { Span } from '../diag/types';
 import { LensResult } from './compile';
 import { formatMetricValue } from './render/MetricTiles';
@@ -64,13 +64,13 @@ export function cellFilterValue(bucket: BucketDim | undefined, cell: InspectorCe
   return label;
 }
 
-/** Display text of a cell: date buckets as local date-time, numbers grouped, null as "-". */
+/** Display text of a cell: date buckets as date-time in the chosen zone, numbers grouped, null as "-". */
 export function formatCell(col: InspectorColumn, cell: InspectorCell): string {
   if (cell === null || cell === undefined) {
     return '-';
   }
   if (col.isTime && typeof cell === 'number') {
-    return dateTime(cell).format('YYYY-MM-DD HH:mm:ss');
+    return formatInZone(cell, 'YYYY-MM-DD HH:mm:ss');
   }
   if (typeof cell === 'number') {
     if (col.metric) {

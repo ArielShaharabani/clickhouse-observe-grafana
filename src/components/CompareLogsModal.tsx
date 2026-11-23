@@ -9,6 +9,7 @@ import { GrafanaTheme2 } from '@grafana/data';
 import { Modal, useStyles2 } from '@grafana/ui';
 import { LogRow, SourceConfig } from '../types';
 import { formatTimestamp } from './LogsTable';
+import { useTimeZoneSettings } from '../utils/timeZone';
 import { CORE_ALIAS } from '../sql/queryBuilder';
 
 interface CompareLogsModalProps {
@@ -35,6 +36,7 @@ function timestampOf(row: LogRow, timestampCol: string | undefined): unknown {
 
 export function CompareLogsModal({ rows, config, onDismiss }: CompareLogsModalProps) {
   const styles = useStyles2(getStyles);
+  useTimeZoneSettings();
   const timestampCol = config.columns.timestamp;
 
   const fieldKeys = useMemo(() => {

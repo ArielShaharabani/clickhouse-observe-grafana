@@ -8,7 +8,8 @@
  */
 import React, { useId, useState } from 'react';
 import { css } from '@emotion/css';
-import { dateTime, GrafanaTheme2 } from '@grafana/data';
+import { GrafanaTheme2 } from '@grafana/data';
+import { formatInZone, parseInZone, useTimeZoneSettings } from '../utils/timeZone';
 import { Button, Combobox, Field, IconButton, Input, RadioButtonGroup, useStyles2 } from '@grafana/ui';
 import { parseKql } from '../sql/kql';
 import { compatibleFields } from './dimensions';
@@ -252,17 +253,17 @@ function CommitBox(props: {
 const TIME_FORMAT = 'YYYY-MM-DD HH:mm:ss';
 const TIME_RE = /^\d{4}-\d{2}-\d{2}( \d{2}:\d{2}(:\d{2})?)?$/;
 
-/** "2026-01-05 09:00[:00]" (browser time zone) → epoch ms, or undefined. */
+/** "2026-01-05 09:00[:00]" (in the chosen time zone) → epoch ms, or undefined. */
 export function parseAnnotationTime(text: string): number | undefined {
   const t = text.trim();
   if (!TIME_RE.test(t)) {
     return undefined;
   }
-  const d = dateTime(t, t.length === 10 ? 'YYYY-MM-DD' : t.length === 16 ? 'YYYY-MM-DD HH:mm' : TIME_FORMAT);
+  const d = parseInZone(t, t.length === 10 ? 'YYYY-MM-DD' : t.length === 16 ? 'YYYY-MM-DD HH:mm' : TIME_FORMAT);
   return d.isValid() ? d.valueOf() : undefined;
 }
 
-const fmtTime = (ms: number) => dateTime(ms).format(TIME_FORMAT);
+const fmtTime = (ms: number) => formatInZone(ms, TIME_FORMAT);
 const numberOk = (t: string) =>
   t.trim() !== '' && Number.isFinite(Number(t))
     ? ({ ok: true } as const)
@@ -307,6 +308,7 @@ export function LayerItemEditor({
   onBack,
 }: EditorProps) {
   const styles = useStyles2(getStyles);
+  const { timeZone } = useTimeZoneSettings(); // annotation dates are shown and parsed in the chosen zone
   const ids = useId();
   const layer = layers.find((l) => l.id === target.layerId);
   const item =
@@ -471,7 +473,7 @@ export function LayerItemEditor({
         {a.type === 'manual' ? (
           <>
             <CommitBox
-              key={`t-${a.id}-${a.time}`}
+              key={`t-${a.id}-${a.time}-${timeZone}`}
               label="Annotation date"
               initial={fmtTime(a.time)}
               parse={timeOk}
@@ -481,7 +483,7 @@ export function LayerItemEditor({
               }}
             />
             <CommitBox
-              key={`e-${a.id}-${a.end ?? ''}`}
+              key={`e-${a.id}-${a.end ?? ''}-${timeZone}`}
               label="End date (range, optional)"
               initial={a.end !== undefined ? fmtTime(a.end) : ''}
               placeholder="No end: a point in time"

@@ -81,6 +81,7 @@ import { LayerItemEditor, LayerItemRef, LayersSection } from './LayerPanel';
 import { ExtraLayer } from './layers';
 import { useLayerData } from './useLayerData';
 import { DefaultTimeRangeContext, resolveDefaultTimeRange } from '../utils/defaultTimeRange';
+import { formatInZone, useTimeZoneSettings } from '../utils/timeZone';
 import { panelSourceOf } from './panelSource';
 import { gaugeAutoMax } from './render/gaugeSpec';
 import { GaugePanel } from './GaugePanel';
@@ -248,7 +249,10 @@ export function LensPage() {
   }, [paramsKey, entered]);
 
   // Shared search context from the URL (same params as Discover).
-  const urlState = useMemo(() => decodeLogsState(new URLSearchParams(paramsKey)), [paramsKey]);
+  // Relative ranges (now/d, now/fQ) resolve in the chosen zone: re-decode when it changes.
+  const tzSettings = useTimeZoneSettings();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const urlState = useMemo(() => decodeLogsState(new URLSearchParams(paramsKey)), [paramsKey, tzSettings]);
   const search = urlState.search ?? '';
   const filters = useMemo(() => urlState.filters ?? [], [urlState]);
   const timeRange = useMemo(() => urlState.timeRange ?? resolveDefaultTimeRange(defaultTime), [urlState, defaultTime]);
@@ -748,7 +752,7 @@ export function LensPage() {
       // Exact bucket end (calendar months / years are not a fixed number of ms).
       const end = iv ? stepBucket(from, iv, 1) : from + bucketMs;
       out.push({
-        label: `${x.label}: ${dateTime(from).format('YYYY-MM-DD HH:mm')} – ${dateTime(end).format('YYYY-MM-DD HH:mm')}`,
+        label: `${x.label}: ${formatInZone(from, 'YYYY-MM-DD HH:mm')} – ${formatInZone(end, 'YYYY-MM-DD HH:mm')}`,
         time: [from, end],
       });
     }

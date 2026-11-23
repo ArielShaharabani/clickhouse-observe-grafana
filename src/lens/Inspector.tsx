@@ -43,6 +43,7 @@ import {
 } from './inspectorData';
 import { LensState } from './state';
 import { saveFile } from '../utils/download';
+import { useTimeZoneSettings } from '../utils/timeZone';
 
 export const INSPECTOR_PAGE_SIZE = 20;
 /** Response JSON shows at most this many rows (the Data view has them all). */
@@ -90,6 +91,7 @@ function download(text: string, fileName: string) {
 
 function DataView({ lens, data, title, addFilter }: LensInspectorProps) {
   const styles = useStyles2(getStyles);
+  useTimeZoneSettings(); // date cells format in the chosen zone
   const table = useMemo(() => inspectorTable(lens, data), [lens, data]);
   const [sort, setSort] = useState<InspectorSort | null>(null);
   const [page, setPage] = useState(1);
