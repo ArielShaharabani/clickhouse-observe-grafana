@@ -69,7 +69,9 @@ export function withLensStyle(
   const options: Record<string, unknown> = { ...parts.options, legend: legendOptions(style) };
   if (panel === 'barchart') {
     options.orientation = style.orientation ?? 'auto';
-    options.showValue = style.barValues === 'show' ? 'auto' : 'never';
+    // Grafana prints a stacked bar's value on the next segment: no values rather than wrong ones.
+    const stacked = parts.options.stacking === 'normal' || parts.options.stacking === 'percent';
+    options.showValue = style.barValues === 'show' && !stacked ? 'auto' : 'never';
     options.xTickLabelRotation = tickRotation(bottom.orientation);
   }
   return { options, fieldConfig: { defaults, overrides: parts.fieldConfig.overrides } };

@@ -355,7 +355,7 @@ describe('StylePanel', () => {
 describe('Grafana panels (exported dashboard panel)', () => {
   const state: LensState = {
     chartType: 'bar',
-    subType: 'stacked',
+    subType: 'unstacked',
     buckets: [{ kind: 'terms', id: 'b', field: 'ServiceName', label: 'ServiceName', size: 5 }],
     metrics: [{ kind: 'metric', id: 'm', op: 'count' }],
     style: {

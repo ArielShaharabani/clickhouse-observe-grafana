@@ -68,3 +68,13 @@ describe('R8 E9', () => {
     expect(mode({ chartType: 'line', buckets: [date, svc], metrics: [count] })).toBe('none');
   });
 });
+
+describe('R8 E10', () => {
+  it('stacked bar panels print no values (Grafana puts them on the next segment); grouped ones do', () => {
+    const show = (subType: LensState['subType']) =>
+      (panel({ chartType: 'bar', subType, buckets: [svc, lvl], metrics: [count], style: { barValues: 'show' } }).options as any).showValue;
+    expect(show('stacked')).toBe('never');
+    expect(show('percentage')).toBe('never');
+    expect(show('unstacked')).toBe('auto');
+  });
+});
