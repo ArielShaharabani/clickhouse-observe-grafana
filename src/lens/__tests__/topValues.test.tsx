@@ -49,7 +49,7 @@ const sqlOf = (b: TermsDim, metrics: MetricDim[] = [count], mode: 'app' | 'dashb
 describe('top values SQL (LENS-DIM-04)', () => {
   it('default options keep the original shape', () => {
     const sql = sqlOf(svc);
-    expect(sql).toContain('GROUP BY v ORDER BY count() DESC LIMIT 3)');
+    expect(sql).toContain('GROUP BY v ORDER BY count() DESC, v LIMIT 3)');
     expect(sql).toContain('toString("ServiceName") GLOBAL IN (SELECT v FROM top0)');
     expect(sql).not.toContain('Other');
   });
@@ -97,9 +97,9 @@ describe('top values SQL (LENS-DIM-04)', () => {
     const map = { ...svc, field: "LogAttributes['k']", missing: true };
     const sql = sqlOf(map);
     expect(sql).toContain(`multiIf(if(mapContains(LogAttributes, 'k'), toString(LogAttributes['k']), NULL) IS NULL, 2`);
-    // Without the option the field is read as before.
+    // Without the option a record without the key is left out, not counted as ''.
     expect(sqlOf({ ...map, missing: false })).toContain(`toString(LogAttributes['k'])`);
-    expect(sqlOf({ ...map, missing: false })).not.toContain('mapContains');
+    expect(sqlOf({ ...map, missing: false })).toContain('mapContains');
     // A quoted column name and a key with a bracket and quote are handled the same way.
     const odd = sqlOf({ ...svc, field: `"My Map"['a]\\'b']`, missing: true });
     expect(odd).toContain(`mapContains("My Map", 'a]\\'b')`);
@@ -113,7 +113,7 @@ describe('top values SQL (LENS-DIM-04)', () => {
       'ORDER BY quantile(0.5)("SeverityNumber") DESC, v LIMIT 3'
     );
     // A rank metric that does not exist falls back to count.
-    expect(sqlOf({ ...svc, rankBy: 'metric', rankMetric: 'gone' })).toContain('ORDER BY count() DESC LIMIT 3');
+    expect(sqlOf({ ...svc, rankBy: 'metric', rankMetric: 'gone' })).toContain('ORDER BY count() DESC, v LIMIT 3');
   });
 
   it('include / exclude exact values and regular expressions', () => {

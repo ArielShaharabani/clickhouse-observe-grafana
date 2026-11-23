@@ -54,7 +54,7 @@ describe('Intervals SQL (LENS-DIM-05)', () => {
     expect(sql).toContain(
       'rng0 AS (SELECT if(max(v) > min(v), exp10(ceil(log10((max(v) - min(v)) / 50))), 1) AS w FROM (SELECT toFloat64("SeverityNumber") AS v FROM'
     );
-    expect(sql).toContain('floor(toFloat64("SeverityNumber") / (SELECT w FROM rng0)) * (SELECT w FROM rng0) AS b0');
+    expect(sql).toContain('floor(toFloat64("SeverityNumber") / (SELECT w FROM rng0)) * (SELECT w FROM rng0)) AS b0');
     expect(sql).toContain('any((SELECT w FROM rng0)) AS w0');
     expect(sql).toMatch(/ORDER BY b0/);
     expect(sqlOf({ ...sev, granularity: 1 })).toContain('/ 5)');

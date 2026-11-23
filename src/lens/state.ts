@@ -8,7 +8,7 @@
  * (LENS-TYPE-01 remapping rules 1–2), never a rebuild.
  */
 import { FieldModel, FieldType } from '../sql/fieldModel';
-import { formulaErrors, FormulaFields, formulaUsesWindow, formulaTimeSeriesFns, MAX_FORMULA_LEN } from './formula';
+import { formulaErrors, FormulaFields, formulaIsZeroWhenEmpty, formulaUsesWindow, formulaTimeSeriesFns, MAX_FORMULA_LEN } from './formula';
 import {
   BASE_OPS,
   BaseOp,
@@ -732,6 +732,14 @@ function memoFormula(cache: Map<string, boolean>, src: string, compute: (src: st
 /** Whether a metric is a time-series calculation (quick function, or a formula using one / overall_*). */
 export function usesWindow(m: MetricDim): boolean {
   return isCalcOp(m.op) || (m.op === 'formula' && memoFormula(USES_WINDOW, m.formula ?? '', formulaUsesWindow));
+}
+
+const ZERO_WHEN_EMPTY = new Map<string, boolean>();
+/** Whether a metric over no records is 0 (counts and formulas of counts), not empty. */
+export function isZeroWhenEmpty(m: MetricDim): boolean {
+  return (
+    m.op === 'count' || (m.op === 'formula' && memoFormula(ZERO_WHEN_EMPTY, m.formula ?? '', formulaIsZeroWhenEmpty))
+  );
 }
 
 /** Whether a metric needs a date histogram (time-series calculations; overall_* does not). */

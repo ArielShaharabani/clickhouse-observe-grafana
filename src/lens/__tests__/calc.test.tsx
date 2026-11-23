@@ -247,7 +247,7 @@ describe('SQL', () => {
       buckets: [{ ...svc, rankBy: 'metric', rankMetric: 'm1' }, date],
       metrics: [count, movAvg],
     });
-    expect(fallback).toContain('GROUP BY v ORDER BY count() DESC LIMIT 3');
+    expect(fallback).toContain('GROUP BY v ORDER BY count() DESC, v LIMIT 3');
   });
 
   it('a rank metric that is not rankable is cleared once (count); the legend follows the count rank', () => {

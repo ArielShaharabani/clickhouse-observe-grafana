@@ -94,6 +94,16 @@ export function looksLikeMapAccessor(name: string): boolean {
   return MAP_ACCESSOR_RE.test(name);
 }
 
+const MAP_PARTS_RE = new RegExp(`^(${IDENT})\\[(${SAFE_STRING_LITERAL})\\]$`);
+/**
+ * `mapContains(col, 'key')` of a Map accessor, or null for any other expression. ClickHouse reads a
+ * key the record does not have as '' / 0, so "has a value" must be asked for.
+ */
+export function mapHasKey(expr: string): string | null {
+  const m = MAP_PARTS_RE.exec(expr);
+  return m ? `mapContains(${m[1]}, ${m[2]})` : null;
+}
+
 const SAFE_ALIAS_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
 const BARE_IDENT_RE = new RegExp(`^${BARE_IDENT}$`);
 
@@ -387,6 +397,11 @@ function buildFilterClause(filter: FilterPill, config: SourceConfig, index?: Fie
   if (like) {
     // A JSON path can be numeric / boolean, which ILIKE refuses.
     return `${likeLhs(col, resolved)} ${op} ${quoteString('%' + value + '%')}`;
+  }
+  const hasKey = value === '' ? mapHasKey(col) : null;
+  if (hasKey) {
+    // An empty Map value: a record without the key has no value, not an empty one.
+    return `${negate ? 'NOT ' : ''}(${hasKey} AND ${equalsLhs(col, resolved)} = '')`;
   }
   return `${equalsLhs(col, resolved)} ${op} ${quoteString(value)}`;
 }
