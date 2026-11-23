@@ -105,11 +105,11 @@ export const isEditLink = (l: unknown): boolean =>
 /**
  * The panel with its own "Edit in Visualize" panel link. Grafana drops plugin menu items while a
  * dashboard is in edit mode (and editing a panel leaves it there); panel links stay. Panels that
- * were not made in Visualize are returned as they are.
+ * were not made in Visualize are returned as they are, unless `anyPanel` (Configuration adds links).
  */
-export function withEditLink<T extends { targets?: unknown; links?: unknown }>(panel: T, id: number): T {
+export function withEditLink<T extends { targets?: unknown; links?: unknown }>(panel: T, id: number, anyPanel = false): T {
   const made = Array.isArray(panel.targets) && panel.targets.some((t) => isObj(t) && typeof t[VISUALIZE_SOURCE_KEY] === 'string');
-  if (!made) {
+  if (!made && !anyPanel) {
     return panel;
   }
   const others = Array.isArray(panel.links) ? panel.links.filter((l) => !isEditLink(l)) : [];

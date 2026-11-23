@@ -2,14 +2,13 @@
  * Loading a dashboard's panels for "Edit in Visualize" / "Open panel" (R6-PANELS). Reading only:
  * opening a panel never changes the dashboard.
  */
-import { getDashboard, getLibraryPanelModel } from '../data/dashboards';
+import { getDashboard, getLibraryPanelModel, V2_MESSAGE } from '../data/dashboards';
 import { findDashboardPanel } from '../data/panelExport';
 import { isEditLink, isTimeParam } from './panelSource';
 
 const isObj = (x: unknown): x is Record<string, unknown> => !!x && typeof x === 'object' && !Array.isArray(x);
 
-export const V2_MESSAGE =
-  'This dashboard uses the newer (v2) dashboard schema, which Visualize cannot edit yet. Convert it to the classic JSON schema or use Save as new.';
+export { V2_MESSAGE } from '../data/dashboards';
 
 /** Throws a clear message for a dashboard that is not the classic JSON model. */
 export function assertClassicDashboard(d: Record<string, unknown>): void {
