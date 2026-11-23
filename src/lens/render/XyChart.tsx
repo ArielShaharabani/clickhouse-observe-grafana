@@ -8,7 +8,8 @@
  */
 import React, { useEffect, useId, useRef, useState } from 'react';
 import { css, cx } from '@emotion/css';
-import { dateTime, GrafanaTheme2 } from '@grafana/data';
+import { GrafanaTheme2 } from '@grafana/data';
+import { formatInZone, useTimeZoneSettings } from '../../utils/timeZone';
 import { IconButton, useStyles2, useTheme2 } from '@grafana/ui';
 import { LensResult } from '../compile';
 import { moveMenuFocus, usePopoverDialog } from '../../components/a11y/dialog';
@@ -106,8 +107,7 @@ export function xLabel(x: string | number, isTime: boolean, spanMs: number): str
   if (!isTime) {
     return String(x) === '' ? '(empty)' : String(x);
   }
-  const d = dateTime(Number(x));
-  return spanMs > 2 * 86_400_000 ? d.format('MM-DD HH:mm') : d.format('HH:mm');
+  return formatInZone(Number(x), spanMs > 2 * 86_400_000 ? 'MM-DD HH:mm' : 'HH:mm');
 }
 
 /**
@@ -171,6 +171,7 @@ export function XyChart({
   onSeriesColor,
 }: Props) {
   const styles = useStyles2(getStyles);
+  const { timeZone } = useTimeZoneSettings(); // axis, tooltip and annotation times follow the chosen zone
   const theme = useTheme2();
   const clipId = `lens-clip-${useId().replace(/[^a-zA-Z0-9_-]/g, '')}`;
   const boxRef = useRef<HTMLDivElement>(null);
@@ -655,12 +656,12 @@ export function XyChart({
   const timePos = (t: number) => m.left + (step > 0 ? ((t - Number(result.xs[0])) / step) * band : band / 2);
   const inPlot = (px: number) => px >= m.left - 0.5 && px <= m.left + plotW + 0.5;
   const events = timeAxis ? (layers?.events ?? []) : [];
-  const fmtTime = (t: number) => dateTime(t).format('YYYY-MM-DD HH:mm:ss');
+  const fmtTime = (t: number) => formatInZone(t, 'YYYY-MM-DD HH:mm:ss', timeZone);
   // Round-time ticks over the drawn time span (bucket starts sit on the band's left edge).
   const tEnd = result.xs.length > 0 ? Number(result.xs[result.xs.length - 1]) + (step > 0 ? step : 0) : 0;
   const timeTickVals = timeAxis
     ? fitTimeTicks(
-        timeTicks(Number(result.xs[0]), tEnd, Math.max(2, Math.floor(plotW / (catRot === 0 ? 80 : 28)))),
+        timeTicks(Number(result.xs[0]), tEnd, Math.max(2, Math.floor(plotW / (catRot === 0 ? 80 : 28))), timeZone),
         (t) => m.left + (step > 0 ? ((t - Number(result.xs[0])) / step) * band : band / 2),
         // Labels start at the tick (left-anchored): a tick too close to the right edge would be clipped.
         catRot === 0 ? Math.max(0, W - 4) : Infinity
@@ -694,7 +695,7 @@ export function XyChart({
     if (x === undefined) {
       return null;
     }
-    const header = result.xIsTime ? tooltipTime(Number(x), step) : xText(result, h.xi, spanMs);
+    const header = result.xIsTime ? tooltipTime(Number(x), step, timeZone) : xText(result, h.xi, spanMs);
     const rows = visibleIdx
       .map((si) => ({ si, v: pointValue(result.series[si], x), sp: spans[si][h.xi] }))
       .filter((r) => r.v !== null);

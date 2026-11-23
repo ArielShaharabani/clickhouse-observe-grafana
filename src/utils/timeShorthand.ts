@@ -1,4 +1,5 @@
-import { rangeUtil, TimeRange } from '@grafana/data';
+import { TimeRange } from '@grafana/data';
+import { resolveRange } from './timeZone';
 
 /**
  * Typed time shorthand for the Discover time picker (DISC-TIME-01): `-7d`, `td`, `yd`, `tw`, `tm`, `ty`.
@@ -27,7 +28,7 @@ export function parseTimeShorthand(input: string): TimeRange | null {
     raw = { from: `now-${m[1]}${unit}`, to: 'now' };
   }
   try {
-    const range = rangeUtil.convertRawToRange(raw);
+    const range = resolveRange(raw);
     // An overflowing count (`-99999999999999y`) yields an invalid or empty window.
     return range.from.isValid() && range.to.isValid() && range.from.valueOf() < range.to.valueOf() ? range : null;
   } catch {

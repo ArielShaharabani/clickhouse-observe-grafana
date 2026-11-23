@@ -7,7 +7,7 @@
 
 import React, { useState } from 'react';
 import { css } from '@emotion/css';
-import { dateTime, GrafanaTheme2, rangeUtil, TimeRange } from '@grafana/data';
+import { dateTime, GrafanaTheme2, TimeRange } from '@grafana/data';
 import {
   Button,
   ConfirmModal,
@@ -22,6 +22,7 @@ import {
   useStyles2,
 } from '@grafana/ui';
 import { FilterPill } from '../../types';
+import { resolveRange } from '../../utils/timeZone';
 import {
   addSavedQuery,
   deleteSavedQuery,
@@ -79,7 +80,7 @@ function rawBound(raw: unknown, resolved: { valueOf(): number }): string {
 export function toTimeRange(t: { from: string; to: string }): TimeRange | undefined {
   try {
     const toRaw = (v: string) => (v.startsWith('now') ? v : dateTime(Number(v)));
-    const range = rangeUtil.convertRawToRange({ from: toRaw(t.from), to: toRaw(t.to) });
+    const range = resolveRange({ from: toRaw(t.from), to: toRaw(t.to) });
     return range.from.isValid() && range.to.isValid() ? range : undefined;
   } catch {
     return undefined;

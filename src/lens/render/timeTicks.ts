@@ -1,10 +1,11 @@
 /**
- * Time-axis ticks for the Visualize XY chart (Kibana parity): ticks on round local times (every
+ * Time-axis ticks for the Visualize XY chart (Kibana parity): ticks on round times in the chosen zone (every
  * 5 minutes, hour, 3 hours, day, month…), a short label per tick and a second row with the date
- * under the first tick and wherever the date changes. Pure (browser time zone via `Date`), used only
+ * under the first tick and wherever the date changes. Pure (the zone is a parameter), used only
  * by `XyChart`; Discover's histogram has its own axis.
  */
-import { dateTime } from '@grafana/data';
+import { TimeZone } from '@grafana/data';
+import { formatInZone, parseInZone } from '../../utils/timeZone';
 
 const S = 1000;
 const MIN = 60 * S;
@@ -48,68 +49,80 @@ export function timeStep(t0: number, t1: number, maxTicks: number): Step {
   return STEPS.find((s) => span / s.approx <= Math.max(1, maxTicks)) ?? STEPS[STEPS.length - 1];
 }
 
-/** First tick at or after `t` for a step, on a round local time. */
-function firstTick(t: number, s: Step): number {
-  const d = new Date(t);
+/** The calendar date (and weekday) of instant `t` in the zone, as a UTC-based Date so calendar maths ignores DST. */
+function calendarDay(t: number, tz?: TimeZone): Date {
+  const [y, m, d] = formatInZone(t, 'YYYY-M-D', tz).split('-').map(Number);
+  return new Date(Date.UTC(y, m - 1, d));
+}
+
+/** The instant of local midnight on a calendar day (a UTC-based Date) in the zone. */
+function midnight(c: Date, tz?: TimeZone): number {
+  const text = `${String(c.getUTCFullYear()).padStart(4, '0')}-${String(c.getUTCMonth() + 1).padStart(2, '0')}-${String(c.getUTCDate()).padStart(2, '0')} 00:00:00`;
+  return parseInZone(text, 'YYYY-MM-DD HH:mm:ss', tz).valueOf();
+}
+
+/** First tick at or after `t` for a step, on a round time in the zone. */
+function firstTick(t: number, s: Step, tz?: TimeZone): number {
+  const c = calendarDay(t, tz);
   if (s.unit === 'ms') {
-    // Align within the local day, so 3-hour ticks fall on 00, 03, 06… local time.
-    const day = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+    // Align within the day, so 3-hour ticks fall on 00, 03, 06… in the zone.
+    const day = midnight(c, tz);
     return day + Math.ceil((t - day) / s.n) * s.n;
   }
   if (s.unit === 'day' || s.unit === 'week') {
-    const m = new Date(d.getFullYear(), d.getMonth(), d.getDate());
-    if (m.getTime() < t) {
-      m.setDate(m.getDate() + 1);
+    if (midnight(c, tz) < t) {
+      c.setUTCDate(c.getUTCDate() + 1);
     }
     if (s.unit === 'week') {
       // Mondays.
-      while (m.getDay() !== 1) {
-        m.setDate(m.getDate() + 1);
+      while (c.getUTCDay() !== 1) {
+        c.setUTCDate(c.getUTCDate() + 1);
       }
     } else if (s.n > 1) {
-      while ((m.getDate() - 1) % s.n !== 0) {
-        m.setDate(m.getDate() + 1);
+      while ((c.getUTCDate() - 1) % s.n !== 0) {
+        c.setUTCDate(c.getUTCDate() + 1);
       }
     }
-    return m.getTime();
+    return midnight(c, tz);
   }
   if (s.unit === 'month') {
-    const m = new Date(d.getFullYear(), d.getMonth(), 1);
-    if (m.getTime() < t) {
-      m.setMonth(m.getMonth() + 1);
+    const m = new Date(Date.UTC(c.getUTCFullYear(), c.getUTCMonth(), 1));
+    if (midnight(m, tz) < t) {
+      m.setUTCMonth(m.getUTCMonth() + 1);
     }
-    while (m.getMonth() % s.n !== 0) {
-      m.setMonth(m.getMonth() + 1);
+    while (m.getUTCMonth() % s.n !== 0) {
+      m.setUTCMonth(m.getUTCMonth() + 1);
     }
-    return m.getTime();
+    return midnight(m, tz);
   }
-  const y = new Date(d.getFullYear(), 0, 1);
-  if (y.getTime() < t) {
-    y.setFullYear(y.getFullYear() + 1);
+  const y = new Date(Date.UTC(c.getUTCFullYear(), 0, 1));
+  if (midnight(y, tz) < t) {
+    y.setUTCFullYear(y.getUTCFullYear() + 1);
   }
-  while (y.getFullYear() % s.n !== 0) {
-    y.setFullYear(y.getFullYear() + 1);
+  while (y.getUTCFullYear() % s.n !== 0) {
+    y.setUTCFullYear(y.getUTCFullYear() + 1);
   }
-  return y.getTime();
+  return midnight(y, tz);
 }
 
-function next(t: number, s: Step): number {
+function next(t: number, s: Step, tz?: TimeZone): number {
   if (s.unit === 'ms') {
     const n = t + s.n;
-    // Re-align after a DST change inside the day (local midnight + k·step).
-    return s.n < D ? firstTick(n, s) : n;
+    // Re-align after a DST change inside the day (midnight + k·step).
+    return s.n < D ? firstTick(n, s, tz) : n;
   }
   if (s.unit === 'day' || s.unit === 'week') {
-    // The next local midnight that qualifies (n-day steps restart on the 1st of each month).
-    return firstTick(t + 1, s);
+    // The next midnight that qualifies (n-day steps restart on the 1st of each month).
+    return firstTick(t + 1, s, tz);
   }
-  const d = new Date(t);
+  const c = calendarDay(t, tz);
+  const d = new Date(Date.UTC(c.getUTCFullYear(), c.getUTCMonth(), 1));
   if (s.unit === 'month') {
-    d.setMonth(d.getMonth() + s.n);
+    d.setUTCMonth(d.getUTCMonth() + s.n);
   } else {
-    d.setFullYear(d.getFullYear() + s.n);
+    d.setUTCFullYear(d.getUTCFullYear() + s.n);
   }
-  return d.getTime();
+  return midnight(d, tz);
 }
 
 /**
@@ -117,13 +130,13 @@ function next(t: number, s: Step): number {
  * under a minute) with the date (`MMMM D, YYYY`) below the first tick and at each new day; days and
  * weeks `MMM D` with the year below; months `MMM` with the year; years `YYYY`.
  */
-export function timeTicks(t0: number, t1: number, maxTicks: number): TimeTick[] {
+export function timeTicks(t0: number, t1: number, maxTicks: number, tz?: TimeZone): TimeTick[] {
   if (!(t1 > t0) || !Number.isFinite(t0) || !Number.isFinite(t1)) {
     return [];
   }
   const s = timeStep(t0, t1, maxTicks);
   const out: TimeTick[] = [];
-  const fmt = (t: number, f: string) => dateTime(t).format(f);
+  const fmt = (t: number, f: string) => formatInZone(t, f, tz);
   const label =
     s.unit === 'ms'
       ? s.n < MIN
@@ -136,7 +149,7 @@ export function timeTicks(t0: number, t1: number, maxTicks: number): TimeTick[] 
           : 'MMM D';
   const subFmt = s.unit === 'ms' ? 'MMMM D, YYYY' : s.unit === 'year' ? undefined : 'YYYY';
   let prevSub: string | undefined;
-  for (let t = firstTick(t0, s); t <= t1 && out.length < 200; t = next(t, s)) {
+  for (let t = firstTick(t0, s, tz); t <= t1 && out.length < 200; t = next(t, s, tz)) {
     const sub = subFmt ? fmt(t, subFmt) : undefined;
     out.push({ t, label: fmt(t, label), ...(sub !== undefined && sub !== prevSub ? { sub } : {}) });
     prevSub = sub;
@@ -163,6 +176,6 @@ export function fitTimeTicks(ticks: TimeTick[], posOf: (t: number) => number, li
 }
 
 /** Tooltip header for a time bucket (Kibana: the full date and time). */
-export function tooltipTime(t: number, stepMs: number): string {
-  return dateTime(t).format(stepMs > 0 && stepMs < MIN ? 'MMM D, YYYY @ HH:mm:ss' : 'MMM D, YYYY @ HH:mm');
+export function tooltipTime(t: number, stepMs: number, tz?: TimeZone): string {
+  return formatInZone(t, stepMs > 0 && stepMs < MIN ? 'MMM D, YYYY @ HH:mm:ss' : 'MMM D, YYYY @ HH:mm', tz);
 }
