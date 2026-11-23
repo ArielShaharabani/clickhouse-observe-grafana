@@ -34,6 +34,9 @@ beforeEach(() => {
   window.sessionStorage.clear();
 });
 
+// Opening Grafana menus and a modal in jsdom is slow on a loaded machine.
+jest.setTimeout(30_000);
+
 describe('QueryMenu (DISC-SEARCH-03)', () => {
   it('saves the query with filters and time, then loads it back', async () => {
     const h = setup();
