@@ -68,6 +68,15 @@ interface Props {
   onSeriesColor?: (seriesName: string, color: string | undefined) => void;
 }
 
+/** Rows came back but no series has a finite value (NaN / inf only): the chart would be empty with no reason. */
+export function nothingFinite(result: LensResult): boolean {
+  return (
+    result.xs.length > 0 &&
+    result.series.length > 0 &&
+    result.series.every((s) => !s.zeroFill && [...s.points.values()].every((v) => !Number.isFinite(v)))
+  );
+}
+
 /** A series' value at x: missing → 0 for counts, null (gap) otherwise. */
 function pointValue(s: LensResult['series'][number], x: string | number): number | null {
   const v = s.points.get(x);
@@ -887,6 +896,11 @@ export function XyChart({
     >
       {!inside && (lg.alignment === 'top' || lg.alignment === 'left') && legendEl}
       <div ref={boxRef} className={styles.plot}>
+        {nothingFinite(result) && (
+          <div role="note" className={styles.noFinite} data-testid="lens-no-finite">
+            Nothing to draw: every value is NaN or infinite.
+          </div>
+        )}
         {W > 0 && (
           <svg
             width={W}
@@ -1355,6 +1369,14 @@ const getStyles = (theme: GrafanaTheme2) => ({
     flex-direction: column;
     width: 100%;
     height: 100%;
+  `,
+  noFinite: css`
+    position: absolute;
+    inset: 40% 0 auto 0;
+    text-align: center;
+    z-index: 1;
+    color: ${theme.colors.text.secondary};
+    pointer-events: none;
   `,
   wrapRow: css`
     flex-direction: row;

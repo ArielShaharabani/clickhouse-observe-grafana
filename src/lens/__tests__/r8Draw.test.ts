@@ -83,3 +83,15 @@ describe('R8 draw: M6 log scale', () => {
     expect(stackValues(r, [true, true], 'none').spans[0][0]).toEqual([0, -186]);
   });
 });
+
+import { nothingFinite } from '../render/XyChart';
+
+describe('R8 draw: M9 nothing finite', () => {
+  const mk = (v: number, zeroFill = false) =>
+    ({ xs: [1], series: [{ name: 's', points: new Map([[1, v]]), zeroFill, metricIndex: 0 }] }) as unknown as LensResult;
+  it('detects NaN / inf only', () => {
+    expect(nothingFinite(mk(NaN))).toBe(true);
+    expect(nothingFinite(mk(Infinity))).toBe(true);
+    expect(nothingFinite(mk(3))).toBe(false);
+  });
+});
