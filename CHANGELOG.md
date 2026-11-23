@@ -10,6 +10,37 @@ Versions track the plugin's release history. `Unreleased` collects commits not y
 
 ---
 
+## [0.79.0] — 2026-11-23
+
+- Fixed: switching data views could run queries with the previous view's auto-detected time column or fields ("Unknown identifier"), and its errors stayed on screen. Discovery is now tied to its table; errors, rows and unfinished search text are reset on a switch.
+- Discover keeps filters across a data view switch: struck through and not applied on the new view, applied again on their own view, removed only by the user.
+- Visualize: the last metric (vertical axis) can be removed; the workspace is empty until a metric is added, other dimensions stay.
+- Fixed: search text typed before the field list loads gets suggestions once it does; the Discover pager wraps in a narrow pane instead of squeezing out the table.
+- Replacing a dashboard panel fails safe: a panel not made in Visualize always warns unless it is known to convert fully.
+- Visualize: the panel menu's "Edit in Visualize" is on every saved dashboard panel. Panels not made in Visualize are converted when Visualize opens (the link carries only the dashboard, panel and time, no SQL): raw-SQL and builder targets of the ClickHouse data source (one SELECT from one table: date buckets, top values, count / unique / sum / avg / min / max / median / percentile / standard deviation, GROUP BY, ORDER BY, LIMIT, simple AND conditions as filter pills), and panels exported from Discover (volume histogram). Chart type, unit, decimals, legend and gauge range carry over.
+- Visualize: when a panel is not fully converted, a short note says so and offers the original query (read only, copyable). Joins, subqueries, CTEs, UNION, window functions, HAVING, OR, template variables, several queries, other data sources and other panel types give an empty chart with the reason.
+- Visualize: any Save and return of a panel that was not fully converted (or could not be) first asks "Replace the original panel?", listing what would be lost, with "Save as new panel" (adds to the same dashboard, original untouched; primary), "Replace anyway" (version lock kept) and Cancel. Fully converted panels still save in one click. Opening a panel never changes the dashboard.
+- Visualize: new "Open panel" action (next to Share / Save): pick a dashboard and a panel (rows included, with type; panels that cannot be converted are marked and say why).
+- Dashboards in the newer v2 schema give a clear message instead of an error.
+- Fixed: Visualize "Add layer" opened its menu at the far right of the dimensions panel instead of under the button. It and the layer actions menu now use Grafana's Dropdown + Menu (floating placement, flips near edges, Escape / outside click close, focus returns to the button).
+- Fixed: the chart type list could run past the right edge or bottom of the window when the dimensions panel is narrow or the window is small; it now stays inside and its list scrolls.
+- Fixed: the legend actions menu on Visualize charts now closes on a click outside it.
+- Fixed: the data view picker and Saved searches menus now close on Escape.
+- Security: dependencies updated to the latest compatible releases (all published at least 2 weeks ago); transitive advisories fixed in the lockfile and with scoped `overrides` (dompurify, js-cookie, moment, uuid, basic-ftp). Nothing flagged ships in `dist/module.js` except `react-router-dom` (see below).
+- Security: matched-term highlighting no longer backtracks on a hostile shared-link query (many `*` wildcards) and scans at most 5000 characters per cell.
+- Security: the remembered trace-view lookup ignores inherited keys (`constructor`, `__proto__`) and non-object storage values.
+- CI/dev: release workflow uses `npm ci`, no persisted checkout credentials and no `${{ }}` expansion inside shell; `cp-update` gets `contents: read`; dev docker-compose publishes ClickHouse, Ollama and OTLP ports on 127.0.0.1 only.
+- The time picker's "Change time settings" now works: the time zone and fiscal year start month you pick apply to every time shown in Discover and Visualize (grid, detail drawer, compare and surrounding documents, histogram axis / tooltip / caption / bucket menu, chart axes, tooltips, annotations, inspector). The default is Grafana's own preference; "Default" in the picker goes back to it. The choice is kept per browser.
+- Relative ranges with rounding (`now/d`, Today, Yesterday, This week, fiscal ranges, shorthand `td`/`yd`/`tw`) resolve in the chosen zone and fiscal month, including from URLs, saved searches and saved queries; changing the zone re-resolves a relative range on screen. Absolute ranges keep the same instants.
+- The query request carries the chosen zone.
+- Fixed: hovering or drop-targeting a Discover table column header no longer shows scrolled rows through it (tint is an image layer over the opaque header; header now sits above row cell toolbars).
+- Added: the histogram height is adjustable by a drag handle at its bottom edge (arrow keys, Home/End, double-click resets to 104); remembered per browser, never taller than ~60% of the window.
+- Removed: the Language (KQL / Lucene) group from the query menu; Lucene is not implemented.
+- Changed: Discover tabs are larger and shrink as more open, like browser tabs; the strip scrolls only when all tabs are at minimum width, and the active tab is scrolled into view.
+- Changed: tab reordering uses pointer drag: grab anywhere on a tab, drop anywhere (also past the ends), neighbours move aside live, Escape cancels.
+
+---
+
 ## [0.78.1] — 2026-11-22
 
 - Replaced hard-coded px paddings/gaps with theme tokens in Emotion blocks:
