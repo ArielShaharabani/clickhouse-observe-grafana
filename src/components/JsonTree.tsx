@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
-import { css } from '@emotion/css';
+import React, { useMemo, useRef, useState } from 'react';
+import { css, cx } from '@emotion/css';
 import { GrafanaTheme2 } from '@grafana/data';
-import { useStyles2, Icon, ClipboardButton } from '@grafana/ui';
+import { useStyles2, Icon, IconButton, ClipboardButton } from '@grafana/ui';
+import { FindBar, getFindHighlightStyle, useFind } from './FindInText/FindBar';
 
 interface JsonTreeProps {
   data: unknown;
@@ -60,6 +61,13 @@ export function JsonTree({ data, defaultExpanded }: JsonTreeProps) {
   const styles = useStyles2(getStyles);
   const [expanded, setExpanded] = useState<Set<string>>(defaultExpanded ?? new Set(['root']));
 
+  // Ctrl+F in the document panel. Opening it unfolds everything, so no match stays hidden.
+  const highlight = useStyles2(getFindHighlightStyle);
+  const treeRef = useRef<HTMLDivElement>(null);
+  const find = useFind(treeRef, '[role="region"]', () => setExpanded(allContainerPaths(data)));
+
+  const contentKey = useMemo(() => ({ data, expanded }), [data, expanded]);
+
   const toggle = (path: string) => {
     setExpanded((prev) => {
       const next = new Set(prev);
@@ -85,7 +93,7 @@ export function JsonTree({ data, defaultExpanded }: JsonTreeProps) {
 
     if (!isContainer) {
       return (
-        <div key={path} className={styles.line} style={{ paddingLeft: depth * 16 }}>
+        <div key={path} data-find-line className={styles.line} style={{ paddingLeft: depth * 16 }}>
           <span className={styles.gutter} />
           {keyLabel}
           <span className={styles[kind === 'string' ? 'valString' : kind === 'number' ? 'valNumber' : kind === 'boolean' ? 'valBool' : 'valNull']}>
@@ -103,7 +111,7 @@ export function JsonTree({ data, defaultExpanded }: JsonTreeProps) {
 
     return (
       <div key={path}>
-        <div className={styles.line} style={{ paddingLeft: depth * 16 }}>
+        <div data-find-line className={styles.line} style={{ paddingLeft: depth * 16 }}>
           <button
             type="button"
             className={styles.gutterToggle}
@@ -125,14 +133,14 @@ export function JsonTree({ data, defaultExpanded }: JsonTreeProps) {
         {isOpen && (
           <>
             {entries.length === 0 ? (
-              <div className={styles.line} style={{ paddingLeft: (depth + 1) * 16 }}>
+              <div data-find-line className={styles.line} style={{ paddingLeft: (depth + 1) * 16 }}>
                 <span className={styles.gutter} />
                 <span className={styles.collapsedPreview}>(empty)</span>
               </div>
             ) : (
               entries.map(([k, v], i) => renderNode(k, v, `${path}.${k}`, depth + 1, i === entries.length - 1))
             )}
-            <div className={styles.line} style={{ paddingLeft: depth * 16 }}>
+            <div data-find-line className={styles.line} style={{ paddingLeft: depth * 16 }}>
               <span className={styles.gutter} />
               <span className={styles.brace}>{closeBrace}</span>
               {!isLast && <span className={styles.comma}>,</span>}
@@ -145,7 +153,9 @@ export function JsonTree({ data, defaultExpanded }: JsonTreeProps) {
 
   return (
     <div className={styles.wrap}>
+      <div className={styles.top}>
       <div className={styles.copyRow}>
+        <IconButton name="search" size="sm" tooltip="Find (Ctrl+F)" aria-label="Find (Ctrl+F)" onClick={find.show} />
         <ClipboardButton
           icon="clipboard-alt"
           size="sm"
@@ -155,7 +165,9 @@ export function JsonTree({ data, defaultExpanded }: JsonTreeProps) {
           Copy JSON
         </ClipboardButton>
       </div>
-      <div className={styles.tree}>{renderNode(null, data, 'root', 0, true)}</div>
+      {find.open && <FindBar rootRef={treeRef} find={find} contentKey={contentKey} />}
+      </div>
+      <div ref={treeRef} className={cx(styles.tree, highlight)}>{renderNode(null, data, 'root', 0, true)}</div>
     </div>
   );
 }
@@ -167,8 +179,20 @@ const getStyles = (theme: GrafanaTheme2) => ({
     gap: ${theme.spacing(1)};
     height: 100%;
   `,
+  /* Stays in view while the panel scrolls. */
+  top: css`
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    display: flex;
+    flex-direction: column;
+    gap: ${theme.spacing(0.5)};
+    background: ${theme.colors.background.primary};
+  `,
   copyRow: css`
     display: flex;
+    align-items: center;
+    gap: ${theme.spacing(1)};
     justify-content: flex-end;
   `,
   tree: css`
