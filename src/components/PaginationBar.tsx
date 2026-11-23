@@ -92,7 +92,8 @@ const getStyles = (theme: GrafanaTheme2) => ({
     border-top: 1px solid ${theme.colors.border.weak};
     background: ${theme.colors.background.primary};
     flex-shrink: 0;
-    gap: ${theme.spacing(2)};
+    flex-wrap: wrap;
+    gap: ${theme.spacing(0.5, 2)};
   `,
   left: css`
     display: flex;
@@ -107,6 +108,10 @@ const getStyles = (theme: GrafanaTheme2) => ({
   right: css`
     display: flex;
     align-items: center;
+    flex-wrap: wrap;
+    /* In a narrow pane the page buttons wrap below the text instead of stacking one per line. */
+    row-gap: ${theme.spacing(0.5)};
+    min-width: 0;
     gap: ${theme.spacing(2)};
   `,
   info: css`

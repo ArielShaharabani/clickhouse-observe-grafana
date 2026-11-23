@@ -244,10 +244,21 @@ test('panel with settings Visualize cannot carry: warning lists them; Replace an
 
 test('Open panel: dashboard + panel picker (rows, types, cannot-convert reasons), same import', async ({ page }) => {
   const before = await get(page);
+  // Grafana indexes a new dashboard for search a moment after it is saved.
+  await expect
+    .poll(
+      async () => {
+        const hits = await (await page.request.get('/api/search?type=dash-db&limit=5000')).json();
+        return (hits as Array<{ uid: string }>).some((h) => h.uid === UID);
+      },
+      { timeout: 60_000 }
+    )
+    .toBe(true);
   await page.goto('/a/poortuna-clickhouse-observe-app/visualize');
   await page.getByRole('button', { name: 'Open panel' }).click();
   const dialog = page.getByRole('dialog', { name: 'Open panel' });
-  await dialog.getByRole('combobox').click();
+  // Type the name: a long list only renders the options in view.
+  await dialog.getByRole('combobox').fill(dashboard.title);
   await page.getByRole('option', { name: new RegExp(dashboard.title) }).first().click();
   await expect(dialog.getByRole('radio', { name: `${names.text} (text)` })).toBeVisible();
   await expect(dialog.getByText(/Can't be converted: Panel type "text" is not supported/)).toBeVisible();
