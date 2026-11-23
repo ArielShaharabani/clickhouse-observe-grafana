@@ -11,12 +11,15 @@
  *  - a dynamic JSON path read as a typed subcolumn (`a.b.:Int64`, see jsonPaths.ts) is NULL on rows
  *    whose value has another type than the sampled one, and `typed = 'abc'` throws. Scalar filters
  *    therefore read the bare path as text (`toString(a.b)`), which keeps every row's value; the
- *    typed form stays for GROUP BY / aggregates (where Dynamic is refused) and for arrays.
+ *    typed form stays for GROUP BY / aggregates (where Dynamic is refused) and for arrays;
+ *  - a path read bare because its values have several types or hold lists of objects (`dynamic`)
+ *    compares as text too: `path = 'x'` throws as soon as one row holds a list. A list or object is
+ *    compared with its JSON, which is what the grid shows.
  */
 import type { ResolvedField } from './fields';
 import { stripTypedSubcolumn, hasScalarTypedSubcolumn } from './jsonPaths';
 
-export type PredicateField = Pick<ResolvedField, 'kind' | 'array' | 'jsonContainer'> | null | undefined;
+export type PredicateField = Pick<ResolvedField, 'kind' | 'array' | 'dynamic' | 'jsonContainer'> | null | undefined;
 
 /** The expression scalar filters read: the bare path of a typed scalar JSON subcolumn, else `expr`. */
 function filterExpr(expr: string, f: PredicateField): string {
@@ -25,7 +28,7 @@ function filterExpr(expr: string, f: PredicateField): string {
 
 /** Whether filters on this field compare its text rather than its typed value. */
 export function comparesAsText(expr: string, f: PredicateField): boolean {
-  return filterExpr(expr, f) !== expr;
+  return f?.dynamic === true || filterExpr(expr, f) !== expr;
 }
 
 /** `field:*` / "exists". */
@@ -64,6 +67,36 @@ export function likeLhs(expr: string, f: PredicateField): string {
 /** Left side of `= 'v'` / `IN (...)`: the text of a typed scalar JSON subcolumn, else `expr`. */
 export function equalsLhs(expr: string, f: PredicateField): string {
   return comparesAsText(expr, f) ? `toString(${filterExpr(expr, f)})` : expr;
+}
+
+/** A value as JSON text, spelled like `JSON.stringify` (ClickHouse writes `/` as `\/`); never NULL. */
+function jsonText(expr: string): string {
+  return `replaceAll(ifNull(toJSONString(${expr}), ''), '\\\\/', '/')`;
+}
+
+const looksLikeJson = (v: string) => /^\s*[[{]/.test(v);
+
+/**
+ * The field equals one of `values` (unquoted; `quote` makes the literals). For an array path: any
+ * element does, or the whole list. Undefined when a plain `=` / `IN` is right.
+ */
+export function listPredicate(
+  expr: string,
+  f: PredicateField,
+  values: string[],
+  quote: (v: string) => string
+): string | undefined {
+  const json = values.filter(looksLikeJson);
+  if (!f?.array && !(f?.dynamic && json.length > 0)) {
+    return undefined;
+  }
+  const parts = f.array
+    ? values.map((v) => anyElementPredicate(expr, quote(v), false))
+    : [`${equalsLhs(expr, f)} IN (${values.map(quote).join(', ')})`];
+  if (json.length > 0) {
+    parts.push(`${jsonText(filterExpr(expr, f))} IN (${json.map(quote).join(', ')})`);
+  }
+  return f.array && parts.length === 1 ? parts[0] : `(${parts.join(' OR ')})`;
 }
 
 /** The expression `IS NULL` tests (the bare path: a typed subcolumn is NULL for other types too). */

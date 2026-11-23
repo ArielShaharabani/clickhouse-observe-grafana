@@ -10,7 +10,7 @@ import { isCondGroup, isDateBound, isNumericBound } from './filters';
 import { BreakdownSel, FilterCondGroup, FilterPill, FilterOp, LogsQueryState, SelectedColumn, SourceConfig } from '../types';
 import { resolveField, FieldIndex } from './fields';
 import { parseKql, kqlToSql } from './kql';
-import { anyElementPredicate, equalsLhs, existsPredicate, likeLhs, missingPredicate, numericLhs } from './fieldPredicates';
+import { anyElementPredicate, equalsLhs, existsPredicate, likeLhs, listPredicate, missingPredicate, numericLhs } from './fieldPredicates';
 import { configSettingsFragments, queryTimeoutFragments, withSettings } from './settings';
 import { isConvertedTimestamp, timeExpr } from './timeExpr';
 
@@ -300,6 +300,10 @@ function buildFilterClause(filter: FilterPill, config: SourceConfig, index?: Fie
       // guard: empty value set → always false / always true
       return filter.op === 'one_of' ? '1=0' : '1=1';
     }
+    const listed = listPredicate(quoteIdentifier(sqlExprRaw), resolved, vals, quoteString);
+    if (listed) {
+      return filter.op === 'one_of' ? listed : `NOT ${listed}`;
+    }
     const col = equalsLhs(quoteIdentifier(sqlExprRaw), resolved);
     const list = vals.map(quoteString).join(', ');
     return filter.op === 'one_of'
@@ -371,10 +375,14 @@ function buildFilterClause(filter: FilterPill, config: SourceConfig, index?: Fie
     // A whole JSON column has no single value (`Payload = 'x'` fails parsing 'x' as JSON), as in KQL.
     return negate ? 'NOT 0' : '0';
   }
-  if (resolved.array) {
-    // A JSON array path: any element matches (`arr = 'x'` itself fails in ClickHouse).
-    const any = anyElementPredicate(col, quoteString(like ? '%' + value + '%' : value), like);
+  if (resolved.array && like) {
+    // A JSON array path: any element matches (`arr ILIKE 'x'` itself fails in ClickHouse).
+    const any = anyElementPredicate(col, quoteString('%' + value + '%'), true);
     return negate ? `NOT ${any}` : any;
+  }
+  const listed = like ? undefined : listPredicate(col, resolved, [value], quoteString);
+  if (listed) {
+    return negate ? `NOT ${listed}` : listed;
   }
   if (like) {
     // A JSON path can be numeric / boolean, which ILIKE refuses.
