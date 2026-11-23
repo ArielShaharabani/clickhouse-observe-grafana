@@ -25,14 +25,22 @@ import { coarsePrunePredicate, quoteIdentifier, quoteString, tableRef } from '..
 import { parseKql, kqlToSql } from '../sql/kql';
 import { chInterval, NORMALIZE_SECONDS, parseSpan, spanText, TimeSpan } from './metricOptions';
 import { configSettingsFragments, withSettings } from '../sql/settings';
+import { getTimeZoneSettings, toServerTimeZone } from '../utils/timeZone';
 import { isConvertedTimestamp, timeExpr } from '../sql/timeExpr';
 import {
+  bucketDateTimeSql,
+  bucketSecondsSql,
   bucketStartSql,
   dashboardBucketSql,
   dashboardFillSql,
+  dashboardIntervalSql,
+  dashboardSecondsSql,
+  dashboardToSql,
   intervalMs as ivMs,
-  isCalendarUnit,
+  intervalSql,
+  isZonedUnit,
   LensInterval,
+  msInZoneSql,
   parseInterval,
   ResolvedLensInterval,
   resolveLensInterval,
@@ -301,7 +309,9 @@ export function compileLens(
    */
   mode: 'app' | 'dashboard' = 'app',
   /** Discovered fields, for the `kql=` filters of formulas (same resolution as the search bar). */
-  index?: FieldIndex
+  index?: FieldIndex,
+  /** Zone the date buckets start in (validated); the user's chosen zone by default. */
+  zone: string | undefined = toServerTimeZone(getTimeZoneSettings().timeZone)
 ): CompiledLens {
   const fctx: FormulaSqlContext = { config, index, dashboard: mode === 'dashboard' };
   const tbl = tableRef(config, config.logsTable);
@@ -346,12 +356,21 @@ export function compileLens(
       : expr;
   const rowTs = ts ? shifted(ts) : '';
 
+  // A Date has no time of day: read as its midnight, as the time filter does, and never moved to
+  // another zone's day.
+  const isDateColumn = (field: string) =>
+    /^(LowCardinality\(|Nullable\()*Date(32)?\b/.test(index?.bySqlExpr.get(field)?.rawType ?? '');
+  const dateTz = (field: string) => (isDateColumn(field) ? 'UTC' : zone);
   // A date histogram on the view's time field reads it the way every other query does: a
   // converted time field (epoch / text, PLAN #16d) is not a real DateTime column. Any other field
   // is quoted as before.
   const dateSql = (field: string) =>
     shifted(
-      field === config.columns.timestamp && isConvertedTimestamp(config) ? timeExpr(config) : quoteIdentifier(field)
+      field === config.columns.timestamp && isConvertedTimestamp(config)
+        ? timeExpr(config)
+        : isDateColumn(field)
+          ? `toDateTime(${quoteIdentifier(field)})`
+          : quoteIdentifier(field)
     );
 
   /** Row condition of a metric: its copy, Filter by, and reduced time range. */
@@ -428,23 +447,28 @@ export function compileLens(
   state.buckets.forEach((b: BucketDim, i) => {
     const custom = b.kind === 'date_histogram' ? parseInterval(b.interval) : null;
     if (b.kind === 'date_histogram' && mode === 'dashboard' && custom) {
-      selects.push(`${dashboardBucketSql(dateSql(b.field), custom)} AS ${bucketAlias(i)}`);
+      selects.push(`${dashboardBucketSql(dateSql(b.field), custom, dateTz(b.field))} AS ${bucketAlias(i)}`);
     } else if (b.kind === 'date_histogram' && mode === 'dashboard') {
       const col = dateSql(b.field);
       // The datasource's macro parser counts parentheses and commas without regard to quotes, so
       // an expression field (e.g. a Map key with ')' in it) gets the explicit form instead.
       selects.push(
-        /[(),]/.test(col) || shifting
-          ? `toStartOfInterval(toDateTime(${col}), INTERVAL $__interval_s second) AS ${bucketAlias(i)}`
+        /[(),]/.test(col) || shifting || (dateTz(b.field) ?? 'UTC') !== 'UTC'
+          ? `${dashboardBucketSql(col, null, dateTz(b.field))} AS ${bucketAlias(i)}`
           : `$__timeInterval(${col}) AS ${bucketAlias(i)}`
       );
     } else if (b.kind === 'date_histogram') {
-      const iv = resolveLensInterval(b.interval, timeRange);
+      const auto = resolveLensInterval(b.interval, timeRange, dateTz(b.field));
+      // Auto buckets below a day would leave a Date column mostly empty.
+      const iv =
+        !auto.requested && !isZonedUnit(auto.unit) && isDateColumn(b.field)
+          ? { n: 1, unit: 'd' as const, scaled: false, requested: null, tz: 'UTC' }
+          : auto;
       interval = iv;
       intervalMs = ivMs(iv);
       if (appDate && i === dateIdx) {
         seriesIv = iv;
-        selects.push(`${dateTimeBucketSql(dateSql(b.field), iv)} AS ${DATE_ALIAS}`);
+        selects.push(`${bucketDateTimeSql(dateSql(b.field), iv)} AS ${DATE_ALIAS}`);
       } else {
         selects.push(`${bucketStartSql(dateSql(b.field), iv)} AS ${bucketAlias(i)}`);
       }
@@ -513,22 +537,38 @@ export function compileLens(
       return expr;
     }
     const unitS = NORMALIZE_SECONDS[unit];
-    const factor = mode === 'dashboard' ? dashboardPerUnit(unitS) : intervalMs ? perUnit(unitS, intervalMs) : null;
+    const factor = mode === 'dashboard' ? dashboardPerUnit(unitS) : appPerUnit(unitS);
     return factor ? `(${expr}) * ${factor}` : expr;
   };
-  // Saved panels: the bucket is `$__interval_s` seconds (auto), at least the typed minimum (fixed
-  // units), or the calendar unit (approximated like in the app).
+  // A calendar bucket (day, week, month, year) counts with its real length: 28-31 days, 23 / 25 hours.
+  const appPerUnit = (unitS: number): string | null => {
+    if (!interval || !intervalMs) {
+      return null;
+    }
+    if (!isZonedUnit(interval.unit)) {
+      return perUnit(unitS, intervalMs);
+    }
+    const start = appDate ? DATE_ALIAS : msInZoneSql(bucketAlias(dateIdx), interval.tz);
+    return `(${unitS} / ${bucketSecondsSql(start, intervalSql(interval))})`;
+  };
   const dashboardPerUnit = (unitS: number): string => {
     const d = state.buckets[dateIdx];
     const iv = d?.kind === 'date_histogram' ? parseInterval(d.interval) : null;
     if (!iv) {
       return `(${unitS} / $__interval_s)`;
     }
-    if (isCalendarUnit(iv.unit) || iv.unit === 'w') {
-      return perUnit(unitS, ivMs(iv));
-    }
-    return `(${unitS} / greatest(${Math.max(1, Math.ceil(ivMs(iv) / 1000))}, $__interval_s))`;
+    const seconds = dashboardSecondsSql(iv);
+    return seconds
+      ? `(${unitS} / (${seconds}))`
+      : `(${unitS} / ${bucketSecondsSql(bucketAlias(dateIdx), dashboardIntervalSql(iv))})`;
   };
+  // Drop partial intervals in a saved panel: only buckets wholly inside the dashboard's range.
+  const dateDim = dateIdx >= 0 ? (state.buckets[dateIdx] as DateHistogramDim) : undefined;
+  const dateZone = dateDim ? dateTz(dateDim.field) : undefined;
+  const dropPartialSql =
+    mode === 'dashboard' && dateDim?.dropPartial
+      ? `${bucketAlias(dateIdx)} >= $__fromTime AND ${bucketAlias(dateIdx)} + ${dashboardIntervalSql(parseInterval(dateDim.interval))} <= ${dashboardToSql(dateZone)}`
+      : null;
 
   // Window mode: every aggregate goes to the inner query as `a<k>` (identical ones shared); the
   // metric itself is an outer expression over them.
@@ -616,6 +656,8 @@ export function compileLens(
       groupBy,
       dateIdx,
       seriesIv,
+      dateZone,
+      dropPartialSql,
       countSql: shifting ? `countIf(${SHIFT_ALIAS} = 0)` : 'count()',
       settings: configSettingsFragments(config),
     });
@@ -627,7 +669,7 @@ export function compileLens(
     // would draw a line straight across the gap. Fill the buckets with zero counts (as Visualize
     // does), per breakdown value: the other group columns lead, so WITH FILL fills within each.
     const rest = groupBy.filter((g) => g !== bucketAlias(0));
-    const fill = dashboardFillSql(parseInterval(first.interval), !first.unbound);
+    const fill = dashboardFillSql(parseInterval(first.interval), !first.unbound, dateZone, !!first.dropPartial);
     orderBy = `ORDER BY ${[...rest, `${bucketAlias(0)} ${fill}`].join(', ')}`;
   } else if (first?.kind === 'date_histogram' || first?.kind === 'range' || first?.kind === 'filters') {
     orderBy = `ORDER BY ${groupBy.join(', ')}`;
@@ -644,6 +686,7 @@ export function compileLens(
       shifting ? `ARRAY JOIN [${[0, ...shifts.map((_x, k) => k + 1)].join(', ')}] AS ${SHIFT_ALIAS}` : null,
       allWhere ? `WHERE ${allWhere}` : null,
       groupBy.length > 0 ? `GROUP BY ${groupBy.join(', ')}` : null,
+      dropPartialSql ? `HAVING ${dropPartialSql}` : null,
       orderBy,
       `LIMIT ${LENS_ROW_LIMIT}`,
     ],
@@ -660,39 +703,17 @@ const COUNT_ALIAS = '__c';
 /** A number we computed: per-`unitS` factor of a bucket of `ms` milliseconds. */
 const perUnit = (unitS: number, ms: number): string => String(Number(((unitS * 1000) / ms).toPrecision(12)));
 
-/** The date bucket as a DateTime (DateTime64(3) for milliseconds), for WITH FILL on calendar steps. */
-function dateTimeBucketSql(col: string, iv: LensInterval): string {
-  return iv.unit === 'ms'
-    ? `toStartOfInterval(toDateTime64(${col}, 3), INTERVAL ${iv.n} MILLISECOND)`
-    : `toDateTime(toStartOfInterval(${col}, ${chIntervalOf(iv)}))`;
-}
-
-const CH_UNITS: Record<string, string> = {
-  ms: 'MILLISECOND',
-  s: 'SECOND',
-  m: 'MINUTE',
-  h: 'HOUR',
-  d: 'DAY',
-  w: 'WEEK',
-  M: 'MONTH',
-  y: 'YEAR',
-};
-/** `INTERVAL n UNIT` from an interval we parsed (integer + keyword from the table). */
-const chIntervalOf = (iv: LensInterval): string => `INTERVAL ${Math.max(1, Math.floor(iv.n))} ${CH_UNITS[iv.unit]}`;
-
 /**
  * App window mode, Include empty rows: WITH FILL of the DateTime bucket over the time picker range
  * (the bucket holding the start up to the end), or between buckets with data when not bound to it —
  * the same buckets `shapeLensRows` would add, but before the window functions see the rows.
  */
 function appFillSql(iv: LensInterval, bound: boolean): string {
-  const step = iv.unit === 'ms' ? `toIntervalMillisecond(${Math.max(1, Math.floor(iv.n))})` : chIntervalOf(iv);
+  const step = iv.unit === 'ms' ? `toIntervalMillisecond(${iv.n})` : intervalSql(iv);
   if (!bound) {
     return `WITH FILL STEP ${step}`;
   }
-  return iv.unit === 'ms'
-    ? `WITH FILL FROM toStartOfInterval(toDateTime64($__fromTime, 3), ${chIntervalOf(iv)}) TO toDateTime64($__toTime, 3) STEP ${step}`
-    : `WITH FILL FROM toDateTime(toStartOfInterval($__fromTime, ${chIntervalOf(iv)})) TO $__toTime STEP ${step}`;
+  return `WITH FILL FROM ${bucketDateTimeSql('$__fromTime', iv)} TO ${iv.unit === 'ms' ? 'toDateTime64($__toTime, 3)' : '$__toTime'} STEP ${step}`;
 }
 
 /**
@@ -730,6 +751,9 @@ interface WrapParts {
   groupBy: string[];
   dateIdx: number;
   seriesIv?: ResolvedLensInterval;
+  /** Saved panels: zone of the date bucket, and the condition of Drop partial intervals. */
+  dateZone?: string;
+  dropPartialSql: string | null;
   /** Row count of a group (time shift: of the unshifted copy). */
   countSql: string;
   settings: string[];
@@ -764,7 +788,7 @@ function wrapWindow(p: WrapParts): string {
     const fill =
       appDate && p.seriesIv
         ? appFillSql(p.seriesIv, !date.unbound)
-        : dashboardFillSql(parseInterval(date.interval), !date.unbound);
+        : dashboardFillSql(parseInterval(date.interval), !date.unbound, p.dateZone);
     const lead = [...groupBy.filter((g) => g !== dateRef), ...widths];
     innerOrder = `ORDER BY ${[...lead, `${dateRef} ${fill}`].join(', ')}`;
   }
@@ -806,9 +830,11 @@ function wrapWindow(p: WrapParts): string {
   const outerWhere =
     appDate && date?.dropPartial && p.seriesIv
       ? `WHERE ${DATE_ALIAS} >= $__fromTime AND ${DATE_ALIAS} + ${
-          p.seriesIv.unit === 'ms' ? `toIntervalMillisecond(${p.seriesIv.n})` : chIntervalOf(p.seriesIv)
+          p.seriesIv.unit === 'ms' ? `toIntervalMillisecond(${p.seriesIv.n})` : intervalSql(p.seriesIv)
         } <= $__toTime`
-      : null;
+      : p.dropPartialSql
+        ? `WHERE ${p.dropPartialSql}`
+        : null;
 
   const outerGroup = groupBy.map((g) => (g === DATE_ALIAS ? bucketAlias(dateIdx) : g));
   let orderBy: string | null = null;

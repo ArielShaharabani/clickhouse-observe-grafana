@@ -7,6 +7,7 @@
  */
 import { createTheme, TimeRange } from '@grafana/data';
 import { chDatasourceRef, EXPORT_VOLUME_POINTS, ExportedPanel, FORMAT_TABLE, GridPos } from '../data/panelExport';
+import { FieldIndex } from '../sql/fields';
 import { SourceConfig } from '../types';
 import { bucketAlias, compileLens, kindAlias, metricAlias, uniqueMetricLabels } from './compile';
 import { dimLabelIn, LensState } from './state';
@@ -30,6 +31,8 @@ export interface LensPanelOpts {
   source?: string;
   /** The series the chart currently shows: they get the same stable colours as in Visualize. */
   series?: Array<{ name: string; breakdown?: string; synthetic?: boolean }>;
+  /** Discovered fields: a Date column keeps its days, KQL filters resolve as in Visualize. */
+  index?: FieldIndex;
   /** Gauge without a Maximum value metric or a typed maximum: the automatic maximum Visualize drew. */
   gaugeMax?: number;
 }
@@ -192,7 +195,7 @@ function baseLensPanel(
   opts: LensPanelOpts
 ): LensPanel {
   const datasource = chDatasourceRef(config.datasourceUid);
-  const { sql } = compileLens(state, config, conditions, timeRange, 'dashboard');
+  const { sql } = compileLens(state, config, conditions, timeRange, 'dashboard', opts.index);
   const names = columnNames(state);
   const [x, split] = state.buckets;
   const stacking = stackingOf(state);

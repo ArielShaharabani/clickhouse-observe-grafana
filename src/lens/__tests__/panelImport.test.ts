@@ -126,6 +126,17 @@ describe('importPanel: supported', () => {
     expect(r.notes.join(' ')).toMatch(/separate percentile/);
   });
 
+  it('date buckets of exported panels in a zone', () => {
+    const off = "timeZoneOffset(toDateTime($__fromTime, 'Asia/Kolkata'))";
+    const rest = `AS t, count() FROM otel_logs WHERE $__timeFilter(${ts}) GROUP BY t`;
+    const a = imp(`SELECT toStartOfInterval(toDateTime(${ts}) + ${off}, INTERVAL $__interval_s second) - ${off} ${rest}`);
+    expect(a.lens?.buckets[0]).toMatchObject({ kind: 'date_histogram', interval: 'auto' });
+    const b = imp(
+      `SELECT toDateTime(toStartOfInterval(toDateTime(${ts}), INTERVAL 1 MONTH, 'Asia/Kolkata'), 'Asia/Kolkata') ${rest}`
+    );
+    expect(b.lens?.buckets[0]).toMatchObject({ kind: 'date_histogram', interval: '1M' });
+  });
+
   it('toStartOfInterval / toStartOf* intervals', () => {
     const a = imp(`SELECT toStartOfInterval(${ts}, INTERVAL 5 minute) AS t, count() FROM otel_logs WHERE $__timeFilter(${ts}) GROUP BY t`);
     expect(a.lens?.buckets[0]).toMatchObject({ interval: '5m' });
