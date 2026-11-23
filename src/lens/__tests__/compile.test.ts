@@ -46,7 +46,7 @@ describe('compileLens', () => {
     expect(sql).toContain('toUnixTimestamp(toStartOfInterval("Timestamp", INTERVAL 10800 SECOND)) * 1000 AS b0');
     expect(sql).toContain('WITH top1 AS (SELECT toString("SeverityText") AS v FROM "default"."spec_logs" WHERE');
     expect(sql).toContain(
-      'ServiceName = \'payments\' AND toString("SeverityText") IS NOT NULL GROUP BY v ORDER BY count() DESC LIMIT 9)'
+      'ServiceName = \'payments\' AND toString("SeverityText") IS NOT NULL GROUP BY v ORDER BY count() DESC, v LIMIT 9)'
     );
     expect(sql).toContain('toString("SeverityText") GLOBAL IN (SELECT v FROM top1)');
     expect(sql).toContain('GROUP BY b0, b1');

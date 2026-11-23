@@ -12,7 +12,7 @@
 import { SourceConfig } from '../types';
 import { FieldIndex } from '../sql/fields';
 import { parseKql, kqlToSql } from '../sql/kql';
-import { quoteIdentifier } from '../sql/queryBuilder';
+import { mapHasKey, quoteIdentifier } from '../sql/queryBuilder';
 import { timeExpr } from '../sql/timeExpr';
 import {
   counterRateSql,
@@ -505,6 +505,40 @@ export function formulaUsesWindow(src: string): boolean {
   return !!n && windowCalls(n, ['series', 'overall']).length > 0;
 }
 
+/** The aggregations a formula calls (by name). */
+export function formulaAggs(src: string): string[] {
+  const n = parsedOrNull(src);
+  return n ? windowCalls(n, ['agg']) : [];
+}
+
+/**
+ * Whether a formula is 0 where there are no records: what it gives with every count and sum at 0
+ * (an aggregate without a value makes it empty).
+ */
+export function formulaIsZeroWhenEmpty(src: string): boolean {
+  const value = (n: FormulaNode): number | null => {
+    if (n.type === 'num') {
+      return Number(n.value);
+    }
+    if (n.type === 'neg') {
+      const v = value(n.operand);
+      return v === null ? null : -v;
+    }
+    if (n.type === 'bin') {
+      const l = value(n.left);
+      const r = value(n.right);
+      if (l === null || r === null) {
+        return null;
+      }
+      return n.op === '+' ? l + r : n.op === '-' ? l - r : n.op === '*' ? l * r : r === 0 ? null : l / r;
+    }
+    return n.type === 'call' && (n.fn === 'count' || n.fn === 'unique_count') ? 0 : null;
+  };
+  const n = parsedOrNull(src);
+  const v = n ? value(n) : null;
+  return v !== null && v === 0;
+}
+
 /** The time-series functions a formula uses (they need a date histogram). */
 export function formulaTimeSeriesFns(src: string): string[] {
   const n = parsedOrNull(src);
@@ -658,7 +692,6 @@ const AGG_SQL: Record<string, string> = {
   sum: 'sum',
   min: 'min',
   max: 'max',
-  unique_count: 'uniq',
 };
 
 const MATH_SQL: Record<string, (a: string[]) => string> = {
@@ -815,6 +848,18 @@ export function lastValueSql(x: string, cond: string | undefined, config: Source
   return `argMaxIfOrNull(${x}, ${timeExpr(config)}, ${c})`;
 }
 
+/** A field's value, NULL where a record has no such Map key (read as '' / 0 otherwise). */
+export function presentValue(f: string): string {
+  const has = mapHasKey(f);
+  return has ? `if(${has}, ${f}, NULL)` : f;
+}
+
+/** Unique count of a field; a record without the Map key does not count. */
+export function uniqueSql(f: string, cond?: string): string {
+  const c = [mapHasKey(f), cond].filter(Boolean).join(' AND ');
+  return c ? `uniqIf(${f}, ${c})` : `uniq(${f})`;
+}
+
 function emitAgg(
   n: Extract<FormulaNode, { type: 'call' }>,
   fn: FormulaFn,
@@ -832,7 +877,7 @@ function emitAgg(
   const kqlCond = kqlSql ? `(${ctx.dashboard ? kqlSql.replace(/\$/g, () => '\\x24') : kqlSql})` : undefined;
   const cond = [ctx.rowCond, kqlCond].filter(Boolean).join(' AND ') || undefined;
   // Same cast the quick functions use for a field not typed as a number.
-  const x = f && (ref!.numeric ? f : `toFloat64OrNull(toString(${f}))`);
+  const x = f && (ref!.numeric ? presentValue(f) : `toFloat64OrNull(toString(${f}))`);
   // Window mode: an aggregate over no values is NULL (an empty bucket), not 0 / nan (Kibana's
   // empty rows); count, sum and unique count of nothing stay 0.
   const orNull = ctx.window ? 'OrNull' : '';
@@ -851,7 +896,10 @@ function emitAgg(
     if (!f) {
       return cond ? `countIf(${cond})` : 'count()';
     }
-    return cond ? `countIf(isNotNull(${f}) AND ${cond})` : `count(${f})`;
+    const has = mapHasKey(f);
+    return cond || has
+      ? `countIf(${[has ?? `isNotNull(${f})`, cond].filter(Boolean).join(' AND ')})`
+      : `count(${f})`;
   }
   if (fn.name === 'median' || fn.name === 'percentile') {
     const level =
@@ -860,10 +908,12 @@ function emitAgg(
     const q = Number(level.toFixed(4));
     return cond ? `quantileIf${orNull}(${q})(${x}, ${cond})` : `quantile${orNull}(${q})(${x})`;
   }
+  if (fn.name === 'unique_count') {
+    return uniqueSql(f!, cond);
+  }
   const agg = AGG_SQL[fn.name];
-  const arg = fn.name === 'unique_count' ? f : x;
-  const nul = fn.name === 'sum' || fn.name === 'unique_count' ? '' : orNull;
-  return cond ? `${agg}If${nul}(${arg}, ${cond})` : `${agg}${nul}(${arg})`;
+  const nul = fn.name === 'sum' ? '' : orNull;
+  return cond ? `${agg}If${nul}(${x}, ${cond})` : `${agg}${nul}(${x})`;
 }
 
 // ── Helpers for the editor ───────────────────────────────────────────────────────────────────────

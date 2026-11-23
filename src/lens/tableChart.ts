@@ -4,7 +4,7 @@
  * colour-by-value option. Pure functions over the shaped result; no SQL here (the pivot only
  * reshapes the rows the normal Lens query already returns).
  */
-import { LensState, MetricDim, TableSummary } from './state';
+import { distinctLabels, LensState, MetricDim, TableSummary } from './state';
 
 export type TableColumnKind = 'time' | 'string' | 'number';
 
@@ -30,7 +30,7 @@ const cellKey = (v: string | number | null) => (v === null ? '\u0000null' : Stri
  */
 export function tableColumns(
   state: LensState,
-  table: { columns: string[]; rows: Array<Array<string | number | null>> }
+  table: { columns: string[]; rows: Array<Array<string | number | null>>; keys?: string[][] }
 ): TableColumn[] {
   const nb = state.buckets.length;
   const bucketKind = (i: number): TableColumnKind => (state.buckets[i]?.kind === 'date_histogram' ? 'time' : 'string');
@@ -56,9 +56,11 @@ export function tableColumns(
   const groupOrder: string[] = [];
   const groupLabel = new Map<string, string>();
   const values = new Map<string, Map<string, Array<number | null>>>(); // row → group → metric values
-  for (const r of table.rows) {
-    const rk = rowIdx.map((i) => cellKey(r[i])).join('\u0001');
-    const gk = pivotIdx.map((i) => cellKey(r[i])).join('\u0001');
+  for (const [ri, r] of table.rows.entries()) {
+    // By identity: two values may have the same label.
+    const keyOf = (i: number) => table.keys?.[ri]?.[i] ?? cellKey(r[i]);
+    const rk = JSON.stringify(rowIdx.map(keyOf));
+    const gk = JSON.stringify(pivotIdx.map(keyOf));
     if (!rowCells.has(rk)) {
       rowOrder.push(rk);
       rowCells.set(
@@ -86,15 +88,16 @@ export function tableColumns(
       })
     );
   }
+  const groupNames = distinctLabels(groupOrder.map((gk) => groupLabel.get(gk) ?? ''));
   const cols: TableColumn[] = rowIdx.map((i, k) => ({
     name: table.columns[i],
     kind: bucketKind(i),
     values: rowOrder.map((rk) => rowCells.get(rk)![k]),
   }));
-  for (const gk of groupOrder) {
+  for (const [gi, gk] of groupOrder.entries()) {
     for (const m of metricIdx) {
       cols.push({
-        name: `${groupLabel.get(gk)}${PIVOT_SEP}${table.columns[nb + m]}`,
+        name: `${groupNames[gi]}${PIVOT_SEP}${table.columns[nb + m]}`,
         kind: 'number',
         // A row without that combination is empty, not 0 (it had no documents there).
         values: rowOrder.map((rk) => values.get(rk)?.get(gk)?.[m] ?? null),

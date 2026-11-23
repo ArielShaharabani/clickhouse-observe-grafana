@@ -1,17 +1,17 @@
 // Jest Snapshot v1, https://goo.gl/fbAQLP
 
 exports[`SQL a calculation wraps the grouped query: gap-filled inner, window functions outside (app) 1`] = `
-"SELECT toUnixTimestamp(__d) * 1000 AS b0, k1, b1, sum(ifNull(a0, 0)) OVER (PARTITION BY b1, k1 ORDER BY __d ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS m0
+"SELECT toUnixTimestamp(__d) * 1000 AS b0, k1, b1, __n, sum(ifNull(a0, 0)) OVER (PARTITION BY b1, k1 ORDER BY __d ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS m0
 FROM (
-WITH top1 AS (SELECT toString("ServiceName") AS v FROM "default"."spec_logs" WHERE Timestamp >= $__fromTime AND Timestamp <= $__toTime AND v IS NOT NULL GROUP BY v ORDER BY count() DESC LIMIT 3)
-SELECT toDateTime(toStartOfInterval("Timestamp", INTERVAL 1 DAY)) AS __d, multiIf(toString("ServiceName") IS NULL, 2, toString("ServiceName") GLOBAL IN (SELECT v FROM top1), 0, 1) AS k1, if(k1 = 0, toString("ServiceName"), '') AS b1, count() AS a0
+WITH top1 AS (SELECT toString("ServiceName") AS v FROM "default"."spec_logs" WHERE Timestamp >= $__fromTime AND Timestamp <= $__toTime AND v IS NOT NULL GROUP BY v ORDER BY count() DESC, v LIMIT 3)
+SELECT toDateTime(toStartOfInterval("Timestamp", INTERVAL 1 DAY)) AS __d, multiIf(toString("ServiceName") IS NULL, 2, toString("ServiceName") GLOBAL IN (SELECT v FROM top1), 0, 1) AS k1, if(k1 = 0, toString("ServiceName"), '') AS b1, count() AS __n, count() AS a0
 FROM "default"."spec_logs"
 WHERE Timestamp >= $__fromTime AND Timestamp <= $__toTime AND toString("ServiceName") IS NOT NULL
 GROUP BY __d, b1, k1
 ORDER BY b1, k1, __d WITH FILL FROM toDateTime(toStartOfInterval($__fromTime, INTERVAL 1 DAY)) TO $__toTime STEP INTERVAL 1 DAY
 )
 ORDER BY b0, b1, k1
-LIMIT 10000"
+LIMIT 50001"
 `;
 
 exports[`SQL every function in one query; nullable inner aggregates use -OrNull so empty buckets stay empty 1`] = `
@@ -24,13 +24,13 @@ GROUP BY __d
 ORDER BY __d WITH FILL FROM toDateTime(toStartOfInterval($__fromTime, INTERVAL 1 DAY)) TO $__toTime STEP INTERVAL 1 DAY
 )
 ORDER BY b0
-LIMIT 10000"
+LIMIT 50001"
 `;
 
 exports[`SQL saved panels compute the same calculation over $__timeInterval buckets 1`] = `
 "SELECT b0, k1, b1, sum(ifNull(a0, 0)) OVER (PARTITION BY b1, k1 ORDER BY b0 ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS m0
 FROM (
-WITH top1 AS (SELECT toString("ServiceName") AS v FROM "default"."spec_logs" WHERE Timestamp >= $__fromTime AND Timestamp <= $__toTime AND v IS NOT NULL GROUP BY v ORDER BY count() DESC LIMIT 3)
+WITH top1 AS (SELECT toString("ServiceName") AS v FROM "default"."spec_logs" WHERE Timestamp >= $__fromTime AND Timestamp <= $__toTime AND v IS NOT NULL GROUP BY v ORDER BY count() DESC, v LIMIT 3)
 SELECT toStartOfInterval(toDateTime("Timestamp"), INTERVAL greatest(86400, $__interval_s) second) AS b0, multiIf(toString("ServiceName") IS NULL, 2, toString("ServiceName") GLOBAL IN (SELECT v FROM top1), 0, 1) AS k1, multiIf(k1 = 1, 'Other', k1 = 2, '(missing)', if(toString("ServiceName") IN ('Other'), concat(toString("ServiceName"), ' (value)'), toString("ServiceName"))) AS b1, count() AS a0
 FROM "default"."spec_logs"
 WHERE Timestamp >= $__fromTime AND Timestamp <= $__toTime AND toString("ServiceName") IS NOT NULL

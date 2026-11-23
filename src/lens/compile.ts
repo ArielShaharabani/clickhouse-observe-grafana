@@ -21,9 +21,10 @@
  */
 import { TimeRange } from '@grafana/data';
 import { SourceConfig } from '../types';
-import { coarsePrunePredicate, quoteIdentifier, quoteString, tableRef } from '../sql/queryBuilder';
+import { coarsePrunePredicate, mapHasKey, quoteIdentifier, quoteString, tableRef } from '../sql/queryBuilder';
 import { parseKql, kqlToSql } from '../sql/kql';
 import { chInterval, NORMALIZE_SECONDS, parseSpan, spanText, TimeSpan } from './metricOptions';
+import { formatInZone } from '../utils/timeZone';
 import { configSettingsFragments, withSettings } from '../sql/settings';
 import { isConvertedTimestamp, timeExpr } from '../sql/timeExpr';
 import {
@@ -39,7 +40,15 @@ import {
   stepBucket,
 } from './interval';
 import { FieldIndex } from '../sql/fields';
-import { formulaToSql, FormulaSqlContext, lastValueSql, percentileRankSql, stdDevSql } from './formula';
+import {
+  formulaToSql,
+  FormulaSqlContext,
+  lastValueSql,
+  percentileRankSql,
+  presentValue,
+  stdDevSql,
+  uniqueSql,
+} from './formula';
 import {
   clampWindow,
   counterRateSql,
@@ -59,31 +68,39 @@ import {
   dimLabel,
   dimLabelIn,
   DEFAULT_GRANULARITY,
-  filterLabel,
+  distinctLabels,
+  entryLabels,
   FiltersDim,
   GRANULARITY_TARGETS,
   hasKindColumn,
   hasRef,
   isRankable,
+  isZeroWhenEmpty,
   refMetric,
   usesWindow,
   KIND_MISSING,
   KIND_OTHER,
   KIND_VALUE,
   LensState,
+  MAX_TERMS_SIZE,
   MetricDim,
   MISSING_VALUE,
   OTHER_VALUE,
   RangeDim,
-  rangeLabel,
   RangeSpec,
   rankDirOf,
   regexError,
   TermsDim,
 } from './state';
 
-/** Safety cap on result rows (a date histogram × 9 breakdown values stays far below it). */
-export const LENS_ROW_LIMIT = 10_000;
+/**
+ * Most result rows a chart is drawn from. The app query asks for one more, so a result that was cut
+ * is told apart from one that just fits (`LensResult.truncated`).
+ */
+export const LENS_ROW_LIMIT = 50_000;
+/** Row limit of a saved panel's query. */
+const PANEL_ROW_LIMIT = 10_000;
+const limitSql = (mode: 'app' | 'dashboard') => `LIMIT ${mode === 'app' ? LENS_ROW_LIMIT + 1 : PANEL_ROW_LIMIT}`;
 
 /** Upper bound for gap filling (the auto interval targets ~60 buckets). */
 const MAX_FILLED_BUCKETS = 5000;
@@ -126,7 +143,7 @@ function rangeCond(x: string, r: RangeSpec): string {
 /** Numeric value of an Intervals field (cast like the quick functions for a non-number column). */
 function rangeValue(b: RangeDim): string {
   const f = quoteIdentifier(b.field);
-  return b.numeric ? `toFloat64(${f})` : `toFloat64OrNull(toString(${f}))`;
+  return b.numeric ? `toFloat64(${presentValue(f)})` : `toFloat64OrNull(toString(${f}))`;
 }
 
 /** WHERE condition of one Filters bucket; an empty query matches everything, an invalid one nothing. */
@@ -145,8 +162,6 @@ function filterCond(query: string, fctx: FormulaSqlContext): string {
     return '0';
   }
 }
-
-const MAP_ACCESSOR = /^("(?:[^"]|"")*"|[A-Za-z_][A-Za-z0-9_]*)\[(.+)\]$/;
 
 /**
  * A metric's aggregate. `cond` (our own SQL: the metric's Filter by / reduced range / time-shift copy
@@ -168,7 +183,7 @@ function metricSql(m: MetricDim, fctx: FormulaSqlContext, cond?: string, orNull 
     return cond ? `countIf(${cond})` : 'count()';
   }
   const f = quoteIdentifier(m.field);
-  const x = m.numeric ? f : `toFloat64OrNull(toString(${f}))`;
+  const x = m.numeric ? presentValue(f) : `toFloat64OrNull(toString(${f}))`;
   const nul = orNull ? 'OrNull' : '';
   const agg = (fn: string, arg: string, n = nul) => (cond ? `${fn}If${n}(${arg}, ${cond})` : `${fn}${n}(${arg})`);
   switch (m.op) {
@@ -184,7 +199,7 @@ function metricSql(m: MetricDim, fctx: FormulaSqlContext, cond?: string, orNull 
     case 'counter_rate':
       return agg('max', x);
     case 'unique':
-      return agg('uniq', f, '');
+      return uniqueSql(f, cond);
     case 'std_dev':
       return stdDevSql(x, cond);
     case 'last_value':
@@ -277,8 +292,31 @@ function valuePredicate(b: TermsDim, expr: string): string | null {
  * is Nullable (a non-Nullable column has no "missing", an empty string stays a value).
  */
 function missingAwareRaw(field: string): string {
-  const m = MAP_ACCESSOR.exec(field);
-  return m ? `if(mapContains(${m[1]}, ${m[2]}), toString(${field}), NULL)` : `toString(${field})`;
+  const has = mapHasKey(field);
+  return has ? `if(${has}, toString(${field}), NULL)` : `toString(${field})`;
+}
+
+/** Row count of a group, for the legend order of a breakdown ranked by count (app mode). */
+const RANK_COUNT_ALIAS = '__n';
+
+/** The index of the plain Count metric a count ranking can be read from, or -1. */
+const plainCountIndex = (state: LensState): number =>
+  state.metrics.findIndex((m) => m.op === 'count' && !m.shift && !m.filter && !m.reducedRange);
+
+/** The rank metric of a top-values bucket ranked by one that can rank, or -1. */
+const rankMetricIndex = (state: LensState, b: TermsDim): number =>
+  b.rankBy === 'metric' ? state.metrics.findIndex((m) => m.id === b.rankMetric && isRankable(m)) : -1;
+
+/** Whether the breakdown's legend order needs a row count no metric of the chart gives. */
+function needsRankCount(state: LensState): boolean {
+  const b = state.buckets[1];
+  return (
+    b?.kind === 'terms' &&
+    b.rankBy !== 'alpha' &&
+    state.metrics.length > 0 &&
+    rankMetricIndex(state, b) < 0 &&
+    plainCountIndex(state) < 0
+  );
 }
 
 export interface CompiledLens {
@@ -373,11 +411,32 @@ export function compileLens(
     return parts.length > 0 ? parts.join(' AND ') : undefined;
   };
 
+  /** Row condition of a metric in a ranking query, which reads one window (no shift copies). */
+  const rankCond = (m: MetricDim, sp: TimeSpan | null): string | undefined => {
+    const parts: string[] = [];
+    const f = metricFilterSql(m, fctx);
+    if (f) {
+      parts.push(f);
+    }
+    const reduced = m.op === 'formula' || hasDateHistogram ? null : parseSpan(m.reducedRange);
+    if (reduced && ts) {
+      parts.push(`${ts} > $__toTime - ${chInterval(reduced)}${sp ? ` - ${chInterval(sp)}` : ''}`);
+    }
+    return parts.length > 0 ? parts.join(' AND ') : undefined;
+  };
+  /** The chart's conditions on the window a shift reads. */
+  const shiftedWhere = (sp: TimeSpan): string =>
+    [
+      ...conditions.filter((c) => c !== timeCond && c !== coarsePrunePredicate(config)),
+      `${ts} + ${chInterval(sp)} >= $__fromTime AND ${ts} + ${chInterval(sp)} <= $__toTime`,
+      `${ts} >= $__fromTime - ${chInterval(sp)} AND ${ts} <= $__toTime - ${chInterval(sp)}`,
+    ].join(' AND ');
+
   const ctes: string[] = [];
   const restrictions: string[] = [];
   const selects: string[] = [];
 
-  // Intervals (LENS-DIM-05): custom ranges → the index of the first matching range; automatic →
+  // Intervals (LENS-DIM-05): custom ranges → the index of every range the value fits; automatic →
   // the bucket start, with a power-of-ten width sized from the data's span (`rng<i>` CTE).
   const rangeBucket = (b: RangeDim, i: number) => {
     const x = rangeValue(b);
@@ -387,11 +446,13 @@ export function compileLens(
         selects.push(`0 AS ${bucketAlias(i)}`);
         return;
       }
-      const idx = `multiIf(${b.ranges.map((r, k) => `${rangeCond(x, r)}, ${k}`).join(', ')}, -1)`;
-      restrictions.push(`${idx} >= 0`);
+      // Ranges may overlap: a record counts in every range it fits (as a Filters bucket).
+      const conds = b.ranges.map((r) => rangeCond(x, r));
+      restrictions.push(`(${conds.map((c) => `(${c})`).join(' OR ')})`);
+      const idx = `arrayJoin(arrayFilter(__r -> __r >= 0, [${conds.map((c, k) => `if(${c}, ${k}, -1)`).join(', ')}]))`;
       selects.push(
         mode === 'dashboard'
-          ? `transform(${idx}, [${b.ranges.map((_, k) => k).join(', ')}], [${b.ranges.map((r) => lit(rangeLabel(r))).join(', ')}], '') AS ${bucketAlias(i)}`
+          ? `transform(${idx}, [${b.ranges.map((_, k) => k).join(', ')}], [${entryLabels(b).map(lit).join(', ')}], '') AS ${bucketAlias(i)}`
           : `${idx} AS ${bucketAlias(i)}`
       );
       return;
@@ -399,11 +460,17 @@ export function compileLens(
     const target = GRANULARITY_TARGETS[(b.granularity ?? DEFAULT_GRANULARITY) - 1] ?? 50;
     const cte = `rng${i}`;
     ctes.push(
-      `${cte} AS (SELECT if(max(v) > min(v), exp10(ceil(log10((max(v) - min(v)) / ${target}))), 1) AS w FROM (SELECT ${x} AS v FROM ${tbl}${where ? ` WHERE ${where}` : ''}) WHERE v IS NOT NULL)`
+      `${cte} AS (SELECT if(max(v) > min(v), exp10(ceil(log10((max(v) - min(v)) / ${target}))), 1) AS w FROM (SELECT ${x} AS v FROM ${tbl}${where ? ` WHERE ${where}` : ''}) WHERE isFinite(v))`
     );
     const w = `(SELECT w FROM ${cte})`;
-    restrictions.push(`${x} IS NOT NULL`);
-    selects.push(`floor(${x} / ${w}) * ${w} AS ${bucketAlias(i)}`);
+    // inf / nan are in no bucket. Widths below 1 divide by the exact whole number of buckets per unit
+    // and forgive the last bits of a float, so 0.3 is in 0.3 – 0.4.
+    restrictions.push(`isFinite(${x})`);
+    const per = `round(1 / ${w})`;
+    const y = `${x} * ${per}`;
+    selects.push(
+      `if(${w} < 1, if(abs(${y} - round(${y})) <= least(abs(${y}) * 1e-15, 1e-6), round(${y}), floor(${y})) / ${per}, floor(${x} / ${w}) * ${w}) AS ${bucketAlias(i)}`
+    );
     if (mode === 'app') {
       selects.push(`any(${w}) AS ${widthAlias(i)}`);
     }
@@ -421,7 +488,7 @@ export function compileLens(
     const idx = `arrayJoin(arrayFilter(__f -> __f >= 0, [${conds.map((c, k) => `if(${c}, ${k}, -1)`).join(', ')}]))`;
     selects.push(
       mode === 'dashboard'
-        ? `transform(${idx}, [${b.filters.map((_, k) => k).join(', ')}], [${b.filters.map((f) => lit(filterLabel(f))).join(', ')}], '') AS ${bucketAlias(i)}`
+        ? `transform(${idx}, [${b.filters.map((_, k) => k).join(', ')}], [${entryLabels(b).map(lit).join(', ')}], '') AS ${bucketAlias(i)}`
         : `${idx} AS ${bucketAlias(i)}`
     );
   };
@@ -440,8 +507,9 @@ export function compileLens(
       );
     } else if (b.kind === 'date_histogram') {
       const iv = resolveLensInterval(b.interval, timeRange);
-      interval = iv;
-      intervalMs = ivMs(iv);
+      // The horizontal axis' interval, when several buckets are date histograms.
+      interval ??= iv;
+      intervalMs ??= ivMs(iv);
       if (appDate && i === dateIdx) {
         seriesIv = iv;
         selects.push(`${dateTimeBucketSql(dateSql(b.field), iv)} AS ${DATE_ALIAS}`);
@@ -454,23 +522,26 @@ export function compileLens(
       filtersBucket(b, i);
     } else {
       const field = quoteIdentifier(b.field);
-      const size = Math.max(1, Math.floor(b.size));
+      const size = Math.min(MAX_TERMS_SIZE, Math.max(1, Math.floor(b.size)));
       const cte = `top${i}`;
       const dir = rankDirOf(b).toUpperCase();
       // A calculation other than Cumulative sum has no single value to rank by: count instead.
       const rankMetric =
         b.rankBy === 'metric' ? state.metrics.find((m) => m.id === b.rankMetric && isRankable(m)) : undefined;
+      // Ranked over what the metric draws: its filter, reduced range and shifted window.
+      const rankShift = shifting && rankMetric && rankMetric.op !== 'formula' ? parseSpan(rankMetric.shift) : null;
+      const rankWhere = rankShift ? shiftedWhere(rankShift) : where;
       const rank =
         b.rankBy === 'alpha'
           ? `v ${dir}`
           : rankMetric
-            ? `${metricSql(rankMetric, fctx, metricFilterSql(rankMetric, fctx))} ${dir}, v`
+            ? `${metricSql(rankMetric, fctx, rankCond(rankMetric, rankShift))} ${dir}, v`
             : b.rankDir === 'asc'
               ? 'count() ASC, v'
-              : 'count() DESC';
-      const cteWhere = (nn: string) => `${where ? `${where} AND ` : ''}${nn}`;
+              : 'count() DESC, v';
+      const cteWhere = (nn: string) => `${rankWhere ? `${rankWhere} AND ` : ''}${nn}`;
       if (!hasKindColumn(b)) {
-        const raw = `toString(${field})`;
+        const raw = missingAwareRaw(field);
         const pred = valuePredicate(b, raw);
         // NULL never matches the outer GLOBAL IN, so it must not take one of the top-N slots either.
         const notNull = pred ? `${raw} IS NOT NULL AND ${pred}` : `${raw} IS NOT NULL`;
@@ -484,7 +555,7 @@ export function compileLens(
       // Other and / or "(missing)": the row kind goes in its own column so a real value spelled
       // "Other" / "(missing)" stays a real value. The value expression is inlined (not selected under
       // an alias of its own): only the GROUP BY keys k / b and aggregates may be selected.
-      const raw = b.missing ? missingAwareRaw(field) : `toString(${field})`;
+      const raw = missingAwareRaw(field);
       const r = raw;
       const pred = valuePredicate(b, r);
       const nonNull = pred ? `${r} IS NOT NULL AND ${pred}` : `${r} IS NOT NULL`;
@@ -586,6 +657,9 @@ export function compileLens(
     outerMetrics.push(`${normalized(m, expr)} AS ${metricAlias(i)}`);
   });
 
+  if (mode === 'app' && needsRankCount(state)) {
+    selects.push(`${shifting ? `countIf(${SHIFT_ALIAS} = 0)` : 'count()'} AS ${RANK_COUNT_ALIAS}`);
+  }
   // With shifts the plain time condition (and its coarse partition bound) is replaced by a
   // prefilter covering every shifted window plus the exact check on the shifted time.
   let outer = conditions;
@@ -645,7 +719,7 @@ export function compileLens(
       allWhere ? `WHERE ${allWhere}` : null,
       groupBy.length > 0 ? `GROUP BY ${groupBy.join(', ')}` : null,
       orderBy,
-      `LIMIT ${LENS_ROW_LIMIT}`,
+      limitSql(mode),
     ],
     configSettingsFragments(config)
   );
@@ -801,6 +875,9 @@ function wrapWindow(p: WrapParts): string {
     return cols;
   });
 
+  if (mode === 'app' && needsRankCount(state)) {
+    outerCols.push(RANK_COUNT_ALIAS);
+  }
   // Drop partial intervals (app): before the window functions, so a running total starts at the
   // first whole bucket (Kibana drops them from the rows the calculations run on).
   const outerWhere =
@@ -825,7 +902,7 @@ function wrapWindow(p: WrapParts): string {
       `)`,
       outerWhere,
       orderBy,
-      `LIMIT ${LENS_ROW_LIMIT}`,
+      limitSql(mode),
     ],
     p.settings
   );
@@ -961,6 +1038,8 @@ export interface LensSeries {
   synthetic?: boolean;
   /** Index into `state.metrics`. */
   metricIndex: number;
+  /** Records of the series, where the query returns them (legend order of a count ranking). */
+  records?: number;
   /** A missing point means 0 (counts); otherwise it's a gap (no data). */
   zeroFill: boolean;
 }
@@ -975,7 +1054,14 @@ export interface LensResult {
   xIsTime: boolean;
   series: LensSeries[];
   /** Rows as returned (for the table), with readable column names. */
-  table: { columns: string[]; rows: Array<Array<string | number | null>> };
+  table: {
+    columns: string[];
+    rows: Array<Array<string | number | null>>;
+    /** Per row, the identity of each bucket cell (two values may have the same label). */
+    keys?: string[][];
+  };
+  /** The query had more rows than `LENS_ROW_LIMIT`: the rest is missing (never drawn as 0). */
+  truncated?: boolean;
 }
 
 /** Date buckets come back as epoch ms (see compileLens), possibly as a numeric string. */
@@ -1027,6 +1113,72 @@ function termCell(b: TermsDim, r: Record<string, unknown>, i: number): TermCell 
   };
 }
 
+/** Number of explicitly configured entries of a bucket (Filters, custom ranges), else 0. */
+const entryCount = (b: BucketDim): number =>
+  b.kind === 'filters' ? b.filters.length : b.kind === 'range' ? (b.ranges?.length ?? 0) : 0;
+
+/** A metric over no records: 0 for what adds up records, no value otherwise. */
+const emptyValue = (m: MetricDim): number | null =>
+  isZeroWhenEmpty(m) || m.op === 'unique' || m.op === 'sum' ? 0 : null;
+
+/**
+ * Rows for the configured filters / custom ranges no record fell in: the query returns none, but the
+ * reader asked for them, so they are 0 (counts, unique counts, sums) or empty (other metrics).
+ */
+function withEmptyEntries(state: LensState, rowsIn: Array<Record<string, unknown>>): Array<Record<string, unknown>> {
+  type Row = Record<string, unknown>;
+  let rows: Row[] = rowsIn;
+  const empty: Row = Object.fromEntries(state.metrics.map((m, k) => [metricAlias(k), emptyValue(m)]));
+  state.buckets.forEach((b, i) => {
+    const n = entryCount(b);
+    if (n === 0) {
+      return;
+    }
+    const alias = bucketAlias(i);
+    const others = state.buckets.flatMap((o, j) =>
+      j === i
+        ? []
+        : [
+            bucketAlias(j),
+            ...(o.kind === 'terms' && hasKindColumn(o) ? [kindAlias(j)] : []),
+            ...(o.kind === 'range' && !o.ranges ? [widthAlias(j)] : []),
+          ]
+    );
+    // One group per combination of the other buckets, in row order (a single group without others).
+    const groups = new Map<string, { of: Row; rows: Row[] }>();
+    if (others.length === 0) {
+      groups.set('[]', { of: {}, rows: [] });
+    }
+    for (const r of rows) {
+      const key = JSON.stringify(others.map((c) => r[c] ?? null));
+      let g = groups.get(key);
+      if (!g) {
+        g = { of: Object.fromEntries(others.map((c) => [c, r[c]])), rows: [] };
+        groups.set(key, g);
+      }
+      g.rows.push(r);
+    }
+    if (groups.size * n > LENS_ROW_LIMIT) {
+      return;
+    }
+    const byEntry = (p: Row, q: Row) => num(p[alias]) - num(q[alias]);
+    rows = [...groups.values()].flatMap((g) => {
+      const have = new Set(g.rows.map((r) => num(r[alias])));
+      const added: Row[] = [];
+      for (let k = 0; k < n; k++) {
+        if (!have.has(k)) {
+          added.push({ ...empty, ...g.of, [alias]: k });
+        }
+      }
+      return [...g.rows, ...added].sort(byEntry);
+    });
+    if (i === 0) {
+      rows.sort(byEntry);
+    }
+  });
+  return rows;
+}
+
 /** Date histogram shaping inputs (LENS-DIM-05): exact bucket stepping and the time picker range. */
 export interface ShapeOptions {
   interval?: LensInterval;
@@ -1034,33 +1186,76 @@ export interface ShapeOptions {
   range?: { from: number; to: number };
 }
 
-/** A float bucket start / end normalised so data rows and generated buckets share one key. */
-const normNum = (n: number): number => Number(n.toPrecision(12));
-const fmtNum = (n: number): string => normNum(n).toLocaleString('en-US', { maximumFractionDigits: 6 });
+/** Start of the automatic bucket `k` buckets after `start`, computed as the query does (exact key). */
+function rangeStart(start: number, w: number, k: number): number {
+  if (w < 1) {
+    const per = Math.round(1 / w);
+    return (Math.round(start * per) + k) / per;
+  }
+  return start + k * w;
+}
+/** Label of an automatic bucket; decimals follow the width, so neighbours never read the same. */
+function autoRangeLabel(start: number, w: number): string {
+  const digits = w > 0 && w < 1 ? Math.min(20, Math.ceil(-Math.log10(w) - 1e-9)) : 0;
+  const fmt = (n: number) => n.toLocaleString('en-US', { maximumFractionDigits: Math.max(6, digits) });
+  return `${fmt(start)} – ${fmt(rangeStart(start, w, 1))}`;
+}
 
-/** Cell of an Intervals / Filters bucket (top values: `termCell`; date histogram: none). */
+/** Label of a date bucket used as a breakdown: the bucket start, in the chosen zone. */
+function dateLabel(ms: number): string {
+  return formatInZone(ms, ms % 1000 ? 'YYYY-MM-DD HH:mm:ss.SSS' : ms % 60_000 ? 'YYYY-MM-DD HH:mm:ss' : 'YYYY-MM-DD HH:mm');
+}
+
+/** Cell of a bucket (a date histogram on the horizontal axis has none: its position is the time). */
 function bucketCell(b: BucketDim | undefined, r: Record<string, unknown>, i: number): TermCell | undefined {
-  if (!b || b.kind === 'date_histogram') {
+  if (!b || (b.kind === 'date_histogram' && i === 0)) {
     return undefined;
+  }
+  if (b.kind === 'date_histogram') {
+    const t = toMs(r[bucketAlias(i)]);
+    return { key: `\u0003${t}`, label: dateLabel(t), synthetic: false };
   }
   if (b.kind === 'terms') {
     return termCell(b, r, i);
   }
   const v = r[bucketAlias(i)];
-  if (b.kind === 'filters') {
+  if (b.kind === 'filters' || b.ranges) {
     const k = num(v);
-    const f = b.filters[k];
-    return { key: `\u0002${k}`, label: f ? filterLabel(f) : String(k), synthetic: false };
+    return { key: `\u0002${k}`, label: entryLabels(b)[k] ?? String(k), synthetic: false };
   }
-  if (b.ranges) {
-    const k = num(v);
-    const spec = b.ranges[k];
-    return { key: `\u0002${k}`, label: spec ? rangeLabel(spec) : String(k), synthetic: false };
-  }
-  const start = normNum(num(v));
-  const w = num(r[widthAlias(i)]);
-  return { key: String(start), label: `${fmtNum(start)} – ${fmtNum(start + w)}`, synthetic: false };
+  const start = num(v);
+  return { key: String(start), label: autoRangeLabel(start, num(r[widthAlias(i)])), synthetic: false };
 }
+
+/**
+ * The rows a chart is drawn from: at most `LENS_ROW_LIMIT`. When the result was cut inside a date
+ * or number bucket (rows come in bucket order) that half-read last bucket is left out too.
+ */
+function limitRows(
+  state: LensState,
+  rows: Array<Record<string, unknown>>
+): { rows: Array<Record<string, unknown>>; truncated: boolean } {
+  if (rows.length <= LENS_ROW_LIMIT) {
+    return { rows, truncated: false };
+  }
+  const kept = rows.slice(0, LENS_ROW_LIMIT);
+  const x = state.buckets[0];
+  if (x?.kind === 'date_histogram' || x?.kind === 'range') {
+    const b0 = bucketAlias(0);
+    const next = String(rows[LENS_ROW_LIMIT][b0]);
+    const end = kept.findIndex((r) => String(r[b0]) === next);
+    if (end > 0) {
+      return { rows: kept.slice(0, end), truncated: true };
+    }
+  }
+  return { rows: kept, truncated: true };
+}
+
+/** What a cut result means for the reader, or null for a complete one. */
+export const truncatedNote = (r: Pick<LensResult, 'truncated'> | undefined): string | null =>
+  r?.truncated
+    ? `Incomplete: the result has more than ${LENS_ROW_LIMIT.toLocaleString('en-US')} rows and was cut. The missing values are not drawn and totals are too low. Use fewer values or a larger interval.`
+    : null;
 
 /** Shapes query rows into chart series: X = buckets[0], one series per metric × breakdown value. */
 export function shapeLensRows(
@@ -1076,13 +1271,15 @@ export function shapeLensRows(
   const canStep = !!interval || (!!bucketMs && bucketMs > 0);
   const step = (t: number, k: number) => (interval ? stepBucket(t, interval, k) : t + k * (bucketMs ?? 0));
   // Drop partial intervals: buckets the time range covers only in part (first / last).
+  const { rows: read, truncated } = limitRows(state, rowsIn);
+  const limited = truncated ? read : withEmptyEntries(state, read);
   const rows =
     xd?.dropPartial && range && canStep
-      ? rowsIn.filter((r) => {
+      ? limited.filter((r) => {
           const t = toMs(r[bucketAlias(0)]);
           return t >= range.from && step(t, 1) <= range.to;
         })
-      : rowsIn;
+      : limited;
   const xs: Array<string | number> = [];
   const xInfo = new Map<string | number, TermCell>();
   const seenX = new Set<string | number>();
@@ -1105,7 +1302,9 @@ export function shapeLensRows(
     state.metrics.forEach((_m, i) => {
       const label = labels[i];
       const name = bv === undefined ? label : multiMetric ? `${bv} · ${label}` : bv;
-      let s = seriesMap.get(name);
+      // By identity: two breakdown values may have the same label.
+      const seriesKey = `${bCell?.key ?? ''}\u0000${i}`;
+      let s = seriesMap.get(seriesKey);
       if (!s) {
         s = {
           name,
@@ -1114,9 +1313,12 @@ export function shapeLensRows(
           breakdown: bCell && !bCell.synthetic ? (r[bucketAlias(1)] == null ? '' : String(r[bucketAlias(1)])) : bv,
           synthetic: bCell?.synthetic,
           metricIndex: i,
-          zeroFill: state.metrics[i].op === 'count',
+          zeroFill: !truncated && isZeroWhenEmpty(state.metrics[i]),
         };
-        seriesMap.set(name, s);
+        seriesMap.set(seriesKey, s);
+      }
+      if (r[RANK_COUNT_ALIAS] !== undefined) {
+        s.records = (s.records ?? 0) + num(r[RANK_COUNT_ALIAS]);
       }
       // An empty value (no data in the bucket, or a calculation without a previous bucket) is a gap,
       // except for counts (0).
@@ -1132,7 +1334,7 @@ export function shapeLensRows(
     // (bars and the brush line up with real time). Include empty rows (default on) fills the whole
     // time picker range when bound to it, else only between the first and last bucket with data.
     // Stepping starts from a real bucket so generated starts line up with ClickHouse's.
-    if (canStep && xd?.emptyRows !== false && xs.length > 0) {
+    if (canStep && xd?.emptyRows !== false && xs.length > 0 && !truncated) {
       let start = Number(xs[0]);
       let end = Number(xs[xs.length - 1]);
       if (range && !xd?.unbound) {
@@ -1160,25 +1362,25 @@ export function shapeLensRows(
   }
   // Intervals (automatic) with Include empty rows: fill the missing widths between the first and
   // last bucket so the axis is linear in value.
-  if (x?.kind === 'range' && !x.ranges && x.emptyRows !== false && xs.length > 1 && rows.length > 0) {
+  if (x?.kind === 'range' && !x.ranges && x.emptyRows !== false && xs.length > 1 && rows.length > 0 && !truncated) {
     const w = num(rows[0][widthAlias(0)]);
     const first = Number(xs[0]);
     const last = Number(xs[xs.length - 1]);
     if (w > 0 && (last - first) / w <= MAX_FILLED_BUCKETS) {
-      const filled: string[] = [];
+      const filled = new Set<string>(xs.map(String));
       for (let k = 0; first + k * w <= last + w / 2; k++) {
-        const start = normNum(first + k * w);
-        filled.push(String(start));
+        const start = rangeStart(first, w, k);
+        filled.add(String(start));
         if (!xInfo.has(String(start))) {
           xInfo.set(String(start), {
             key: String(start),
-            label: `${fmtNum(start)} – ${fmtNum(start + w)}`,
+            label: autoRangeLabel(start, w),
             synthetic: false,
           });
         }
       }
       xs.length = 0;
-      xs.push(...filled);
+      xs.push(...[...filled].sort((a, b) => Number(a) - Number(b)));
     }
   }
   const columns = [...state.buckets.map((b) => dimLabelIn(b, state.metrics)), ...labels];
@@ -1192,16 +1394,26 @@ export function shapeLensRows(
     }),
     ...state.metrics.map((m, i) => (m.op === 'count' ? num(r[metricAlias(i)]) : numOrNull(r[metricAlias(i)]))),
   ]);
-  const xLabels = xs.map((v) => (xIsTime ? String(v) : (xInfo.get(v)?.label ?? String(v))));
+  const tableKeys = rows.map((r) =>
+    state.buckets.map((b, i) => bucketCell(b, r, i)?.key ?? String(r[bucketAlias(i)] ?? '\u0000null'))
+  );
+  const xLabels = distinctLabels(xs.map((v) => (xIsTime ? String(v) : (xInfo.get(v)?.label ?? String(v)))));
   const xSynthetic = xs.map((v) => xInfo.get(v)?.synthetic ?? false);
   return {
     xs,
     xLabels,
     xSynthetic,
     xIsTime,
-    series: orderSeries(state, [...seriesMap.values()]),
-    table: { columns, rows: tableRows },
+    series: distinctNames(orderSeries(state, [...seriesMap.values()])),
+    table: { columns, rows: tableRows, keys: tableKeys },
+    ...(truncated ? { truncated: true } : {}),
   };
+}
+
+/** Series names (legend, hiding, colours) never equal. */
+function distinctNames(series: LensSeries[]): LensSeries[] {
+  const names = distinctLabels(series.map((s) => s.name));
+  return series.map((s, i) => (names[i] === s.name ? s : { ...s, name: names[i] }));
 }
 
 /**
@@ -1213,18 +1425,20 @@ export function shapeLensRows(
  */
 export function orderSeries(state: LensState, series: LensSeries[]): LensSeries[] {
   const b = state.buckets[1];
+  if (b?.kind === 'date_histogram' || (b && entryCount(b) > 0)) {
+    // In time order / the configured order of the filters or ranges.
+    return [...series].sort(
+      (p, q) => Number(p.breakdown) - Number(q.breakdown) || p.metricIndex - q.metricIndex
+    );
+  }
   if (b?.kind !== 'terms' || series.length < 2) {
     return series;
   }
   const dir = rankDirOf(b) === 'asc' ? 1 : -1;
-  // Same rank as the top-N CTE: a rankable rank metric, else the row count (a plain Count metric;
-  // with none, the query's order, which already follows it).
-  const rankIdx =
-    b.rankBy === 'metric'
-      ? state.metrics.findIndex((m) => m.id === b.rankMetric && isRankable(m))
-      : -1;
-  const countIdx = state.metrics.findIndex((m) => m.op === 'count' && !m.shift && !m.filter);
-  const useIdx = rankIdx >= 0 ? rankIdx : countIdx;
+  // Same rank as the top-N CTE: a rankable rank metric, else the row count (a plain Count metric, else
+  // the records column the query adds).
+  const rankIdx = rankMetricIndex(state, b);
+  const useIdx = rankIdx >= 0 ? rankIdx : plainCountIndex(state);
   const rankCumulative = state.metrics[useIdx]?.op === 'cumulative_sum';
   // One group per breakdown value (its display label, the part every series of the value shares).
   const groupOf = (s: LensSeries) => `${s.synthetic ? '1' : '0'}${s.breakdown ?? ''}`;
@@ -1234,6 +1448,9 @@ export function orderSeries(state: LensState, series: LensSeries[]): LensSeries[
     const g = groupOf(s);
     if (!firstSeen.has(g)) {
       firstSeen.set(g, i);
+    }
+    if (useIdx < 0 && s.records !== undefined) {
+      totals.set(g, s.records);
     }
     if (s.metricIndex === useIdx) {
       // A cumulative sum's total is its last value (the largest bucket); other metrics add up.

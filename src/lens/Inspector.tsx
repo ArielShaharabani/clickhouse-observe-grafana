@@ -28,7 +28,7 @@ import { formatDurationMs } from '../diag/formatDuration';
 import { formatBytes, formatCount } from '../components/Diagnostics/formatNumbers';
 import { Span } from '../diag/types';
 import { FilterPill } from '../types';
-import { LensResult } from './compile';
+import { LensResult, truncatedNote } from './compile';
 import {
   cellFilterValue,
   csvFileName,
@@ -114,6 +114,11 @@ function DataView({ lens, data, title, addFilter }: LensInspectorProps) {
         <span className={styles.muted}>
           {formatCount(sorted.length)} row{sorted.length === 1 ? '' : 's'}
         </span>
+        {data.truncated && (
+          <span role="alert" data-testid="lens-inspector-truncated">
+            <Icon name="exclamation-triangle" size="sm" /> {truncatedNote(data)}
+          </span>
+        )}
         <Dropdown
           overlay={
             <Menu>

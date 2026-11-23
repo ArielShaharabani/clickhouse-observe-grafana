@@ -70,7 +70,7 @@ describe('formula: parse + compile', () => {
 
   it('a field name that is not a bare identifier is written in backticks and quoted in SQL', () => {
     expect(fieldToken('LogAttributes.http-status')).toBe('`LogAttributes.http-status`');
-    expect(sql('unique_count(`LogAttributes.http-status`)')).toBe("uniq(LogAttributes['http-status'])");
+    expect(sql('unique_count(`LogAttributes.http-status`)')).toBe("uniqIf(LogAttributes['http-status'], mapContains(LogAttributes, 'http-status'))");
   });
 
   it('a non-number field in a numeric aggregation is an error', () => {
