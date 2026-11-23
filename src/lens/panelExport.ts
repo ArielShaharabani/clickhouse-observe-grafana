@@ -16,12 +16,12 @@ import { withMetricAppearance } from './render/fieldConfig';
 import { tableOverrides } from './tableChart';
 import { autoAxisTitles, withLensStyle } from './render/styleConfig';
 import { withReferenceThresholds } from './render/layerConfig';
-import { seriesColorOf } from './style';
+import { axisOf, seriesColorOf } from './style';
 import { stableColors } from './render/seriesColors';
 import { panelSignature, VISUALIZE_SIG_KEY, VISUALIZE_SOURCE_KEY } from './panelSource';
 import { gaugeDefaults, gaugeMetrics, gaugeOptions } from './render/gaugeSpec';
 import { formatOf, grafanaUnit } from './metricOptions';
-import { intervalMs, parseInterval } from './interval';
+import { dashboardIntervalSql, parseInterval } from './interval';
 
 export interface LensPanelOpts {
   id: number;
@@ -56,6 +56,10 @@ function stackingOf(state: LensState): 'normal' | 'percent' | 'none' {
   }
   if (state.subType === 'percentage') {
     return 'percent';
+  }
+  // A log axis is never stacked, as in the Visualize chart.
+  if (state.style && axisOf(state.style, 'left').scale === 'log') {
+    return 'none';
   }
   // No sub-type counts as stacked, as in the Visualize chart.
   return state.subType === 'unstacked' ? 'none' : 'normal';
@@ -106,6 +110,19 @@ function splitSeriesNames(state: LensState): unknown[] {
     ],
   }));
 }
+
+/** After the join the category column still carries the breakdown's label: give it its own name. */
+const categoryName = (name: string) => ({
+  matcher: { id: 'byRegexp', options: `^${bucketAlias(0)}( |$)` },
+  properties: [{ id: 'displayName', value: name.replace(/\$/g, '＄') }],
+});
+
+/**
+ * Unit of values without a chosen format. Thousands separators for whole numbers only: Grafana's
+ * `locale` rounds small averages to 0, where its plain number keeps significant digits.
+ */
+const plainUnit = (state: LensState): string =>
+  state.metrics.every((m) => m.role === 'max' || ((m.op === 'count' || m.op === 'unique') && !m.normalize)) ? 'locale' : 'none';
 
 /** Row-kind columns of top-values buckets (Other / missing): for ordering only, never a series. */
 const KIND_COLUMNS = Object.fromEntries([0, 1, 2, 3].map((i) => [kindAlias(i), true]));
@@ -199,8 +216,9 @@ function lensPanel(
   const plain = {
     ...panel.fieldConfig,
     defaults: {
-      unit: 'locale',
-      mappings: [{ type: 'special', options: { match: 'null+nan', result: { text: '-', index: 0 } } }],
+      unit: plainUnit(state),
+      // Not on XY charts: a bar chart lists its value mappings in the legend.
+      ...(xy ? {} : { mappings: [{ type: 'special', options: { match: 'null+nan', result: { text: '-', index: 0 } } }] }),
       ...panel.fieldConfig.defaults,
     },
   };
@@ -333,7 +351,7 @@ function baseLensPanel(
           orientation: 'auto',
           xTickLabelRotation: 0,
         },
-        fieldConfig: { defaults: { custom }, overrides: splitCategorySeries(state) ? splitSeriesNames(state) : [] },
+        fieldConfig: { defaults: { custom }, overrides: splitCategorySeries(state) ? [...splitSeriesNames(state), categoryName(names[bucketAlias(0)])] : [] },
       };
     }
     case 'heatmap':
@@ -395,16 +413,19 @@ function baseLensPanel(
         transformations: [rename(names)],
         options: { showHeader: true, enablePagination: true },
         fieldConfig: {
-          defaults: { unit: 'locale', custom: { wrapHeaderText: true } },
-          overrides: tableOverrides(
-            state.metrics.map((_, i) => ({
-              name: names[metricAlias(i)],
-              kind: 'number' as const,
-              values: [],
-              metricIndex: i,
-            })),
-            state.metrics
-          ),
+          defaults: { unit: plainUnit(state), custom: { wrapHeaderText: true } },
+          overrides: [
+            ...tableOverrides(
+              state.metrics.map((_, i) => ({
+                name: names[metricAlias(i)],
+                kind: 'number' as const,
+                values: [],
+                metricIndex: i,
+              })),
+              state.metrics
+            ),
+            ...state.buckets.flatMap((b, i) => (b.kind === 'date_histogram' ? [] : [emptyValueName(names[bucketAlias(i)])])),
+          ],
         },
       };
   }
@@ -414,31 +435,16 @@ type PanelBase = Omit<LensPanel, 'type'>;
 
 /**
  * Grafana's heat map draws a cell ending at its time stamp, but the query returns the bucket start
- * (Visualize draws [start, start + interval)). Move the time to the bucket end before pivoting.
- * Auto buckets are `$__interval` wide, custom ones their own width.
+ * (Visualize draws [start, start + interval)). The panel's query hands over the bucket end.
  */
-function bucketEndShift(x: { interval?: string }): Transformation[] {
+function bucketEndSql(sql: string, x: { interval?: string }): string {
   const iv = x.interval && x.interval !== 'auto' ? parseInterval(x.interval) : null;
-  // Month and year buckets have no fixed length: their mean length puts the cell in the right month.
-  const mean = iv && (iv.unit === 'M' || iv.unit === 'y') ? Math.round(iv.n * (iv.unit === 'y' ? 365.25 : 30.4375) * 86400000) : undefined;
-  const width = mean !== undefined ? String(mean) : iv ? String(intervalMs(iv)) : '${__interval_ms}';
   const t = bucketAlias(0);
-  return [
-    {
-      id: 'calculateField',
-      options: {
-        mode: 'binary',
-        alias: 'bucketEnd',
-        replaceFields: false,
-        binary: { left: { matcher: { id: 'byName', options: t } }, operator: '+', right: { fixed: width } },
-      },
-    },
-    { id: 'convertFieldType', options: { conversions: [{ targetField: 'bucketEnd', destinationType: 'time' }] } },
-    {
-      id: 'organize',
-      options: { excludeByName: { [t]: true }, renameByName: { bucketEnd: t }, indexByName: { bucketEnd: 0 } },
-    },
-  ];
+  return `SELECT * REPLACE (${t} + ${dashboardIntervalSql(iv)} AS ${t})
+FROM (
+${sql}
+)
+ORDER BY ${t}`;
 }
 
 /**
@@ -476,15 +482,15 @@ function heatmapPanel(
       ]
     : [];
   const { unit, decimals } = grafanaUnit(formatOf(state.metrics[0]));
-  const units = { unit: unit ?? 'locale', ...(decimals !== undefined ? { decimals } : {}) };
+  const units = { unit: unit ?? plainUnit(state), ...(decimals !== undefined ? { decimals } : {}) };
   if (x?.kind === 'date_histogram') {
     return {
       ...base,
+      targets: base.targets.map((t) => ({ ...t, rawSql: bucketEndSql(t.rawSql, x) })),
       type: 'heatmap',
       // Rows in rank order (the biggest on top, as in Visualize): the pivot sorts its columns by value.
       transformations: y
         ? [
-            ...bucketEndShift(x),
             ...pivot,
             {
               id: 'organize',
@@ -498,7 +504,7 @@ function heatmapPanel(
               },
             },
           ]
-        : [...bucketEndShift(x), rename(names)],
+        : [rename(names)],
       options: {
         calculate: false,
         cellGap: 1,

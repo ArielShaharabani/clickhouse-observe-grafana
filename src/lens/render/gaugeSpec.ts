@@ -86,7 +86,7 @@ export function gaugeDefaults(state: LensState): Record<string, unknown> {
   const { unit, decimals } = grafanaUnit(formatOf(m));
   const color = m?.color ?? theme.visualization.getColorByName('blue');
   return {
-    unit: unit ?? 'locale',
+    unit: unit ?? (m && (m.op === 'count' || m.op === 'unique') && !m.normalize ? 'locale' : 'none'),
     ...(decimals !== undefined ? { decimals } : {}),
     min: state.gauge?.min ?? 0,
     color: { mode: 'thresholds' },

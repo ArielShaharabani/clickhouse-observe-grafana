@@ -296,3 +296,7 @@ Match = the drawn value equals the direct query. "Panel" = the saved dashboard p
 - Clean-up: audit_ tables dropped, test dashboards deleted (a search for "audit" returns none), spec files removed from the repo.
 - At the end `git status` showed changes by someone else during the audit: src/sql/fieldPredicates.ts, fields.ts, kql/toSql.ts, queryBuilder.ts, src/sql/__tests__/json_list_filter.test.ts and tests/features/zz.spec.ts. They are not mine and I left them alone. I tested the dist that was deployed at the start (module.js 23 Nov 17:37). Someone rebuilt dist at 18:24:58. Cases run before that used the old build. The reruns of about 20 cases ran around that time, see file times in audit-out; all gave the same results.
 - Line numbers were read at commit 1bbba3f. A few are approximate (~).
+
+## Re-check after the fixes (2026-11-24)
+
+31 fixed, 7 partly, 0 wrong. Remaining: E5 (negative heat map cells: filter fixed, not re-checked after the E2 rewrite); E6 first partial bucket in panels; E11 range labels, gauge empty name, percentage reference line, infinity; M6 no note for negatives on a log axis; M9 right axis in a stacked chart (one axis by design), NaN table cells blank; L5 abbreviations / durations in tables and gauges; L6 square-root ticks; integers over 2^53; one colour shared by two slices of a pie with negatives; `timezone=` URL parameter not read.

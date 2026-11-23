@@ -306,7 +306,7 @@ export function PieChart({ names, values, colors, donut, metric, metricLabel, on
       data-pie-type={donut ? 'donut' : 'pie'}
     >
       {negative && (
-        <div role="note" className={styles.negNote} data-testid="lens-pie-negative">
+        <div role="note" className={styles.negNote} style={legendRight ? { maxWidth: pw } : undefined} data-testid="lens-pie-negative">
           Negative values cannot be drawn in a pie chart, so no percentages are shown.
         </div>
       )}

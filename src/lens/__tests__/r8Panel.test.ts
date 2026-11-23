@@ -22,15 +22,12 @@ const avg = { kind: 'metric' as const, id: 'm1', op: 'avg' as const, field: 'Sev
 const panel = (s: LensState) => buildLensPanel(s, config, conds, range, { id: 1, gridPos: { x: 0, y: 0, w: 12, h: 8 } });
 
 describe('R8 panel export', () => {
-  it('E2: a heat map over time moves each cell to its bucket end', () => {
-    const auto = panel({ chartType: 'heatmap', buckets: [date, svc], metrics: [count] });
-    const first = auto.transformations![0];
-    expect(first.id).toBe('calculateField');
-    expect(JSON.stringify(first.options)).toContain('__interval_ms');
-    const custom = panel({ chartType: 'heatmap', buckets: [{ ...date, interval: '6h' }, svc], metrics: [count] });
-    expect(JSON.stringify(custom.transformations![0].options)).toContain('"fixed":"21600000"');
-    const month = panel({ chartType: 'heatmap', buckets: [{ ...date, interval: '1M' }, svc], metrics: [count] });
-    expect(JSON.stringify(month.transformations![0].options)).toContain('"fixed":"2629800000"');
+  it('E2: the query of a heat map over time hands over the bucket end', () => {
+    const sql = (interval?: string) =>
+      panel({ chartType: 'heatmap', buckets: [interval ? { ...date, interval } : date, svc], metrics: [count] }).targets[0].rawSql;
+    expect(sql()).toContain('b0 + INTERVAL $__interval_s second AS b0');
+    expect(sql('6h')).toContain('b0 + INTERVAL 21600 * ');
+    expect(sql('1M')).toContain('b0 + INTERVAL 1 MONTH AS b0');
   });
 });
 
@@ -91,8 +88,8 @@ describe('R8 M3', () => {
       ],
     });
     const ov = p.fieldConfig!.overrides as any[];
-    expect(ov).toHaveLength(2);
-    for (const o of ov) {
+    expect(ov).toHaveLength(3); // the two metrics, and the name of an empty value
+    for (const o of ov.slice(0, 2)) {
       expect(o.properties).toContainEqual({ id: 'fieldMinMax', value: true });
     }
   });
