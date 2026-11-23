@@ -466,6 +466,24 @@ export function filterLabel(f: FilterSpec): string {
   return f.label ?? (f.query.trim() || ALL_RECORDS);
 }
 
+/** Labels made distinguishable for display ("bad", "bad (2)"); the first of equal labels is kept. */
+export function distinctLabels(labels: string[]): string[] {
+  const taken = new Set(labels);
+  const used = new Set<string>();
+  return labels.map((l) => {
+    let out = l;
+    for (let n = 2; used.has(out) || (out !== l && taken.has(out)); n++) {
+      out = `${l} (${n})`;
+    }
+    used.add(out);
+    return out;
+  });
+}
+
+/** Display labels of a Filters bucket / custom ranges, one per entry, never two the same. */
+export const entryLabels = (b: RangeDim | FiltersDim): string[] =>
+  distinctLabels(b.kind === 'filters' ? b.filters.map(filterLabel) : (b.ranges ?? []).map(rangeLabel));
+
 export interface LensState {
   chartType: ChartType;
   subType?: XySubType;

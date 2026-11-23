@@ -2,6 +2,7 @@
 import { dateTime } from '@grafana/data';
 import { compileLens, LENS_ROW_LIMIT, shapeLensRows, truncatedNote } from '../compile';
 import { BucketDim, decodeLens, encodeLens, FiltersDim, LensState, MetricDim, RangeDim, TermsDim } from '../state';
+import { tableColumns } from '../tableChart';
 import { OTEL_COLUMN_MAPPING, SourceConfig } from '../../types';
 
 const config: SourceConfig = {
@@ -78,5 +79,59 @@ describe('W3: overlapping ranges', () => {
     if (process.env.R8_SQL) {
       console.log(sql);
     }
+  });
+});
+
+describe('W4 / M4: filters and ranges', () => {
+  const f: FiltersDim = {
+    kind: 'filters',
+    id: 'f',
+    field: '',
+    label: 'Filters',
+    filters: [
+      { query: 'a: 1', label: 'bad' },
+      { query: 'a: 2', label: 'bad' },
+      { query: 'a: 3', label: 'none' },
+    ],
+  };
+  it('equal labels stay separate series; a filter without records is 0', () => {
+    const r = shapeLensRows(st([svc, f]), [
+      { b0: 'p', b1: 1, m0: 5 },
+      { b0: 'p', b1: 0, m0: 7 },
+    ]);
+    expect(r.series.map((x) => [x.name, x.points.get('p')])).toEqual([
+      ['bad', 7],
+      ['bad (2)', 5],
+      ['none', 0],
+    ]);
+    expect(r.table.rows).toEqual([
+      ['p', 'bad', 7],
+      ['p', 'bad (2)', 5],
+      ['p', 'none', 0],
+    ]);
+  });
+  it('on the axis: every entry, in order; other metrics stay empty', () => {
+    const avg: MetricDim = { kind: 'metric', id: 'm1', op: 'avg', field: 'SeverityNumber', numeric: true };
+    const r = shapeLensRows(st([f], [count, avg]), [{ b0: 1, m0: 5, m1: 2 }]);
+    expect(r.xLabels).toEqual(['bad', 'bad (2)', 'none']);
+    expect(r.table.rows.map((x) => x.slice(1))).toEqual([
+      [0, null],
+      [5, 2],
+      [0, null],
+    ]);
+  });
+  it('saved panels get the same labels', () => {
+    expect(sqlOf(st([f]), 'dashboard')).toContain("['bad', 'bad (2)', 'none']");
+  });
+  it('a pivoted table keeps equal labels apart', () => {
+    const s: LensState = { chartType: 'table', buckets: [svc, { ...f, pivot: true }], metrics: [count] };
+    const cols = tableColumns(
+      s,
+      shapeLensRows(s, [
+        { b0: 'p', b1: 0, m0: 1 },
+        { b0: 'p', b1: 1, m0: 2 },
+      ]).table
+    );
+    expect(cols.map((c) => c.values)).toEqual([['p'], [1], [2], [0]]);
   });
 });

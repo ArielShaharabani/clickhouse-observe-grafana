@@ -60,7 +60,8 @@ import {
   dimLabel,
   dimLabelIn,
   DEFAULT_GRANULARITY,
-  filterLabel,
+  distinctLabels,
+  entryLabels,
   FiltersDim,
   GRANULARITY_TARGETS,
   hasKindColumn,
@@ -77,7 +78,6 @@ import {
   MISSING_VALUE,
   OTHER_VALUE,
   RangeDim,
-  rangeLabel,
   RangeSpec,
   rankDirOf,
   regexError,
@@ -401,7 +401,7 @@ export function compileLens(
       const idx = `arrayJoin(arrayFilter(__r -> __r >= 0, [${conds.map((c, k) => `if(${c}, ${k}, -1)`).join(', ')}]))`;
       selects.push(
         mode === 'dashboard'
-          ? `transform(${idx}, [${b.ranges.map((_, k) => k).join(', ')}], [${b.ranges.map((r) => lit(rangeLabel(r))).join(', ')}], '') AS ${bucketAlias(i)}`
+          ? `transform(${idx}, [${b.ranges.map((_, k) => k).join(', ')}], [${entryLabels(b).map(lit).join(', ')}], '') AS ${bucketAlias(i)}`
           : `${idx} AS ${bucketAlias(i)}`
       );
       return;
@@ -431,7 +431,7 @@ export function compileLens(
     const idx = `arrayJoin(arrayFilter(__f -> __f >= 0, [${conds.map((c, k) => `if(${c}, ${k}, -1)`).join(', ')}]))`;
     selects.push(
       mode === 'dashboard'
-        ? `transform(${idx}, [${b.filters.map((_, k) => k).join(', ')}], [${b.filters.map((f) => lit(filterLabel(f))).join(', ')}], '') AS ${bucketAlias(i)}`
+        ? `transform(${idx}, [${b.filters.map((_, k) => k).join(', ')}], [${entryLabels(b).map(lit).join(', ')}], '') AS ${bucketAlias(i)}`
         : `${idx} AS ${bucketAlias(i)}`
     );
   };
@@ -986,7 +986,12 @@ export interface LensResult {
   xIsTime: boolean;
   series: LensSeries[];
   /** Rows as returned (for the table), with readable column names. */
-  table: { columns: string[]; rows: Array<Array<string | number | null>> };
+  table: {
+    columns: string[];
+    rows: Array<Array<string | number | null>>;
+    /** Per row, the identity of each bucket cell (two values may have the same label). */
+    keys?: string[][];
+  };
   /** The query had more rows than `LENS_ROW_LIMIT`: the rest is missing (never drawn as 0). */
   truncated?: boolean;
 }
@@ -1040,6 +1045,71 @@ function termCell(b: TermsDim, r: Record<string, unknown>, i: number): TermCell 
   };
 }
 
+/** Number of explicitly configured entries of a bucket (Filters, custom ranges), else 0. */
+const entryCount = (b: BucketDim): number =>
+  b.kind === 'filters' ? b.filters.length : b.kind === 'range' ? (b.ranges?.length ?? 0) : 0;
+
+/** A metric over no records: 0 for what adds up records, no value otherwise. */
+const emptyValue = (m: MetricDim): number | null => (['count', 'unique', 'sum'].includes(m.op) ? 0 : null);
+
+/**
+ * Rows for the configured filters / custom ranges no record fell in: the query returns none, but the
+ * reader asked for them, so they are 0 (counts, unique counts, sums) or empty (other metrics).
+ */
+function withEmptyEntries(state: LensState, rowsIn: Array<Record<string, unknown>>): Array<Record<string, unknown>> {
+  type Row = Record<string, unknown>;
+  let rows: Row[] = rowsIn;
+  const empty: Row = Object.fromEntries(state.metrics.map((m, k) => [metricAlias(k), emptyValue(m)]));
+  state.buckets.forEach((b, i) => {
+    const n = entryCount(b);
+    if (n === 0) {
+      return;
+    }
+    const alias = bucketAlias(i);
+    const others = state.buckets.flatMap((o, j) =>
+      j === i
+        ? []
+        : [
+            bucketAlias(j),
+            ...(o.kind === 'terms' && hasKindColumn(o) ? [kindAlias(j)] : []),
+            ...(o.kind === 'range' && !o.ranges ? [widthAlias(j)] : []),
+          ]
+    );
+    // One group per combination of the other buckets, in row order (a single group without others).
+    const groups = new Map<string, { of: Row; rows: Row[] }>();
+    if (others.length === 0) {
+      groups.set('[]', { of: {}, rows: [] });
+    }
+    for (const r of rows) {
+      const key = JSON.stringify(others.map((c) => r[c] ?? null));
+      let g = groups.get(key);
+      if (!g) {
+        g = { of: Object.fromEntries(others.map((c) => [c, r[c]])), rows: [] };
+        groups.set(key, g);
+      }
+      g.rows.push(r);
+    }
+    if (groups.size * n > LENS_ROW_LIMIT) {
+      return;
+    }
+    const byEntry = (p: Row, q: Row) => num(p[alias]) - num(q[alias]);
+    rows = [...groups.values()].flatMap((g) => {
+      const have = new Set(g.rows.map((r) => num(r[alias])));
+      const added: Row[] = [];
+      for (let k = 0; k < n; k++) {
+        if (!have.has(k)) {
+          added.push({ ...empty, ...g.of, [alias]: k });
+        }
+      }
+      return [...g.rows, ...added].sort(byEntry);
+    });
+    if (i === 0) {
+      rows.sort(byEntry);
+    }
+  });
+  return rows;
+}
+
 /** Date histogram shaping inputs (LENS-DIM-05): exact bucket stepping and the time picker range. */
 export interface ShapeOptions {
   interval?: LensInterval;
@@ -1069,15 +1139,9 @@ function bucketCell(b: BucketDim | undefined, r: Record<string, unknown>, i: num
     return termCell(b, r, i);
   }
   const v = r[bucketAlias(i)];
-  if (b.kind === 'filters') {
+  if (b.kind === 'filters' || b.ranges) {
     const k = num(v);
-    const f = b.filters[k];
-    return { key: `\u0002${k}`, label: f ? filterLabel(f) : String(k), synthetic: false };
-  }
-  if (b.ranges) {
-    const k = num(v);
-    const spec = b.ranges[k];
-    return { key: `\u0002${k}`, label: spec ? rangeLabel(spec) : String(k), synthetic: false };
+    return { key: `\u0002${k}`, label: entryLabels(b)[k] ?? String(k), synthetic: false };
   }
   const start = normNum(num(v));
   const w = num(r[widthAlias(i)]);
@@ -1128,7 +1192,8 @@ export function shapeLensRows(
   const canStep = !!interval || (!!bucketMs && bucketMs > 0);
   const step = (t: number, k: number) => (interval ? stepBucket(t, interval, k) : t + k * (bucketMs ?? 0));
   // Drop partial intervals: buckets the time range covers only in part (first / last).
-  const { rows: limited, truncated } = limitRows(state, rowsIn);
+  const { rows: read, truncated } = limitRows(state, rowsIn);
+  const limited = truncated ? read : withEmptyEntries(state, read);
   const rows =
     xd?.dropPartial && range && canStep
       ? limited.filter((r) => {
@@ -1158,7 +1223,9 @@ export function shapeLensRows(
     state.metrics.forEach((_m, i) => {
       const label = labels[i];
       const name = bv === undefined ? label : multiMetric ? `${bv} · ${label}` : bv;
-      let s = seriesMap.get(name);
+      // By identity: two breakdown values may have the same label.
+      const seriesKey = `${bCell?.key ?? ''}\u0000${i}`;
+      let s = seriesMap.get(seriesKey);
       if (!s) {
         s = {
           name,
@@ -1169,7 +1236,7 @@ export function shapeLensRows(
           metricIndex: i,
           zeroFill: !truncated && state.metrics[i].op === 'count',
         };
-        seriesMap.set(name, s);
+        seriesMap.set(seriesKey, s);
       }
       // An empty value (no data in the bucket, or a calculation without a previous bucket) is a gap,
       // except for counts (0).
@@ -1245,17 +1312,26 @@ export function shapeLensRows(
     }),
     ...state.metrics.map((m, i) => (m.op === 'count' ? num(r[metricAlias(i)]) : numOrNull(r[metricAlias(i)]))),
   ]);
-  const xLabels = xs.map((v) => (xIsTime ? String(v) : (xInfo.get(v)?.label ?? String(v))));
+  const tableKeys = rows.map((r) =>
+    state.buckets.map((b, i) => bucketCell(b, r, i)?.key ?? String(r[bucketAlias(i)] ?? '\u0000null'))
+  );
+  const xLabels = distinctLabels(xs.map((v) => (xIsTime ? String(v) : (xInfo.get(v)?.label ?? String(v)))));
   const xSynthetic = xs.map((v) => xInfo.get(v)?.synthetic ?? false);
   return {
     xs,
     xLabels,
     xSynthetic,
     xIsTime,
-    series: orderSeries(state, [...seriesMap.values()]),
-    table: { columns, rows: tableRows },
+    series: distinctNames(orderSeries(state, [...seriesMap.values()])),
+    table: { columns, rows: tableRows, keys: tableKeys },
     ...(truncated ? { truncated: true } : {}),
   };
+}
+
+/** Series names (legend, hiding, colours) never equal. */
+function distinctNames(series: LensSeries[]): LensSeries[] {
+  const names = distinctLabels(series.map((s) => s.name));
+  return series.map((s, i) => (names[i] === s.name ? s : { ...s, name: names[i] }));
 }
 
 /**
@@ -1267,8 +1343,8 @@ export function shapeLensRows(
  */
 export function orderSeries(state: LensState, series: LensSeries[]): LensSeries[] {
   const b = state.buckets[1];
-  if (b?.kind === 'date_histogram') {
-    // Breakdown by date: in time order.
+  if (b?.kind === 'date_histogram' || (b && entryCount(b) > 0)) {
+    // In time order / the configured order of the filters or ranges.
     return [...series].sort(
       (p, q) => Number(p.breakdown) - Number(q.breakdown) || p.metricIndex - q.metricIndex
     );
