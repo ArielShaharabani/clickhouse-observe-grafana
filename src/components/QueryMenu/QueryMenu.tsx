@@ -1,8 +1,8 @@
 /**
  * Query menu (DISC-SEARCH-03): the ⋮ button left of the query input. Apply to all (enable /
  * disable / pin / unpin / invert every filter), Clear all (query + filters), Load query, Save query
- * (query + optional filters + optional time range), Manage saved queries, and the query language
- * (KQL; Lucene is listed but not supported).
+ * (query + optional filters + optional time range) and Manage saved queries. There is no query
+ * language switch: queries are always KQL (Lucene is not implemented).
  */
 
 import React, { useState } from 'react';
@@ -179,17 +179,6 @@ export function QueryMenu({
           disabled={saved.length === 0}
           onClick={() => setManageOpen(true)}
         />
-        <Menu.Divider />
-        <Menu.Group label="Language">
-          <Menu.Item label="KQL" ariaChecked={true} role="menuitemradio" icon="check" />
-          <Menu.Item
-            label="Lucene"
-            ariaChecked={false}
-            role="menuitemradio"
-            description="Not supported — queries use KQL"
-            disabled
-          />
-        </Menu.Group>
       </Menu>
     );
   };

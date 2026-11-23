@@ -8,7 +8,7 @@
  * Panel is framed with a top/bottom rule (not a boxed card), generously padded, with the meta
  * caption centered under the chart rather than crammed into the toolbar row.
  */
-import React from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { css } from '@emotion/css';
 import { dateTime, GrafanaTheme2, TimeRange } from '@grafana/data';
 import { Icon, IconButton, LinkButton, useStyles2 } from '@grafana/ui';
@@ -57,6 +57,46 @@ function colorModeFor(breakdown: BreakdownSel): HistogramColorMode {
   return 'single';
 }
 
+export const HISTOGRAM_DEFAULT_HEIGHT = 104;
+export const HISTOGRAM_MIN_HEIGHT = 80;
+/** Share of the viewport the chart may take, so the table below stays usable. */
+const HISTOGRAM_MAX_SHARE = 0.6;
+const HISTOGRAM_KEY_STEP = 8;
+export const HISTOGRAM_HEIGHT_KEY = 'clickhouse-observe.logsExplorer.histogramHeight';
+
+export function maxHistogramHeight(viewportHeight: number): number {
+  return Math.max(HISTOGRAM_MIN_HEIGHT, Math.floor(viewportHeight * HISTOGRAM_MAX_SHARE));
+}
+
+/** Keeps a chart height within [min, ~60% of the viewport]; non-finite input gives the default. */
+export function clampHistogramHeight(height: number, viewportHeight: number): number {
+  if (!Number.isFinite(height)) {
+    height = HISTOGRAM_DEFAULT_HEIGHT;
+  }
+  return Math.round(Math.min(maxHistogramHeight(viewportHeight), Math.max(HISTOGRAM_MIN_HEIGHT, height)));
+}
+
+function readStoredHeight(): number {
+  try {
+    const raw = Number(window.localStorage.getItem(HISTOGRAM_HEIGHT_KEY));
+    return raw > 0 ? raw : HISTOGRAM_DEFAULT_HEIGHT;
+  } catch {
+    return HISTOGRAM_DEFAULT_HEIGHT;
+  }
+}
+
+function storeHeight(height: number | null) {
+  try {
+    if (height === null) {
+      window.localStorage.removeItem(HISTOGRAM_HEIGHT_KEY);
+    } else {
+      window.localStorage.setItem(HISTOGRAM_HEIGHT_KEY, String(height));
+    }
+  } catch {
+    // storage unavailable: the height just isn't remembered
+  }
+}
+
 const CAPTION_FORMAT = 'MMM D, YYYY @ HH:mm:ss.SSS';
 
 /** "Jan 1, 2026 @ 00:00:00.000 - Jan 8, 2026 @ 00:00:00.000" (DISC-CHART-01 caption). */
@@ -87,6 +127,69 @@ export function LogsHistogramPanel({
   editVisualizationUrl,
 }: LogsHistogramPanelProps) {
   const styles = useStyles2(getStyles);
+  const [storedHeight, setStoredHeight] = useState(readStoredHeight);
+  const [viewportHeight, setViewportHeight] = useState(() => window.innerHeight);
+  const drag = useRef<{ startY: number; startHeight: number } | null>(null);
+  // Clamped again at render so a smaller window never leaves the chart taller than the cap.
+  const chartHeight = clampHistogramHeight(storedHeight, viewportHeight);
+
+  useEffect(() => {
+    const onResize = () => setViewportHeight(window.innerHeight);
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
+
+  const commitHeight = useCallback(
+    (h: number) => {
+      const next = clampHistogramHeight(h, window.innerHeight);
+      setStoredHeight(next);
+      return next;
+    },
+    [setStoredHeight]
+  );
+
+  const onHandlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (e.button !== 0) {
+      return;
+    }
+    e.preventDefault();
+    e.currentTarget.setPointerCapture?.(e.pointerId);
+    drag.current = { startY: e.clientY, startHeight: chartHeight };
+  };
+  const onHandlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (drag.current) {
+      commitHeight(drag.current.startHeight + (e.clientY - drag.current.startY));
+    }
+  };
+  const endDrag = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!drag.current) {
+      return;
+    }
+    drag.current = null;
+    e.currentTarget.releasePointerCapture?.(e.pointerId);
+    storeHeight(chartHeight);
+  };
+  const onHandleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    const step = e.shiftKey ? HISTOGRAM_KEY_STEP * 4 : HISTOGRAM_KEY_STEP;
+    let next: number | null = null;
+    if (e.key === 'ArrowUp') {
+      next = chartHeight - step;
+    } else if (e.key === 'ArrowDown') {
+      next = chartHeight + step;
+    } else if (e.key === 'Home') {
+      next = HISTOGRAM_MIN_HEIGHT;
+    } else if (e.key === 'End') {
+      next = window.innerHeight;
+    }
+    if (next !== null) {
+      e.preventDefault();
+      storeHeight(commitHeight(next));
+    }
+  };
+  const resetHeight = () => {
+    setStoredHeight(HISTOGRAM_DEFAULT_HEIGHT);
+    storeHeight(null);
+  };
 
   if (!hasTime) {
     return null;
@@ -141,7 +244,7 @@ export function LogsHistogramPanel({
             <VolumeHistogram
               data={volumeData}
               timeRange={timeRange}
-              height={104}
+              height={chartHeight}
               loading={volLoading}
               onSelectRange={onSelectRange}
               breakdownTarget={breakdownTarget}
@@ -167,8 +270,31 @@ export function LogsHistogramPanel({
             </span>
           </>
         ) : (
-          <div className={styles.histogramEmpty}>{volLoading ? 'Loading…' : 'No events in selected time range'}</div>
+          <div className={styles.histogramEmpty} style={{ height: chartHeight }}>
+            {volLoading ? 'Loading…' : 'No events in selected time range'}
+          </div>
         ))
+      )}
+      {!collapsed && !invalidQuery && (
+        <div
+          role="separator"
+          aria-orientation="horizontal"
+          aria-label="Resize histogram"
+          aria-valuenow={chartHeight}
+          aria-valuemin={HISTOGRAM_MIN_HEIGHT}
+          aria-valuemax={maxHistogramHeight(viewportHeight)}
+          tabIndex={0}
+          data-testid="histogram-resize-handle"
+          className={styles.resizeHandle}
+          onPointerDown={onHandlePointerDown}
+          onPointerMove={onHandlePointerMove}
+          onPointerUp={endDrag}
+          onPointerCancel={endDrag}
+          onKeyDown={onHandleKeyDown}
+          onDoubleClick={resetHeight}
+        >
+          <span className={styles.resizeGrip} />
+        </div>
       )}
     </div>
   );
@@ -183,12 +309,34 @@ const getStyles = (theme: GrafanaTheme2) => ({
     border-bottom: 1px solid ${theme.colors.border.weak};
   `,
   histogramEmpty: css`
-    height: 120px;
     display: flex;
     align-items: center;
     justify-content: center;
     color: ${theme.colors.text.disabled};
     font-size: ${theme.typography.body.fontSize};
+  `,
+  resizeHandle: css`
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 10px;
+    margin: ${theme.spacing(0.5)} 0 -${theme.spacing(0.5)};
+    cursor: row-resize;
+    touch-action: none;
+    &:hover > span,
+    &:focus-visible > span {
+      background: ${theme.colors.primary.main};
+    }
+    &:focus-visible {
+      outline: 2px solid ${theme.colors.primary.main};
+      outline-offset: -2px;
+    }
+  `,
+  resizeGrip: css`
+    width: 40px;
+    height: 3px;
+    border-radius: 2px;
+    background: ${theme.colors.border.medium};
   `,
   histogramHeader: css`
     display: flex;

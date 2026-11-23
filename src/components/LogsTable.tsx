@@ -873,7 +873,9 @@ const getStyles = (theme: GrafanaTheme2) => ({
    *  one, distinct from tableWrapperDragOver's whole-table cue. */
   fieldDropTarget: css`
     box-shadow: inset 2px 0 0 0 ${theme.colors.primary.main};
-    background: ${theme.colors.primary.transparent};
+    /* Tint as an image layer over the cell's own opaque background: on a sticky <th> a bare
+       translucent background would let scrolled rows show through. */
+    background-image: linear-gradient(${theme.colors.primary.transparent}, ${theme.colors.primary.transparent});
   `,
   table: css`
     width: 100%;
@@ -902,16 +904,17 @@ const getStyles = (theme: GrafanaTheme2) => ({
     white-space: nowrap;
     position: sticky;
     top: 0;
-    // Above row content (rows have no explicit z-index / are auto-stacked) and above dataTd's
-    // hover box-shadow, but below cellToolbar's z-index:5 and FieldSidebar's Portal popovers —
-    // just needs to reliably win against the table body, not the whole page's stacking order.
-    z-index: 3;
+    // Above row content, dataTd's hover box-shadow and cellToolbar (z-index:5, which hangs 14px
+    // above its cell and would otherwise paint over the header while rows scroll under it), but
+    // below FieldSidebar's Portal popovers.
+    z-index: 6;
   `,
   /** Hover feedback only for real data-column headers — the leading checkbox/expand-chevron
    *  header cells aren't interactive and shouldn't visually react on hover. */
   dataTh: css`
     &:hover {
-      background: ${theme.colors.action.hover};
+      /* Image layer over the th's opaque background (see fieldDropTarget). */
+      background-image: linear-gradient(${theme.colors.action.hover}, ${theme.colors.action.hover});
     }
   `,
   thDraggable: css`
@@ -922,7 +925,7 @@ const getStyles = (theme: GrafanaTheme2) => ({
   `,
   thDragOver: css`
     box-shadow: inset 2px 0 0 0 ${theme.colors.primary.main};
-    background: ${theme.colors.action.hover};
+    background-image: linear-gradient(${theme.colors.action.hover}, ${theme.colors.action.hover});
   `,
   dragHandle: css`
     flex-shrink: 0;

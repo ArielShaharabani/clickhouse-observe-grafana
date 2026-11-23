@@ -1,7 +1,7 @@
 import React from 'react';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { dateTime } from '@grafana/data';
-import { LogsHistogramPanel } from '../LogsHistogramPanel';
+import { clampHistogramHeight, HISTOGRAM_HEIGHT_KEY, LogsHistogramPanel } from '../LogsHistogramPanel';
 import { resolveInterval } from '../VolumeHistogram';
 
 // Round 2 #2: an invalid search must not leave the previous search's bars and count on screen.
@@ -56,5 +56,41 @@ describe('LogsHistogramPanel breakdown notice (round 2 #17)', () => {
     expect(screen.getByTestId('breakdown-notice')).toHaveTextContent('"x"');
     screen.getByRole('button', { name: 'Dismiss breakdown notice' }).click();
     expect(onDismiss).toHaveBeenCalled();
+  });
+});
+
+describe('histogram resize handle', () => {
+  beforeEach(() => window.localStorage.removeItem(HISTOGRAM_HEIGHT_KEY));
+
+  it('clamps to the minimum and ~60% of the viewport', () => {
+    expect(clampHistogramHeight(10, 1000)).toBe(80);
+    expect(clampHistogramHeight(9999, 1000)).toBe(600);
+    expect(clampHistogramHeight(NaN, 1000)).toBe(104);
+    expect(clampHistogramHeight(500, 100)).toBe(80);
+  });
+
+  it('is a keyboard-operable separator that persists and resets', () => {
+    render(panel(false));
+    const handle = screen.getByRole('separator', { name: 'Resize histogram' });
+    expect(handle).toHaveAttribute('aria-orientation', 'horizontal');
+    expect(handle).toHaveAttribute('aria-valuenow', '104');
+    expect(handle).toHaveAttribute('tabindex', '0');
+    fireEvent.keyDown(handle, { key: 'ArrowDown' });
+    expect(handle).toHaveAttribute('aria-valuenow', '112');
+    expect(window.localStorage.getItem(HISTOGRAM_HEIGHT_KEY)).toBe('112');
+    fireEvent.keyDown(handle, { key: 'ArrowUp', shiftKey: true });
+    fireEvent.keyDown(handle, { key: 'ArrowUp', shiftKey: true });
+    expect(handle).toHaveAttribute('aria-valuenow', '80');
+    fireEvent.doubleClick(handle);
+    expect(handle).toHaveAttribute('aria-valuenow', '104');
+    expect(window.localStorage.getItem(HISTOGRAM_HEIGHT_KEY)).toBeNull();
+  });
+
+  it('restores a stored height and is hidden when collapsed', () => {
+    window.localStorage.setItem(HISTOGRAM_HEIGHT_KEY, '150');
+    const { rerender } = render(panel(false));
+    expect(screen.getByRole('separator')).toHaveAttribute('aria-valuenow', '150');
+    rerender(panel(false, { collapsed: true }));
+    expect(screen.queryByRole('separator')).toBeNull();
   });
 });
