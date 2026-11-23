@@ -36,3 +36,32 @@ describe('R8 draw: L1 / L6 empty first value', () => {
     expect(metricTiles({ ...(state as object), chartType: 'metric' } as never, result).map((t) => t.title)).toEqual(['(empty)', 'a']);
   });
 });
+
+import { formatNumber } from '../../utils/axisNumber';
+import { formatMetricValue } from '../render/MetricTiles';
+
+describe('R8 draw: L3 / L5 numbers', () => {
+  it('keeps significant digits of small numbers', () => {
+    expect(formatNumber(0.0003)).toBe('0.0003');
+    expect(formatNumber(0.00061)).toBe('0.00061');
+    expect(formatNumber(0.00034567)).toBe('0.00035');
+    expect(formatNumber(71160)).toBe('71,160');
+    expect(formatNumber(1.23456)).toBe('1.235');
+    expect(formatNumber(0)).toBe('0');
+  });
+  it('tiles use the same text as other charts', () => {
+    const m = { id: 'm', op: 'avg', format: { id: 'custom', pattern: '0,0' } } as never;
+    expect(formatMetricValue(m, 71160)).toBe('71,160');
+    expect(formatMetricValue({ id: 'm', op: 'count' } as never, 71160)).toBe('71,160');
+    expect(formatMetricValue(undefined as never, 0.0003)).toBe('0.0003');
+  });
+});
+
+import { truncateLabel } from '../render/labels';
+
+describe('R8 draw: L4 ellipsis', () => {
+  it('cuts with an ellipsis', () => {
+    expect(truncateLabel('GET /api/v1/customers/123', 80).endsWith('…')).toBe(true);
+    expect(truncateLabel('GET', 80)).toBe('GET');
+  });
+});
