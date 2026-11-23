@@ -76,6 +76,12 @@ function splitTimeSeries(state: LensState): boolean {
   return x?.kind === 'date_histogram' && !!split && split.kind !== 'date_histogram';
 }
 
+/** Category X with a breakdown and several metrics: one column per (value, metric). */
+function splitCategorySeries(state: LensState): boolean {
+  const [x, split] = state.buckets;
+  return !!x && x.kind !== 'date_histogram' && !!split && split.kind !== 'date_histogram' && state.metrics.length > 1;
+}
+
 /**
  * Series names of a split time series. After `partitionByValues` each series is a metric field
  * (`m0`) labelled with its breakdown value (`b1`), which Grafana would show as "m0 checkout"
@@ -166,7 +172,7 @@ function lensPanel(
     panel.fieldConfig,
     state,
     xy,
-    splitTimeSeries(state) ? (i) => ({ id: 'byName', options: metricAlias(i) }) : undefined
+    splitTimeSeries(state) || splitCategorySeries(state) ? (i) => ({ id: 'byName', options: metricAlias(i) }) : undefined
   );
   if (!xy || (panel.type !== 'timeseries' && panel.type !== 'barchart')) {
     return { ...panel, fieldConfig };
@@ -197,8 +203,6 @@ function baseLensPanel(
   const names = columnNames(state);
   const [x, split] = state.buckets;
   const stacking = stackingOf(state);
-  // Everything renamed except the split column, which the partition / pivot transformations read.
-  const withoutSplit = Object.fromEntries(Object.entries(names).filter(([k]) => k !== bucketAlias(1)));
   // Split time series: the metrics keep their aliases too (named by splitSeriesNames).
   const timeOnly = Object.fromEntries(Object.entries(names).filter(([k]) => k === bucketAlias(0)));
   const base = {
@@ -274,9 +278,12 @@ function baseLensPanel(
                 rename({ [`${bucketAlias(0)}\\${bucketAlias(1)}`]: names[bucketAlias(0)] }),
               ]
             : [
-                rename(withoutSplit),
+                // Partition and join on the raw aliases (a join on a renamed text column finds
+                // nothing), then name the category column.
+                { id: 'organize', options: { renameByName: {}, excludeByName: KIND_COLUMNS, indexByName: {} } },
                 { id: 'partitionByValues', options: { fields: [bucketAlias(1)], keepFields: false } },
-                { id: 'joinByField', options: { byField: names[bucketAlias(0)], mode: 'outer' } },
+                { id: 'joinByField', options: { byField: bucketAlias(0), mode: 'outer' } },
+                rename({ [bucketAlias(0)]: names[bucketAlias(0)] }),
               ];
       return {
         ...base,
@@ -290,7 +297,7 @@ function baseLensPanel(
           orientation: 'auto',
           xTickLabelRotation: 0,
         },
-        fieldConfig: { defaults: { custom }, overrides: [] },
+        fieldConfig: { defaults: { custom }, overrides: splitCategorySeries(state) ? splitSeriesNames(state) : [] },
       };
     }
     case 'heatmap':

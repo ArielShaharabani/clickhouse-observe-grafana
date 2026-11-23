@@ -137,10 +137,10 @@ describe('LENS-SAVE-01 panel per chart type', () => {
   it('category X × breakdown with several metrics keeps every metric (partition + join on X)', () => {
     const avg = { kind: 'metric' as const, id: 'm1', op: 'avg' as const, field: 'SeverityNumber' };
     const p = panel({ ...lens('bar', [service, level], 'stacked'), metrics: [count, avg] });
-    expect(ids(p)).toEqual(['organize', 'partitionByValues', 'joinByField']);
-    const renamed = (p.transformations?.[0].options as any).renameByName;
-    expect(Object.keys(renamed).sort()).toEqual(['b0', 'm0', 'm1']);
-    expect(p.transformations?.[2].options).toEqual({ byField: 'Top 9 values of ServiceName', mode: 'outer' });
+    expect(ids(p)).toEqual(['organize', 'partitionByValues', 'joinByField', 'organize']);
+    // E3: the join runs on the raw alias; the category column is named afterwards.
+    expect(p.transformations?.[2].options).toEqual({ byField: 'b0', mode: 'outer' });
+    expect((p.transformations?.[3].options as any).renameByName).toEqual({ b0: 'Top 9 values of ServiceName' });
   });
 
   it.each([
