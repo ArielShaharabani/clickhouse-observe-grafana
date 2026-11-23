@@ -81,7 +81,7 @@ const DEFAULT_SIDEBAR_SPLIT = 0.24;
 
 /** Narrowest the field sidebar / document panel can get (drag or a wide grid). */
 const SIDEBAR_MIN_WIDTH = 240;
-const DETAIL_MIN_WIDTH = 400;
+const DETAIL_MIN_WIDTH = 401; // 400 and the border
 /** Page width up to which the document panel goes over the grid instead of pushing it. */
 const DETAIL_PUSH_MIN_PAGE = 1100;
 

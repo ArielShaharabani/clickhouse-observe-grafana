@@ -235,7 +235,7 @@ test('panel with settings Visualize cannot carry: warning lists them; Replace an
   await warn.getByRole('button', { name: 'Replace anyway' }).click();
   await expect(page).toHaveURL(new RegExp(`/d/${UID}`));
   const after = await get(page);
-  expect(panel(after, 5).links).toBeUndefined();
+  expect(panel(after, 5).links.map((l: { title: string }) => l.title)).toEqual(['Edit in Visualize']);
   expect(panel(after, 5).targets[0].observeVisualize).toBeTruthy();
   // The replaced version stays in Grafana's version history (the warning says so).
   expect(await versionsCount(page)).toBeGreaterThan(v0);
