@@ -58,8 +58,8 @@ export function gaugeOptions(state: LensState): { pluginId: 'gauge' | 'bargauge'
         namePlacement: 'top',
         showUnfilled: true,
         // One bar per Break down by value at a readable height; a lone bar fills the panel.
-        ...(state.buckets.length > 0 ? { sizing: 'manual', minVizHeight: 24, maxVizHeight: 28 } : { sizing: 'auto' }),
-        text: { titleSize: 13, valueSize: 20 },
+        ...(state.buckets.length > 0 ? { sizing: 'manual', minVizHeight: 40, maxVizHeight: 44 } : { sizing: 'auto' }),
+        text: { titleSize: 13, valueSize: 18 },
       },
     };
   }
@@ -130,7 +130,7 @@ export interface GaugeSpec {
 /** Visualize: one field per gauge (Break down by value), each with its own maximum. */
 export function gaugeSpec(state: LensState, result: LensResult): GaugeSpec {
   const { value, max } = gaugeMetrics(state);
-  const byCategory = result.xs.length > 0 && result.xs[0] !== '';
+  const byCategory = state.buckets.length > 0 && result.xs.length > 0;
   const valueSeries = result.series.find((s) => s.metricIndex === value);
   const maxSeries = max >= 0 ? result.series.find((s) => s.metricIndex === max) : undefined;
   const xs = result.xs.slice(0, MAX_GAUGES);

@@ -1044,8 +1044,11 @@ export function shapeReferenceRow(
 /** Metric labels made unique ("Median of x", "Median of x (2)") so series never merge. */
 export function uniqueMetricLabels(metrics: MetricDim[]): string[] {
   const seen = new Map<string, number>();
-  return metrics.map((m) => {
-    const base = dimLabel(m);
+  const plain = metrics.map((m) => dimLabel(m));
+  return metrics.map((m, i) => {
+    // Equal labels get distinguishing text first (the metric's own filter), a number only when still equal.
+    const clash = plain.filter((l) => l === plain[i]).length > 1;
+    const base = clash && m.filter?.trim() ? `${plain[i]} (${m.filter.trim()})` : plain[i];
     const n = (seen.get(base) ?? 0) + 1;
     seen.set(base, n);
     return n === 1 ? base : `${base} (${n})`;
