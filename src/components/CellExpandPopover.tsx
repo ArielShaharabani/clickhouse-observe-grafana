@@ -1,9 +1,10 @@
 import React, { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { css } from '@emotion/css';
+import { css, cx } from '@emotion/css';
 import { GrafanaTheme2 } from '@grafana/data';
 import { Button, IconButton, useStyles2 } from '@grafana/ui';
 import { DialogHint } from './a11y/dialog';
+import { FindBar, getFindHighlightStyle, useFind } from './FindInText/FindBar';
 import { ActionHost, fieldLabelFor, ValueContext, valueActions } from '../actions/registry';
 
 /**
@@ -130,8 +131,14 @@ export function CellExpandPopover({ ctx, raw, host, onClose }: Props) {
   useLayoutEffect(() => {
     onCloseRef.current = onClose;
   });
+  // Once placed: an element that is still hidden can't take focus.
+  const placed = pos !== null;
   useEffect(() => {
-    ref.current?.focus();
+    if (placed) {
+      ref.current?.focus({ preventScroll: true });
+    }
+  }, [placed]);
+  useEffect(() => {
     const onDocDown = (e: MouseEvent) => {
       if (ref.current && !ref.current.contains(e.target as Node)) {
         onCloseRef.current(false);
@@ -141,6 +148,10 @@ export function CellExpandPopover({ ctx, raw, host, onClose }: Props) {
     return () => document.removeEventListener('mousedown', onDocDown);
   }, []);
   const hintId = useId();
+  const highlight = useStyles2(getFindHighlightStyle);
+  const valueRef = useRef<HTMLPreElement>(null);
+  const find = useFind(valueRef, '[role="dialog"]');
+  const text = expandedText(raw) || '(empty)';
   const name = ctx.fieldLabel ?? fieldLabelFor(ctx.field);
   const actions = valueActions(ctx, host);
   const dialog = (
@@ -165,10 +176,14 @@ export function CellExpandPopover({ ctx, raw, host, onClose }: Props) {
       <DialogHint id={hintId} />
       <div className={styles.header}>
         <span className={styles.name}>{name}</span>
-        <IconButton name="times" size="sm" tooltip="Close" onClick={() => onClose()} />
+        <span className={styles.headerActions}>
+          <IconButton name="search" size="sm" tooltip="Find (Ctrl+F)" aria-label="Find (Ctrl+F)" onClick={find.show} />
+          <IconButton name="times" size="sm" tooltip="Close" onClick={() => onClose()} />
+        </span>
       </div>
-      <pre className={styles.value} data-testid="cell-expand-value">
-        {expandedText(raw) || '(empty)'}
+      {find.open && <FindBar rootRef={valueRef} find={find} contentKey={text} />}
+      <pre ref={valueRef} className={cx(styles.value, highlight)} data-testid="cell-expand-value">
+        {text}
       </pre>
       <div className={styles.actions}>
         {actions.map((a) => (
@@ -206,6 +221,11 @@ const getStyles = (theme: GrafanaTheme2) => ({
     align-items: center;
     justify-content: space-between;
     margin-bottom: ${theme.spacing(0.5)};
+  `,
+  headerActions: css`
+    display: flex;
+    flex-shrink: 0;
+    gap: ${theme.spacing(0.5)};
   `,
   name: css`
     font-weight: ${theme.typography.fontWeightMedium};

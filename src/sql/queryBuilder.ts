@@ -10,7 +10,7 @@ import { isCondGroup, isDateBound, isNumericBound } from './filters';
 import { BreakdownSel, FilterCondGroup, FilterPill, FilterOp, LogsQueryState, SelectedColumn, SourceConfig } from '../types';
 import { resolveField, FieldIndex } from './fields';
 import { parseKql, kqlToSql } from './kql';
-import { anyElementPredicate, equalsLhs, existsPredicate, likeLhs, missingPredicate, numericLhs } from './fieldPredicates';
+import { anyElementPredicate, equalsLhs, existsPredicate, likeLhs, listPredicate, missingPredicate, numericLhs } from './fieldPredicates';
 import { configSettingsFragments, queryTimeoutFragments, withSettings } from './settings';
 import { isConvertedTimestamp, timeExpr } from './timeExpr';
 
@@ -92,6 +92,16 @@ const DOTTED_PATH_RE = new RegExp(`^${IDENT}(\\.${IDENT})+${TYPED_SUBCOLUMN}$`);
  */
 export function looksLikeMapAccessor(name: string): boolean {
   return MAP_ACCESSOR_RE.test(name);
+}
+
+const MAP_PARTS_RE = new RegExp(`^(${IDENT})\\[(${SAFE_STRING_LITERAL})\\]$`);
+/**
+ * `mapContains(col, 'key')` of a Map accessor, or null for any other expression. ClickHouse reads a
+ * key the record does not have as '' / 0, so "has a value" must be asked for.
+ */
+export function mapHasKey(expr: string): string | null {
+  const m = MAP_PARTS_RE.exec(expr);
+  return m ? `mapContains(${m[1]}, ${m[2]})` : null;
 }
 
 const SAFE_ALIAS_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
@@ -300,6 +310,10 @@ function buildFilterClause(filter: FilterPill, config: SourceConfig, index?: Fie
       // guard: empty value set → always false / always true
       return filter.op === 'one_of' ? '1=0' : '1=1';
     }
+    const listed = listPredicate(quoteIdentifier(sqlExprRaw), resolved, vals, quoteString);
+    if (listed) {
+      return filter.op === 'one_of' ? listed : `NOT ${listed}`;
+    }
     const col = equalsLhs(quoteIdentifier(sqlExprRaw), resolved);
     const list = vals.map(quoteString).join(', ');
     return filter.op === 'one_of'
@@ -371,14 +385,23 @@ function buildFilterClause(filter: FilterPill, config: SourceConfig, index?: Fie
     // A whole JSON column has no single value (`Payload = 'x'` fails parsing 'x' as JSON), as in KQL.
     return negate ? 'NOT 0' : '0';
   }
-  if (resolved.array) {
-    // A JSON array path: any element matches (`arr = 'x'` itself fails in ClickHouse).
-    const any = anyElementPredicate(col, quoteString(like ? '%' + value + '%' : value), like);
+  if (resolved.array && like) {
+    // A JSON array path: any element matches (`arr ILIKE 'x'` itself fails in ClickHouse).
+    const any = anyElementPredicate(col, quoteString('%' + value + '%'), true);
     return negate ? `NOT ${any}` : any;
+  }
+  const listed = like ? undefined : listPredicate(col, resolved, [value], quoteString);
+  if (listed) {
+    return negate ? `NOT ${listed}` : listed;
   }
   if (like) {
     // A JSON path can be numeric / boolean, which ILIKE refuses.
     return `${likeLhs(col, resolved)} ${op} ${quoteString('%' + value + '%')}`;
+  }
+  const hasKey = value === '' ? mapHasKey(col) : null;
+  if (hasKey) {
+    // An empty Map value: a record without the key has no value, not an empty one.
+    return `${negate ? 'NOT ' : ''}(${hasKey} AND ${equalsLhs(col, resolved)} = '')`;
   }
   return `${equalsLhs(col, resolved)} ${op} ${quoteString(value)}`;
 }

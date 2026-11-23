@@ -264,7 +264,10 @@ export function LogsTable({
   // Previously every data cell in every row always mounted its toolbar (just opacity:0, revealed
   // by CSS :hover) — with a few hundred user-added columns that's tens of thousands of always-in-
   // the-DOM IconButtons. Only the actually-hovered cell now mounts its toolbar at all.
-  const [hoveredCell, setHoveredCell] = useState<{ ri: number; ci: string } | null>(null);
+  const [hoveredCell, setHoveredCell] = useState<{ ri: number; ci: string; truncated: boolean } | null>(null);
+  // A press on the cell whose popover is open closes it (the popover's own outside press); the
+  // click that follows must not open it again.
+  const pressedExpandedRef = useRef(false);
   // Column drag-and-drop reorder (native HTML5 DnD — no extra dependency). draggedId tracks
   // which column is being lifted (dimmed at its origin); dragOverId tracks the current drop
   // target (highlighted) so the user always sees where a drop would land.
@@ -738,6 +741,7 @@ export function LogsTable({
                     const filterable =
                       onAddFilter && col !== SUMMARY_COLUMN && rawValue !== null && rawValue !== undefined && !isRawContainer &&
                       (timeFilterable || col.type !== 'time');
+                    const expandable = cellTextValue(rawValue) !== '';
                     return (
                       <td
                         key={col.id}
@@ -748,19 +752,38 @@ export function LogsTable({
                         className={cx(
                           styles.td,
                           styles.dataTd,
+                          expandable && styles.expandableTd,
                           col.type === 'text' && widthOf(col) === undefined && styles.bodyCell,
                           isFocusedCell && styles.focusedCell,
                           fieldDropTargetId === col.id && styles.fieldDropTarget
                         )}
                         onDragOver={(e) => onColumnFieldDragOver(e, col.id)}
                         onDrop={(e) => onColumnFieldDrop(e, col.id)}
-                        onMouseDown={() => setFocusCell({ ri: i, ci })}
-                        onMouseEnter={() => setHoveredCell({ ri: i, ci: col.id })}
+                        onMouseDown={() => {
+                          pressedExpandedRef.current = isExpanded;
+                          setFocusCell({ ri: i, ci });
+                        }}
+                        onMouseEnter={(e) =>
+                          setHoveredCell({ ri: i, ci: col.id, truncated: isTruncated(e.currentTarget) })
+                        }
+                        onClick={(e) => {
+                          // Click = expand, except on the cell's own buttons and after selecting text.
+                          if (
+                            !expandable ||
+                            pressedExpandedRef.current ||
+                            (e.target as HTMLElement).closest('button, a, input, [data-cell-toolbar]') ||
+                            (window.getSelection()?.toString() ?? '') !== ''
+                          ) {
+                            return;
+                          }
+                          setExpanded({ rows, row, colId: col.id });
+                        }}
                         onMouseLeave={() =>
                           setHoveredCell((prev) => (prev && prev.ri === i && prev.ci === col.id ? null : prev))
                         }
                       >
                         <span
+                          data-cell-text
                           className={cx(
                             col.type === 'time'
                               ? styles.timestamp
@@ -788,8 +811,14 @@ export function LogsTable({
                             onClose={closeExpand}
                           />
                         )}
+                        {!isExpanded && hoveredCell?.truncated && hoveredCell.ri === i && hoveredCell.ci === col.id && (
+                          <span className={styles.expandHint} data-testid="cell-expand-hint" aria-hidden="true">
+                            <Icon name="expand-arrows" size="xs" /> Click to expand
+                          </span>
+                        )}
                         {!isExpanded && activeCell?.ri === i && activeCell.ci === col.id && (
                           <div
+                            data-cell-toolbar
                             className={cx(styles.cellToolbar, i === 0 && styles.cellToolbarBelow)}
                             style={{ opacity: 1, pointerEvents: 'auto' }}
                           >
@@ -840,6 +869,12 @@ export function LogsTable({
       )}
     </div>
   );
+}
+
+/** The cell's text does not fit (cut by an ellipsis or the line clamp). */
+function isTruncated(td: HTMLElement): boolean {
+  const el = td.querySelector<HTMLElement>('[data-cell-text]');
+  return !!el && (el.scrollWidth > el.clientWidth + 1 || el.scrollHeight > el.clientHeight + 1);
 }
 
 const getStyles = (theme: GrafanaTheme2) => ({
@@ -1089,6 +1124,32 @@ const getStyles = (theme: GrafanaTheme2) => ({
     &:hover {
       box-shadow: inset 0 0 0 1px ${theme.colors.primary.border};
     }
+  `,
+  /** The whole cell is a click target: pointer cursor and a tint on hover. */
+  expandableTd: css`
+    cursor: pointer;
+    &:hover {
+      background: ${theme.colors.primary.transparent};
+    }
+  `,
+  /** On a cut-off value: says what a click does. Never takes the click itself. */
+  expandHint: css`
+    position: absolute;
+    right: 2px;
+    bottom: 2px;
+    z-index: 4;
+    display: inline-flex;
+    align-items: center;
+    gap: ${theme.spacing(0.5)};
+    padding: 0 ${theme.spacing(0.75)};
+    pointer-events: none;
+    white-space: nowrap;
+    font-family: ${theme.typography.fontFamily};
+    font-size: ${theme.typography.bodySmall.fontSize};
+    line-height: 18px;
+    color: ${theme.colors.primary.contrastText};
+    background: ${theme.colors.primary.main};
+    border-radius: ${theme.shape.radius.default};
   `,
   cellToolbar: css`
     position: absolute;

@@ -38,7 +38,7 @@ import { addFilterPill, makeFilter, sanitizeFilterPills } from '../sql/filters';
 import { FilterChoice, FilterChooser } from './FilterChooser';
 import { XySelection, xLabel } from './render/XyChart';
 import { DEFAULT_LOGS_QUERY_STATE, FilterPill } from '../types';
-import { compileLens, LensResult, realKey, shapeLensRows } from './compile';
+import { compileLens, LensResult, realKey, shapeLensRows, truncatedNote } from './compile';
 import { LensChart } from './render/LensChart';
 import { CHART_ICONS, ChartTypeSwitcher } from './ChartTypeSwitcher';
 import { StylePanel, StyleToolbar, StyleView } from './StylePanel';
@@ -164,7 +164,16 @@ export function dimensionGroups(s: LensState): Group[] {
 /** Rows of recent identical queries (PERF-QUERIES #5). */
 const lensRowCache = new ResultCache<Awaited<ReturnType<typeof runQueryRows>>>();
 
-export function LensPage() {
+export interface LensPageProps {
+  /** Session tab strip, rendered above the query row. */
+  tabStrip?: React.ReactNode;
+  /** Names the session tab (the dashboard panel that was opened). */
+  onTitle?: (title: string) => void;
+  /** Back to the dashboard (Cancel, Save and return): this tab is finished. */
+  onLeave?: () => void;
+}
+
+export function LensPage({ tabStrip, onTitle, onLeave }: LensPageProps = {}) {
   const styles = useStyles2(getStyles);
   // Fields | (workspace | dimensions): two nested splitters, drag handles like Discover's sidebar.
   const outerSplit = useSplitter({
@@ -537,6 +546,8 @@ export function LensPage() {
     baseKey: string;
     /** The chart state the rows were shaped for. */
     lens: LensState;
+    /** The chart's SQL (macro form). */
+    sql: string;
     data?: LensResult;
     error?: string;
     bucketMs?: number;
@@ -554,6 +565,7 @@ export function LensPage() {
     filters,
     timeRange.from.valueOf(),
     timeRange.to.valueOf(),
+    tzSettings.timeZone, // date buckets start in the chosen zone
   ];
   const queryKey = JSON.stringify([encodeLens(queryShape(lens)), ...queryContext]);
   const { chartType: _ct, subType: _st, ...lensBase } = queryShape(lens);
@@ -604,12 +616,13 @@ export function LensPage() {
           key: queryKey,
           baseKey,
           lens,
+          sql,
           data: shapeLensRows(lens, rows, intervalMs, { interval, range }),
           bucketMs: intervalMs,
           interval,
         }),
       (e) =>
-        !cancelled && setResult({ key: queryKey, baseKey, lens, error: e instanceof Error ? e.message : String(e) })
+        !cancelled && setResult({ key: queryKey, baseKey, lens, sql, error: e instanceof Error ? e.message : String(e) })
     );
     return () => {
       cancelled = true;
@@ -668,6 +681,7 @@ export function LensPage() {
   // result would need its own empty state).
   const chartLoading = chartFieldsLoading || (!blankChart && !!config.datasourceUid && !current && !queryError && !calcError);
   const approxNote = current?.data ? lensApproxNote(lens) : null;
+  const cutNote = truncatedNote(current?.data);
 
   const onAdd = (f: LensField) => setLens(addField(lens, f, ctx));
   const removeDim = (id: string) => {
@@ -737,6 +751,7 @@ export function LensPage() {
       {
         id: 1,
         gridPos: { x: 0, y: 0, w: 12, h: 8 },
+        index: fieldIndex,
         title,
         description,
         gaugeMax: lens.chartType === 'gauge' && current?.data ? gaugeAutoMax(lens, current.data) : undefined,
@@ -779,6 +794,15 @@ export function LensPage() {
       out.push({
         label: `${breakdown.label}: ${series.breakdown || '(empty)'}`,
         pill: pillFor(breakdown.field, series.breakdown, 'for'),
+      });
+    }
+    // A date breakdown filters on its bucket (the time range is one, so not next to a time axis).
+    if (breakdown?.kind === 'date_histogram' && x?.kind !== 'date_histogram' && series?.breakdown !== undefined && bucketMs) {
+      const from = Number(series.breakdown);
+      const end = iv ? stepBucket(from, iv, 1) : from + bucketMs;
+      out.push({
+        label: `${breakdown.label}: ${formatInZone(from, 'YYYY-MM-DD HH:mm')} – ${formatInZone(end, 'YYYY-MM-DD HH:mm')}`,
+        time: [from, end],
       });
     }
     return out;
@@ -881,10 +905,7 @@ export function LensPage() {
 
   return (
     <div className={styles.page}>
-      {/* Same band as Discover's tab strip, so the header below sits at the same height on both pages. */}
-      <div className={styles.tabBand}>
-        <span className={styles.tabLabel}>Visualization</span>
-      </div>
+      {tabStrip}
       <QueryProgress active={chartLoading} />
 
       <FieldsContext.Provider value={discovery}>
@@ -949,6 +970,8 @@ export function LensPage() {
             defaultTitle={defaultPanelTitle(lens)}
             buildPanel={buildPanel}
             timeRange={timeRange}
+            onTitle={onTitle}
+            onLeave={onLeave}
           />
         }
       />
@@ -1099,6 +1122,12 @@ export function LensPage() {
             )}
           </div>
 
+          {cutNote && (
+            <div className={styles.cutNote} role="alert" data-testid="lens-truncated-note">
+              <Icon name="exclamation-triangle" size="sm" /> {cutNote}
+            </div>
+          )}
+
           {approxNote && (
             <div className={styles.approxNote} data-testid="lens-approx-note">
               <Icon name="info-circle" size="sm" /> {approxNote}
@@ -1147,6 +1176,7 @@ export function LensPage() {
             dataView={activeView}
             tableName={`${config.database}.${config.logsTable}`}
             addFilter={(pill) => addFilters([pill])}
+            chartSql={current?.sql}
             onClose={() => setInspectOpen(false)}
           />
         )}
@@ -1329,22 +1359,10 @@ const getStyles = (theme: GrafanaTheme2) => ({
     height: calc(100vh - 48px);
     min-height: 480px;
   `,
-  tabBand: css`
-    display: flex;
-    align-items: center;
-    min-height: ${theme.spacing(4)};
-    border-bottom: 1px solid ${theme.colors.border.weak};
-    margin-bottom: ${theme.spacing(1)};
-    flex-shrink: 0;
-  `,
-  tabLabel: css`
-    padding: ${theme.spacing(0.25, 1)};
-    color: ${theme.colors.text.primary};
-    background: ${theme.colors.background.primary};
-    border: 1px solid ${theme.colors.border.weak};
-    border-bottom: none;
-    border-radius: ${theme.shape.radius.default} ${theme.shape.radius.default} 0 0;
-    box-shadow: inset 0 2px 0 ${theme.colors.primary.main};
+  cutNote: css`
+    padding: ${theme.spacing(0.5, 1)};
+    font-size: ${theme.typography.bodySmall.fontSize};
+    color: ${theme.colors.warning.text};
   `,
   approxNote: css`
     display: flex;

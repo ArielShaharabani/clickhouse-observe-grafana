@@ -31,7 +31,7 @@ import {
 } from '../style';
 import { dashArray, ResolvedEvent, ResolvedLine } from '../layers';
 import { assignColorSlots, SESSION_COLOR_SLOTS, seriesColorKey } from './seriesColors';
-import { fitTimeTicks, timeTicks, tooltipTime } from './timeTicks';
+import { bucketPos, bucketTimeAt, fitTimeTicks, timeTicks, tooltipTime } from './timeTicks';
 import { truncateLabel } from './labels';
 import { formatAxisNumber, formatNumber } from '../../utils/axisNumber';
 
@@ -66,6 +66,15 @@ interface Props {
   timeRange?: { from: number; to: number };
   /** Legend ⋮ → colour: a `#rrggbb`, or undefined to go back to the automatic colour. */
   onSeriesColor?: (seriesName: string, color: string | undefined) => void;
+}
+
+/** Rows came back but no series has a finite value (NaN / inf only): the chart would be empty with no reason. */
+export function nothingFinite(result: LensResult): boolean {
+  return (
+    result.xs.length > 0 &&
+    result.series.length > 0 &&
+    result.series.every((s) => !s.zeroFill && [...s.points.values()].every((v) => !Number.isFinite(v)))
+  );
 }
 
 /** A series' value at x: missing → 0 for counts, null (gap) otherwise. */
@@ -107,7 +116,9 @@ export function xLabel(x: string | number, isTime: boolean, spanMs: number): str
   if (!isTime) {
     return String(x) === '' ? '(empty)' : String(x);
   }
-  return formatInZone(Number(x), spanMs > 2 * 86_400_000 ? 'MM-DD HH:mm' : 'HH:mm');
+  // The span is between bucket starts: from one day / one year on, shorter text would repeat.
+  const f = spanMs >= 365 * 86_400_000 ? 'YYYY-MM-DD HH:mm' : spanMs >= 86_400_000 ? 'MM-DD HH:mm' : 'HH:mm';
+  return formatInZone(Number(x), f);
 }
 
 /**
@@ -117,7 +128,8 @@ export function xLabel(x: string | number, isTime: boolean, spanMs: number): str
 export function stackValues(
   result: LensResult,
   visible: boolean[],
-  mode: 'stacked' | 'percentage' | 'none'
+  mode: 'stacked' | 'percentage' | 'none',
+  positiveOnly = false
 ): { spans: Array<Array<[number, number] | null>>; max: number; min: number } {
   const spans: Array<Array<[number, number] | null>> = result.series.map(() => []);
   let max = 0;
@@ -135,6 +147,11 @@ export function stackValues(
         return;
       }
       const v = mode === 'percentage' ? (total > 0 ? (raw / total) * 100 : 0) : raw;
+      if (positiveOnly && !(v > 0)) {
+        // A log axis has no zero or negative: such a value is not drawn (the tooltip still gives it).
+        spans[si][xi] = null;
+        return;
+      }
       if (mode === 'none') {
         spans[si][xi] = [0, v];
         max = Math.max(max, v);
@@ -153,6 +170,46 @@ export function stackValues(
     }
   });
   return { spans, max: mode === 'percentage' ? 100 : max, min: mode === 'percentage' ? Math.max(-100, min) : min };
+}
+
+/** Slot (whole buckets from the first) of each X when a time axis has gaps between fixed-length buckets, else null. */
+export function timeSlots(result: LensResult, bucketMs: number | undefined, horizontal: boolean): number[] | null {
+  const xs = result.xs;
+  if (!result.xIsTime || horizontal || !bucketMs || bucketMs > 7 * 86_400_000 || xs.length < 2) {
+    return null;
+  }
+  const t0 = Number(xs[0]);
+  const slots = xs.map((x) => Math.round((Number(x) - t0) / bucketMs));
+  const total = slots[slots.length - 1] + 1;
+  if (total === xs.length || total > 20_000 || slots.some((s, i) => i > 0 && s <= slots[i - 1])) {
+    return null;
+  }
+  return slots;
+}
+
+/** The start of every slot: the buckets' own, and the empty ones spread evenly between their neighbours. */
+export function slotStarts(xs: LensResult['xs'], slots: number[]): number[] {
+  const out: number[] = [];
+  slots.forEach((s, i) => {
+    const a = Number(xs[i]);
+    out[s] = a;
+    const next = slots[i + 1];
+    for (let k = s + 1; next !== undefined && k < next; k++) {
+      out[k] = a + ((Number(xs[i + 1]) - a) * (k - s)) / (next - s);
+    }
+  });
+  return out;
+}
+
+/** Index of the X whose slot is nearest to `slot`. */
+function nearestSlot(slots: number[], slot: number): number {
+  let best = 0;
+  slots.forEach((s, i) => {
+    if (Math.abs(s - slot) < Math.abs(slots[best] - slot)) {
+      best = i;
+    }
+  });
+  return best;
 }
 
 export function XyChart({
@@ -224,8 +281,10 @@ export function XyChart({
   const axisFmtOf = (si: number, v: number) => formatValue(v, formatOf(metricOf(si)), formatAxisNumber);
   const visible = result.series.map((s) => !hidden.has(s.name));
   // Line has no stacking (as in Kibana): a sub-type kept from Bar / Area doesn't change it.
+  // A log axis is not stacked (segment heights would say nothing): the series are drawn unstacked.
+  const logAxis = axisOf(style, 'left').scale === 'log' || axisOf(style, 'right').scale === 'log';
   const mode: 'stacked' | 'percentage' | 'none' =
-    chartType === 'line'
+    chartType === 'line' || (logAxis && subType !== 'percentage')
       ? 'none'
       : subType === 'percentage'
         ? 'percentage'
@@ -244,12 +303,14 @@ export function XyChart({
     left: stackValues(
       result,
       visible.map((v, i) => v && sides[i] !== 'right'),
-      mode
+      mode,
+      mode !== 'percentage' && axisOf(style, 'left').scale === 'log'
     ),
     right: stackValues(
       result,
       visible.map((v, i) => v && sides[i] === 'right'),
-      mode
+      mode,
+      mode !== 'percentage' && axisOf(style, 'right').scale === 'log'
     ),
   };
   const spans = result.series.map((_s, si) => stacked[sides[si]].spans[si]);
@@ -340,11 +401,17 @@ export function XyChart({
   const ys = (si: number) => (sides[si] === 'right' ? yR : y);
   const leftFmt = (v: number) =>
     percent ? `${Math.round(v)}%` : firstOn('left') >= 0 ? axisFmtOf(firstOn('left'), v) : formatAxisNumber(v);
-  const n = Math.max(1, result.xs.length);
+  // A time axis with fixed-length buckets and gaps (Include empty rows off): each bucket sits at its true
+  // time slot, so axis, ticks, shading and brush agree and the gap is visible.
+  const tSlots = timeSlots(result, bucketMs, horizontal);
+  const n = Math.max(1, tSlots ? tSlots[tSlots.length - 1] + 1 : result.xs.length);
   const catLen = horizontal ? plotH : plotW;
   const band = catLen / n;
+  const slotOf = (xi: number) => (tSlots ? tSlots[xi] : xi);
+  // Bucket starts along the axis, the empty slots of a gap included: times and positions convert over these.
+  const axisXs = tSlots ? slotStarts(result.xs, tSlots) : result.xs;
   // Category centre along the category axis (x for vertical charts, y for horizontal bars).
-  const cx0 = (xi: number) => (horizontal ? m.top + band * xi + band / 2 : m.left + band * xi + band / 2);
+  const cx0 = (xi: number) => (horizontal ? m.top + band * slotOf(xi) + band / 2 : m.left + band * slotOf(xi) + band / 2);
   const spanMs =
     result.xIsTime && result.xs.length > 1 ? Number(result.xs[result.xs.length - 1]) - Number(result.xs[0]) : 0;
   const labelEvery = Math.max(
@@ -374,9 +441,8 @@ export function XyChart({
   // to pick a range. A press without movement stays a click (the mark's filter chooser).
   const brushable = result.xIsTime && !!onBrush && !horizontal;
   const pxToTime = (px: number) => {
-    const t0 = Number(result.xs[0]);
-    const tEnd = Number(result.xs[result.xs.length - 1]) + (bucketMs ?? 0);
-    return t0 + ((px - m.left) / plotW) * (tEnd - t0);
+    const end = result.xEnd ?? Number(result.xs[result.xs.length - 1]) + (bucketMs ?? 0);
+    return bucketTimeAt(axisXs, end, ((px - m.left) / plotW) * axisXs.length);
   };
   const onDown = (e: React.MouseEvent<SVGSVGElement>) => {
     suppressClick.current = false;
@@ -467,7 +533,8 @@ export function XyChart({
     }
     const along = horizontal ? py : px;
     const across = horizontal ? px : py;
-    const xi = Math.max(0, Math.min(n - 1, Math.floor((along - (horizontal ? m.top : m.left)) / band)));
+    const slot = Math.max(0, Math.min(n - 1, Math.floor((along - (horizontal ? m.top : m.left)) / band)));
+    const xi = tSlots ? nearestSlot(tSlots, slot) : slot;
     const si = seriesAt(xi, along, across);
     setHover((h) => (h && h.xi === xi && h.si === si && h.px === px && h.py === py ? h : { xi, si, px, py }));
   };
@@ -494,7 +561,7 @@ export function XyChart({
   const valueTickVals = valueTicks(lo, hi, leftScale);
   const rightTickVals = valueTicks(loR, hiR, rightScale);
   const catTick = (xi: number) =>
-    horizontal ? truncateLabel(xText(result, xi, spanMs), catTicksDepth) : xText(result, xi, spanMs).slice(0, 14);
+    truncateLabel(xText(result, xi, spanMs), horizontal ? catTicksDepth : Math.max(60, band * labelEvery));
 
   const legendEl = showLegend ? (
     <div
@@ -653,16 +720,17 @@ export function XyChart({
   // Annotation events: on a time X axis of a vertical chart, at their time within the buckets.
   const step =
     bucketMs ?? (result.xs.length > 1 ? (Number(result.xs[result.xs.length - 1]) - Number(result.xs[0])) / (n - 1) : 0);
-  const timePos = (t: number) => m.left + (step > 0 ? ((t - Number(result.xs[0])) / step) * band : band / 2);
+  const tEnd =
+    result.xs.length > 0 ? (result.xEnd ?? Number(result.xs[result.xs.length - 1]) + (step > 0 ? step : 0)) : 0;
+  const timePos = (t: number) => m.left + (step > 0 ? bucketPos(axisXs, tEnd, t) * band : band / 2);
   const inPlot = (px: number) => px >= m.left - 0.5 && px <= m.left + plotW + 0.5;
   const events = timeAxis ? (layers?.events ?? []) : [];
   const fmtTime = (t: number) => formatInZone(t, 'YYYY-MM-DD HH:mm:ss', timeZone);
   // Round-time ticks over the drawn time span (bucket starts sit on the band's left edge).
-  const tEnd = result.xs.length > 0 ? Number(result.xs[result.xs.length - 1]) + (step > 0 ? step : 0) : 0;
   const timeTickVals = timeAxis
     ? fitTimeTicks(
         timeTicks(Number(result.xs[0]), tEnd, Math.max(2, Math.floor(plotW / (catRot === 0 ? 80 : 28))), timeZone),
-        (t) => m.left + (step > 0 ? ((t - Number(result.xs[0])) / step) * band : band / 2),
+        timePos,
         // Labels start at the tick (left-anchored): a tick too close to the right edge would be clipped.
         catRot === 0 ? Math.max(0, W - 4) : Infinity
       )
@@ -674,8 +742,8 @@ export function XyChart({
     if (Number(result.xs[0]) < timeRange.from) {
       partial.push({ xi: 0, x: m.left, w: band });
     }
-    if (Number(result.xs[last]) + step > timeRange.to && (last > 0 || partial.length === 0)) {
-      partial.push({ xi: last, x: m.left + band * last, w: band });
+    if (tEnd > timeRange.to && (last > 0 || partial.length === 0)) {
+      partial.push({ xi: last, x: m.left + band * slotOf(last), w: band });
     }
   }
 
@@ -846,6 +914,11 @@ export function XyChart({
     >
       {!inside && (lg.alignment === 'top' || lg.alignment === 'left') && legendEl}
       <div ref={boxRef} className={styles.plot}>
+        {nothingFinite(result) && (
+          <div role="note" className={styles.noFinite} data-testid="lens-no-finite">
+            Nothing to draw: every value is NaN or infinite.
+          </div>
+        )}
         {W > 0 && (
           <svg
             width={W}
@@ -996,6 +1069,7 @@ export function XyChart({
                       <text
                         x={c}
                         y={m.top + plotH + 16}
+                        aria-label={xText(result, xi, spanMs)}
                         textAnchor={catRot ? 'end' : 'middle'}
                         transform={rotated(c, m.top + plotH + 16, catRot)}
                         className={styles.tick}
@@ -1094,7 +1168,7 @@ export function XyChart({
                 horizontal ? (
                   <rect
                     x={m.left}
-                    y={m.top + band * hover.xi}
+                    y={m.top + band * slotOf(hover.xi)}
                     width={plotW}
                     height={band}
                     className={styles.hoverBand}
@@ -1102,7 +1176,7 @@ export function XyChart({
                   />
                 ) : (
                   <rect
-                    x={m.left + band * hover.xi}
+                    x={m.left + band * slotOf(hover.xi)}
                     y={m.top}
                     width={band}
                     height={plotH}
@@ -1313,6 +1387,14 @@ const getStyles = (theme: GrafanaTheme2) => ({
     flex-direction: column;
     width: 100%;
     height: 100%;
+  `,
+  noFinite: css`
+    position: absolute;
+    inset: 40% 0 auto 0;
+    text-align: center;
+    z-index: 1;
+    color: ${theme.colors.text.secondary};
+    pointer-events: none;
   `,
   wrapRow: css`
     flex-direction: row;

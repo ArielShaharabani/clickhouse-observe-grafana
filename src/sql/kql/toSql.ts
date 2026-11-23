@@ -19,6 +19,7 @@ import {
   equalsLhs,
   existsPredicate,
   likeLhs,
+  listPredicate,
   nullLhs,
   numericLhs,
 } from '../fieldPredicates';
@@ -113,12 +114,12 @@ function valueSql(node: KqlIs, sqlExpr: string, kind: FieldKind, index?: FieldIn
   }
   // A JSON path holding an array matches when any element does (Kibana's multi-value semantics);
   // `arr = 'x'` itself fails in ClickHouse ("Array does not start with '['").
-  if (resolved?.array) {
-    return anyElementPredicate(
-      maybeQuote(sqlExpr),
-      quoteString(node.isWildcard ? wildcardLike(val) : val),
-      node.isWildcard
-    );
+  if (resolved?.array && node.isWildcard) {
+    return anyElementPredicate(maybeQuote(sqlExpr), quoteString(wildcardLike(val)), true);
+  }
+  const listed = node.isWildcard ? undefined : listPredicate(maybeQuote(sqlExpr), resolved, [val], quoteString);
+  if (listed) {
+    return listed;
   }
 
   // Wildcard — applies to all field kinds (text, exact, map).

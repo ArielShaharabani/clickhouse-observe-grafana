@@ -3,7 +3,7 @@
  * Mirrors the getBackendSrv() pattern already used in AppConfig.updatePlugin
  * (src/components/AppConfig/AppConfig.tsx) — no dashboard API was called anywhere before this.
  */
-import { getBackendSrv } from '@grafana/runtime';
+import { config, getBackendSrv } from '@grafana/runtime';
 import { isDashboardUid } from '../lens/panelSource';
 import { errMsg } from '../errMsg';
 
@@ -12,11 +12,12 @@ export interface DashboardHit {
   title: string;
   url: string;
   folderTitle?: string;
+  tags?: string[];
 }
 
 export interface DashboardGetResult {
   dashboard: Record<string, unknown>;
-  meta: { folderUid?: string };
+  meta: { folderUid?: string; provisioned?: boolean; canSave?: boolean };
 }
 
 export interface SaveDashboardResult {
@@ -45,18 +46,60 @@ export async function getDashboard(uid: string): Promise<DashboardGetResult> {
   if (!res || typeof res !== 'object' || !res.dashboard || typeof res.dashboard !== 'object') {
     throw new Error('Unexpected dashboard response');
   }
-  return { dashboard: res.dashboard, meta: { folderUid: typeof res.meta?.folderUid === 'string' ? res.meta.folderUid : undefined } };
+  return {
+    dashboard: res.dashboard,
+    meta: {
+      folderUid: typeof res.meta?.folderUid === 'string' ? res.meta.folderUid : undefined,
+      provisioned: res.meta?.provisioned === true,
+      canSave: res.meta?.canSave !== false,
+    },
+  };
+}
+
+export const V2_MESSAGE =
+  'This dashboard uses the newer (v2) dashboard schema, which Visualize cannot edit yet. Convert it to the classic JSON schema or use Save as new.';
+
+/**
+ * Throws V2_MESSAGE when the dashboard is stored in the v2 schema (tabs, auto grid). Grafana hands
+ * such a dashboard to the classic API already converted, with nothing to tell; saving that copy
+ * back would flatten its layout for good. Grafana without the v2 API can't store one.
+ */
+export async function assertClassicStored(uid: string): Promise<void> {
+  if (!isDashboardUid(uid)) {
+    throw new Error('Invalid dashboard uid');
+  }
+  let stored: unknown;
+  try {
+    const res = await getBackendSrv().get<{ status?: { conversion?: { storedVersion?: unknown } } }>(
+      `/apis/dashboard.grafana.app/v1/namespaces/${encodeURIComponent(config.namespace || 'default')}/dashboards/${uid}`,
+      undefined,
+      undefined,
+      { showErrorAlert: false }
+    );
+    stored = res?.status?.conversion?.storedVersion;
+  } catch (e) {
+    if ((e as { status?: number } | undefined)?.status === 404) {
+      return;
+    }
+    throw e;
+  }
+  if (typeof stored === 'string' && /^v2/i.test(stored)) {
+    throw new Error(V2_MESSAGE);
+  }
 }
 
 /** Create or update a dashboard. Set overwrite=true when saving an appended-to existing dashboard. */
 export async function saveDashboard(
   dashboard: Record<string, unknown>,
-  opts: { folderUid?: string; overwrite?: boolean } = {}
+  opts: { folderUid?: string; overwrite?: boolean; message?: string } = {}
 ): Promise<SaveDashboardResult> {
+  if (typeof dashboard.uid === 'string' && dashboard.uid) {
+    await assertClassicStored(dashboard.uid);
+  }
   // Errors are shown by the dialogs (dashboardSaveError), not as a second Grafana toast.
   return getBackendSrv().post<SaveDashboardResult>(
     '/api/dashboards/db',
-    { dashboard, folderUid: opts.folderUid, overwrite: opts.overwrite ?? false },
+    { dashboard, folderUid: opts.folderUid, overwrite: opts.overwrite ?? false, ...(opts.message ? { message: opts.message } : {}) },
     { showErrorAlert: false }
   );
 }

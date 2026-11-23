@@ -42,7 +42,7 @@ import {
   searchDashboards,
 } from '../data/dashboards';
 import { LensPanel } from './panelExport';
-import { dashboardReturnPath, DashboardReturn } from './panelSource';
+import { dashboardReturnPath, DashboardReturn, withEditLink } from './panelSource';
 
 export type SaveDestination = 'existing' | 'new' | 'none';
 
@@ -66,6 +66,8 @@ export interface ReturnTarget extends DashboardReturn {
   panelDescription: string;
   /** The panel carries its Visualize state (it was saved from here). */
   madeInVisualize?: boolean;
+  /** What was edited in Grafana since (replacing the panel loses it). */
+  edits?: string[];
 }
 
 /**
@@ -101,7 +103,7 @@ export async function saveLens(req: SaveLensRequest): Promise<{ url?: string }> 
   try {
     if (destination === 'new') {
       const title = req.dashboardTitle?.trim() || panel.title;
-      const dash = { ...buildNewDashboard([onDashboard], title), time: dashboardTime(req.timeRange) };
+      const dash = { ...buildNewDashboard([withEditLink(onDashboard, onDashboard.id)], title), time: dashboardTime(req.timeRange) };
       return { url: (await saveDashboard(dash)).url };
     }
     const existing = await getDashboard(req.dashboardUid as string);
@@ -125,6 +127,8 @@ interface Props {
   canSaveDashboards: boolean;
   /** Opened from a dashboard panel: Save and return replaces it. */
   returnTo?: ReturnTarget;
+  /** The panel was saved back: leaving for its dashboard. */
+  onReturn?: () => void;
   /** Start on Save as new (the toolbar's "Save as new") instead of Save and return. */
   startAsNew?: boolean;
   /** Shown when the dialog opens (the toolbar's one-click Save and return failed). */
@@ -143,6 +147,7 @@ export function SaveLensModal({
   timeRange,
   canSaveDashboards,
   returnTo,
+  onReturn,
   startAsNew,
   initialError,
   confirmLoss,
@@ -225,6 +230,7 @@ export function SaveLensModal({
     try {
       const path = await saveAndReturn(returnTo, buildPanel(title.trim(), description));
       onDismiss();
+      onReturn?.();
       locationService.push(path);
     } catch (e) {
       setError(returnSaveError(e));

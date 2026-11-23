@@ -7,6 +7,7 @@
  */
 import { createTheme, TimeRange } from '@grafana/data';
 import { chDatasourceRef, EXPORT_VOLUME_POINTS, ExportedPanel, FORMAT_TABLE, GridPos } from '../data/panelExport';
+import { FieldIndex } from '../sql/fields';
 import { SourceConfig } from '../types';
 import { bucketAlias, compileLens, kindAlias, metricAlias, uniqueMetricLabels } from './compile';
 import { dimLabelIn, LensState } from './state';
@@ -15,11 +16,12 @@ import { withMetricAppearance } from './render/fieldConfig';
 import { tableOverrides } from './tableChart';
 import { autoAxisTitles, withLensStyle } from './render/styleConfig';
 import { withReferenceThresholds } from './render/layerConfig';
-import { seriesColorOf } from './style';
+import { axisOf, seriesColorOf } from './style';
 import { stableColors } from './render/seriesColors';
-import { VISUALIZE_SOURCE_KEY } from './panelSource';
+import { panelSignature, VISUALIZE_SIG_KEY, VISUALIZE_SOURCE_KEY } from './panelSource';
 import { gaugeDefaults, gaugeMetrics, gaugeOptions } from './render/gaugeSpec';
 import { formatOf, grafanaUnit } from './metricOptions';
+import { dashboardIntervalSql, parseInterval } from './interval';
 
 export interface LensPanelOpts {
   id: number;
@@ -30,6 +32,8 @@ export interface LensPanelOpts {
   source?: string;
   /** The series the chart currently shows: they get the same stable colours as in Visualize. */
   series?: Array<{ name: string; breakdown?: string; synthetic?: boolean }>;
+  /** Discovered fields: a Date column keeps its days, KQL filters resolve as in Visualize. */
+  index?: FieldIndex;
   /** Gauge without a Maximum value metric or a typed maximum: the automatic maximum Visualize drew. */
   gaugeMax?: number;
 }
@@ -39,6 +43,9 @@ export interface LensPanel extends ExportedPanel {
 }
 
 type Transformation = NonNullable<ExportedPanel['transformations']>[number];
+
+/** Grafana's reduceOptions.limit defaults to 25 values; Visualize shows every row of the result. */
+const ROW_LIMIT = 10000;
 
 const LEGEND = { showLegend: true, displayMode: 'list', placement: 'bottom', calcs: [] };
 
@@ -50,7 +57,12 @@ function stackingOf(state: LensState): 'normal' | 'percent' | 'none' {
   if (state.subType === 'percentage') {
     return 'percent';
   }
-  return state.subType === 'stacked' ? 'normal' : 'none';
+  // A log axis is never stacked, as in the Visualize chart.
+  if (state.style && axisOf(state.style, 'left').scale === 'log') {
+    return 'none';
+  }
+  // No sub-type counts as stacked, as in the Visualize chart.
+  return state.subType === 'unstacked' ? 'none' : 'normal';
 }
 
 /** Readable column names for the SQL aliases (b0 → "Top 9 values of ServiceName", m0 → "Count of records"). */
@@ -75,6 +87,12 @@ function splitTimeSeries(state: LensState): boolean {
   return x?.kind === 'date_histogram' && !!split && split.kind !== 'date_histogram';
 }
 
+/** Category X with a breakdown and several metrics: one column per (value, metric). */
+function splitCategorySeries(state: LensState): boolean {
+  const [x, split] = state.buckets;
+  return !!x && x.kind !== 'date_histogram' && !!split && split.kind !== 'date_histogram' && state.metrics.length > 1;
+}
+
 /**
  * Series names of a split time series. After `partitionByValues` each series is a metric field
  * (`m0`) labelled with its breakdown value (`b1`), which Grafana would show as "m0 checkout"
@@ -93,8 +111,41 @@ function splitSeriesNames(state: LensState): unknown[] {
   }));
 }
 
+/** After the join the category column still carries the breakdown's label: give it its own name. */
+const categoryName = (name: string) => ({
+  matcher: { id: 'byRegexp', options: `^${bucketAlias(0)}( |$)` },
+  properties: [{ id: 'displayName', value: name.replace(/\$/g, '＄') }],
+});
+
+/**
+ * Unit of values without a chosen format. Thousands separators for whole numbers only: Grafana's
+ * `locale` rounds small averages to 0, where its plain number keeps significant digits.
+ */
+const plainUnit = (state: LensState): string =>
+  state.metrics.every((m) => m.role === 'max' || ((m.op === 'count' || m.op === 'unique') && !m.normalize)) ? 'locale' : 'none';
+
 /** Row-kind columns of top-values buckets (Other / missing): for ordering only, never a series. */
 const KIND_COLUMNS = Object.fromEntries([0, 1, 2, 3].map((i) => [kindAlias(i), true]));
+
+/** A Metric chart's Maximum value metric only feeds the progress bar: it is not a tile of its own. */
+function withoutMaxMetrics(t: Transformation, state: LensState, keep: boolean): Transformation {
+  const max = state.metrics.map((m, i) => (m.role === 'max' ? metricAlias(i) : '')).filter(Boolean);
+  if (keep || max.length === 0) {
+    return t;
+  }
+  const o = t.options as { excludeByName: Record<string, boolean> };
+  return { ...t, options: { ...t.options, excludeByName: { ...o.excludeByName, ...Object.fromEntries(max.map((a) => [a, true])) } } };
+}
+
+/** Override that shows an empty text value as "(empty)" (slice and tile names come from it). */
+function emptyValueName(field: string) {
+  return {
+    matcher: { id: 'byName', options: field },
+    properties: [
+      { id: 'mappings', value: [{ type: 'special', options: { match: 'empty', result: { text: '(empty)', index: 0 } } }] },
+    ],
+  };
+}
 
 function rename(names: Record<string, string>): Transformation {
   return { id: 'organize', options: { renameByName: names, excludeByName: KIND_COLUMNS, indexByName: {} } };
@@ -139,6 +190,20 @@ export function buildLensPanel(
   timeRange: TimeRange,
   opts: LensPanelOpts
 ): LensPanel {
+  const panel = lensPanel(state, config, conditions, timeRange, opts);
+  // Signed as a dashboard stores it, so edits made in Grafana can be told later.
+  return opts.source
+    ? { ...panel, targets: panel.targets.map((t) => ({ ...t, [VISUALIZE_SIG_KEY]: panelSignature(panel) })) }
+    : panel;
+}
+
+function lensPanel(
+  state: LensState,
+  config: SourceConfig,
+  conditions: string[],
+  timeRange: TimeRange,
+  opts: LensPanelOpts
+): LensPanel {
   const panel = baseLensPanel(state, config, conditions, timeRange, opts);
   const xy = state.chartType === 'line' || state.chartType === 'area' || state.chartType === 'bar';
   if (!panel.fieldConfig || state.chartType === 'gauge') {
@@ -147,11 +212,21 @@ export function buildLensPanel(
   }
   // Split time series keep the metric aliases as field names (see splitSeriesNames), so their
   // per-metric overrides match the alias, not the label.
+  // Numbers without a chosen format read as in Visualize (thousands separators), and null / NaN show "-".
+  const plain = {
+    ...panel.fieldConfig,
+    defaults: {
+      unit: plainUnit(state),
+      // Not on XY charts: a bar chart lists its value mappings in the legend.
+      ...(xy ? {} : { mappings: [{ type: 'special', options: { match: 'null+nan', result: { text: '-', index: 0 } } }] }),
+      ...panel.fieldConfig.defaults,
+    },
+  };
   const fieldConfig = withMetricAppearance(
-    panel.fieldConfig,
+    plain,
     state,
     xy,
-    splitTimeSeries(state) ? (i) => ({ id: 'byName', options: metricAlias(i) }) : undefined
+    splitTimeSeries(state) || splitCategorySeries(state) ? (i) => ({ id: 'byName', options: metricAlias(i) }) : undefined
   );
   if (!xy || (panel.type !== 'timeseries' && panel.type !== 'barchart')) {
     return { ...panel, fieldConfig };
@@ -178,12 +253,10 @@ function baseLensPanel(
   opts: LensPanelOpts
 ): LensPanel {
   const datasource = chDatasourceRef(config.datasourceUid);
-  const { sql } = compileLens(state, config, conditions, timeRange, 'dashboard');
+  const { sql } = compileLens(state, config, conditions, timeRange, 'dashboard', opts.index);
   const names = columnNames(state);
   const [x, split] = state.buckets;
   const stacking = stackingOf(state);
-  // Everything renamed except the split column, which the partition / pivot transformations read.
-  const withoutSplit = Object.fromEntries(Object.entries(names).filter(([k]) => k !== bucketAlias(1)));
   // Split time series: the metrics keep their aliases too (named by splitSeriesNames).
   const timeOnly = Object.fromEntries(Object.entries(names).filter(([k]) => k === bucketAlias(0)));
   const base = {
@@ -213,7 +286,7 @@ function baseLensPanel(
     case 'bar': {
       const custom =
         state.chartType === 'bar'
-          ? { fillOpacity: 80, lineWidth: 0 }
+          ? { fillOpacity: 80, lineWidth: 0, barAlignment: 1, barWidthFactor: 1 }
           : { fillOpacity: state.chartType === 'area' ? 50 : 0, lineWidth: 2 };
       if (x?.kind === 'date_histogram') {
         // Long rows (time, split value, metrics) → one series per split value.
@@ -259,9 +332,12 @@ function baseLensPanel(
                 rename({ [`${bucketAlias(0)}\\${bucketAlias(1)}`]: names[bucketAlias(0)] }),
               ]
             : [
-                rename(withoutSplit),
+                // Partition and join on the raw aliases (a join on a renamed text column finds
+                // nothing), then name the category column.
+                { id: 'organize', options: { renameByName: {}, excludeByName: KIND_COLUMNS, indexByName: {} } },
                 { id: 'partitionByValues', options: { fields: [bucketAlias(1)], keepFields: false } },
-                { id: 'joinByField', options: { byField: names[bucketAlias(0)], mode: 'outer' } },
+                { id: 'joinByField', options: { byField: bucketAlias(0), mode: 'outer' } },
+                rename({ [bucketAlias(0)]: names[bucketAlias(0)] }),
               ];
       return {
         ...base,
@@ -275,7 +351,7 @@ function baseLensPanel(
           orientation: 'auto',
           xTickLabelRotation: 0,
         },
-        fieldConfig: { defaults: { custom }, overrides: [] },
+        fieldConfig: { defaults: { custom }, overrides: splitCategorySeries(state) ? [...splitSeriesNames(state), categoryName(names[bucketAlias(0)])] : [] },
       };
     }
     case 'heatmap':
@@ -295,15 +371,17 @@ function baseLensPanel(
       return {
         ...base,
         type: pie ? 'piechart' : 'stat',
-        transformations: [rename(tiles ? { [bucketAlias(0)]: names[bucketAlias(0)] } : names)],
+        transformations: [
+          withoutMaxMetrics(rename(tiles ? { [bucketAlias(0)]: names[bucketAlias(0)] } : names), state, pie),
+        ],
         options: pie
             ? {
                 legend: { ...LEGEND, placement: 'right', values: ['value'] },
-                reduceOptions: { values: true, calcs: [], fields: '' },
+                reduceOptions: { values: true, calcs: [], fields: '', limit: ROW_LIMIT },
                 pieType: state.chartType === 'donut' ? 'donut' : 'pie',
               }
             : {
-                reduceOptions: { values: byCategory, calcs: ['lastNotNull'], fields: '' },
+                reduceOptions: { values: byCategory, calcs: ['lastNotNull'], fields: '', ...(byCategory ? { limit: ROW_LIMIT } : {}) },
                 textMode: byCategory ? 'value_and_name' : 'auto',
                 colorMode: 'none',
                 graphMode: 'none',
@@ -311,15 +389,18 @@ function baseLensPanel(
               },
         fieldConfig: {
           defaults: {},
-          overrides:
-            tiles && state.metrics.length > 1
+          overrides: [
+            ...(tiles && state.metrics.filter((m) => m.role !== 'max').length > 1
               ? state.metrics.map((_, i) => ({
                   matcher: { id: 'byName', options: metricAlias(i) },
                   properties: [
                     { id: 'displayName', value: '${__data.fields[0]} · ' + labels[i].replace(/\$/g, '＄') },
                   ],
                 }))
-              : [],
+              : []),
+            // An empty value is named like Visualize names it, not left blank.
+            ...(tiles ? [emptyValueName(names[bucketAlias(0)])] : []),
+          ],
         },
       };
     }
@@ -332,22 +413,39 @@ function baseLensPanel(
         transformations: [rename(names)],
         options: { showHeader: true, enablePagination: true },
         fieldConfig: {
-          defaults: { unit: 'locale', custom: { wrapHeaderText: true } },
-          overrides: tableOverrides(
-            state.metrics.map((_, i) => ({
-              name: names[metricAlias(i)],
-              kind: 'number' as const,
-              values: [],
-              metricIndex: i,
-            })),
-            state.metrics
-          ),
+          defaults: { unit: plainUnit(state), custom: { wrapHeaderText: true } },
+          overrides: [
+            ...tableOverrides(
+              state.metrics.map((_, i) => ({
+                name: names[metricAlias(i)],
+                kind: 'number' as const,
+                values: [],
+                metricIndex: i,
+              })),
+              state.metrics
+            ),
+            ...state.buckets.flatMap((b, i) => (b.kind === 'date_histogram' ? [] : [emptyValueName(names[bucketAlias(i)])])),
+          ],
         },
       };
   }
 }
 
 type PanelBase = Omit<LensPanel, 'type'>;
+
+/**
+ * Grafana's heat map draws a cell ending at its time stamp, but the query returns the bucket start
+ * (Visualize draws [start, start + interval)). The panel's query hands over the bucket end.
+ */
+function bucketEndSql(sql: string, x: { interval?: string }): string {
+  const iv = x.interval && x.interval !== 'auto' ? parseInterval(x.interval) : null;
+  const t = bucketAlias(0);
+  return `SELECT * REPLACE (${t} + ${dashboardIntervalSql(iv)} AS ${t})
+FROM (
+${sql}
+)
+ORDER BY ${t}`;
+}
 
 /**
  * Heat map (R3-CHARTS). A date histogram on X → Grafana's heatmap: the long rows (time, Y value,
@@ -384,10 +482,11 @@ function heatmapPanel(
       ]
     : [];
   const { unit, decimals } = grafanaUnit(formatOf(state.metrics[0]));
-  const units = { unit: unit ?? 'locale', ...(decimals !== undefined ? { decimals } : {}) };
+  const units = { unit: unit ?? plainUnit(state), ...(decimals !== undefined ? { decimals } : {}) };
   if (x?.kind === 'date_histogram') {
     return {
       ...base,
+      targets: base.targets.map((t) => ({ ...t, rawSql: bucketEndSql(t.rawSql, x) })),
       type: 'heatmap',
       // Rows in rank order (the biggest on top, as in Visualize): the pivot sorts its columns by value.
       transformations: y
@@ -418,7 +517,7 @@ function heatmapPanel(
           reverse: false,
           fill: 'dark-blue',
         },
-        filterValues: { le: -1e-9 },
+        filterValues: { le: -1e300 },
         rowsFrame: { layout: 'auto' },
         yAxis: { axisPlacement: 'left', reverse: true },
         cellValues: units,

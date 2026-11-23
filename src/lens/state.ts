@@ -8,7 +8,7 @@
  * (LENS-TYPE-01 remapping rules 1–2), never a rebuild.
  */
 import { FieldModel, FieldType } from '../sql/fieldModel';
-import { formulaErrors, FormulaFields, formulaUsesWindow, formulaTimeSeriesFns, MAX_FORMULA_LEN } from './formula';
+import { formulaErrors, FormulaFields, formulaIsZeroWhenEmpty, formulaUsesWindow, formulaTimeSeriesFns, MAX_FORMULA_LEN } from './formula';
 import {
   BASE_OPS,
   BaseOp,
@@ -124,6 +124,8 @@ export const RANK_BYS: readonly TermsRankBy[] = ['count', 'alpha', 'metric'];
 /** Labels of the synthetic values (also what a chart click must not turn into a filter). */
 export const OTHER_VALUE = 'Other';
 export const MISSING_VALUE = '(missing)';
+/** Most top values kept (editor, URL and query). */
+export const MAX_TERMS_SIZE = 1000;
 export const MAX_PATTERNS = 50;
 export const MAX_PATTERN_LEN = 200;
 
@@ -250,7 +252,8 @@ const cleanList = (x: unknown): string[] | undefined => {
 /** Keeps only the known, well-typed top-values options of untrusted input (nothing else rides along). */
 export function cleanTerms(b: TermsDim): TermsDim {
   const raw = b as unknown as Record<string, unknown>;
-  const out: TermsDim = { kind: 'terms', id: b.id, field: b.field, label: b.label, size: b.size };
+  const size = Math.min(MAX_TERMS_SIZE, b.size);
+  const out: TermsDim = { kind: 'terms', id: b.id, field: b.field, label: b.label, size };
   if (typeof raw.name === 'string') {
     out.name = raw.name;
   }
@@ -462,6 +465,24 @@ export function rangeLabel(r: RangeSpec): string {
 export function filterLabel(f: FilterSpec): string {
   return f.label ?? (f.query.trim() || ALL_RECORDS);
 }
+
+/** Labels made distinguishable for display ("bad", "bad (2)"); the first of equal labels is kept. */
+export function distinctLabels(labels: string[]): string[] {
+  const taken = new Set(labels);
+  const used = new Set<string>();
+  return labels.map((l) => {
+    let out = l;
+    for (let n = 2; used.has(out) || (out !== l && taken.has(out)); n++) {
+      out = `${l} (${n})`;
+    }
+    used.add(out);
+    return out;
+  });
+}
+
+/** Display labels of a Filters bucket / custom ranges, one per entry, never two the same. */
+export const entryLabels = (b: RangeDim | FiltersDim): string[] =>
+  distinctLabels(b.kind === 'filters' ? b.filters.map(filterLabel) : (b.ranges ?? []).map(rangeLabel));
 
 export interface LensState {
   chartType: ChartType;
@@ -711,6 +732,14 @@ function memoFormula(cache: Map<string, boolean>, src: string, compute: (src: st
 /** Whether a metric is a time-series calculation (quick function, or a formula using one / overall_*). */
 export function usesWindow(m: MetricDim): boolean {
   return isCalcOp(m.op) || (m.op === 'formula' && memoFormula(USES_WINDOW, m.formula ?? '', formulaUsesWindow));
+}
+
+const ZERO_WHEN_EMPTY = new Map<string, boolean>();
+/** Whether a metric over no records is 0 (counts and formulas of counts), not empty. */
+export function isZeroWhenEmpty(m: MetricDim): boolean {
+  return (
+    m.op === 'count' || (m.op === 'formula' && memoFormula(ZERO_WHEN_EMPTY, m.formula ?? '', formulaIsZeroWhenEmpty))
+  );
 }
 
 /** Whether a metric needs a date histogram (time-series calculations; overall_* does not). */

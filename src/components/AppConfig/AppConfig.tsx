@@ -10,6 +10,7 @@ import { css } from '@emotion/css';
 import { AppPluginMeta, GrafanaTheme2, PluginConfigPageProps, PluginMeta } from '@grafana/data';
 import { getBackendSrv, getDataSourceSrv } from '@grafana/runtime';
 import { Alert, Button, Field, FieldSet, Input, Select, Switch, useStyles2 } from '@grafana/ui';
+import { EditLinksSection } from './EditLinksSection';
 import { applyOtelPreset } from '../../sql/schema';
 import { DEFAULT_QUERY_TIMEOUT_SECONDS } from '../../sql/settings';
 import { errMsg } from '../../errMsg';
@@ -294,6 +295,8 @@ const AppConfig = ({ plugin }: AppConfigProps) => {
           />
         </Field>
       </FieldSet>
+
+      <EditLinksSection />
 
       {saveStatus === 'error' && (
         <Alert title="Save failed" severity="error">

@@ -10,6 +10,26 @@ Versions track the plugin's release history. `Unreleased` collects commits not y
 
 ---
 
+## [0.80.0] — 2026-11-23
+
+- Discover: opening a document keeps the field list open, and the document panel pushes the histogram and grid aside instead of covering them (as Kibana). On pages up to 1100 px wide, or expanded, it still goes over them.
+- Discover: click any cell to expand its value (click again to close). Cells show a pointer and a tint; a cut-off value shows "Click to expand" on hover. Selecting text and the cell's buttons do not expand.
+- Discover: Ctrl+F (or the search icon) finds text in a document's JSON and in an expanded cell value: next / previous (Enter, Shift+Enter, F3), match count, match case, whole word, regular expression. Folded JSON is unfolded.
+- Fixed: the expanded cell popover did not take keyboard focus when opened with the mouse.
+- Inspect SQL shows every query as it was executed (each time window the document search tried, loaded pages, the histogram), with real values, and Copy copies exactly that. Same in the Inspect drawer and the Visualize Inspector (raw SQL mode, running and failed queries too).
+- Fixed: JSON keys with `:` (or other punctuation) were shown as SQL (`P."a:b".:String`) in filter pills and cell actions, and picked suggestions inserted `:`. Names are shown as in the field list; suggestions insert `a\:b`.
+- Configuration: "Edit in Visualize links" finds ClickHouse panels without the link and adds it to the dashboards you tick (as a new dashboard version).
+- Fixed (data loss): saving to a dashboard that uses Grafana's newer layouts (tabs, auto grid) would have flattened it; Save and return, Add to dashboard and the link tool now refuse with a message.
+- Fixed: filtering on a JSON path holding a list of objects, or values of several types, failed with a ClickHouse error (pills, is one of, search bar). Such paths compare as text, lists with their JSON; Filter for on a list cell matches the whole list.
+- Visualize data audit (docs/dev/audit/): wrong data. Results over the row limit (now 50,000) are flagged in the chart and Inspector, never drawn as 0; Top values at most 1000. A date histogram as breakdown gives one series per date. A record counts in every range it fits. Equal labels no longer overwrite each other. Number intervals are exact (decimals, big numbers, inf). Top values rank by what the metric draws (filter, reduced range, time shift); ties are stable. A Map key a record lacks is missing, not an empty value (also Discover's empty-value filters). Filters and ranges without records show 0. Median / percentile estimates are noted.
+- Visualize: day, week, month and year buckets start in the chosen time zone (DST included); per-unit values use the real month / day length; very fine intervals are widened instead of hiding gaps; Date columns work with Auto.
+- Visualize: bars stay at their true time with Include empty rows off; a log axis is never stacked; pies with negative values say so; gauges write min and max; small numbers are no longer rounded to 0; long labels end with an ellipsis; empty values are "(empty)" everywhere; NaN-only charts say so.
+- Saved panels match Visualize better: start at 0, heat map cells on their buckets (negatives included), several metrics with a breakdown, every pie / Stat value (not 25), bars over their bucket, stacking, typed interval, zone and dropped partial intervals kept, table colours per column, no extra tile for a maximum. Panels saved earlier change when saved again.
+- Visualize has session tabs that work as Discover's (add, rename, duplicate, reorder, close, recently closed). A link opens in its own tab when the current one holds a chart; a dashboard panel's tab is named after it and closes on Cancel / Save and return. The side menu reopens the active tab's chart (an empty tab follows the last search).
+- Fixed: a Visualize panel edited in Grafana's own editor could not be edited in Visualize. Grafana hides plugin menu items while a dashboard is in edit mode, so panels saved from Visualize now also carry an "Edit in Visualize" panel link, which stays. If the query or chart type was edited, Visualize reads the panel as it is now; what cannot be converted opens on the saved chart. Save and return warns when it would drop edits made in Grafana.
+
+---
+
 ## [0.79.0] — 2026-11-23
 
 - Fixed: switching data views could run queries with the previous view's auto-detected time column or fields ("Unknown identifier"), and its errors stayed on screen. Discovery is now tied to its table; errors, rows and unfinished search text are reset on a switch.

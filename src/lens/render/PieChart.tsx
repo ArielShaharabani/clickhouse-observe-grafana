@@ -137,8 +137,8 @@ function insideLabel(
 ): PieLabel | undefined {
   const mid = (s + e) / 2;
   const fracs = inner > 0 ? [(inner + r) / 2 / r] : [0.62, 0.5, 0.72, 0.4, 0.8];
-  const one = `${name} ${pct}`;
-  for (const lines of [[one], [name, pct]]) {
+  const one = [name, pct].filter(Boolean).join(' ');
+  for (const lines of [[one], [name, pct].filter(Boolean)]) {
     const w = Math.max(...lines.map(textW));
     const h = lines.length * LINE_H;
     for (const fr of fracs) {
@@ -166,7 +166,14 @@ function fitName(name: string, pct: string, px: number): string {
  * leave room for them). When there is not enough height for every outside label, the smallest
  * slices lose theirs (the legend and the tooltip still give the numbers).
  */
-export function pieLayout(values: number[], names: string[], w: number, h: number, donut: boolean): PieLayout {
+export function pieLayout(
+  values: number[],
+  names: string[],
+  w: number,
+  h: number,
+  donut: boolean,
+  withPercent = true
+): PieLayout {
   const vals = values.map((v) => (Number.isFinite(v) && v > 0 ? v : 0));
   const total = vals.reduce((a, v) => a + v, 0);
   const cx = w / 2;
@@ -180,7 +187,7 @@ export function pieLayout(values: number[], names: string[], w: number, h: numbe
       a += share * 2 * Math.PI;
     }
   });
-  const pctOf = (share: number) => pctText(share);
+  const pctOf = (share: number) => (withPercent ? pctText(share) : '');
 
   const placeInside = (r: number) => {
     const inner = donut ? r * DONUT_HOLE : 0;
@@ -191,7 +198,7 @@ export function pieLayout(values: number[], names: string[], w: number, h: numbe
   if (inside.some((l) => !l)) {
     // Room on both sides for the outside labels (centred pie), at most 30 % of the width each.
     const widest = Math.max(
-      ...angles.filter((_, k) => !inside[k]).map((g) => textW(`${names[g.i] ?? ''} ${pctOf(g.share)}`))
+      ...angles.filter((_, k) => !inside[k]).map((g) => textW(`${names[g.i] ?? ''} ${pctOf(g.share)}`.trim()))
     );
     const margin = Math.min(widest + 26, w * 0.3);
     r = Math.max(4, Math.min(w / 2 - margin, h / 2 - LINE_H));
@@ -235,7 +242,7 @@ export function pieLayout(values: number[], names: string[], w: number, h: numbe
       const elbow = pt(cx, cy, r + 10, mid);
       const lx = right ? cx + r + 18 : cx - r - 18;
       s.label = {
-        lines: [`${fitName(name, pct, labelRoom)} ${pct}`],
+        lines: [`${fitName(name, pct, labelRoom)} ${pct}`.trim()],
         x: lx,
         y,
         anchor: right ? 'start' : 'end',
@@ -277,14 +284,17 @@ export function PieChart({ names, values, colors, donut, metric, metricLabel, on
   }, []);
   const fmt = (v: number) => formatValue(v, formatOf(metric), formatNumber);
   const total = values.reduce((a, v) => a + (Number.isFinite(v) && v > 0 ? v : 0), 0);
+  // Negative values have no slice, so shares of the positive rest are not parts of a whole: no percentages.
+  const negative = values.some((v) => Number.isFinite(v) && v < 0);
   const share = (v: number) => (total > 0 && v > 0 ? v / total : 0);
+  const pctOrDash = (v: number) => (negative ? '–' : pctText(share(v)));
   const legendRight = size.w >= LEGEND_MIN_W;
   const legendW = legendRight ? Math.min(300, Math.max(160, size.w * 0.32)) : size.w;
   const legendH = legendRight ? 0 : Math.min(size.h * 0.4, names.length * 22 + 8);
   const pw = Math.max(0, legendRight ? size.w - legendW : size.w);
   const ph = Math.max(0, size.h - legendH);
-  const layout = pw > 40 && ph > 40 ? pieLayout(values, names, pw, ph, donut) : null;
-  const sliceText = (i: number) => `${names[i]}: ${fmt(values[i])} (${pctText(share(values[i]))})`;
+  const layout = pw > 40 && ph > 40 ? pieLayout(values, names, pw, ph, donut, !negative) : null;
+  const sliceText = (i: number) => `${names[i]}: ${fmt(values[i])} (${pctOrDash(values[i])})`;
   const select = (i: number, clientX: number, clientY: number) =>
     onSelect?.({ xIndex: i, seriesIndex: 0, clientX, clientY });
 
@@ -295,6 +305,11 @@ export function PieChart({ names, values, colors, donut, metric, metricLabel, on
       data-testid="lens-pie"
       data-pie-type={donut ? 'donut' : 'pie'}
     >
+      {negative && (
+        <div role="note" className={styles.negNote} style={legendRight ? { maxWidth: pw } : undefined} data-testid="lens-pie-negative">
+          Negative values cannot be drawn in a pie chart, so no percentages are shown.
+        </div>
+      )}
       <div className={styles.plot} style={{ width: pw, height: ph }}>
         {layout && (
           <svg width={pw} height={ph} role="group" aria-label={metricLabel ?? 'Pie chart'}>
@@ -365,7 +380,7 @@ export function PieChart({ names, values, colors, donut, metric, metricLabel, on
               {n}
             </span>
             <span className={styles.legendValue}>{fmt(values[i])}</span>
-            <span className={styles.legendValue}>{pctText(share(values[i]))}</span>
+            <span className={styles.legendValue}>{pctOrDash(values[i])}</span>
           </li>
         ))}
       </ul>
@@ -383,7 +398,7 @@ export function PieChart({ names, values, colors, donut, metric, metricLabel, on
             <span className={styles.swatch} style={{ background: colors[hover.i] }} aria-hidden />
             <span className={styles.tooltipName}>{names[hover.i]}</span>
             <span className={styles.tooltipValue}>{fmt(values[hover.i])}</span>
-            <span className={styles.tooltipValue}>{pctText(share(values[hover.i]))}</span>
+            <span className={styles.tooltipValue}>{pctOrDash(values[hover.i])}</span>
           </div>
           {metricLabel && <div className={styles.tooltipMetric}>{metricLabel}</div>}
         </div>
@@ -408,6 +423,15 @@ const getStyles = (theme: GrafanaTheme2) => ({
   `,
   col: css`
     flex-direction: column;
+  `,
+  negNote: css`
+    position: absolute;
+    top: 0;
+    left: 0;
+    z-index: 1;
+    padding: 2px 6px;
+    font-size: ${theme.typography.bodySmall.fontSize};
+    color: ${theme.colors.warning.text};
   `,
   plot: css`
     flex: none;

@@ -10,6 +10,8 @@ export interface ResolvedField {
   kind: FieldKind;
   /** Set for a discovered JSON path holding an array: compiled as "any element matches" (kql/toSql.ts). */
   array?: boolean;
+  /** A JSON path read bare: each row's value has its own type (mixed types, lists of objects). */
+  dynamic?: boolean;
   /** True for a whole native JSON column (not one of its paths). */
   jsonContainer?: boolean;
 }
@@ -96,6 +98,8 @@ function resolvedOf(field: FieldModel, config: SourceConfig): ResolvedField {
   const out: ResolvedField = { sqlExpr: field.sqlExpr, kind: kindForField(field, config) };
   if (field.source === 'json' && field.type === 'array') {
     out.array = true;
+  } else if (field.source === 'json' && field.rawType?.startsWith('Dynamic')) {
+    out.dynamic = true;
   }
   if (field.source === 'column' && field.type === 'json') {
     out.jsonContainer = true;

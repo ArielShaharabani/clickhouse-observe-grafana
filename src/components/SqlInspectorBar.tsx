@@ -16,6 +16,7 @@ import { useDiagnostics } from '../diag/DiagContext';
 import { formatDurationMs } from '../diag/formatDuration';
 import { computeWarnings } from '../diag/warnings';
 import { expandTimeMacros } from '../sql/expandMacros';
+import { executedQueries } from '../diag/executedQueries';
 
 interface SqlInspectorBarProps {
   queryState: LogsQueryState;
@@ -34,10 +35,8 @@ interface SqlInspectorBarProps {
   onRawSqlDraftChange: (sql: string) => void;
   onRunRawSql: () => void;
 
-  /** Builder-generated SQL in its macro form ($__fromTime / $__toTime) — always current. The
-   *  "Inspect SQL" preview shows it with the time macros expanded (the values actually queried);
-   *  "Copy" keeps the macro form, the same text "Edit as SQL" starts from, so it stays re-runnable
-   *  for any range; "Copy as shown" copies the expanded text. */
+  /** Builder-generated SQL in its macro form: what "Inspect SQL" shows (with the time filled in)
+   *  until a query has run. Otherwise it shows the queries as they were executed. */
   builderSql: string;
 
   /** Opens the diagnostics drawer (see components/Diagnostics/DiagnosticsDrawer.tsx) — additive to
@@ -68,6 +67,7 @@ export function SqlInspectorBar({
 }: SqlInspectorBarProps) {
   const styles = useStyles2(getStyles);
   const { roots } = useDiagnostics();
+  const executed = showSqlInspect ? executedQueries(roots) : [];
   // Most recently *ended* root — a still-running one is deliberately skipped here so the button's
   // duration doesn't flicker mid-query; the live number belongs in the drawer's waterfall, not the
   // toolbar. Muted secondary text, not a badge: a duration isn't something requiring action.
@@ -99,7 +99,7 @@ export function SqlInspectorBar({
           <button
             className={styles.sqlToggle}
             onClick={onToggleShowSqlInspect}
-            title="Inspect the SQL query that will be sent to ClickHouse"
+            title="The SQL exactly as it was run on ClickHouse"
           >
             <Icon name={showSqlInspect ? 'angle-down' : 'angle-right'} size="xs" />
             {showSqlInspect ? 'Hide SQL' : 'Inspect SQL'}
@@ -162,29 +162,32 @@ export function SqlInspectorBar({
           </div>
         </>
       )}
-      {showSqlInspect && !queryState.useRawSql && (
-        <div className={styles.sqlInspect}>
-          <pre className={styles.sqlInspectPre}>{expandTimeMacros(builderSql, timeRange)}</pre>
-          <div className={styles.sqlCopyGroup}>
-            <ClipboardButton
-              className={styles.sqlCopyBtn}
-              size="sm"
-              variant="secondary"
-              icon="clipboard-alt"
-              tooltip="Copies the SQL with the time-range macros, as Edit as SQL uses it"
-              getText={() => builderSql}
-            >
-              Copy
-            </ClipboardButton>
-            <ClipboardButton
-              size="sm"
-              variant="secondary"
-              className={styles.sqlCopyBtn}
-              getText={() => expandTimeMacros(builderSql, timeRange)}
-            >
-              Copy as shown
-            </ClipboardButton>
-          </div>
+      {showSqlInspect && (
+        <div className={styles.sqlInspectList}>
+          {(executed.length > 0
+            ? executed
+            : queryState.useRawSql
+              ? []
+              : [{ id: 'preview', label: 'Documents (not run yet)', sql: expandTimeMacros(builderSql, timeRange) }]
+          ).map((q) => (
+            <div key={q.id} className={styles.sqlInspect} role="group" aria-label={`Executed SQL: ${q.label}`}>
+              <div className={styles.sqlInspectMain}>
+                <div className={styles.sqlInspectLabel}>{q.label}</div>
+                <pre className={styles.sqlInspectPre}>{q.sql}</pre>
+              </div>
+              <div className={styles.sqlCopyGroup}>
+                <ClipboardButton
+                  className={styles.sqlCopyBtn}
+                  size="sm"
+                  variant="secondary"
+                  icon="clipboard-alt"
+                  getText={() => q.sql}
+                >
+                  Copy
+                </ClipboardButton>
+              </div>
+            </div>
+          ))}
         </div>
       )}
     </div>
@@ -192,6 +195,22 @@ export function SqlInspectorBar({
 }
 
 const getStyles = (theme: GrafanaTheme2) => ({
+  sqlInspectList: css`
+    display: flex;
+    flex-direction: column;
+    gap: ${theme.spacing(0.5)};
+    max-height: 40vh;
+    overflow: auto;
+    flex-shrink: 0;
+  `,
+  sqlInspectMain: css`
+    flex: 1;
+    min-width: 0;
+  `,
+  sqlInspectLabel: css`
+    font-size: ${theme.typography.bodySmall.fontSize};
+    color: ${theme.colors.text.secondary};
+  `,
   sqlRow: css`
     display: flex;
     flex-direction: column;

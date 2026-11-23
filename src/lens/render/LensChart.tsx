@@ -20,7 +20,9 @@ import { PanelRenderer } from '@grafana/runtime';
 import { LensResult } from '../compile';
 import { dimLabelIn, LensState, MAX_GAUGES } from '../state';
 import { isPieLike } from '../suggest';
-import { gaugeSpec } from './gaugeSpec';
+import { gaugeMetrics, gaugeSpec } from './gaugeSpec';
+import { formatOf, formatValue } from '../metricOptions';
+import { formatNumber } from '../../utils/axisNumber';
 import { HeatmapChart } from './HeatmapChart';
 import { seriesColorOf } from '../style';
 import { stableColors, SESSION_COLOR_SLOTS } from './seriesColors';
@@ -40,6 +42,9 @@ interface PanelSpec {
   options: Record<string, unknown>;
   fieldConfig: { defaults: Record<string, unknown>; overrides: unknown[] };
 }
+
+/** Height (px) of the written minimum / maximum under an arc gauge. */
+const RANGE_H = 16;
 
 const legend = { showLegend: true, displayMode: 'list', placement: 'bottom', calcs: [] };
 
@@ -80,9 +85,9 @@ function basePanelSpec(state: LensState, result: LensResult): PanelSpec {
       ? 'none'
       : state.subType === 'percentage'
         ? 'percent'
-        : state.subType === 'stacked'
-          ? 'normal'
-          : 'none';
+        : state.subType === 'unstacked'
+          ? 'none'
+          : 'normal';
   switch (state.chartType) {
     case 'line':
     case 'area':
@@ -127,14 +132,14 @@ function basePanelSpec(state: LensState, result: LensResult): PanelSpec {
       return { ...basePanelSpec({ ...state, chartType: 'table' }, result) };
     case 'pie':
     case 'donut':
-      if (hasSlices(result)) {
+      if (hasSlices(state, result)) {
         return pieSpec(state, result);
       }
     // falls through (no categories: the same panel as the Metric chart)
     case 'metric': {
-      const byCategory = result.xs.length > 0 && result.xs[0] !== '';
+      const byCategory = state.buckets.length > 0 && result.xs.length > 0;
       const fields = byCategory
-        ? [{ name: 'category', type: FieldType.string, values: result.xLabels }, ...numberFields(result)]
+        ? [{ name: 'category', type: FieldType.string, values: result.xLabels.map((l) => l || '(empty)') }, ...numberFields(result)]
         : numberFields(result);
       return {
         pluginId: isPieLike(state.chartType) ? 'piechart' : 'stat',
@@ -193,13 +198,13 @@ export function pieDisplayLabels(values: number[]): Array<'name' | 'percent'> {
 }
 
 /** Whether a pie / donut has slices to draw (one metric over categories). */
-const hasSlices = (result: LensResult) => result.xs.length > 0 && result.xs[0] !== '' && result.series.length === 1;
+const hasSlices = (state: LensState, result: LensResult) => state.buckets.length > 0 && result.xs.length > 0 && result.series.length === 1;
 
 /** Slice names, values and colours: the value's stable colour (as in the XY chart) or a legend pick. */
 function pieData(state: LensState, result: LensResult): { names: string[]; values: number[]; colors: string[] } {
   const theme = createTheme();
   const series = result.series[0];
-  const names = result.xLabels.map((l, i) => l ?? String(result.xs[i]));
+  const names = result.xLabels.map((l, i) => (l ?? String(result.xs[i])) || '(empty)');
   const colors = stableColors(
     names,
     result.xSynthetic,
@@ -310,7 +315,7 @@ export function LensChart({
       </div>
     );
   }
-  if (isPieLike(state.chartType) && hasSlices(result)) {
+  if (isPieLike(state.chartType) && hasSlices(state, result)) {
     // Custom-drawn: Kibana-like labels (decimals, inside or outside, no overlap) and click to filter.
     const { names, values, colors } = pieData(state, result);
     return (
@@ -369,6 +374,8 @@ function GaugeGrid({ state, result, timeRange }: { state: LensState; result: Len
   }, []);
   const spec = panelSpec(state, result);
   const fields = spec.frames[0]?.fields ?? [];
+  const gaugeMetric = state.metrics[gaugeMetrics(state).value];
+  const rangeFmt = (v: number) => formatValue(v, formatOf(gaugeMetric), formatNumber);
   const hidden = Math.max(0, result.xs.length - MAX_GAUGES);
   const cols = gaugeColumns(fields.length, size.width, size.height - (hidden > 0 ? 18 : 0));
   const rows = Math.max(1, Math.ceil(fields.length / cols));
@@ -399,7 +406,7 @@ function GaugeGrid({ state, result, timeRange }: { state: LensState; result: Len
                 title=""
                 pluginId="gauge"
                 width={cw}
-                height={ch - (fields.length > 1 ? 22 : 0)}
+                height={ch - (fields.length > 1 ? 22 : 0) - RANGE_H}
                 data={{
                   state: LoadingState.Done,
                   series: [createDataFrame({ fields: [f] })],
@@ -409,6 +416,10 @@ function GaugeGrid({ state, result, timeRange }: { state: LensState; result: Len
                 fieldConfig={spec.fieldConfig as FieldConfigSource}
                 timeZone={timeZone}
               />
+              {/* The arc has no scale of its own: write its minimum and maximum. */}
+              <div className={styles.gaugeRange} data-testid="lens-gauge-range">
+                {rangeFmt(spec.fieldConfig.defaults.min as number)} – {rangeFmt(f.config.max as number)}
+              </div>
               {/* Grafana hides a lone gauge's name: the value it is for goes underneath. */}
               {fields.length > 1 && (
                 <div className={styles.gaugeName} title={f.name}>
@@ -504,6 +515,12 @@ const styles = {
     overflow: hidden;
     display: flex;
     flex-direction: column;
+  `,
+  gaugeRange: css`
+    text-align: center;
+    font-size: 11px;
+    line-height: ${RANGE_H}px;
+    opacity: 0.7;
   `,
   gaugeName: css`
     text-align: center;

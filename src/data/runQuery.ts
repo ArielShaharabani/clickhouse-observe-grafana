@@ -12,6 +12,7 @@ import { detectTruncation } from '../diag/sqlIntegrity';
 import { appendLogComment, buildLogCommentTag } from '../diag/logComment';
 import { isEnrichmentEnabled } from '../diag/enrichment';
 import { errMsg } from '../errMsg';
+import { expandTimeMacros } from '../sql/expandMacros';
 import { getTimeZoneSettings } from '../utils/timeZone';
 
 // CH datasource format enum (Table = 1). Must match their src/types/sql.ts.
@@ -96,6 +97,8 @@ export interface RunQueryOptions {
    * actions' async work interleaves.
    */
   trace?: SpanHandle;
+  /** Queries of one search (the widening time windows of a document list) share a group id. */
+  group?: string;
 }
 
 /**
@@ -108,7 +111,7 @@ export interface RunQueryOptions {
  * can reuse this without producing a tracer span for itself — see that function's doc comment.
  */
 async function fetchFrames(options: RunQueryOptions, span: SpanHandle | undefined): Promise<DataFrame[]> {
-  const { datasourceUid, sql: originalSql, timeRange, refId = 'A', maxDataPoints = 5000, signal, op } = options;
+  const { datasourceUid, sql: originalSql, timeRange, refId = 'A', maxDataPoints = 5000, signal, op, group } = options;
 
   if (signal?.aborted) {
     throw new DOMException('The query was aborted before it started.', 'AbortError');
@@ -123,6 +126,10 @@ async function fetchFrames(options: RunQueryOptions, span: SpanHandle | undefine
     span && op !== 'serverStatsLookup' && isEnrichmentEnabled()
       ? appendLogComment(originalSql, buildLogCommentTag(span.span.rootId, span.span.id, op))
       : originalSql;
+
+  // Known before the answer, so a running, failed or cancelled query shows its SQL too (the time
+  // macros are all our builders use). The datasource's own text replaces it when it arrives.
+  span?.setAttrs({ sql, executedSql: expandTimeMacros(sql, timeRange), ...(group ? { group } : {}) });
 
   const ds = await getDataSourceSrv().get(datasourceUid);
 
@@ -189,6 +196,13 @@ async function fetchFrames(options: RunQueryOptions, span: SpanHandle | undefine
   // only ever emit a resolved value). Without this check every ClickHouse error (bad SQL, a
   // `timeout_overflow_mode = 'throw'` guardrail firing, permissions) would silently surface here as
   // an empty/partial `data` array instead of a catchable error.
+  // Post-macro SQL as the ClickHouse datasource sent it (frame.meta.executedQueryString): what Inspect
+  // SQL, the Inspect drawer and the Visualize Inspector show.
+  const frames = response.data as DataFrame[];
+  const executedSql = frames?.[0]?.meta?.executedQueryString;
+  if (executedSql) {
+    span?.setAttrs({ executedSql });
+  }
   if (response.errors?.length || response.error) {
     // Prefer .errors[0] (the newer, non-deprecated field) but fall back to .error — either can be
     // populated alone depending on which layer produced it (see runQuery.ts's C0 doc comment
@@ -196,13 +210,6 @@ async function fetchFrames(options: RunQueryOptions, span: SpanHandle | undefine
     const err = response.errors?.[0] ?? response.error!;
     throw new Error(formatDataQueryError(err));
   }
-  const frames = response.data as DataFrame[];
-  // The CH datasource populates frame.meta.executedQueryString with the post-macro SQL (after
-  // $__fromTime/$__timeInterval expansion) — strictly more useful than the pre-expansion builder
-  // SQL SqlInspectorBar.tsx shows, and previously discarded entirely the moment runQueryRows
-  // flattened frames to rows. Attach it to the span rather than losing it.
-  const executedSql = frames?.[0]?.meta?.executedQueryString;
-  span?.setAttrs({ sql, ...(executedSql ? { executedSql } : {}) });
   return frames;
 }
 

@@ -81,7 +81,9 @@ const DEFAULT_SIDEBAR_SPLIT = 0.24;
 
 /** Narrowest the field sidebar / document panel can get (drag or a wide grid). */
 const SIDEBAR_MIN_WIDTH = 240;
-const DETAIL_MIN_WIDTH = 400;
+const DETAIL_MIN_WIDTH = 401; // 400 and the border
+/** Page width up to which the document panel goes over the grid instead of pushing it. */
+const DETAIL_PUSH_MIN_PAGE = 1100;
 
 function readSidebarSplit(): number {
   const raw = Number(window.localStorage.getItem(SIDEBAR_SPLIT_KEY));
@@ -90,6 +92,9 @@ function readSidebarSplit(): number {
 
 
 
+
+/** Numbers the document searches (tracer group ids), across tabs. */
+let listGroup = 0;
 
 export interface LogsExplorerProps {
   /** Session tab (DISC-NAV-01): kept as `_tab` in every URL this page writes. */
@@ -411,23 +416,6 @@ export function LogsExplorer({ tabId, tabStrip, onTitle }: LogsExplorerProps = {
 
   // Sidebar collapse + resizable width, persisted across sessions
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  // Auto-minimize the fields sidebar while the log detail drawer is open — it's competing for the
-  // same horizontal space the drawer needs. Restores on close, but only if the user hadn't already
-  // collapsed it manually before opening (so a manual collapse isn't clobbered by the drawer closing).
-  const wasOpenRef = useRef(false);
-  const collapsedBeforeOpenRef = useRef(false);
-  useEffect(() => {
-    const isOpen = selectedRow !== null;
-    if (isOpen && !wasOpenRef.current) {
-      setSidebarCollapsed((prev) => {
-        collapsedBeforeOpenRef.current = prev;
-        return true;
-      });
-    } else if (!isOpen && wasOpenRef.current && !collapsedBeforeOpenRef.current) {
-      setSidebarCollapsed(false);
-    }
-    wasOpenRef.current = isOpen;
-  }, [selectedRow]);
   const { containerProps: bodySplitterProps, primaryProps: sidebarPaneProps, secondaryProps: resultsPaneProps, splitterProps } =
     useSplitter({
       direction: 'row',
@@ -695,7 +683,7 @@ export function LogsExplorer({ tabId, tabStrip, onTitle }: LogsExplorerProps = {
       state: LogsQueryState,
       opts: { refId?: string; signal?: AbortSignal; op: 'logs' | 'loadMore'; trace?: SpanHandle }
     ) => {
-      const base = { datasourceUid: config.datasourceUid, sql, ...opts };
+      const base = { datasourceUid: config.datasourceUid, sql, ...opts, group: `list-${++listGroup}` };
       if (!isNewestFirstSort(config, state)) {
         return runQueryRows({ ...base, timeRange });
       }
@@ -2055,6 +2043,15 @@ export function LogsExplorer({ tabId, tabStrip, onTitle }: LogsExplorerProps = {
   );
 }
 
+const overlayPane = (theme: GrafanaTheme2) => `
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 5;
+  box-shadow: ${theme.shadows.z3};
+`;
+
 const getStyles = (theme: GrafanaTheme2) => ({
   container: css`
     display: flex;
@@ -2138,23 +2135,25 @@ const getStyles = (theme: GrafanaTheme2) => ({
     flex-direction: column;
     gap: ${theme.spacing(1)};
   `,
-  // The document panel overlays the right side of the grid (Kibana's flyout) instead of squeezing
-  // it: the grid keeps its rows, columns and pager at full size underneath.
+  // The document panel pushes the histogram and the grid aside (Kibana's flyout on a wide page);
+  // the grid scrolls sideways. On a narrow page there is no room for both: it goes over them.
   detailPane: css`
-    position: absolute;
-    top: 0;
-    right: 0;
-    bottom: 0;
-    z-index: 5;
+    position: relative;
+    flex: 0 0 auto;
     width: 45%;
+    margin-left: ${theme.spacing(1)};
     min-width: ${DETAIL_MIN_WIDTH}px;
     max-width: 100%;
     overflow: hidden;
     background: ${theme.colors.background.primary};
     border-left: 1px solid ${theme.colors.border.medium};
-    box-shadow: ${theme.shadows.z3};
+    @media (max-width: ${DETAIL_PUSH_MIN_PAGE}px) {
+      ${overlayPane(theme)}
+    }
   `,
+  // Expanded, the panel takes most of the page: over the grid instead of squeezing it to a sliver.
   detailPaneExpanded: css`
+    ${overlayPane(theme)}
     width: 88%;
   `,
   sidebarRail: css`

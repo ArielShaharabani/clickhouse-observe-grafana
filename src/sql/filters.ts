@@ -3,6 +3,7 @@
  * Adapted from grafana/clickhouse-datasource src/data/adHocFilter.ts (Apache-2.0).
  */
 
+import { pathLabel } from './pathLabel';
 import { FilterPill, FilterOp, FilterCondition, FilterCondGroup } from '../types';
 
 /** Every operator a pill may carry; anything else in a link is dropped (see sanitizeFilterPills). */
@@ -305,24 +306,25 @@ export function condGroupLabel(g: FilterCondGroup, top = false): string {
 
 /** Label of one condition (a plain pill's label without the custom-label override). */
 export function conditionLabel(f: Pick<FilterPill, 'field' | 'op' | 'value' | 'values'>): string {
+  const name = pathLabel(f.field);
   if (f.op === 'exists') {
-    return `${f.field} exists`;
+    return `${name} exists`;
   }
   if (f.op === 'not_exists') {
-    return `${f.field} does not exist`;
+    return `${name} does not exist`;
   }
   if (f.op === 'one_of' || f.op === 'not_one_of') {
     const vals = (f.values ?? [f.value]).filter(Boolean).join(', ');
     return f.op === 'one_of'
-      ? `${f.field} is one of [${vals}]`
-      : `${f.field} is not one of [${vals}]`;
+      ? `${name} is one of [${vals}]`
+      : `${name} is not one of [${vals}]`;
   }
   if (f.op === 'between' || f.op === 'not_between') {
     const [lo = '', hi = ''] = f.values ?? [];
-    return `${f.field} ${f.op === 'between' ? 'is between' : 'is not between'} ${lo} and ${hi}`;
+    return `${name} ${f.op === 'between' ? 'is between' : 'is not between'} ${lo} and ${hi}`;
   }
   if (f.value === '' && f.op === '=') {
-    return `${f.field} is empty`;
+    return `${name} is empty`;
   }
   const opSymbol: Record<FilterOp, string> = {
     '=': '=',
@@ -338,7 +340,7 @@ export function conditionLabel(f: Pick<FilterPill, 'field' | 'op' | 'value' | 'v
     between: 'between',
     not_between: 'not between',
   };
-  return `${f.field} ${opSymbol[f.op]} ${f.value}`;
+  return `${name} ${opSymbol[f.op]} ${f.value}`;
 }
 
 // ── Filter groups (one level) ────────────────────────────────────────────────

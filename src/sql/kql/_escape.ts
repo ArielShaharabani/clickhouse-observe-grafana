@@ -19,8 +19,10 @@ function uEscape(ch: string): string {
   return '\\u' + ch.charCodeAt(0).toString(16).padStart(4, '0');
 }
 
+/** Punctuation reads back as itself after a backslash, so `a:b` shows as `a\:b` (as in Kibana);
+ *  white space is spelled out. */
 export function escapeKqlIdent(raw: string): string {
-  let out = raw.replace(SPECIAL_CHARS, (ch) => uEscape(ch));
+  let out = raw.replace(SPECIAL_CHARS, (ch) => (/\s/.test(ch) ? uEscape(ch) : `\\${ch}`));
   // A bare "and" / "or" / "not" would otherwise lex as a keyword token, not an IDENT — escape
   // just the first character so `hadEscape` suppresses keyword classification (see _lexer.ts).
   if (KEYWORDS.test(raw)) {

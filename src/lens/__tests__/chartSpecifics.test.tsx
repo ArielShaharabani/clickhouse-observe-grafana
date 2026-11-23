@@ -89,6 +89,7 @@ describe('Table: summary row and colour by value', () => {
         { id: 'custom.footer.reducers', value: ['sum'] },
         { id: 'custom.cellOptions', value: { type: 'color-background', mode: 'gradient' } },
         { id: 'color', value: { mode: 'continuous-GrYlRd' } },
+        { id: 'fieldMinMax', value: true },
       ],
     });
   });
@@ -162,7 +163,7 @@ describe('Metric chart tiles', () => {
     const tiles = metricTiles(state, shapeLensRows(state, [{ m0: 2048, m1: 1000 }]));
     expect(tiles).toHaveLength(1);
     expect(tiles[0].title).toBe('Count of records');
-    expect(tiles[0].value).toBe('2 KiB');
+    expect(tiles[0].value).toBe('2.0 KiB');
     expect(tiles[0].percent).toBe(100);
   });
 

@@ -19,6 +19,7 @@ import {
   LensField,
   LensState,
   MAX_NAME,
+  MAX_TERMS_SIZE,
   MetricDim,
   MetricOp,
   newDimId,
@@ -216,7 +217,7 @@ export function withName<D extends BucketDim | MetricDim>(d: D, name: string): D
 }
 
 export function withSize(b: BucketDim, size: number): BucketDim {
-  return b.kind === 'terms' ? { ...b, size: Math.min(100, Math.max(1, Math.round(size) || 1)) } : b;
+  return b.kind === 'terms' ? { ...b, size: Math.min(MAX_TERMS_SIZE, Math.max(1, Math.round(size) || 1)) } : b;
 }
 
 /** Applies top-values options (LENS-DIM-04); the result is normalised like URL input (defaults dropped, lists capped). */

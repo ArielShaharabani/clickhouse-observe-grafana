@@ -2,14 +2,13 @@
  * Loading a dashboard's panels for "Edit in Visualize" / "Open panel" (R6-PANELS). Reading only:
  * opening a panel never changes the dashboard.
  */
-import { getDashboard, getLibraryPanelModel } from '../data/dashboards';
+import { getDashboard, getLibraryPanelModel, V2_MESSAGE } from '../data/dashboards';
 import { findDashboardPanel } from '../data/panelExport';
-import { isTimeParam } from './panelSource';
+import { isEditLink, isTimeParam } from './panelSource';
 
 const isObj = (x: unknown): x is Record<string, unknown> => !!x && typeof x === 'object' && !Array.isArray(x);
 
-export const V2_MESSAGE =
-  'This dashboard uses the newer (v2) dashboard schema, which Visualize cannot edit yet. Convert it to the classic JSON schema or use Save as new.';
+export { V2_MESSAGE } from '../data/dashboards';
 
 /** Throws a clear message for a dashboard that is not the classic JSON model. */
 export function assertClassicDashboard(d: Record<string, unknown>): void {
@@ -40,12 +39,26 @@ export async function withLibraryModel(panel: Record<string, unknown>): Promise<
   return panel;
 }
 
-export async function loadDashboardPanel(uid: string, panelId: number): Promise<LoadedPanel> {
+/** Panels whose own link names panel `panelId`: more than one after the panel was duplicated in Grafana. */
+function linkedPanels(dashboard: Record<string, unknown>, panelId: number): number {
+  const links = (p: Record<string, unknown>) => (Array.isArray(p.links) ? p.links : []);
+  return listDashboardPanels(dashboard).filter(({ panel }) =>
+    links(panel).some((l) => isEditLink(l) && (l as { url: string }).url.includes(`&panel=${panelId}&`))
+  ).length;
+}
+
+/** `viaLink`: opened from the panel's own link, which a duplicate of the panel carries too. */
+export async function loadDashboardPanel(uid: string, panelId: number, viaLink = false): Promise<LoadedPanel> {
   const { dashboard, meta } = await getDashboard(uid);
   assertClassicDashboard(dashboard);
   const found = findDashboardPanel(dashboard, panelId);
   if (!found) {
     throw new Error('The panel is no longer on the dashboard.');
+  }
+  if (viaLink && linkedPanels(dashboard, panelId) > 1) {
+    throw new Error(
+      'This panel was duplicated in Grafana, so its link fits several panels. Use the panel menu (Extensions > Edit in Visualize) or Open panel to choose one.'
+    );
   }
   const t = isObj(dashboard.time) ? dashboard.time : {};
   return {

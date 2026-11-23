@@ -57,10 +57,12 @@ export interface DiscoverTabsProps {
   onMove: (id: string, to: number) => void;
   onRestore: (id: string) => void;
   onClearClosed: () => void;
+  /** Name of the tab list. */
+  label?: string;
 }
 
 export function DiscoverTabs(props: DiscoverTabsProps) {
-  const { state, onSelect, onAdd, onDuplicate, onRename, onClose, onMove, onRestore, onClearClosed } = props;
+  const { state, onSelect, onAdd, onDuplicate, onRename, onClose, onMove, onRestore, onClearClosed, label = 'Discover tabs' } = props;
   const styles = useStyles2(getStyles);
   const [editing, setEditing] = useState<string | null>(null);
   const [drag, setDrag] = useState<DragView | null>(null);
@@ -284,7 +286,7 @@ export function DiscoverTabs(props: DiscoverTabsProps) {
       <div
         className={styles.scroller}
         role="tablist"
-        aria-label="Discover tabs"
+        aria-label={label}
         ref={scroller}
         // Natural width = every tab at its preferred size; it shrinks (tabs with it) down to the
         // tabs' minimum, then scrolls. Explicit because the tabs' size containment hides their

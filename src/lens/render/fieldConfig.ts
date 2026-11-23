@@ -14,6 +14,17 @@ export interface LensFieldConfig {
 
 const escapeRegex = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
+/**
+ * Stacked and horizontal charts draw every metric on one value axis (a Right axis setting has no
+ * effect there, as in the Visualize chart); only unstacked vertical charts have a right axis.
+ */
+export function sharesOneAxis(state: LensState): boolean {
+  if (state.chartType === 'line') {
+    return false;
+  }
+  return state.subType !== 'unstacked' || (state.chartType === 'bar' && state.style?.orientation === 'horizontal');
+}
+
 function properties(m: MetricDim, state: LensState, xy: boolean): Array<{ id: string; value: unknown }> {
   const props: Array<{ id: string; value: unknown }> = [];
   const { unit, decimals } = grafanaUnit(formatOf(m));
@@ -28,7 +39,7 @@ function properties(m: MetricDim, state: LensState, xy: boolean): Array<{ id: st
   if (m.color && !breakdown) {
     props.push({ id: 'color', value: { mode: 'fixed', fixedColor: m.color } });
   }
-  if (xy && m.axis) {
+  if (xy && m.axis && !sharesOneAxis(state)) {
     props.push({ id: 'custom.axisPlacement', value: m.axis });
   }
   return props;

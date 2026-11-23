@@ -76,10 +76,10 @@ describe('LENS-DIM-02 metric editor rules', () => {
     expect(dimLabel(withName(named, '  '))).toBe(autoLabel(p));
   });
 
-  it('top values size is clamped to 1–100', () => {
+  it('top values size is clamped to 1–1000', () => {
     const b = { kind: 'terms' as const, id: 'b', field: 'ServiceName', label: 'ServiceName', size: 9 };
     expect(withSize(b, 0)).toMatchObject({ size: 1 });
-    expect(withSize(b, 500)).toMatchObject({ size: 100 });
+    expect(withSize(b, 5000)).toMatchObject({ size: 1000 });
   });
 
   it('add metric / bucket and replace by id', () => {

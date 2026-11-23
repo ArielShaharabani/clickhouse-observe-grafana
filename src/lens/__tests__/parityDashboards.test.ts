@@ -235,10 +235,10 @@ describe('Saved Lens panels: split series names and empty buckets', () => {
 
   it('custom intervals step like their buckets', () => {
     expect(dashboardFillSql({ n: 5, unit: 'm' })).toBe(
-      'WITH FILL FROM toStartOfInterval($__fromTime, INTERVAL greatest(300, $__interval_s) second) TO $__toTime STEP greatest(300, $__interval_s)'
+      'WITH FILL FROM toStartOfInterval($__fromTime, INTERVAL 300 * greatest(1, intDiv(toUnixTimestamp($__toTime) - toUnixTimestamp($__fromTime) + 149999, 150000)) SECOND) TO $__toTime STEP 300 * greatest(1, intDiv(toUnixTimestamp($__toTime) - toUnixTimestamp($__fromTime) + 149999, 150000))'
     );
     expect(dashboardFillSql({ n: 1, unit: 'M' })).toBe(
-      'WITH FILL FROM toDateTime(toStartOfInterval($__fromTime, INTERVAL 1 MONTH)) TO $__toTime STEP INTERVAL 1 MONTH'
+      `WITH FILL FROM toDateTime(toStartOfInterval($__fromTime, INTERVAL 1 MONTH, 'UTC'), 'UTC') TO $__toTime STEP INTERVAL 1 MONTH`
     );
     expect(dashboardFillSql({ n: 2, unit: 'w' }, false)).toBe('WITH FILL STEP INTERVAL 2 WEEK');
   });

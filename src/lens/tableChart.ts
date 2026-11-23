@@ -4,7 +4,7 @@
  * colour-by-value option. Pure functions over the shaped result; no SQL here (the pivot only
  * reshapes the rows the normal Lens query already returns).
  */
-import { LensState, MetricDim, TableSummary } from './state';
+import { distinctLabels, LensState, MetricDim, TableSummary } from './state';
 
 export type TableColumnKind = 'time' | 'string' | 'number';
 
@@ -30,17 +30,19 @@ const cellKey = (v: string | number | null) => (v === null ? '\u0000null' : Stri
  */
 export function tableColumns(
   state: LensState,
-  table: { columns: string[]; rows: Array<Array<string | number | null>> }
+  table: { columns: string[]; rows: Array<Array<string | number | null>>; keys?: string[][] }
 ): TableColumn[] {
   const nb = state.buckets.length;
   const bucketKind = (i: number): TableColumnKind => (state.buckets[i]?.kind === 'date_histogram' ? 'time' : 'string');
+  // An empty value has a name, as in every other chart.
+  const named = (v: string | number | null, i: number) => (v === '' && bucketKind(i) === 'string' ? '(empty)' : v);
   const rowIdx = state.buckets.map((b, i) => (b.pivot ? -1 : i)).filter((i) => i >= 0);
   const pivotIdx = state.buckets.map((b, i) => (b.pivot ? i : -1)).filter((i) => i >= 0);
   const metricIdx = state.metrics.map((_, i) => i);
 
   if (pivotIdx.length === 0) {
     return [
-      ...rowIdx.map((i) => ({ name: table.columns[i], kind: bucketKind(i), values: table.rows.map((r) => r[i]) })),
+      ...rowIdx.map((i) => ({ name: table.columns[i], kind: bucketKind(i), values: table.rows.map((r) => named(r[i], i)) })),
       ...metricIdx.map((m) => ({
         name: table.columns[nb + m],
         kind: 'number' as const,
@@ -56,9 +58,11 @@ export function tableColumns(
   const groupOrder: string[] = [];
   const groupLabel = new Map<string, string>();
   const values = new Map<string, Map<string, Array<number | null>>>(); // row → group → metric values
-  for (const r of table.rows) {
-    const rk = rowIdx.map((i) => cellKey(r[i])).join('\u0001');
-    const gk = pivotIdx.map((i) => cellKey(r[i])).join('\u0001');
+  for (const [ri, r] of table.rows.entries()) {
+    // By identity: two values may have the same label.
+    const keyOf = (i: number) => table.keys?.[ri]?.[i] ?? cellKey(r[i]);
+    const rk = JSON.stringify(rowIdx.map(keyOf));
+    const gk = JSON.stringify(pivotIdx.map(keyOf));
     if (!rowCells.has(rk)) {
       rowOrder.push(rk);
       rowCells.set(
@@ -71,7 +75,7 @@ export function tableColumns(
         continue;
       }
       groupOrder.push(gk);
-      groupLabel.set(gk, pivotIdx.map((i) => (r[i] === null ? '(empty)' : String(r[i]))).join(PIVOT_SEP));
+      groupLabel.set(gk, pivotIdx.map((i) => (r[i] === null || r[i] === '' ? '(empty)' : String(r[i]))).join(PIVOT_SEP));
     }
     let byGroup = values.get(rk);
     if (!byGroup) {
@@ -86,15 +90,16 @@ export function tableColumns(
       })
     );
   }
+  const groupNames = distinctLabels(groupOrder.map((gk) => groupLabel.get(gk) ?? ''));
   const cols: TableColumn[] = rowIdx.map((i, k) => ({
     name: table.columns[i],
     kind: bucketKind(i),
-    values: rowOrder.map((rk) => rowCells.get(rk)![k]),
+    values: rowOrder.map((rk) => named(rowCells.get(rk)![k], i)),
   }));
-  for (const gk of groupOrder) {
+  for (const [gi, gk] of groupOrder.entries()) {
     for (const m of metricIdx) {
       cols.push({
-        name: `${groupLabel.get(gk)}${PIVOT_SEP}${table.columns[nb + m]}`,
+        name: `${groupNames[gi]}${PIVOT_SEP}${table.columns[nb + m]}`,
         kind: 'number',
         // A row without that combination is empty, not 0 (it had no documents there).
         values: rowOrder.map((rk) => values.get(rk)?.get(gk)?.[m] ?? null),
@@ -142,6 +147,8 @@ export function tableOverrides(columns: TableColumn[], metrics: MetricDim[]): un
         value: m.colorBy === 'cell' ? { type: 'color-background', mode: 'gradient' } : { type: 'color-text' },
       });
       properties.push({ id: 'color', value: { mode: 'continuous-GrYlRd' } });
+      // Min and max of this column, not of the whole table (a count and an average share no scale).
+      properties.push({ id: 'fieldMinMax', value: true });
     }
     if (properties.length > 0) {
       out.push({ matcher: { id: 'byName', options: c.name }, properties });
