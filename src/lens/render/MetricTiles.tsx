@@ -6,10 +6,11 @@
  */
 import React from 'react';
 import { css, cx } from '@emotion/css';
-import { formattedValueToString, getValueFormat, GrafanaTheme2 } from '@grafana/data';
+import { GrafanaTheme2 } from '@grafana/data';
 import { useStyles2 } from '@grafana/ui';
 import { LensResult, uniqueMetricLabels } from '../compile';
-import { formatOf, grafanaUnit } from '../metricOptions';
+import { formatOf, formatValue } from '../metricOptions';
+import { formatNumber } from '../../utils/axisNumber';
 import { LensState, MetricDim } from '../state';
 
 export const EMPTY_TILE = '–';
@@ -30,11 +31,8 @@ export function formatMetricValue(m: MetricDim | undefined, v: number | undefine
   if (v === undefined || v === null || !Number.isFinite(v)) {
     return EMPTY_TILE;
   }
-  const { unit, decimals } = grafanaUnit(formatOf(m));
-  if (!unit) {
-    return v.toLocaleString(undefined, { maximumFractionDigits: decimals ?? 2 });
-  }
-  return formattedValueToString(getValueFormat(unit)(v, decimals));
+  // The same formatter as the bars, pie and heat map, so one format reads the same everywhere.
+  return formatValue(v, formatOf(m), formatNumber);
 }
 
 /** The tiles of a Metric chart, from the shaped result. Pure (tested without rendering). */
