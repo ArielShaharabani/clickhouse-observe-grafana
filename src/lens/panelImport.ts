@@ -22,7 +22,7 @@ import { Expr, exprKey, readSelect, SelectQuery, SqlReadError } from './sqlRead'
 import { parseInterval } from './interval';
 import { switchChart } from './suggest';
 import { ValueFormat } from './metricOptions';
-import { VISUALIZE_SOURCE_KEY } from './panelSource';
+import { chartEdited, panelEdits, VISUALIZE_SIG_KEY, VISUALIZE_SOURCE_KEY, withoutEditLink } from './panelSource';
 
 export interface PanelImport {
   /** ok: nothing lost; partial: converted with the `notes` lost; unsupported: no chart, `reason` says why. */
@@ -997,9 +997,29 @@ function discoverImport(base: PanelImport, p: Record<string, unknown>, raw: stri
   return { ...ctxBase, kind: notes.length ? 'partial' : 'ok', lens, notes, originalQuery: raw.slice(0, MAX_QUERY_TEXT) };
 }
 
-/** Panel JSON (untrusted) + data views → a Visualize chart, or why it cannot be one. */
+/**
+ * Panel JSON (untrusted) + data views → a Visualize chart, or why it cannot be one. A panel made in
+ * Visualize whose query or type was then edited in Grafana is read as it is now; when that cannot
+ * be converted, it opens on its saved chart, with the edits as what replacing it would lose.
+ */
 export function importPanel(raw: unknown, views: DataView[]): PanelImport {
-  const p = isObj(raw) ? raw : {};
+  const p = isObj(raw) ? withoutEditLink(raw) : {};
+  const t = Array.isArray(p.targets) ? p.targets.find(isObj) : undefined;
+  const edits = t && typeof t[VISUALIZE_SOURCE_KEY] === 'string' ? panelEdits(p) : [];
+  if (!t || !chartEdited(edits)) {
+    const r = readPanel(p, views);
+    return edits.length > 0 && r.kind !== 'unsupported' ? { ...r, kind: 'partial', notes: [...r.notes, ...edits] } : r;
+  }
+  const { [VISUALIZE_SOURCE_KEY]: _source, [VISUALIZE_SIG_KEY]: _sig, ...plain } = t;
+  const now = readPanel({ ...p, targets: (p.targets as unknown[]).map((x) => (x === t ? plain : x)) }, views);
+  if (now.kind !== 'unsupported') {
+    return now;
+  }
+  const saved = readPanel({ ...p, type: 'table', targets: [{ ...t, hide: false }] }, views);
+  return saved.kind === 'unsupported' ? now : { ...saved, kind: 'partial', notes: [...saved.notes, ...edits] };
+}
+
+function readPanel(p: Record<string, unknown>, views: DataView[]): PanelImport {
   const t = target0(p);
   const base: PanelImport = {
     kind: 'ok',

@@ -10,6 +10,15 @@ Versions track the plugin's release history. `Unreleased` collects commits not y
 
 ---
 
+## [0.80.0] — 2026-11-23
+
+- Discover: opening a document keeps the field list open, and the document panel pushes the histogram and grid aside instead of covering them (as Kibana). On pages up to 1100 px wide, or expanded, it still goes over them.
+- Discover: click any cell to expand its value (click again to close). Cells show a pointer and a tint; a cut-off value shows "Click to expand" on hover. Selecting text and the cell's buttons do not expand.
+- Visualize has session tabs that work as Discover's (add, rename, duplicate, reorder, close, recently closed). A link opens in its own tab when the current one holds a chart; a dashboard panel's tab is named after it and closes on Cancel / Save and return. The side menu reopens the active tab's chart (an empty tab follows the last search).
+- Fixed: a Visualize panel edited in Grafana's own editor could not be edited in Visualize. Grafana hides plugin menu items while a dashboard is in edit mode, so panels saved from Visualize now also carry an "Edit in Visualize" panel link, which stays. If the query or chart type was edited, Visualize reads the panel as it is now; what cannot be converted opens on the saved chart. Save and return warns when it would drop edits made in Grafana.
+
+---
+
 ## [0.79.0] — 2026-11-23
 
 - Fixed: switching data views could run queries with the previous view's auto-detected time column or fields ("Unknown identifier"), and its errors stayed on screen. Discovery is now tied to its table; errors, rows and unfinished search text are reset on a switch.

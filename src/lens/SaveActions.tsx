@@ -23,7 +23,7 @@ import { LensPanel } from './panelExport';
 import { lossList, PanelImport } from './panelImport';
 import { assertClassicDashboard } from './panelImportLoad';
 import { OpenPanelModal } from './OpenPanelModal';
-import { dashboardReturnPath, DashboardReturn, readDashboardReturn, VISUALIZE_SOURCE_KEY } from './panelSource';
+import { dashboardReturnPath, DashboardReturn, panelEdits, readDashboardReturn, VISUALIZE_SOURCE_KEY } from './panelSource';
 import { returnSaveError, ReturnTarget, saveAndReturn, SaveLensModal } from './SaveLensModal';
 
 interface Props {
@@ -71,6 +71,7 @@ export async function loadReturnTarget(ret: DashboardReturn): Promise<ReturnTarg
     panelTitle: text(panel.title, 200),
     panelDescription: text(panel.description, 2000),
     madeInVisualize: editsInVisualize(panel),
+    edits: panelEdits(panel),
   };
 }
 
@@ -142,7 +143,7 @@ export function SaveActions({ paramsKey, disabled, defaultTitle, buildPanel, tim
   // Replacing the panel loses what the chart does not carry over: every replace goes through the
   // warning. Fails safe: without an analysis, only a panel made in Visualize saves directly.
   const loss = useMemo(
-    () => (imported ? lossList(imported) : returnTarget && !returnTarget.madeInVisualize ? UNKNOWN_LOSS : []),
+    () => (imported ? lossList(imported) : returnTarget ? (returnTarget.madeInVisualize ? (returnTarget.edits ?? []) : UNKNOWN_LOSS) : []),
     [imported, returnTarget]
   );
   const lossy = loss.length > 0;

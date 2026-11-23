@@ -12,7 +12,7 @@ import { errMsg } from '../errMsg';
 import { DataView } from '../types';
 import { finishImport, importPanel, PanelImport } from './panelImport';
 import { loadDashboardPanel } from './panelImportLoad';
-import { IMPORT_PARAM, readDashboardReturn } from './panelSource';
+import { IMPORT_PARAM, LINK_TOKEN, readDashboardReturn } from './panelSource';
 import { encodeLens, isEmptyLens, LensField } from './state';
 
 interface Stage {
@@ -64,7 +64,7 @@ export function usePanelImport(a: Args): PanelImportState {
       return;
     }
     let cancelled = false;
-    loadDashboardPanel(ret.uid, ret.panelId).then(
+    loadDashboardPanel(ret.uid, ret.panelId, token === LINK_TOKEN).then(
       (lp) => {
         if (!cancelled) {
           const r = importPanel(lp.panel, viewsRef.current);
@@ -125,6 +125,11 @@ export function usePanelImport(a: Args): PanelImportState {
           next.set('filters', JSON.stringify(r.filters));
         }
         next.set(IMPORT_PARAM, `${token}.k`);
+        // The panel's own link carries the dashboard's time once: it is also the one to return to.
+        if (token === LINK_TOKEN && next.get('from') && next.get('to') && !next.has('dfrom')) {
+          next.set('dfrom', next.get('from')!);
+          next.set('dto', next.get('to')!);
+        }
         return next;
       },
       { replace: true }

@@ -10,6 +10,7 @@ import { LogsQueryState, SelectedColumn, SourceConfig } from '../types';
 import { buildLogsQuery, buildVolumeQuery, CORE_ALIAS, VolumeBreakdown } from '../sql/queryBuilder';
 import { FieldIndex } from '../sql/fields';
 import { DISCOVER_SOURCE_KEY } from './discoverSource';
+import { withEditLink } from '../lens/panelSource';
 
 export const CH_DATASOURCE_TYPE = 'grafana-clickhouse-datasource';
 
@@ -39,6 +40,8 @@ export interface ExportedPanel {
     rawSql: string;
     /** Visualize state of a panel added from Visualize ("Edit in Visualize", lens/panelSource.ts). */
     observeVisualize?: string;
+    /** The panel's signature when Visualize saved it (lens/panelSource.ts). */
+    observeVisualizeSig?: string;
     /** Discover search of a logs panel added from Discover ("Open in Discover", data/discoverSource.ts). */
     observeDiscover?: string;
   }>;
@@ -47,6 +50,7 @@ export interface ExportedPanel {
   /** Drives the panel's $__interval / $__timeInterval (Grafana default: the panel width in pixels). */
   maxDataPoints?: number;
   options?: Record<string, unknown>;
+  links?: unknown[];
   fieldConfig?: { defaults: Record<string, unknown>; overrides: unknown[] };
 }
 
@@ -341,7 +345,7 @@ export function appendPanelsToDashboard(
     0
   );
   const offsetPanels = panels.map((p, i) => ({
-    ...p,
+    ...withEditLink(p, maxId + i + 1),
     id: maxId + i + 1,
     gridPos: { ...p.gridPos, y: maxY + p.gridPos.y },
   }));
@@ -377,7 +381,7 @@ export function replacePanelInDashboard(
       if (!found && p.id === panelId && p.type !== 'row') {
         found = true;
         const gridPos = isGridPos(p.gridPos) ? p.gridPos : panel.gridPos;
-        return { ...panel, id: panelId, gridPos };
+        return { ...withEditLink(panel, panelId), id: panelId, gridPos };
       }
       return p.type === 'row' && Array.isArray(p.panels) ? { ...p, panels: swap(p.panels) } : raw;
     });

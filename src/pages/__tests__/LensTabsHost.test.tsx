@@ -36,11 +36,14 @@ jest.mock('../../components/App/App', () => {
 });
 
 const probe = { search: '' };
-function LocationProbe() {
+function LocationProbe({ onChange }: { onChange: (search: string) => void }) {
   const { search } = useLocation();
-  probe.search = search;
+  React.useEffect(() => onChange(search), [search, onChange]);
   return null;
 }
+const recordSearch = (search: string) => {
+  probe.search = search;
+};
 
 function renderAt(url: string) {
   return render(
@@ -51,7 +54,7 @@ function renderAt(url: string) {
           element={
             <>
               <LensTabsHost />
-              <LocationProbe />
+              <LocationProbe onChange={recordSearch} />
             </>
           }
         />

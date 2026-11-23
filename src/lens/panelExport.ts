@@ -17,7 +17,7 @@ import { autoAxisTitles, withLensStyle } from './render/styleConfig';
 import { withReferenceThresholds } from './render/layerConfig';
 import { seriesColorOf } from './style';
 import { stableColors } from './render/seriesColors';
-import { VISUALIZE_SOURCE_KEY } from './panelSource';
+import { panelSignature, VISUALIZE_SIG_KEY, VISUALIZE_SOURCE_KEY } from './panelSource';
 import { gaugeDefaults, gaugeMetrics, gaugeOptions } from './render/gaugeSpec';
 import { formatOf, grafanaUnit } from './metricOptions';
 
@@ -133,6 +133,20 @@ export function seriesColorOverrides(state: LensState, series: LensPanelOpts['se
 }
 
 export function buildLensPanel(
+  state: LensState,
+  config: SourceConfig,
+  conditions: string[],
+  timeRange: TimeRange,
+  opts: LensPanelOpts
+): LensPanel {
+  const panel = lensPanel(state, config, conditions, timeRange, opts);
+  // Signed as a dashboard stores it, so edits made in Grafana can be told later.
+  return opts.source
+    ? { ...panel, targets: panel.targets.map((t) => ({ ...t, [VISUALIZE_SIG_KEY]: panelSignature(panel) })) }
+    : panel;
+}
+
+function lensPanel(
   state: LensState,
   config: SourceConfig,
   conditions: string[],

@@ -563,3 +563,11 @@ Deferred majors: @grafana/data|ui|runtime|schema|i18n 13.0.2 -> 13.3.1 (keeps ty
 Pins: the clickhouse datasource plugin 4.20.0 and `clickhouse-server:26.3-alpine` are pinned; the Grafana base image 13.0.2 is pinned in `.config`.
 
 **View-switch filters (Discover).** `FilterPill.homeView` names the view a pill was disabled away from; `filtersForDiscoverSwitch` enables it again there. A pill the user re-enables on another view then belongs to that view; pinned pills follow their table.
+
+## Round 7 (v0.80.0)
+
+**Edit in Visualize after a Grafana edit.** Grafana 13 builds the panel menu's Extensions only when `!dashboard.state.isEditing`; the top bar / mega menu / chrome extension points accept only Grafana's own app. A panel link is the one entry left in edit mode: `withEditLink` writes it (with the panel's id) on every save from Visualize. Grafana copies links when a panel is duplicated, so `loadDashboardPanel(..., viaLink)` refuses when several panels carry the same link. `observeVisualizeSig` hashes query, type, overrides and transformations; options and field defaults are left out because Grafana fills in its defaults on every save (an edit to those alone is not detected). Panels saved before 0.80.0 have neither link nor signature until saved again.
+
+**Visualize tabs.** `useSessionTabs` is shared with Discover. Unlike Discover, a link never replaces a tab in use (`lensTabInUse`). Supersedes round 3 #19 (side menu always empty). `finishOnLeave` writes storage only: the page still shows the tab until the navigation unmounts it.
+
+**Document panel.** Supersedes round 3 row 3 (overlay): pushes, by user request.
