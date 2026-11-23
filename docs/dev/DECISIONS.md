@@ -571,3 +571,7 @@ Pins: the clickhouse datasource plugin 4.20.0 and `clickhouse-server:26.3-alpine
 **Visualize tabs.** `useSessionTabs` is shared with Discover. Unlike Discover, a link never replaces a tab in use (`lensTabInUse`). Supersedes round 3 #19 (side menu always empty). `finishOnLeave` writes storage only: the page still shows the tab until the navigation unmounts it.
 
 **Document panel.** Supersedes round 3 row 3 (overlay): pushes, by user request.
+
+## Round 8 (Visualize audit fixes)
+
+Day+ buckets follow the user's zone (supersedes server-zone midnight); panels bake the zone at save. W1 limit 50,000 in the app, 10,000 in panels. Accepted: integers over 2^53 (JS numbers), automatic range labels / series order / heat map table row order / infinity in panels, Grafana-only percentage tooltips and reference lines, auto day+ panel buckets an hour off after DST, midnight-DST zones in panels, Discover's histogram stays UTC, abbreviations / durations in tables and gauges use Grafana's spelling.
