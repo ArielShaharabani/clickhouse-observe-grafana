@@ -112,3 +112,13 @@ describe('R8 M9 axes', () => {
     expect(JSON.stringify(panel(s).fieldConfig!.overrides)).toContain('axisPlacement');
   });
 });
+
+describe('R8 E11', () => {
+  it('panels without a value format group thousands and show NaN as "-"', () => {
+    const d = panel({ chartType: 'metric', buckets: [svc], metrics: [count] }).fieldConfig!.defaults as any;
+    expect(d.unit).toBe('locale');
+    expect(d.mappings[0]).toMatchObject({ type: 'special', options: { match: 'null+nan', result: { text: '-' } } });
+    const fmt = panel({ chartType: 'metric', buckets: [svc], metrics: [{ ...count, format: { id: 'percent' } } as any] });
+    expect((fmt.fieldConfig!.defaults as any).unit).not.toBe('locale');
+  });
+});

@@ -172,8 +172,17 @@ function lensPanel(
   }
   // Split time series keep the metric aliases as field names (see splitSeriesNames), so their
   // per-metric overrides match the alias, not the label.
+  // Numbers without a chosen format read as in Visualize (thousands separators), and null / NaN show "-".
+  const plain = {
+    ...panel.fieldConfig,
+    defaults: {
+      unit: 'locale',
+      mappings: [{ type: 'special', options: { match: 'null+nan', result: { text: '-', index: 0 } } }],
+      ...panel.fieldConfig.defaults,
+    },
+  };
   const fieldConfig = withMetricAppearance(
-    panel.fieldConfig,
+    plain,
     state,
     xy,
     splitTimeSeries(state) || splitCategorySeries(state) ? (i) => ({ id: 'byName', options: metricAlias(i) }) : undefined
