@@ -83,6 +83,8 @@ export interface DashboardReturn {
 }
 
 export const RETURN_PARAMS = ['dash', 'panel', 'dfrom', 'dto'] as const;
+/** Marks a link from a panel with no Visualize state: Visualize reads the dashboard and converts the panel (a token: apply; token.k: applied). */
+export const IMPORT_PARAM = 'pi';
 
 /** Save-and-return context from Visualize's URL; undefined unless the uid and panel id are valid. */
 export function readDashboardReturn(sp: URLSearchParams): DashboardReturn | undefined {
@@ -116,6 +118,9 @@ export function editInVisualizePath(ctx: PanelCtx): string | undefined {
   const raw = (ctx.targets ?? [])
     .map((t) => (t as unknown as Record<string, unknown>)[VISUALIZE_SOURCE_KEY])
     .find((v): v is string => typeof v === 'string');
+  if (raw === undefined) {
+    return importPanelPath(ctx);
+  }
   if (!raw || raw.length > MAX_SOURCE_LEN) {
     return undefined;
   }
@@ -144,6 +149,28 @@ export function editInVisualizePath(ctx: PanelCtx): string | undefined {
       sp.set('dfrom', from);
       sp.set('dto', to);
     }
+  }
+  return `${PLUGIN_BASE_URL}/visualize?${sp.toString()}`;
+}
+
+/**
+ * Edit in Visualize for a panel that has no Visualize state (R6-PANELS): the link names only the
+ * dashboard, the panel and the times; Visualize loads the dashboard and converts the panel there
+ * (lens/panelImport.ts). No SQL or settings travel in the URL. Needs a saved dashboard (uid) and panel id.
+ */
+function importPanelPath(ctx: PanelCtx): string | undefined {
+  const uid = ctx.dashboard?.uid;
+  if (!isDashboardUid(uid) || !isPanelId(ctx.id)) {
+    return undefined;
+  }
+  const sp = new URLSearchParams({ dash: uid, panel: String(ctx.id), [IMPORT_PARAM]: Date.now().toString(36) });
+  const from = timeParam(ctx.timeRange?.from);
+  const to = timeParam(ctx.timeRange?.to);
+  if (from && to && isTimeParam(from) && isTimeParam(to)) {
+    sp.set('from', from);
+    sp.set('to', to);
+    sp.set('dfrom', from);
+    sp.set('dto', to);
   }
   return `${PLUGIN_BASE_URL}/visualize?${sp.toString()}`;
 }

@@ -26,6 +26,8 @@ import { visualizeEntry } from './entry';
 import { discoverBreakdownOf, discoverColumns, discoverIntervalOf, discoverUrl, lensContextFor } from './handoff';
 import { buildLensPanel, defaultPanelTitle } from './panelExport';
 import { SaveActions } from './SaveActions';
+import { PanelImportNote } from './PanelImportNote';
+import { usePanelImport } from './usePanelImport';
 import { FilterPills } from '../components/FilterPills';
 import { QueryRow, withQuery } from './QueryRow';
 import { QueryActionsRow, QueryActionToggle, QueryTimeControls } from '../components/QueryBar';
@@ -488,6 +490,17 @@ export function LensPage() {
       }
     }
   }, [fieldsLoading, lens, urlLens, setLens]);
+  // Edit in Visualize on any dashboard panel (R6-PANELS): converts the panel the link names.
+  const panelImport = usePanelImport({
+    paramsKey,
+    setSearchParams,
+    views,
+    activeViewId: activeView?.id,
+    setActiveViewId,
+    fields: lensFields,
+    fieldsReady: fieldsPublished && !discovering,
+    timestamp: config.columns.timestamp,
+  });
   const { loadValues, loadMapKeys } = useAutocompleteSources({
     config,
     query: { ...DEFAULT_LOGS_QUERY_STATE, search, filters },
@@ -909,6 +922,8 @@ export function LensPage() {
         pinTable={tableKey(config.database, config.logsTable)}
       />
 
+      <PanelImportNote state={panelImport} />
+
       <QueryActionsRow
         left={
           <QueryActionToggle icon="info-circle" onClick={() => setInspectOpen(true)} disabled={blankChart}>
@@ -918,7 +933,9 @@ export function LensPage() {
         right={
           <SaveActions
             paramsKey={paramsKey}
-            disabled={blankChart || chartFieldsLoading || !!queryError || !!calcError}
+            disabled={blankChart || chartFieldsLoading || !!queryError || !!calcError || panelImport.pending}
+            imported={panelImport.imported}
+            hasChart={!blankChart}
             defaultTitle={defaultPanelTitle(lens)}
             buildPanel={buildPanel}
             timeRange={timeRange}
