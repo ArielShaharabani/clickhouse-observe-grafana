@@ -359,6 +359,52 @@ describe('useFieldDiscovery — detectedPartitionTimestamp', () => {
     expect(result.current.detectedPartitionTimestamp).toBe('TimestampTime');
   });
 
+  it('never reports the fields or prune column of the previous table after a switch (round 6 #1)', async () => {
+    let failB: (e: Error) => void = () => {};
+    mockRunQueryRows.mockImplementation(async ({ sql }) => {
+      if (!sql.includes('system.columns')) {
+        return [];
+      }
+      if (sql.includes('switch_b')) {
+        return new Promise((_, reject) => {
+          failB = reject;
+        });
+      }
+      const col = { default_kind: '', default_expression: '', is_in_partition_key: 0, is_in_primary_key: 0 };
+      return [
+        { ...col, name: 'Timestamp', type: 'DateTime64(9)', position: 1 },
+        {
+          ...col,
+          name: 'TimestampTime',
+          type: 'DateTime',
+          default_kind: 'DEFAULT',
+          default_expression: 'toDate(Timestamp)',
+          is_in_partition_key: 1,
+          is_in_primary_key: 1,
+          position: 2,
+        },
+      ];
+    });
+    const { result, rerender } = renderHook(
+      ({ table }) => useFieldDiscovery({ ...config, logsTable: table, columns: OTEL_COLUMN_MAPPING }, timeRange),
+      { initialProps: { table: 'switch_a' } }
+    );
+    await waitFor(() => expect(result.current.detectedPartitionTimestamp).toBe('TimestampTime'));
+
+    rerender({ table: 'switch_b' });
+    expect(result.current.detectedPartitionTimestamp).toBe('');
+    expect(result.current.fields).toEqual([]);
+    expect(result.current.loading).toBe(true);
+
+    // A failed lookup must not leave the discovery of the old table in place either.
+    await waitFor(() => expect(mockRunQueryRows.mock.calls.some(([o]) => o.sql.includes('switch_b'))).toBe(true));
+    failB(new Error('no access'));
+    await waitFor(() => expect(result.current.error).toContain('no access'));
+    expect(result.current.loading).toBe(false);
+    expect(result.current.fields).toEqual([]);
+    expect(result.current.detectedPartitionTimestamp).toBe('');
+  });
+
   it('detects nothing when no column qualifies (e.g. the mapped timestamp is itself the sort key)', async () => {
     mockRunQueryRows.mockImplementation(async ({ sql }) => {
       if (sql.includes('system.columns')) {

@@ -61,6 +61,8 @@ export function QueryBar(p: QueryBarProps) {
       />
       <div className={styles.searchWrap}>
         <SearchBar
+          // A draft (or its syntax error) belongs to the view it was typed on.
+          key={p.dataViewId}
           value={p.search}
           onChange={p.onSearch}
           onSearch={() => {}}

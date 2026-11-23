@@ -206,6 +206,8 @@ export function LogsExplorer({ tabId, tabStrip, onTitle }: LogsExplorerProps = {
   // Matching documents of a data view without a time field (no histogram to count from).
   const [noTimeCount, setNoTimeCount] = useState<{ sql: string; count: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // The histogram's own failure, cleared by its next run (a list re-run alone must not decide it).
+  const [volError, setVolError] = useState<string | null>(null);
   // The list query itself failed: the grid shows the error instead of the previous (now stale)
   // rows. A histogram-only failure leaves the valid rows alone.
   const [logsError, setLogsError] = useState<string | null>(null);
@@ -372,6 +374,15 @@ export function LogsExplorer({ tabId, tabStrip, onTitle }: LogsExplorerProps = {
       });
       setBreakdown(null);
       setPendingBreakdownFieldId(undefined);
+      setBreakdownNotice(undefined);
+      // Errors and results of the previous view say nothing about this one.
+      setError(null);
+      setVolError(null);
+      setLogsError(null);
+      setInvalidQuery(null);
+      setRows([]);
+      setVolumeData([]);
+      setSelectedRow(null);
       didReconcileForDiscoveryRef.current = false;
     }
     prevViewId.current = viewId;
@@ -808,6 +819,7 @@ export function LogsExplorer({ tabId, tabStrip, onTitle }: LogsExplorerProps = {
   const fetchVolume = useCallback(async () => {
     if (!config.datasourceUid || !caps.hasTime) {
       setVolumeData([]);
+      setVolError(null);
       if (config.datasourceUid && config.logsTable) {
         // No time field: one count() for "Documents (N)" instead of a histogram.
         const countSql = buildCountQuery(config, queryState, fieldIndexRef.current);
@@ -844,6 +856,7 @@ export function LogsExplorer({ tabId, tabStrip, onTitle }: LogsExplorerProps = {
     // See the matching comment in fetchLogs above.
     const action = actionRef.current ?? undefined;
     setVolLoading(true);
+    setVolError(null);
     try {
       const resolved = resolveInterval(intervalMode, timeRange);
       const volSql = buildVolumeQuery(config, queryState, {
@@ -889,7 +902,7 @@ export function LogsExplorer({ tabId, tabStrip, onTitle }: LogsExplorerProps = {
         // ClickHouse's timeout_overflow_mode = 'throw' (see VOLUME_QUERY_SETTINGS) surfaces as
         // this substring — reword it into something the user can act on instead of a raw
         // ClickHouse error string.
-        setError(
+        setVolError(
           /timeout exceeded|TIMEOUT_EXCEEDED/i.test(rawMsg)
             ? 'Histogram query exceeded its 60s budget — narrow the time range or choose a coarser interval.'
             : rawMsg
@@ -1781,9 +1794,9 @@ export function LogsExplorer({ tabId, tabStrip, onTitle }: LogsExplorerProps = {
         {showDiagnostics && <DiagnosticsDrawer onClose={() => setShowDiagnostics(false)} />}
 
         {/* Error banner */}
-        {error && (
+        {(error ?? volError) && (
           <div className={styles.error}>
-            <strong>Query error:</strong> {error}
+            <strong>Query error:</strong> {error ?? volError}
           </div>
         )}
 

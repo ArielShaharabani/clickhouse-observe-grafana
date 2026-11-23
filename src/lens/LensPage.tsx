@@ -530,6 +530,9 @@ export function LensPage() {
     config.datasourceUid,
     config.database,
     config.logsTable,
+    // The compiled time conditions depend on these (the prune column may be detected later).
+    config.columns.timestamp,
+    config.columns.partitionTimestamp,
     search,
     filters,
     timeRange.from.valueOf(),
