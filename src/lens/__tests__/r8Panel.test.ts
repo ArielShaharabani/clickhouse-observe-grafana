@@ -78,3 +78,21 @@ describe('R8 E10', () => {
     expect(show('unstacked')).toBe('auto');
   });
 });
+
+describe('R8 M3', () => {
+  it('table colour by value scales each column on its own min and max', () => {
+    const p = panel({
+      chartType: 'table',
+      buckets: [svc],
+      metrics: [
+        { ...count, colorBy: 'cell' },
+        { ...avg, colorBy: 'text' },
+      ],
+    });
+    const ov = p.fieldConfig!.overrides as any[];
+    expect(ov).toHaveLength(2);
+    for (const o of ov) {
+      expect(o.properties).toContainEqual({ id: 'fieldMinMax', value: true });
+    }
+  });
+});
