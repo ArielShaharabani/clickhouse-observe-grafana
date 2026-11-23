@@ -52,7 +52,7 @@ const tr: TimeRange = {
 const dashboard = {
   title: 'Ops',
   version: 3,
-  panels: [{ id: 5, type: 'barchart', title: 'Errors by service', description: 'mine', gridPos: { x: 4, y: 2, w: 8, h: 9 } }],
+  panels: [{ id: 5, type: 'barchart', title: 'Errors by service', description: 'mine', gridPos: { x: 4, y: 2, w: 8, h: 9 }, targets: [{ refId: 'A', observeVisualize: 'lens=x' }] }],
 };
 const buildPanel = (title: string, description: string) => ({
   id: 1,

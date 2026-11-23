@@ -64,6 +64,8 @@ export interface ReturnTarget extends DashboardReturn {
   dashboardTitle: string;
   panelTitle: string;
   panelDescription: string;
+  /** The panel carries its Visualize state (it was saved from here). */
+  madeInVisualize?: boolean;
 }
 
 /**

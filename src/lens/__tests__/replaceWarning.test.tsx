@@ -28,8 +28,10 @@ const params = 'dash=abc&panel=2&from=now-1h&to=now&dfrom=now-1h&dto=now';
 const base: PanelImport = { kind: 'ok', search: '', filters: [], notes: [], title: 'Orig', description: '', originalQuery: 'SELECT 1' };
 const tr = { from: dateTime(0), to: dateTime(1000), raw: { from: 'now-1h', to: 'now' } };
 
-function setup(imported?: PanelImport) {
-  (getDashboard as jest.Mock).mockResolvedValue({ dashboard: JSON.parse(JSON.stringify(dashboard)), meta: {} });
+function setup(imported?: PanelImport, targets?: object[]) {
+  const d = JSON.parse(JSON.stringify(dashboard));
+  d.panels[0].targets = targets;
+  (getDashboard as jest.Mock).mockResolvedValue({ dashboard: d, meta: {} });
   (saveDashboard as jest.Mock).mockResolvedValue({ uid: 'abc', url: '/d/abc' });
   (searchDashboards as jest.Mock).mockResolvedValue([]);
   const buildPanel = jest.fn((title: string) => ({
@@ -75,8 +77,16 @@ describe('every replace of an original panel goes through the check', () => {
     expect((saveDashboard as jest.Mock).mock.calls[0][1]).toMatchObject({ overwrite: false });
   });
 
-  it('no import info (a panel saved from Visualize) behaves as before', async () => {
-    setup(undefined);
+  it('no import info: a panel that was not made in Visualize still warns (fails safe)', async () => {
+    setup(undefined, [{ refId: 'A', rawSql: 'SELECT 1' }]);
+    await ready();
+    fireEvent.click(saveAndReturn());
+    expect(await screen.findByText('Replace the original panel?')).toBeTruthy();
+    expect(saveDashboard).not.toHaveBeenCalled();
+  });
+
+  it('a panel saved from Visualize is replaced in one click', async () => {
+    setup(undefined, [{ refId: 'A', observeVisualize: 'lens=x' }]);
     await ready();
     fireEvent.click(saveAndReturn());
     await waitFor(() => expect(saveDashboard).toHaveBeenCalledTimes(1));

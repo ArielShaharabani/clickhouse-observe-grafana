@@ -23,7 +23,7 @@ import { LensPanel } from './panelExport';
 import { lossList, PanelImport } from './panelImport';
 import { assertClassicDashboard } from './panelImportLoad';
 import { OpenPanelModal } from './OpenPanelModal';
-import { dashboardReturnPath, DashboardReturn, readDashboardReturn } from './panelSource';
+import { dashboardReturnPath, DashboardReturn, readDashboardReturn, VISUALIZE_SOURCE_KEY } from './panelSource';
 import { returnSaveError, ReturnTarget, saveAndReturn, SaveLensModal } from './SaveLensModal';
 
 interface Props {
@@ -66,8 +66,20 @@ export async function loadReturnTarget(ret: DashboardReturn): Promise<ReturnTarg
     dashboardTitle: text(dashboard.title, 200) || ret.uid,
     panelTitle: text(panel.title, 200),
     panelDescription: text(panel.description, 2000),
+    madeInVisualize: editsInVisualize(panel),
   };
 }
+
+/** The panel carries its Visualize state, so replacing it from Visualize is a round trip. */
+function editsInVisualize(panel: Record<string, unknown>): boolean {
+  return (
+    Array.isArray(panel.targets) &&
+    panel.targets.some((t) => typeof (t as Record<string, unknown> | null)?.[VISUALIZE_SOURCE_KEY] === 'string')
+  );
+}
+
+/** Any other panel whose conversion isn't known (failed, or the link has no import marker) may lose everything. */
+const UNKNOWN_LOSS = ['The original query and panel settings (they were not read into Visualize)'];
 
 export function SaveActions({ paramsKey, disabled, defaultTitle, buildPanel, timeRange, imported, hasChart }: Props) {
   const ret = useMemo(() => readDashboardReturn(new URLSearchParams(paramsKey)), [paramsKey]);
@@ -81,9 +93,6 @@ export function SaveActions({ paramsKey, disabled, defaultTitle, buildPanel, tim
   const [warnOpen, setWarnOpen] = useState(false);
   const [openPanel, setOpenPanel] = useState(false);
   const canView = useMemo(() => canViewDashboards(), []);
-  // Replacing the panel loses what the chart does not carry over: every replace goes through the warning.
-  const loss = useMemo(() => (imported ? lossList(imported) : []), [imported]);
-  const lossy = loss.length > 0;
   const canSave = useMemo(() => canCreateDashboards(), []);
   // The chart as it was when the panel opened: Cancel only asks when it has changed since.
   const baseline = useRef<{ key: string; chart: string } | null>(null);
@@ -123,6 +132,13 @@ export function SaveActions({ paramsKey, disabled, defaultTitle, buildPanel, tim
 
   const loaded = target?.key === retKey ? target : null;
   const returnTarget = loaded?.value;
+  // Replacing the panel loses what the chart does not carry over: every replace goes through the
+  // warning. Fails safe: without an analysis, only a panel made in Visualize saves directly.
+  const loss = useMemo(
+    () => (imported ? lossList(imported) : returnTarget && !returnTarget.madeInVisualize ? UNKNOWN_LOSS : []),
+    [imported, returnTarget]
+  );
+  const lossy = loss.length > 0;
 
   const onCancel = () => {
     if (!ret) {

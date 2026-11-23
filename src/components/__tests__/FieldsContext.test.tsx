@@ -438,7 +438,7 @@ describe('useFieldDiscovery — fieldsFor (#16b view switch)', () => {
     mockRunQueryRows.mockReset();
   });
 
-  it('names the table the published fields belong to, and keeps the old name until the new table publishes', async () => {
+  it('names the table the published fields belong to, and reports no fields until the new table publishes', async () => {
     let release: () => void = () => undefined;
     const gate = new Promise<void>((r) => (release = r));
     mockRunQueryRows.mockImplementation(async ({ sql }) => {
@@ -457,8 +457,9 @@ describe('useFieldDiscovery — fieldsFor (#16b view switch)', () => {
     await waitFor(() => expect(result.current.fieldsFor).toBe(discoveryKey(a)));
 
     rerender({ c: b });
-    // Still table A's fields: a consumer comparing fieldsFor with discoveryKey(b) waits.
-    expect(result.current.fields.map((f) => f.name)).toEqual(['Body']);
+    // Table A's fields are not offered for table B; fieldsFor still says B has not published.
+    expect(result.current.fields).toEqual([]);
+    expect(result.current.loading).toBe(true);
     expect(result.current.fieldsFor).toBe(discoveryKey(a));
     expect(result.current.fieldsFor).not.toBe(discoveryKey(b));
 
