@@ -71,6 +71,7 @@ import {
   KIND_OTHER,
   KIND_VALUE,
   LensState,
+  MAX_TERMS_SIZE,
   MetricDim,
   MISSING_VALUE,
   OTHER_VALUE,
@@ -82,8 +83,14 @@ import {
   TermsDim,
 } from './state';
 
-/** Safety cap on result rows (a date histogram × 9 breakdown values stays far below it). */
-export const LENS_ROW_LIMIT = 10_000;
+/**
+ * Most result rows a chart is drawn from. The app query asks for one more, so a result that was cut
+ * is told apart from one that just fits (`LensResult.truncated`).
+ */
+export const LENS_ROW_LIMIT = 50_000;
+/** Row limit of a saved panel's query. */
+const PANEL_ROW_LIMIT = 10_000;
+const limitSql = (mode: 'app' | 'dashboard') => `LIMIT ${mode === 'app' ? LENS_ROW_LIMIT + 1 : PANEL_ROW_LIMIT}`;
 
 /** Upper bound for gap filling (the auto interval targets ~60 buckets). */
 const MAX_FILLED_BUCKETS = 5000;
@@ -454,7 +461,7 @@ export function compileLens(
       filtersBucket(b, i);
     } else {
       const field = quoteIdentifier(b.field);
-      const size = Math.max(1, Math.floor(b.size));
+      const size = Math.min(MAX_TERMS_SIZE, Math.max(1, Math.floor(b.size)));
       const cte = `top${i}`;
       const dir = rankDirOf(b).toUpperCase();
       // A calculation other than Cumulative sum has no single value to rank by: count instead.
@@ -645,7 +652,7 @@ export function compileLens(
       allWhere ? `WHERE ${allWhere}` : null,
       groupBy.length > 0 ? `GROUP BY ${groupBy.join(', ')}` : null,
       orderBy,
-      `LIMIT ${LENS_ROW_LIMIT}`,
+      limitSql(mode),
     ],
     configSettingsFragments(config)
   );
@@ -825,7 +832,7 @@ function wrapWindow(p: WrapParts): string {
       `)`,
       outerWhere,
       orderBy,
-      `LIMIT ${LENS_ROW_LIMIT}`,
+      limitSql(mode),
     ],
     p.settings
   );
@@ -976,6 +983,8 @@ export interface LensResult {
   series: LensSeries[];
   /** Rows as returned (for the table), with readable column names. */
   table: { columns: string[]; rows: Array<Array<string | number | null>> };
+  /** The query had more rows than `LENS_ROW_LIMIT`: the rest is missing (never drawn as 0). */
+  truncated?: boolean;
 }
 
 /** Date buckets come back as epoch ms (see compileLens), possibly as a numeric string. */
@@ -1062,6 +1071,36 @@ function bucketCell(b: BucketDim | undefined, r: Record<string, unknown>, i: num
   return { key: String(start), label: `${fmtNum(start)} – ${fmtNum(start + w)}`, synthetic: false };
 }
 
+/**
+ * The rows a chart is drawn from: at most `LENS_ROW_LIMIT`. When the result was cut inside a date
+ * or number bucket (rows come in bucket order) that half-read last bucket is left out too.
+ */
+function limitRows(
+  state: LensState,
+  rows: Array<Record<string, unknown>>
+): { rows: Array<Record<string, unknown>>; truncated: boolean } {
+  if (rows.length <= LENS_ROW_LIMIT) {
+    return { rows, truncated: false };
+  }
+  const kept = rows.slice(0, LENS_ROW_LIMIT);
+  const x = state.buckets[0];
+  if (x?.kind === 'date_histogram' || x?.kind === 'range') {
+    const b0 = bucketAlias(0);
+    const next = String(rows[LENS_ROW_LIMIT][b0]);
+    const end = kept.findIndex((r) => String(r[b0]) === next);
+    if (end > 0) {
+      return { rows: kept.slice(0, end), truncated: true };
+    }
+  }
+  return { rows: kept, truncated: true };
+}
+
+/** What a cut result means for the reader, or null for a complete one. */
+export const truncatedNote = (r: Pick<LensResult, 'truncated'> | undefined): string | null =>
+  r?.truncated
+    ? `Incomplete: the result has more than ${LENS_ROW_LIMIT.toLocaleString('en-US')} rows and was cut. The missing values are not drawn and totals are too low. Use fewer values or a larger interval.`
+    : null;
+
 /** Shapes query rows into chart series: X = buckets[0], one series per metric × breakdown value. */
 export function shapeLensRows(
   state: LensState,
@@ -1076,13 +1115,14 @@ export function shapeLensRows(
   const canStep = !!interval || (!!bucketMs && bucketMs > 0);
   const step = (t: number, k: number) => (interval ? stepBucket(t, interval, k) : t + k * (bucketMs ?? 0));
   // Drop partial intervals: buckets the time range covers only in part (first / last).
+  const { rows: limited, truncated } = limitRows(state, rowsIn);
   const rows =
     xd?.dropPartial && range && canStep
-      ? rowsIn.filter((r) => {
+      ? limited.filter((r) => {
           const t = toMs(r[bucketAlias(0)]);
           return t >= range.from && step(t, 1) <= range.to;
         })
-      : rowsIn;
+      : limited;
   const xs: Array<string | number> = [];
   const xInfo = new Map<string | number, TermCell>();
   const seenX = new Set<string | number>();
@@ -1114,7 +1154,7 @@ export function shapeLensRows(
           breakdown: bCell && !bCell.synthetic ? (r[bucketAlias(1)] == null ? '' : String(r[bucketAlias(1)])) : bv,
           synthetic: bCell?.synthetic,
           metricIndex: i,
-          zeroFill: state.metrics[i].op === 'count',
+          zeroFill: !truncated && state.metrics[i].op === 'count',
         };
         seriesMap.set(name, s);
       }
@@ -1132,7 +1172,7 @@ export function shapeLensRows(
     // (bars and the brush line up with real time). Include empty rows (default on) fills the whole
     // time picker range when bound to it, else only between the first and last bucket with data.
     // Stepping starts from a real bucket so generated starts line up with ClickHouse's.
-    if (canStep && xd?.emptyRows !== false && xs.length > 0) {
+    if (canStep && xd?.emptyRows !== false && xs.length > 0 && !truncated) {
       let start = Number(xs[0]);
       let end = Number(xs[xs.length - 1]);
       if (range && !xd?.unbound) {
@@ -1160,7 +1200,7 @@ export function shapeLensRows(
   }
   // Intervals (automatic) with Include empty rows: fill the missing widths between the first and
   // last bucket so the axis is linear in value.
-  if (x?.kind === 'range' && !x.ranges && x.emptyRows !== false && xs.length > 1 && rows.length > 0) {
+  if (x?.kind === 'range' && !x.ranges && x.emptyRows !== false && xs.length > 1 && rows.length > 0 && !truncated) {
     const w = num(rows[0][widthAlias(0)]);
     const first = Number(xs[0]);
     const last = Number(xs[xs.length - 1]);
@@ -1201,6 +1241,7 @@ export function shapeLensRows(
     xIsTime,
     series: orderSeries(state, [...seriesMap.values()]),
     table: { columns, rows: tableRows },
+    ...(truncated ? { truncated: true } : {}),
   };
 }
 

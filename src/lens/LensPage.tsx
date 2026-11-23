@@ -38,7 +38,7 @@ import { addFilterPill, makeFilter, sanitizeFilterPills } from '../sql/filters';
 import { FilterChoice, FilterChooser } from './FilterChooser';
 import { XySelection, xLabel } from './render/XyChart';
 import { DEFAULT_LOGS_QUERY_STATE, FilterPill } from '../types';
-import { compileLens, LensResult, realKey, shapeLensRows } from './compile';
+import { compileLens, LensResult, realKey, shapeLensRows, truncatedNote } from './compile';
 import { LensChart } from './render/LensChart';
 import { CHART_ICONS, ChartTypeSwitcher } from './ChartTypeSwitcher';
 import { StylePanel, StyleToolbar, StyleView } from './StylePanel';
@@ -680,6 +680,7 @@ export function LensPage({ tabStrip, onTitle, onLeave }: LensPageProps = {}) {
   // result would need its own empty state).
   const chartLoading = chartFieldsLoading || (!blankChart && !!config.datasourceUid && !current && !queryError && !calcError);
   const approxNote = current?.data ? lensApproxNote(lens) : null;
+  const cutNote = truncatedNote(current?.data);
 
   const onAdd = (f: LensField) => setLens(addField(lens, f, ctx));
   const removeDim = (id: string) => {
@@ -1110,6 +1111,12 @@ export function LensPage({ tabStrip, onTitle, onLeave }: LensPageProps = {}) {
             )}
           </div>
 
+          {cutNote && (
+            <div className={styles.cutNote} role="alert" data-testid="lens-truncated-note">
+              <Icon name="exclamation-triangle" size="sm" /> {cutNote}
+            </div>
+          )}
+
           {approxNote && (
             <div className={styles.approxNote} data-testid="lens-approx-note">
               <Icon name="info-circle" size="sm" /> {approxNote}
@@ -1340,6 +1347,11 @@ const getStyles = (theme: GrafanaTheme2) => ({
     background: ${theme.colors.background.canvas};
     height: calc(100vh - 48px);
     min-height: 480px;
+  `,
+  cutNote: css`
+    padding: ${theme.spacing(0.5, 1)};
+    font-size: ${theme.typography.bodySmall.fontSize};
+    color: ${theme.colors.warning.text};
   `,
   approxNote: css`
     display: flex;

@@ -74,7 +74,7 @@ describe('top values SQL (LENS-DIM-04)', () => {
 
   it('outer order follows the rank: alphabetical by value, custom metric by its column, direction honoured', () => {
     const order = (b: TermsDim, metrics: MetricDim[] = [count]) =>
-      /ORDER BY [^\n]*\nLIMIT 10000/.exec(sqlOf(b, metrics))![0];
+      /ORDER BY [^\n]*\nLIMIT 50001/.exec(sqlOf(b, metrics))![0];
     expect(order({ ...svc, rankBy: 'alpha' })).toContain('ORDER BY b0 ASC, b0');
     expect(order({ ...svc, rankBy: 'alpha', rankDir: 'desc', other: true })).toContain('ORDER BY k0, b0 DESC, b0, k0');
     expect(order({ ...svc, rankDir: 'asc' })).toContain('ORDER BY m0 ASC, b0');

@@ -124,6 +124,8 @@ export const RANK_BYS: readonly TermsRankBy[] = ['count', 'alpha', 'metric'];
 /** Labels of the synthetic values (also what a chart click must not turn into a filter). */
 export const OTHER_VALUE = 'Other';
 export const MISSING_VALUE = '(missing)';
+/** Most top values kept (editor, URL and query). */
+export const MAX_TERMS_SIZE = 1000;
 export const MAX_PATTERNS = 50;
 export const MAX_PATTERN_LEN = 200;
 
@@ -250,7 +252,8 @@ const cleanList = (x: unknown): string[] | undefined => {
 /** Keeps only the known, well-typed top-values options of untrusted input (nothing else rides along). */
 export function cleanTerms(b: TermsDim): TermsDim {
   const raw = b as unknown as Record<string, unknown>;
-  const out: TermsDim = { kind: 'terms', id: b.id, field: b.field, label: b.label, size: b.size };
+  const size = Math.min(MAX_TERMS_SIZE, b.size);
+  const out: TermsDim = { kind: 'terms', id: b.id, field: b.field, label: b.label, size };
   if (typeof raw.name === 'string') {
     out.name = raw.name;
   }

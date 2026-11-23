@@ -17,7 +17,7 @@ const lensOf = (chartType: string, buckets: object[], metrics: object[]) =>
 /** The SQL of the next Lens chart query (the request body carries rawSql). */
 async function nextLensSql(page: Page, action: () => Promise<unknown>): Promise<string> {
   const req = page.waitForRequest(
-    (r) => r.url().includes('/api/ds/query') && (r.postData() ?? '').includes('LIMIT 10000')
+    (r) => r.url().includes('/api/ds/query') && (r.postData() ?? '').includes('LIMIT 50001')
   );
   await action();
   return (await req).postData() ?? '';

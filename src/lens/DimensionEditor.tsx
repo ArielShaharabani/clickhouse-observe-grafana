@@ -54,6 +54,7 @@ import {
   MetricOp,
   opName,
   rankDirOf,
+  MAX_TERMS_SIZE,
   TermsRankBy,
 } from './state';
 import {
@@ -307,7 +308,7 @@ export function DimensionEditor({
               key={`size-${dim.size}`}
               label="Number of values"
               min={1}
-              max={100}
+              max={MAX_TERMS_SIZE}
               value={dim.size}
               onCommit={(n) => onChange(withSize(dim, n))}
             />
