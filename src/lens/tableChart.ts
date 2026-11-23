@@ -34,13 +34,15 @@ export function tableColumns(
 ): TableColumn[] {
   const nb = state.buckets.length;
   const bucketKind = (i: number): TableColumnKind => (state.buckets[i]?.kind === 'date_histogram' ? 'time' : 'string');
+  // An empty value has a name, as in every other chart.
+  const named = (v: string | number | null, i: number) => (v === '' && bucketKind(i) === 'string' ? '(empty)' : v);
   const rowIdx = state.buckets.map((b, i) => (b.pivot ? -1 : i)).filter((i) => i >= 0);
   const pivotIdx = state.buckets.map((b, i) => (b.pivot ? i : -1)).filter((i) => i >= 0);
   const metricIdx = state.metrics.map((_, i) => i);
 
   if (pivotIdx.length === 0) {
     return [
-      ...rowIdx.map((i) => ({ name: table.columns[i], kind: bucketKind(i), values: table.rows.map((r) => r[i]) })),
+      ...rowIdx.map((i) => ({ name: table.columns[i], kind: bucketKind(i), values: table.rows.map((r) => named(r[i], i)) })),
       ...metricIdx.map((m) => ({
         name: table.columns[nb + m],
         kind: 'number' as const,
@@ -73,7 +75,7 @@ export function tableColumns(
         continue;
       }
       groupOrder.push(gk);
-      groupLabel.set(gk, pivotIdx.map((i) => (r[i] === null ? '(empty)' : String(r[i]))).join(PIVOT_SEP));
+      groupLabel.set(gk, pivotIdx.map((i) => (r[i] === null || r[i] === '' ? '(empty)' : String(r[i]))).join(PIVOT_SEP));
     }
     let byGroup = values.get(rk);
     if (!byGroup) {
@@ -92,7 +94,7 @@ export function tableColumns(
   const cols: TableColumn[] = rowIdx.map((i, k) => ({
     name: table.columns[i],
     kind: bucketKind(i),
-    values: rowOrder.map((rk) => rowCells.get(rk)![k]),
+    values: rowOrder.map((rk) => named(rowCells.get(rk)![k], i)),
   }));
   for (const [gi, gk] of groupOrder.entries()) {
     for (const m of metricIdx) {

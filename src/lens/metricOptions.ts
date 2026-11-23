@@ -256,7 +256,8 @@ export function grafanaUnit(f: ValueFormat | undefined): { unit?: string; decima
   const decimals = f.decimals === undefined ? undefined : clampDecimals(f.decimals, 2);
   switch (f.id) {
     case 'number':
-      return { unit: 'none', decimals: decimals ?? 2 };
+      // Thousands separators, as formatValue draws it elsewhere.
+      return { unit: 'locale', decimals: decimals ?? 2 };
     case 'percent':
       return { unit: 'percentunit', decimals };
     case 'bytes':
@@ -281,7 +282,7 @@ export function grafanaUnit(f: ValueFormat | undefined): { unit?: string; decima
       if (suffix.trim()) {
         return { unit: `suffix:${suffix.trimEnd()}`, decimals: d };
       }
-      return { unit: abbr ? 'short' : 'none', decimals: d };
+      return { unit: abbr ? 'short' : (f.pattern ?? '').includes(',') ? 'locale' : 'none', decimals: d };
     }
   }
 }
