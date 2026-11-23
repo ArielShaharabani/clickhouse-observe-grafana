@@ -41,6 +41,9 @@ export interface LensPanel extends ExportedPanel {
 
 type Transformation = NonNullable<ExportedPanel['transformations']>[number];
 
+/** Grafana's reduceOptions.limit defaults to 25 values; Visualize shows every row of the result. */
+const ROW_LIMIT = 10000;
+
 const LEGEND = { showLegend: true, displayMode: 'list', placement: 'bottom', calcs: [] };
 
 function stackingOf(state: LensState): 'normal' | 'percent' | 'none' {
@@ -321,11 +324,11 @@ function baseLensPanel(
         options: pie
             ? {
                 legend: { ...LEGEND, placement: 'right', values: ['value'] },
-                reduceOptions: { values: true, calcs: [], fields: '' },
+                reduceOptions: { values: true, calcs: [], fields: '', limit: ROW_LIMIT },
                 pieType: state.chartType === 'donut' ? 'donut' : 'pie',
               }
             : {
-                reduceOptions: { values: byCategory, calcs: ['lastNotNull'], fields: '' },
+                reduceOptions: { values: byCategory, calcs: ['lastNotNull'], fields: '', ...(byCategory ? { limit: ROW_LIMIT } : {}) },
                 textMode: byCategory ? 'value_and_name' : 'auto',
                 colorMode: 'none',
                 graphMode: 'none',

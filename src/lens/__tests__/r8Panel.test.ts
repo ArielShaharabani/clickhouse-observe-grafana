@@ -32,3 +32,13 @@ describe('R8 panel export', () => {
     expect(month.transformations![0].id).toBe('groupingToMatrix');
   });
 });
+
+describe('R8 E4', () => {
+  it('pie and stat panels by category read every row, not Grafana’s default 25', () => {
+    for (const chartType of ['pie', 'donut', 'metric'] as const) {
+      const p = panel({ chartType, buckets: [svc], metrics: [count] });
+      expect((p.options as any).reduceOptions.limit).toBe(10000);
+    }
+    expect((panel({ chartType: 'metric', buckets: [], metrics: [count] }).options as any).reduceOptions.limit).toBeUndefined();
+  });
+});
