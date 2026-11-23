@@ -122,6 +122,17 @@ describe('R8 E11', () => {
     expect((fmt.fieldConfig!.defaults as any).unit).not.toBe('locale');
   });
 
+  it('a log axis starts at 1, as in Visualize', () => {
+    const p = panel({
+      chartType: 'bar',
+      subType: 'unstacked',
+      buckets: [svc],
+      metrics: [count],
+      style: { left: { scale: 'log', bounds: 'full' } },
+    });
+    expect((p.fieldConfig!.defaults as any).min).toBe(1);
+  });
+
   it('a Metric chart’s Maximum value metric is not a tile', () => {
     const p = panel({ chartType: 'metric', buckets: [svc], metrics: [count, { ...avg, role: 'max' }] });
     expect((p.transformations![0].options as any).excludeByName).toMatchObject({ m1: true });

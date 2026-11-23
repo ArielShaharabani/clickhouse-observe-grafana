@@ -55,8 +55,13 @@ export function withLensStyle(
   if (left.scale === 'log') {
     custom.scaleDistribution = { type: 'log', log: 10 };
   }
-  if (left.bounds === 'full' && left.scale !== 'log') {
-    custom.axisSoftMin = 0;
+  if (left.bounds === 'full') {
+    // A log axis starts at 1 (a power of ten), as in Visualize; Grafana would pick the lowest value's decade.
+    if (left.scale === 'log') {
+      defaults.min = 1;
+    } else {
+      custom.axisSoftMin = 0;
+    }
   } else if (left.bounds === 'custom') {
     if (left.min !== undefined) {
       defaults.min = left.min;
