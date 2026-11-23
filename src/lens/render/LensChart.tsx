@@ -80,9 +80,9 @@ function basePanelSpec(state: LensState, result: LensResult): PanelSpec {
       ? 'none'
       : state.subType === 'percentage'
         ? 'percent'
-        : state.subType === 'stacked'
-          ? 'normal'
-          : 'none';
+        : state.subType === 'unstacked'
+          ? 'none'
+          : 'normal';
   switch (state.chartType) {
     case 'line':
     case 'area':

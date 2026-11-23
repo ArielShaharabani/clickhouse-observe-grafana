@@ -54,7 +54,8 @@ function stackingOf(state: LensState): 'normal' | 'percent' | 'none' {
   if (state.subType === 'percentage') {
     return 'percent';
   }
-  return state.subType === 'stacked' ? 'normal' : 'none';
+  // No sub-type counts as stacked, as in the Visualize chart.
+  return state.subType === 'unstacked' ? 'none' : 'normal';
 }
 
 /** Readable column names for the SQL aliases (b0 → "Top 9 values of ServiceName", m0 → "Count of records"). */

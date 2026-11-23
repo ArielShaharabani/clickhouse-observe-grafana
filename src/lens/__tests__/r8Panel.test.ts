@@ -58,3 +58,13 @@ describe('R8 E6', () => {
     expect((line.fieldConfig!.defaults.custom as any).barAlignment).toBeUndefined();
   });
 });
+
+describe('R8 E9', () => {
+  it('a bar or area without a sub-type is stacked in the panel (as in Visualize); unstacked stays grouped', () => {
+    const mode = (s: LensState) => (panel(s).fieldConfig!.defaults.custom as any).stacking.mode;
+    expect(mode({ chartType: 'bar', buckets: [date, svc], metrics: [count] })).toBe('normal');
+    expect(mode({ chartType: 'area', buckets: [date, svc], metrics: [count] })).toBe('normal');
+    expect(mode({ chartType: 'bar', subType: 'unstacked', buckets: [date, svc], metrics: [count] })).toBe('none');
+    expect(mode({ chartType: 'line', buckets: [date, svc], metrics: [count] })).toBe('none');
+  });
+});
