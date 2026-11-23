@@ -107,6 +107,16 @@ function splitSeriesNames(state: LensState): unknown[] {
 /** Row-kind columns of top-values buckets (Other / missing): for ordering only, never a series. */
 const KIND_COLUMNS = Object.fromEntries([0, 1, 2, 3].map((i) => [kindAlias(i), true]));
 
+/** A Metric chart's Maximum value metric only feeds the progress bar: it is not a tile of its own. */
+function withoutMaxMetrics(t: Transformation, state: LensState, keep: boolean): Transformation {
+  const max = state.metrics.map((m, i) => (m.role === 'max' ? metricAlias(i) : '')).filter(Boolean);
+  if (keep || max.length === 0) {
+    return t;
+  }
+  const o = t.options as { excludeByName: Record<string, boolean> };
+  return { ...t, options: { ...t.options, excludeByName: { ...o.excludeByName, ...Object.fromEntries(max.map((a) => [a, true])) } } };
+}
+
 function rename(names: Record<string, string>): Transformation {
   return { id: 'organize', options: { renameByName: names, excludeByName: KIND_COLUMNS, indexByName: {} } };
 }
@@ -330,7 +340,9 @@ function baseLensPanel(
       return {
         ...base,
         type: pie ? 'piechart' : 'stat',
-        transformations: [rename(tiles ? { [bucketAlias(0)]: names[bucketAlias(0)] } : names)],
+        transformations: [
+          withoutMaxMetrics(rename(tiles ? { [bucketAlias(0)]: names[bucketAlias(0)] } : names), state, pie),
+        ],
         options: pie
             ? {
                 legend: { ...LEGEND, placement: 'right', values: ['value'] },
@@ -347,7 +359,7 @@ function baseLensPanel(
         fieldConfig: {
           defaults: {},
           overrides:
-            tiles && state.metrics.length > 1
+            tiles && state.metrics.filter((m) => m.role !== 'max').length > 1
               ? state.metrics.map((_, i) => ({
                   matcher: { id: 'byName', options: metricAlias(i) },
                   properties: [

@@ -121,4 +121,10 @@ describe('R8 E11', () => {
     const fmt = panel({ chartType: 'metric', buckets: [svc], metrics: [{ ...count, format: { id: 'percent' } } as any] });
     expect((fmt.fieldConfig!.defaults as any).unit).not.toBe('locale');
   });
+
+  it('a Metric chart’s Maximum value metric is not a tile', () => {
+    const p = panel({ chartType: 'metric', buckets: [svc], metrics: [count, { ...avg, role: 'max' }] });
+    expect((p.transformations![0].options as any).excludeByName).toMatchObject({ m1: true });
+    expect(JSON.stringify(p.fieldConfig!.overrides)).not.toContain('displayName');
+  });
 });
