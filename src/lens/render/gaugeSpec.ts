@@ -58,8 +58,8 @@ export function gaugeOptions(state: LensState): { pluginId: 'gauge' | 'bargauge'
         namePlacement: 'top',
         showUnfilled: true,
         // One bar per Break down by value at a readable height; a lone bar fills the panel.
-        ...(state.buckets.length > 0 ? { sizing: 'manual', minVizHeight: 24, maxVizHeight: 28 } : { sizing: 'auto' }),
-        text: { titleSize: 13, valueSize: 20 },
+        ...(state.buckets.length > 0 ? { sizing: 'manual', minVizHeight: 40, maxVizHeight: 44 } : { sizing: 'auto' }),
+        text: { titleSize: 13, valueSize: 18 },
       },
     };
   }

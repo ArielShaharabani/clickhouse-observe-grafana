@@ -20,7 +20,9 @@ import { PanelRenderer } from '@grafana/runtime';
 import { LensResult } from '../compile';
 import { dimLabelIn, LensState, MAX_GAUGES } from '../state';
 import { isPieLike } from '../suggest';
-import { gaugeSpec } from './gaugeSpec';
+import { gaugeMetrics, gaugeSpec } from './gaugeSpec';
+import { formatOf, formatValue } from '../metricOptions';
+import { formatNumber } from '../../utils/axisNumber';
 import { HeatmapChart } from './HeatmapChart';
 import { seriesColorOf } from '../style';
 import { stableColors, SESSION_COLOR_SLOTS } from './seriesColors';
@@ -40,6 +42,9 @@ interface PanelSpec {
   options: Record<string, unknown>;
   fieldConfig: { defaults: Record<string, unknown>; overrides: unknown[] };
 }
+
+/** Height (px) of the written minimum / maximum under an arc gauge. */
+const RANGE_H = 16;
 
 const legend = { showLegend: true, displayMode: 'list', placement: 'bottom', calcs: [] };
 
@@ -369,6 +374,8 @@ function GaugeGrid({ state, result, timeRange }: { state: LensState; result: Len
   }, []);
   const spec = panelSpec(state, result);
   const fields = spec.frames[0]?.fields ?? [];
+  const gaugeMetric = state.metrics[gaugeMetrics(state).value];
+  const rangeFmt = (v: number) => formatValue(v, formatOf(gaugeMetric), formatNumber);
   const hidden = Math.max(0, result.xs.length - MAX_GAUGES);
   const cols = gaugeColumns(fields.length, size.width, size.height - (hidden > 0 ? 18 : 0));
   const rows = Math.max(1, Math.ceil(fields.length / cols));
@@ -399,7 +406,7 @@ function GaugeGrid({ state, result, timeRange }: { state: LensState; result: Len
                 title=""
                 pluginId="gauge"
                 width={cw}
-                height={ch - (fields.length > 1 ? 22 : 0)}
+                height={ch - (fields.length > 1 ? 22 : 0) - RANGE_H}
                 data={{
                   state: LoadingState.Done,
                   series: [createDataFrame({ fields: [f] })],
@@ -409,6 +416,10 @@ function GaugeGrid({ state, result, timeRange }: { state: LensState; result: Len
                 fieldConfig={spec.fieldConfig as FieldConfigSource}
                 timeZone={timeZone}
               />
+              {/* The arc has no scale of its own: write its minimum and maximum. */}
+              <div className={styles.gaugeRange} data-testid="lens-gauge-range">
+                {rangeFmt(spec.fieldConfig.defaults.min as number)} – {rangeFmt(f.config.max as number)}
+              </div>
               {/* Grafana hides a lone gauge's name: the value it is for goes underneath. */}
               {fields.length > 1 && (
                 <div className={styles.gaugeName} title={f.name}>
@@ -504,6 +515,12 @@ const styles = {
     overflow: hidden;
     display: flex;
     flex-direction: column;
+  `,
+  gaugeRange: css`
+    text-align: center;
+    font-size: 11px;
+    line-height: ${RANGE_H}px;
+    opacity: 0.7;
   `,
   gaugeName: css`
     text-align: center;
