@@ -565,6 +565,7 @@ export function LensPage({ tabStrip, onTitle, onLeave }: LensPageProps = {}) {
     filters,
     timeRange.from.valueOf(),
     timeRange.to.valueOf(),
+    tzSettings.timeZone, // date buckets start in the chosen zone
   ];
   const queryKey = JSON.stringify([encodeLens(queryShape(lens)), ...queryContext]);
   const { chartType: _ct, subType: _st, ...lensBase } = queryShape(lens);
@@ -750,6 +751,7 @@ export function LensPage({ tabStrip, onTitle, onLeave }: LensPageProps = {}) {
       {
         id: 1,
         gridPos: { x: 0, y: 0, w: 12, h: 8 },
+        index: fieldIndex,
         title,
         description,
         gaugeMax: lens.chartType === 'gauge' && current?.data ? gaugeAutoMax(lens, current.data) : undefined,

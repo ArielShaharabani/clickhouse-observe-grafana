@@ -305,8 +305,17 @@ const START_OF: Record<string, string> = {
   tostartofquarter: '3M', tostartofyear: '1y',
 };
 
+/** `x` of a one-sided wrapper our exported panels put around a date bucket; anything else as is. */
+function unwrapZone(e: Expr, op: '+' | '-'): Expr {
+  const isCall = (x: Expr, name: string) => x.t === 'call' && x.name.toLowerCase() === name;
+  const inner = e.t === 'bin' && e.op === op && isCall(e.r, 'timezoneoffset') ? e.l : e;
+  const cast = inner.t === 'call' && isCall(inner, 'todatetime') && !inner.params ? inner : undefined;
+  return cast && (cast.args.length === 1 || (cast.args.length === 2 && cast.args[1].t === 'str')) ? cast.args[0] : inner;
+}
+
 /** A date bucket expression → its column and interval, or a reason. */
-function timeBucketOf(e: Expr, q: SelectQuery): { field: string; interval: string } | null {
+function timeBucketOf(whole: Expr, q: SelectQuery): { field: string; interval: string } | null {
+  const e = unwrapZone(whole, '-');
   if (e.t === 'macro' && e.name === 'timeInterval' && e.args.length === 1) {
     const f = fieldOf(e.args[0], q);
     return f ? { field: f, interval: 'auto' } : null;
@@ -315,8 +324,8 @@ function timeBucketOf(e: Expr, q: SelectQuery): { field: string; interval: strin
     return null;
   }
   const name = e.name.toLowerCase();
-  if (name === 'tostartofinterval' && e.args.length === 2) {
-    const f = fieldOf(e.args[0], q);
+  if (name === 'tostartofinterval' && (e.args.length === 2 || (e.args.length === 3 && e.args[2].t === 'str'))) {
+    const f = fieldOf(unwrapZone(e.args[0], '+'), q);
     const iv = e.args[1];
     if (!f || iv.t !== 'interval') {
       return null;

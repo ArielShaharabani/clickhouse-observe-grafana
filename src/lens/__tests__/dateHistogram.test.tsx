@@ -126,7 +126,7 @@ describe('date histogram SQL', () => {
 
   it('typed intervals use the parsed number and a unit keyword', () => {
     expect(sqlOf({ ...date, interval: '3h' }).sql).toContain(
-      'toUnixTimestamp(toStartOfInterval("Timestamp", INTERVAL 3 HOUR)) * 1000 AS b0'
+      'toUnixTimestamp(toStartOfInterval("Timestamp", INTERVAL 10800 SECOND)) * 1000 AS b0'
     );
     expect(sqlOf({ ...date, interval: '1M' }, 'app', rangeOf(T0, T0 + 365 * DAY)).sql).toContain('INTERVAL 1 MONTH');
     expect(sqlOf({ ...date, interval: '1w' }).sql).toContain('INTERVAL 1 WEEK');
@@ -146,17 +146,17 @@ describe('date histogram SQL', () => {
     expect(sql).toContain(`INTERVAL ${interval!.n} SECOND`);
   });
 
-  it('saved panels: never below the minimum (fixed), calendar units kept', () => {
+  it('saved panels: the typed interval is kept (scaled past the cap), calendar units kept', () => {
     expect(sqlOf({ ...date, interval: '5m' }, 'dashboard').sql).toContain(
-      'toStartOfInterval(toDateTime("Timestamp"), INTERVAL greatest(300, $__interval_s) second) AS b0'
+      'toStartOfInterval(toDateTime("Timestamp"), INTERVAL 300 * greatest(1, intDiv(toUnixTimestamp($__toTime) - toUnixTimestamp($__fromTime) + 149999, 150000)) SECOND) AS b0'
     );
     expect(sqlOf({ ...date, interval: '1M' }, 'dashboard').sql).toContain(
-      'toDateTime(toStartOfInterval(toDateTime("Timestamp"), INTERVAL 1 MONTH)) AS b0'
+      `toDateTime(toStartOfInterval(toDateTime("Timestamp"), INTERVAL 1 MONTH, 'UTC'), 'UTC') AS b0`
     );
     expect(sqlOf(date, 'dashboard').sql).toContain('$__timeInterval("Timestamp") AS b0');
-    expect(dashboardBucketSql('t', { n: 250, unit: 'ms' })).toContain('greatest(1, $__interval_s)');
+    expect(dashboardBucketSql('t', { n: 250, unit: 'ms' })).toContain('INTERVAL 1 * greatest(1, intDiv(');
     expect(bucketStartSql('t', { n: 2, unit: 'd' })).toBe(
-      'toUnixTimestamp(toStartOfInterval(t, INTERVAL 2 DAY)) * 1000'
+      `toUnixTimestamp(toDateTime(toStartOfInterval(t, INTERVAL 2 DAY, 'UTC'), 'UTC')) * 1000`
     );
   });
 
@@ -165,7 +165,7 @@ describe('date histogram SQL', () => {
       id: 1,
       gridPos: { x: 0, y: 0, w: 12, h: 8 },
     });
-    expect(JSON.stringify(panel)).toContain('greatest(900, $__interval_s)');
+    expect(JSON.stringify(panel)).toContain('900 * greatest(1, intDiv(');
   });
 });
 

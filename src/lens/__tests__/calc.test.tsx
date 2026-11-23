@@ -159,7 +159,7 @@ describe('SQL', () => {
   it('saved panels compute the same calculation over $__timeInterval buckets', () => {
     const sql = sqlOf(line([date, svc], [cumsum]), 'dashboard');
     expect(sql).toMatchSnapshot();
-    expect(sql).toContain('ORDER BY b1, k1, b0 WITH FILL FROM toStartOfInterval($__fromTime');
+    expect(sql).toContain('ORDER BY b1, k1, b0 WITH FILL FROM toDateTime(toStartOfInterval($__fromTime');
     expect(sql).toContain('PARTITION BY b1, k1 ORDER BY b0 ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW');
   });
 
@@ -170,7 +170,7 @@ describe('SQL', () => {
     expect(sql).toContain('quantileOrNull(0.5)("SeverityNumber") AS a1');
     expect(sql).toContain('maxOrNull("SeverityNumber") AS a2');
     // Counter rate per second of a 1-day bucket.
-    expect(sql).toMatch(/\* 0\.0000115740740741 AS m2/);
+    expect(sql).toMatch(/\* \(1 \/ \(toUnixTimestamp\(__d \+ INTERVAL 1 DAY\) - toUnixTimestamp\(__d\)\)\) AS m2/);
   });
 
   it('Include empty rows off: no gap filling; not bound to the time picker: fill between data only', () => {
@@ -182,9 +182,9 @@ describe('SQL', () => {
 
   it('calendar and millisecond buckets fill on DateTime / DateTime64', () => {
     const m = sqlOf(line([{ ...date, interval: '1M' } as BucketDim], [cumsum]));
-    expect(m).toContain('toDateTime(toStartOfInterval("Timestamp", INTERVAL 1 MONTH)) AS __d');
+    expect(m).toContain(`toDateTime(toStartOfInterval("Timestamp", INTERVAL 1 MONTH, 'UTC'), 'UTC') AS __d`);
     expect(m).toContain(
-      'WITH FILL FROM toDateTime(toStartOfInterval($__fromTime, INTERVAL 1 MONTH)) TO $__toTime STEP INTERVAL 1 MONTH'
+      `WITH FILL FROM toDateTime(toStartOfInterval($__fromTime, INTERVAL 1 MONTH, 'UTC'), 'UTC') TO $__toTime STEP INTERVAL 1 MONTH`
     );
     expect(m).toContain('toUnixTimestamp(__d) * 1000 AS b0');
     const shortRange = { from, to: dateTime(T0 + 60_000), raw: { from, to: dateTime(T0 + 60_000) } };
@@ -213,7 +213,7 @@ describe('SQL', () => {
 
   it('normalize by unit applies after the calculation', () => {
     const sql = sqlOf(line([date], [{ ...diffs, normalize: 'h' }]));
-    expect(sql).toMatch(/\(\(a0 - lagInFrame\(toNullable\(a0\), 1, NULL\).*\)\) \* 0\.0416666666667 AS m0/);
+    expect(sql).toMatch(/\(\(a0 - lagInFrame\(toNullable\(a0\), 1, NULL\).*\)\) \* \(3600 \/ \(toUnixTimestamp\(__d \+ INTERVAL 1 DAY\) - toUnixTimestamp\(__d\)\)\) AS m0/);
   });
 
   it('no date histogram: the calculation compiles to no value (the page shows why instead)', () => {
