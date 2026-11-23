@@ -17,6 +17,7 @@ import { MetricDim } from '../state';
 import { formatOf, formatValue } from '../metricOptions';
 import { formatAxisNumber, formatNumber } from '../../utils/axisNumber';
 import { fitTimeTicks, timeTicks, tooltipTime } from './timeTicks';
+import { useTimeZoneSettings } from '../../utils/timeZone';
 import { XySelection, xText } from './XyChart';
 import { truncateLabel } from './labels';
 
@@ -84,6 +85,7 @@ const LEGEND_H = 34;
 
 export function HeatmapChart({ result, metric, yTitle, metricLabel, bucketMs, onSelect }: Props) {
   const styles = useStyles2(getStyles);
+  const { timeZone } = useTimeZoneSettings();
   const theme = useTheme2();
   const ramp = theme.isDark ? HEATMAP_RAMP_DARK : HEATMAP_RAMP_LIGHT;
   const gradId = `lens-heat-${useId().replace(/[^a-zA-Z0-9_-]/g, '')}`;
@@ -129,14 +131,14 @@ export function HeatmapChart({ result, metric, yTitle, metricLabel, bucketMs, on
   const timeTickVals =
     result.xIsTime && nx > 0
       ? fitTimeTicks(
-          timeTicks(Number(result.xs[0]), Number(result.xs[nx - 1]) + step, Math.max(2, Math.floor(plotW / 80))),
+          timeTicks(Number(result.xs[0]), Number(result.xs[nx - 1]) + step, Math.max(2, Math.floor(plotW / 80)), timeZone),
           xPosOfTime,
           Math.max(0, W - 4)
         )
       : [];
   // Category X: every k-th label so they don't overlap (about 70 px each), cut to the cell width.
   const catEvery = Math.max(1, Math.ceil(nx / Math.max(1, Math.floor(plotW / 70))));
-  const xHeader = (xi: number) => (result.xIsTime ? tooltipTime(Number(result.xs[xi]), step) : xText(result, xi, 0));
+  const xHeader = (xi: number) => (result.xIsTime ? tooltipTime(Number(result.xs[xi]), step, timeZone) : xText(result, xi, 0));
   const cellLabel = (xi: number, si: number) => {
     const v = cellValue(result, xi, si);
     return `${xHeader(xi)} · ${yLabels[si]}: ${v === null ? 'No data' : fmt(v)}`;

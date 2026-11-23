@@ -224,6 +224,9 @@ interface FieldsContextValue {
   refresh: () => void;
 }
 
+const NO_FIELDS: FieldModel[] = [];
+const NO_TEXT_INDEXES: TextIndexInfo[] = [];
+
 const EMPTY_FIELDS_CONTEXT: FieldsContextValue = {
   fields: [],
   loading: false,
@@ -300,7 +303,8 @@ export function useFieldDiscovery(
   // downgrade the severity breakdown to "none" on every fresh load, before fields even arrived.
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [detectedPartitionTimestamp, setDetectedPartitionTimestamp] = useState('');
+  // Keyed by table + time column: a prune column detected for another view must never reach this one.
+  const [detected, setDetected] = useState({ key: '', column: '' });
   const [fieldsFor, setFieldsFor] = useState('');
   const [textIndexes, setTextIndexes] = useState<TextIndexInfo[]>([]);
   const runRef = useRef(0);
@@ -341,13 +345,20 @@ export function useFieldDiscovery(
     // Top-level columns (time-independent, shared + cached per table by the metadata layer).
     let columns: FieldModel[];
     let rawColumns: PruneCandidateColumn[];
-    if (!hasFreshMetadata({ datasourceUid: config.datasourceUid, database: config.database, table: resolvedTable, kind: 'columns' })) {
+    // `fieldsFor !== cKey`: a switch to a cached table still has JSON paths to wait for.
+    if (fieldsFor !== cKey || !hasFreshMetadata({ datasourceUid: config.datasourceUid, database: config.database, table: resolvedTable, kind: 'columns' })) {
       setLoading(true);
     }
     try {
       ({ columns, rawColumns } = await fetchColumns(config, resolvedTable, timeRange));
     } catch (e) {
       if (runRef.current === runId) {
+        // Another table's fields don't stand in for the ones that failed to load.
+        if (fieldsFor !== cKey) {
+          setFields([]);
+          setTextIndexes([]);
+          setFieldsFor(cKey);
+        }
         setError(errMsg(e));
         setLoading(false);
       }
@@ -380,7 +391,7 @@ export function useFieldDiscovery(
       }
     }
 
-    const detected = detectPruneColumn(rawColumns, config.columns.timestamp) ?? '';
+    const pruneColumn = detectPruneColumn(rawColumns, config.columns.timestamp) ?? '';
 
     // Publish what's already known before Phase C runs, so the sidebar paints immediately instead
     // of waiting on a round-trip per JSON column. `loading` deliberately stays true until Phase C
@@ -391,7 +402,7 @@ export function useFieldDiscovery(
     setFields([...columns, ...tupleFields]);
     setFieldsFor(cKey);
     setError(null);
-    setDetectedPartitionTimestamp(detected);
+    setDetected({ key: `${cKey}:${config.columns.timestamp}`, column: pruneColumn });
     if (columnsOnly) {
       setLoading(false);
       return;
@@ -519,5 +530,17 @@ export function useFieldDiscovery(
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [config.datasourceUid, config.database, resolvedTable, bucket, config.columns.timestamp]);
 
-  return { fields, textIndexes, loading, error, refresh, detectedPartitionTimestamp, fieldsFor };
+  // After a table switch the state still holds the previous table's discovery until the new one
+  // publishes: report "loading, nothing known" instead, so no query mixes the two tables.
+  const key = columnCacheKey(config, resolvedTable);
+  const stale = fieldsFor !== key;
+  return {
+    fields: stale ? NO_FIELDS : fields,
+    textIndexes: stale ? NO_TEXT_INDEXES : textIndexes,
+    loading: stale || loading,
+    error: stale ? null : error,
+    refresh,
+    detectedPartitionTimestamp: detected.key === `${key}:${config.columns.timestamp}` ? detected.column : '',
+    fieldsFor,
+  };
 }

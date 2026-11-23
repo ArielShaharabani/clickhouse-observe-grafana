@@ -8,8 +8,9 @@
  */
 import React, { useId, useState } from 'react';
 import { css } from '@emotion/css';
-import { dateTime, GrafanaTheme2 } from '@grafana/data';
-import { Button, Combobox, Field, IconButton, Input, RadioButtonGroup, useStyles2 } from '@grafana/ui';
+import { GrafanaTheme2 } from '@grafana/data';
+import { formatInZone, parseInZone, useTimeZoneSettings } from '../utils/timeZone';
+import { Button, Combobox, Dropdown, Field, IconButton, Input, Menu, RadioButtonGroup, useStyles2 } from '@grafana/ui';
 import { parseKql } from '../sql/kql';
 import { compatibleFields } from './dimensions';
 import {
@@ -74,7 +75,6 @@ export function LayersSection({ layers, timeAxis, suggestedValue, suggestedTime,
     onEdit({ layerId: layer.id, itemId: item.id });
   };
   const pick = (kind: LayerKind) => {
-    setAdding(false);
     onChange(tidy(addLayer(layers, kind)));
   };
 
@@ -96,39 +96,36 @@ export function LayersSection({ layers, timeAxis, suggestedValue, suggestedTime,
           >
             <div className={styles.cardHeader}>
               <span className={styles.cardTitle}>{title}</span>
-              <IconButton
-                name="ellipsis-v"
-                size="sm"
-                // aria-label, not tooltip: a hover tooltip stays up over the opened menu and covers its first item.
-                aria-label={`Layer actions for ${title}`}
-                aria-expanded={menuFor === layer.id}
-                onClick={() => setMenuFor(menuFor === layer.id ? null : layer.id)}
-              />
-              {menuFor === layer.id && (
-                <div className={styles.menu} role="menu" aria-label={`${title} layer actions`}>
-                  {(
-                    [
-                      ['Duplicate layer', () => duplicateLayer(layers, layer.id), full],
-                      ['Clear layer', () => clearLayer(layers, layer.id), items.length === 0],
-                      ['Remove layer', () => removeLayer(layers, layer.id), false],
-                    ] as Array<[string, () => ExtraLayer[], boolean]>
-                  ).map(([text, run, disabled]) => (
-                    <button
-                      key={text}
-                      type="button"
-                      role="menuitem"
-                      className={styles.menuItem}
-                      disabled={disabled}
-                      onClick={() => {
-                        setMenuFor(null);
-                        onChange(tidy(run()));
-                      }}
-                    >
-                      {text}
-                    </button>
-                  ))}
-                </div>
-              )}
+              <Dropdown
+                placement="bottom-end"
+                onVisibleChange={(open) => setMenuFor(open ? layer.id : null)}
+                overlay={
+                  <Menu ariaLabel={`${title} layer actions`}>
+                    {(
+                      [
+                        ['Duplicate layer', () => duplicateLayer(layers, layer.id), full],
+                        ['Clear layer', () => clearLayer(layers, layer.id), items.length === 0],
+                        ['Remove layer', () => removeLayer(layers, layer.id), false],
+                      ] as Array<[string, () => ExtraLayer[], boolean]>
+                    ).map(([text, run, disabled]) => (
+                      <Menu.Item
+                        key={text}
+                        label={text}
+                        disabled={disabled}
+                        onClick={() => onChange(tidy(run()))}
+                      />
+                    ))}
+                  </Menu>
+                }
+              >
+                <IconButton
+                  name="ellipsis-v"
+                  size="sm"
+                  // aria-label, not tooltip: a hover tooltip stays up over the opened menu and covers its first item.
+                  aria-label={`Layer actions for ${title}`}
+                  aria-expanded={menuFor === layer.id}
+                />
+              </Dropdown>
             </div>
             {layer.kind === 'annotations' && !timeAxis && (
               <div className={styles.note}>
@@ -162,46 +159,35 @@ export function LayersSection({ layers, timeAxis, suggestedValue, suggestedTime,
         );
       })}
       <div className={styles.addWrap}>
-        <Button
-          size="sm"
-          variant="secondary"
-          icon="plus"
-          aria-expanded={adding}
-          disabled={full}
-          title={full ? `At most ${MAX_LAYERS} layers` : undefined}
-          onClick={() => setAdding((v) => !v)}
+        <Dropdown
+          placement="bottom-start"
+          onVisibleChange={setAdding}
+          overlay={
+            <Menu ariaLabel="Select layer type">
+              <Menu.Group label="Select layer type">
+                <Menu.Item label="Visualization" description="Not available yet" disabled />
+                <Menu.Item
+                  label="Annotations"
+                  description={timeAxis ? undefined : 'Needs a time axis'}
+                  disabled={!timeAxis}
+                  onClick={() => pick('annotations')}
+                />
+                <Menu.Item label="Reference lines" onClick={() => pick('referenceLine')} />
+              </Menu.Group>
+            </Menu>
+          }
         >
-          Add layer
-        </Button>
-        {adding && (
-          <div className={styles.menu} role="menu" aria-label="Select layer type">
-            <div className={styles.menuTitle}>Select layer type</div>
-            <button
-              type="button"
-              role="menuitem"
-              className={styles.menuItem}
-              disabled
-              title="Not available yet: one data layer per chart"
-            >
-              Visualization
-              <span className={styles.menuHint}>Not available yet</span>
-            </button>
-            <button
-              type="button"
-              role="menuitem"
-              className={styles.menuItem}
-              disabled={!timeAxis}
-              title={timeAxis ? undefined : 'Annotations need a date histogram on the horizontal axis'}
-              onClick={() => pick('annotations')}
-            >
-              Annotations
-              {!timeAxis && <span className={styles.menuHint}>Needs a time axis</span>}
-            </button>
-            <button type="button" role="menuitem" className={styles.menuItem} onClick={() => pick('referenceLine')}>
-              Reference lines
-            </button>
-          </div>
-        )}
+          <Button
+            size="sm"
+            variant="secondary"
+            icon="plus"
+            aria-expanded={adding}
+            disabled={full}
+            title={full ? `At most ${MAX_LAYERS} layers` : undefined}
+          >
+            Add layer
+          </Button>
+        </Dropdown>
       </div>
     </div>
   );
@@ -252,17 +238,17 @@ function CommitBox(props: {
 const TIME_FORMAT = 'YYYY-MM-DD HH:mm:ss';
 const TIME_RE = /^\d{4}-\d{2}-\d{2}( \d{2}:\d{2}(:\d{2})?)?$/;
 
-/** "2026-01-05 09:00[:00]" (browser time zone) → epoch ms, or undefined. */
+/** "2026-01-05 09:00[:00]" (in the chosen time zone) → epoch ms, or undefined. */
 export function parseAnnotationTime(text: string): number | undefined {
   const t = text.trim();
   if (!TIME_RE.test(t)) {
     return undefined;
   }
-  const d = dateTime(t, t.length === 10 ? 'YYYY-MM-DD' : t.length === 16 ? 'YYYY-MM-DD HH:mm' : TIME_FORMAT);
+  const d = parseInZone(t, t.length === 10 ? 'YYYY-MM-DD' : t.length === 16 ? 'YYYY-MM-DD HH:mm' : TIME_FORMAT);
   return d.isValid() ? d.valueOf() : undefined;
 }
 
-const fmtTime = (ms: number) => dateTime(ms).format(TIME_FORMAT);
+const fmtTime = (ms: number) => formatInZone(ms, TIME_FORMAT);
 const numberOk = (t: string) =>
   t.trim() !== '' && Number.isFinite(Number(t))
     ? ({ ok: true } as const)
@@ -307,6 +293,7 @@ export function LayerItemEditor({
   onBack,
 }: EditorProps) {
   const styles = useStyles2(getStyles);
+  const { timeZone } = useTimeZoneSettings(); // annotation dates are shown and parsed in the chosen zone
   const ids = useId();
   const layer = layers.find((l) => l.id === target.layerId);
   const item =
@@ -471,7 +458,7 @@ export function LayerItemEditor({
         {a.type === 'manual' ? (
           <>
             <CommitBox
-              key={`t-${a.id}-${a.time}`}
+              key={`t-${a.id}-${a.time}-${timeZone}`}
               label="Annotation date"
               initial={fmtTime(a.time)}
               parse={timeOk}
@@ -481,7 +468,7 @@ export function LayerItemEditor({
               }}
             />
             <CommitBox
-              key={`e-${a.id}-${a.end ?? ''}`}
+              key={`e-${a.id}-${a.end ?? ''}-${timeZone}`}
               label="End date (range, optional)"
               initial={a.end !== undefined ? fmtTime(a.end) : ''}
               placeholder="No end: a point in time"
@@ -604,46 +591,7 @@ const getStyles = (theme: GrafanaTheme2) => ({
     font-size: ${theme.typography.bodySmall.fontSize};
   `,
   addWrap: css`
-    position: relative;
-  `,
-  menu: css`
-    position: absolute;
-    top: 100%;
-    right: 0;
-    z-index: 10;
-    min-width: 200px;
-    padding: ${theme.spacing(0.5)};
-    background: ${theme.colors.background.primary};
-    border: 1px solid ${theme.colors.border.medium};
-    border-radius: ${theme.shape.radius.default};
-    box-shadow: ${theme.shadows.z3};
     display: flex;
-    flex-direction: column;
-  `,
-  menuTitle: css`
-    font-weight: ${theme.typography.fontWeightMedium};
-    padding: ${theme.spacing(0.5)};
-  `,
-  menuItem: css`
-    display: flex;
-    justify-content: space-between;
-    gap: ${theme.spacing(1)};
-    background: none;
-    border: none;
-    text-align: left;
-    padding: ${theme.spacing(0.5)};
-    color: ${theme.colors.text.primary};
-    cursor: pointer;
-    &:hover:not(:disabled) {
-      background: ${theme.colors.action.hover};
-    }
-    &:disabled {
-      color: ${theme.colors.text.disabled};
-      cursor: not-allowed;
-    }
-  `,
-  menuHint: css`
-    font-size: ${theme.typography.bodySmall.fontSize};
   `,
   panel: css`
     display: flex;

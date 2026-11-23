@@ -1,5 +1,6 @@
 import { createContext } from 'react';
 import { dateMath, dateTime, TimeRange } from '@grafana/data';
+import { getTimeZoneSettings } from './timeZone';
 
 /**
  * Admin default time range (app config `jsonData.defaultTimeRange`), the counterpart of Kibana's
@@ -31,8 +32,9 @@ export function cleanDefaultTimeRange(raw: unknown): DefaultTimeRangeSetting {
   if (!f || !t || f.length > MAX_LEN || t.length > MAX_LEN) {
     return FALLBACK;
   }
-  const pf = dateMath.parse(f, false);
-  const pt = dateMath.parse(t, true);
+  const { timeZone, fiscalYearStartMonth } = getTimeZoneSettings();
+  const pf = dateMath.parse(f, false, timeZone, fiscalYearStartMonth);
+  const pt = dateMath.parse(t, true, timeZone, fiscalYearStartMonth);
   if (!pf?.isValid() || !pt?.isValid() || pf.valueOf() >= pt.valueOf()) {
     return FALLBACK;
   }
@@ -42,8 +44,9 @@ export function cleanDefaultTimeRange(raw: unknown): DefaultTimeRangeSetting {
 /** The setting resolved to a TimeRange now (relative bounds are evaluated at call time). */
 export function resolveDefaultTimeRange(setting: DefaultTimeRangeSetting = FALLBACK): TimeRange {
   const s = cleanDefaultTimeRange(setting);
-  const from = dateMath.parse(s.from, false) ?? dateTime(Date.now() - 3600 * 1000);
-  const to = dateMath.parse(s.to, true) ?? dateTime(Date.now());
+  const { timeZone, fiscalYearStartMonth } = getTimeZoneSettings();
+  const from = dateMath.parse(s.from, false, timeZone, fiscalYearStartMonth) ?? dateTime(Date.now() - 3600 * 1000);
+  const to = dateMath.parse(s.to, true, timeZone, fiscalYearStartMonth) ?? dateTime(Date.now());
   return { from, to, raw: { from: s.from, to: s.to } };
 }
 

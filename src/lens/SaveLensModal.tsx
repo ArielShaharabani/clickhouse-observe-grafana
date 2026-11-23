@@ -14,6 +14,7 @@ import { getAppEvents, locationService } from '@grafana/runtime';
 import {
   Alert,
   Button,
+  Checkbox,
   Combobox,
   Field,
   Input,
@@ -63,6 +64,8 @@ export interface ReturnTarget extends DashboardReturn {
   dashboardTitle: string;
   panelTitle: string;
   panelDescription: string;
+  /** The panel carries its Visualize state (it was saved from here). */
+  madeInVisualize?: boolean;
 }
 
 /**
@@ -126,6 +129,10 @@ interface Props {
   startAsNew?: boolean;
   /** Shown when the dialog opens (the toolbar's one-click Save and return failed). */
   initialError?: string;
+  /** What replacing the original panel loses (R6-PANELS): shown with a required checkbox. */
+  confirmLoss?: string[];
+  /** Save as new starts on "Existing dashboard" with the panel's own dashboard. */
+  preferSameDashboard?: boolean;
 }
 
 export function SaveLensModal({
@@ -138,6 +145,8 @@ export function SaveLensModal({
   returnTo,
   startAsNew,
   initialError,
+  confirmLoss,
+  preferSameDashboard,
 }: Props) {
   const styles = useStyles2(getStyles);
   const ids = useId();
@@ -153,6 +162,7 @@ export function SaveLensModal({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [asNew, setAsNew] = useState(!returnTo || Boolean(startAsNew));
+  const [understood, setUnderstood] = useState(false);
 
   // Reset each time the modal opens (state adjusted during render, as in AddToDashboardModal).
   const [wasOpen, setWasOpen] = useState(isOpen);
@@ -164,8 +174,10 @@ export function SaveLensModal({
       setAsNew(!returnTo || Boolean(startAsNew));
       setTitle(start);
       setDescription(returnTo?.panelDescription ?? '');
-      setDestination(canSaveDashboards ? 'new' : 'none');
-      setDashboardUid(undefined);
+      const same = Boolean(preferSameDashboard && returnTo && startAsNew && canSaveDashboards);
+      setUnderstood(false);
+      setDestination(same ? 'existing' : canSaveDashboards ? 'new' : 'none');
+      setDashboardUid(same ? returnTo?.uid : undefined);
       setLibrary(false);
       setDashboardTitle(start);
       setTitleEdited(false);
@@ -195,7 +207,8 @@ export function SaveLensModal({
 
   const toDashboard = destination !== 'none';
   const replacing = Boolean(returnTo) && !asNew;
-  const canReturn = !saving && Boolean(title.trim()) && canSaveDashboards;
+  const needsConfirm = Boolean(confirmLoss && confirmLoss.length > 0);
+  const canReturn = !saving && Boolean(title.trim()) && canSaveDashboards && (!needsConfirm || understood);
   const canSave =
     !saving &&
     Boolean(title.trim()) &&
@@ -281,6 +294,20 @@ export function SaveLensModal({
         <Alert title="Save and return" severity="info" className={styles.alert}>
           Replaces this panel on the dashboard &quot;{returnTo.dashboardTitle}&quot; (same place and size), then goes
           back to the dashboard.
+        </Alert>
+      )}
+      {replacing && needsConfirm && (
+        <Alert title="This replaces the original panel with a different one" severity="warning" className={styles.alert}>
+          <ul>
+            {confirmLoss?.map((l, i) => (
+              <li key={i}>{l}</li>
+            ))}
+          </ul>
+          <Checkbox
+            label="Replace the original panel anyway"
+            value={understood}
+            onChange={(e) => setUnderstood(e.currentTarget.checked)}
+          />
         </Alert>
       )}
       {!replacing && (

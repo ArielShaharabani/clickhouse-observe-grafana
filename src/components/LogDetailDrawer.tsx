@@ -24,6 +24,7 @@ import { loadDocPins, saveDocPins } from '../state/docPins';
 import { ActionIconButton } from '../actions/ActionIconButton';
 import { CORE_ALIAS } from '../sql/queryBuilder';
 import { formatTimestamp } from './LogsTable';
+import { useTimeZoneSettings } from '../utils/timeZone';
 import { makeColumnKey, fieldToColumn } from './FieldSidebar/FieldSidebar';
 import { FIELD_TYPE_ICONS } from './FieldSidebar/fieldIcons';
 import { fieldTypeColor } from './FieldSidebar/fieldTypeColors';
@@ -366,6 +367,7 @@ export function LogDetailDrawer({
     () => groupAttributes(effectiveRow, config.columns, mapColumns, jsonColumns),
     [effectiveRow, config.columns, mapColumns, jsonColumns]
   );
+  const { timeZone } = useTimeZoneSettings();
   const allRows = useMemo(() => {
     const flat = [
       ...flattenRowEntries(effectiveRow, containerCols, jsonColumns, rawTimeCol, resolveType),
@@ -373,7 +375,7 @@ export function LogDetailDrawer({
     ];
     return flat.sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [effectiveRow, containerCols, attrGroups, rawTimeCol, jsonColumns, typeByExpr]);
+  }, [effectiveRow, containerCols, attrGroups, rawTimeCol, jsonColumns, typeByExpr, timeZone]);
 
 
   // Reset per-log UI state (not the search/selected-only filters, which the user likely wants to

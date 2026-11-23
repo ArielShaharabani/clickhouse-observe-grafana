@@ -33,13 +33,20 @@ const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const WORD = 'A-Za-z0-9_';
 /** Shortest literal text worth highlighting — single characters would mark nearly every cell. */
 const MIN_LITERAL = 2;
+/** Most literal fragments one wildcard value may highlight as a single ordered pattern. */
+const MAX_PATTERN_PARTS = 2;
+/** Longest cell text scanned for highlights (the rest stays plain), bounding regex work per cell. */
+export const MAX_HIGHLIGHT_CHARS = 5000;
 
 function valuePattern(value: string, isWildcard: boolean, isPhrase: boolean): string | null {
   const parts = (isWildcard ? value.split(WILDCARD_STAR) : [value]).filter((p) => p.length > 0);
   if (parts.join('').trim().length < MIN_LITERAL) {
     return null;
   }
-  const core = parts.map(escapeRe).join('.*?');
+  // Lazy gaps backtrack polynomially (n^gaps on a cell that almost matches) and the query can come
+  // from a shared link: past one gap, mark only the longest literal fragment, not one ordered pattern.
+  const used = parts.length > MAX_PATTERN_PARTS ? [parts.reduce((a, b) => (b.length > a.length ? b : a))] : parts;
+  const core = used.map(escapeRe).join('.*?');
   return isPhrase ? `(?<![${WORD}])${core}(?![${WORD}])` : core;
 }
 
@@ -163,7 +170,7 @@ export function splitHighlights(text: string, matcher: RegExp | null): Highlight
   }
   const runs: HighlightRun[] = [];
   let last = 0;
-  for (const m of text.matchAll(new RegExp(matcher.source, matcher.flags))) {
+  for (const m of text.slice(0, MAX_HIGHLIGHT_CHARS).matchAll(new RegExp(matcher.source, matcher.flags))) {
     const start = m.index ?? 0;
     if (m[0].length === 0) {
       continue;

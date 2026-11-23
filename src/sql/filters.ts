@@ -54,6 +54,9 @@ export function sanitizeFilterPills(raw: unknown[]): FilterPill[] {
         pill.negate = true;
       }
     }
+    if (typeof r.homeView !== 'string' || r.homeView.length > 128) {
+      delete pill.homeView;
+    }
     // Group fields come from untrusted input too: keep only a short id and a known operator.
     if (typeof r.group !== 'string' || !GROUP_ID_RE.test(r.group)) {
       delete pill.group;
@@ -247,7 +250,14 @@ export function updateFilter(filters: FilterPill[], id: string, patch: Partial<F
 
 /** Toggle a pill's `disabled` flag in place (id-preserving). */
 export function toggleDisabled(filters: FilterPill[], id: string): FilterPill[] {
-  return filters.map((f) => (f.id === id ? { ...f, disabled: !f.disabled } : f));
+  return filters.map((f) => {
+    if (f.id !== id) {
+      return f;
+    }
+    // The user's own choice replaces the one a data view switch made.
+    const { homeView: _h, ...rest } = f;
+    return { ...rest, disabled: !f.disabled };
+  });
 }
 
 const NEGATED_OP: Record<FilterOp, FilterOp> = {

@@ -8,6 +8,7 @@ import { css } from '@emotion/css';
 import { GrafanaTheme2, TimeRange } from '@grafana/data';
 import { Icon, RefreshPicker, TimeRangePicker, useStyles2 } from '@grafana/ui';
 import { shiftTimeRange, zoomOutTimeRange } from '../utils/timeRangeNav';
+import { getTimeZoneSettings, reresolveRange, setFiscalYearStartMonth, setTimeZone, useTimeZoneSettings } from '../utils/timeZone';
 import { TimeShorthandInput } from './TimeShorthandInput';
 import { AddFilterPopover } from './AddFilter/AddFilterPopover';
 import { DataViewPicker } from './DataViewPicker/DataViewPicker';
@@ -61,6 +62,8 @@ export function QueryBar(p: QueryBarProps) {
       />
       <div className={styles.searchWrap}>
         <SearchBar
+          // A draft (or its syntax error) belongs to the view it was typed on.
+          key={p.dataViewId}
           value={p.search}
           onChange={p.onSearch}
           onSearch={() => {}}
@@ -91,19 +94,33 @@ interface QueryTimeControlsProps {
  */
 export function QueryTimeControls(p: QueryTimeControlsProps) {
   const styles = useStyles2(getStyles);
+  const tzs = useTimeZoneSettings();
+  // A rounded relative range (now/d, now/fQ) lands on other instants in another zone: re-resolve it.
+  const reresolve = (next: { timeZone: string; fiscalYearStartMonth: number }) => {
+    const { from, to } = p.timeRange.raw;
+    if ((typeof from === 'string' && from.includes('/')) || (typeof to === 'string' && to.includes('/'))) {
+      p.onTimeChange(reresolveRange(p.timeRange, next));
+    }
+  };
   return (
     <div className={styles.timeGroup}>
       <TimeShorthandInput range={p.timeRange} onApply={p.onTimeChange} />
       <TimeRangePicker
         value={p.timeRange}
         onChange={p.onTimeChange}
-        onChangeTimeZone={() => {}}
-        onChangeFiscalYearStartMonth={() => {}}
+        onChangeTimeZone={(tz) => {
+          setTimeZone(tz);
+          reresolve(getTimeZoneSettings());
+        }}
+        onChangeFiscalYearStartMonth={(m) => {
+          setFiscalYearStartMonth(m);
+          reresolve(getTimeZoneSettings());
+        }}
         onMoveBackward={() => p.onTimeChange(shiftTimeRange(p.timeRange, -1))}
         onMoveForward={() => p.onTimeChange(shiftTimeRange(p.timeRange, 1))}
         onZoom={() => p.onTimeChange(zoomOutTimeRange(p.timeRange))}
-        timeZone="browser"
-        fiscalYearStartMonth={0}
+        timeZone={tzs.timeZone}
+        fiscalYearStartMonth={tzs.fiscalYearStartMonth}
       />
       <RefreshPicker
         onRefresh={p.onRefresh}

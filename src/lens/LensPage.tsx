@@ -26,6 +26,8 @@ import { visualizeEntry } from './entry';
 import { discoverBreakdownOf, discoverColumns, discoverIntervalOf, discoverUrl, lensContextFor } from './handoff';
 import { buildLensPanel, defaultPanelTitle } from './panelExport';
 import { SaveActions } from './SaveActions';
+import { PanelImportNote } from './PanelImportNote';
+import { usePanelImport } from './usePanelImport';
 import { FilterPills } from '../components/FilterPills';
 import { QueryRow, withQuery } from './QueryRow';
 import { QueryActionsRow, QueryActionToggle, QueryTimeControls } from '../components/QueryBar';
@@ -81,6 +83,7 @@ import { LayerItemEditor, LayerItemRef, LayersSection } from './LayerPanel';
 import { ExtraLayer } from './layers';
 import { useLayerData } from './useLayerData';
 import { DefaultTimeRangeContext, resolveDefaultTimeRange } from '../utils/defaultTimeRange';
+import { formatInZone, useTimeZoneSettings } from '../utils/timeZone';
 import { panelSourceOf } from './panelSource';
 import { gaugeAutoMax } from './render/gaugeSpec';
 import { GaugePanel } from './GaugePanel';
@@ -248,7 +251,10 @@ export function LensPage() {
   }, [paramsKey, entered]);
 
   // Shared search context from the URL (same params as Discover).
-  const urlState = useMemo(() => decodeLogsState(new URLSearchParams(paramsKey)), [paramsKey]);
+  // Relative ranges (now/d, now/fQ) resolve in the chosen zone: re-decode when it changes.
+  const tzSettings = useTimeZoneSettings();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const urlState = useMemo(() => decodeLogsState(new URLSearchParams(paramsKey)), [paramsKey, tzSettings]);
   const search = urlState.search ?? '';
   const filters = useMemo(() => urlState.filters ?? [], [urlState]);
   const timeRange = useMemo(() => urlState.timeRange ?? resolveDefaultTimeRange(defaultTime), [urlState, defaultTime]);
@@ -488,6 +494,17 @@ export function LensPage() {
       }
     }
   }, [fieldsLoading, lens, urlLens, setLens]);
+  // Edit in Visualize on any dashboard panel (R6-PANELS): converts the panel the link names.
+  const panelImport = usePanelImport({
+    paramsKey,
+    setSearchParams,
+    views,
+    activeViewId: activeView?.id,
+    setActiveViewId,
+    fields: lensFields,
+    fieldsReady: fieldsPublished && !discovering,
+    timestamp: config.columns.timestamp,
+  });
   const { loadValues, loadMapKeys } = useAutocompleteSources({
     config,
     query: { ...DEFAULT_LOGS_QUERY_STATE, search, filters },
@@ -530,6 +547,9 @@ export function LensPage() {
     config.datasourceUid,
     config.database,
     config.logsTable,
+    // The compiled time conditions depend on these (the prune column may be detected later).
+    config.columns.timestamp,
+    config.columns.partitionTimestamp,
     search,
     filters,
     timeRange.from.valueOf(),
@@ -542,7 +562,8 @@ export function LensPage() {
   const calcError = calculationError(lens);
   // An axis chart whose horizontal axis was removed (or never filled): shown as an empty
   // visualization, not re-picked as another chart type.
-  const blankChart = isEmptyLens(lens) || ((isXy(lens.chartType) || lens.chartType === 'heatmap') && lens.buckets.length === 0);
+  // No metric (the vertical axis was removed): nothing to draw either.
+  const blankChart = lens.metrics.length === 0 || ((isXy(lens.chartType) || lens.chartType === 'heatmap') && lens.buckets.length === 0);
   useEffect(() => {
     if (blankChart || !config.datasourceUid || chartFieldsLoading || queryError || calcError) {
       return;
@@ -659,6 +680,11 @@ export function LensPage() {
       setLens(EMPTY_LENS);
       return;
     }
+    // Removing the last metric sticks too: back to the empty workspace, the other dimensions kept.
+    if (next.metrics.length === 0) {
+      setLens(next);
+      return;
+    }
     // Removing the only horizontal axis leaves the chart type as it is, with an empty axis slot
     // (an empty visualization), instead of becoming a Metric.
     if ((isXy(next.chartType) || next.chartType === 'heatmap') && next.buckets.length === 0) {
@@ -745,7 +771,7 @@ export function LensPage() {
       // Exact bucket end (calendar months / years are not a fixed number of ms).
       const end = iv ? stepBucket(from, iv, 1) : from + bucketMs;
       out.push({
-        label: `${x.label}: ${dateTime(from).format('YYYY-MM-DD HH:mm')} – ${dateTime(end).format('YYYY-MM-DD HH:mm')}`,
+        label: `${x.label}: ${formatInZone(from, 'YYYY-MM-DD HH:mm')} – ${formatInZone(end, 'YYYY-MM-DD HH:mm')}`,
         time: [from, end],
       });
     }
@@ -906,6 +932,8 @@ export function LensPage() {
         pinTable={tableKey(config.database, config.logsTable)}
       />
 
+      <PanelImportNote state={panelImport} />
+
       <QueryActionsRow
         left={
           <QueryActionToggle icon="info-circle" onClick={() => setInspectOpen(true)} disabled={blankChart}>
@@ -915,7 +943,9 @@ export function LensPage() {
         right={
           <SaveActions
             paramsKey={paramsKey}
-            disabled={blankChart || chartFieldsLoading || !!queryError || !!calcError}
+            disabled={blankChart || chartFieldsLoading || !!queryError || !!calcError || panelImport.pending}
+            imported={panelImport.imported}
+            hasChart={!blankChart}
             defaultTitle={defaultPanelTitle(lens)}
             buildPanel={buildPanel}
             timeRange={timeRange}

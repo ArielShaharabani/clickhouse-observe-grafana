@@ -7,7 +7,8 @@
  *    dashboards).
  * Everything read back (either store) is untrusted and goes through sanitizeSavedSearch.
  */
-import { TimeRange, dateTime, rangeUtil } from '@grafana/data';
+import { TimeRange, dateTime } from '@grafana/data';
+import { resolveRange } from '../utils/timeZone';
 import { config, getBackendSrv } from '@grafana/runtime';
 import { SavedSearch } from '../types';
 import { sanitizeFilterPills } from '../sql/filters';
@@ -88,7 +89,7 @@ export function savedSearchTimeRange(s: SavedSearch): TimeRange | undefined {
   }
   try {
     const toRaw = (v: string) => (v.startsWith('now') ? v : dateTime(Number(v)));
-    return rangeUtil.convertRawToRange({ from: toRaw(s.timeRange.from), to: toRaw(s.timeRange.to) });
+    return resolveRange({ from: toRaw(s.timeRange.from), to: toRaw(s.timeRange.to) });
   } catch {
     return undefined;
   }

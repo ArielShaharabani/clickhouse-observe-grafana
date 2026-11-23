@@ -132,6 +132,8 @@ export interface FilterCondGroup {
 }
 
 export interface FilterPill {
+  /** Disabled by a Discover data view switch: the id of the view it applies to (enabled again there). */
+  homeView?: string;
   id: string;
   field: string;
   op: FilterOp;

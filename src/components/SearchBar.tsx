@@ -236,6 +236,18 @@ export function SearchBar({
     [fields, loadValues, loadMapKeys, keyListsSnapshot]
   );
 
+  // Text typed before the field list arrived got no suggestions: compute them once it is here.
+  const typedWithoutFieldsRef = useRef(false);
+  useEffect(() => {
+    const input = inputRef.current;
+    if (typedWithoutFieldsRef.current && fields.length > 0) {
+      typedWithoutFieldsRef.current = false;
+      if (input && document.activeElement === input) {
+        computeSuggestions(input.value, input.selectionStart ?? input.value.length);
+      }
+    }
+  }, [fields, computeSuggestions]);
+
   // ── Input handlers ────────────────────────────────────────────────────────
 
   const onInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -243,6 +255,7 @@ export function SearchBar({
     setInputValue(v);
     setParseError(null); // clear a stale error as soon as the user edits the query again
     const cursor = e.target.selectionStart ?? v.length;
+    typedWithoutFieldsRef.current = fields.length === 0;
     computeSuggestions(v, cursor);
   };
 
@@ -281,6 +294,7 @@ export function SearchBar({
   // a Map key fetch): otherwise it reopens the list after Enter / Clear (Kibana closes it).
   const cancelPendingSuggestions = useCallback(() => {
     requestSeqRef.current++;
+    typedWithoutFieldsRef.current = false;
     if (debounceRef.current) {
       clearTimeout(debounceRef.current);
       debounceRef.current = null;

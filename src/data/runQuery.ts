@@ -12,6 +12,7 @@ import { detectTruncation } from '../diag/sqlIntegrity';
 import { appendLogComment, buildLogCommentTag } from '../diag/logComment';
 import { isEnrichmentEnabled } from '../diag/enrichment';
 import { errMsg } from '../errMsg';
+import { getTimeZoneSettings } from '../utils/timeZone';
 
 // CH datasource format enum (Table = 1). Must match their src/types/sql.ts.
 const FORMAT_TABLE = 1;
@@ -141,7 +142,7 @@ async function fetchFrames(options: RunQueryOptions, span: SpanHandle | undefine
     range: timeRange,
     scopedVars: {},
     targets: [target],
-    timezone: 'browser',
+    timezone: getTimeZoneSettings().timeZone,
     startTime: Date.now(),
   };
 

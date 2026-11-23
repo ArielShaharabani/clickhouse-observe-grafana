@@ -12,15 +12,18 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { TimeRange } from '@grafana/data';
 import { locationService } from '@grafana/runtime';
-import { Button, ConfirmModal } from '@grafana/ui';
+import { Button, ConfirmModal, Modal } from '@grafana/ui';
 import { getDashboard } from '../data/dashboards';
 import { findDashboardPanel } from '../data/panelExport';
 import { buildShareUrl, isRelativeRange, VISUALIZE_SHAREABLE_PARAMS } from '../data/shareLink';
 import { errMsg } from '../errMsg';
 import { ShareLinkModal } from '../components/SessionActions/ShareLinkModal';
-import { canCreateDashboards } from '../utils/permissions';
+import { canCreateDashboards, canViewDashboards } from '../utils/permissions';
 import { LensPanel } from './panelExport';
-import { dashboardReturnPath, DashboardReturn, readDashboardReturn } from './panelSource';
+import { lossList, PanelImport } from './panelImport';
+import { assertClassicDashboard } from './panelImportLoad';
+import { OpenPanelModal } from './OpenPanelModal';
+import { dashboardReturnPath, DashboardReturn, readDashboardReturn, VISUALIZE_SOURCE_KEY } from './panelSource';
 import { returnSaveError, ReturnTarget, saveAndReturn, SaveLensModal } from './SaveLensModal';
 
 interface Props {
@@ -30,7 +33,14 @@ interface Props {
   defaultTitle: string;
   buildPanel: (title: string, description: string) => LensPanel;
   timeRange: TimeRange;
+  /** The panel was converted by Edit in Visualize / Open panel: what was not carried over (R6-PANELS). */
+  imported?: PanelImport;
+  /** The page shows a chart (Open panel replaces it). */
+  hasChart?: boolean;
 }
+
+/** Said in the replace warning once verified (e2e r6-panels): Grafana keeps the replaced version. */
+const versionNote = 'Grafana also keeps the previous version of the dashboard in its version history.';
 
 /** The chart's own state in Visualize's URL (the keys a dashboard panel stores; time is not part of it). */
 const CHART_KEYS = ['lens', 'q', 'filters', 'ds'];
@@ -44,6 +54,7 @@ const text = (v: unknown, max = 500) => (typeof v === 'string' ? v.slice(0, max)
 /** The loaded dashboard + panel for Save and return; an error message when it can't be used. */
 export async function loadReturnTarget(ret: DashboardReturn): Promise<ReturnTarget> {
   const { dashboard, meta } = await getDashboard(ret.uid);
+  assertClassicDashboard(dashboard);
   const panel = findDashboardPanel(dashboard, ret.panelId);
   if (!panel) {
     throw new Error('The panel is no longer on the dashboard.');
@@ -55,10 +66,22 @@ export async function loadReturnTarget(ret: DashboardReturn): Promise<ReturnTarg
     dashboardTitle: text(dashboard.title, 200) || ret.uid,
     panelTitle: text(panel.title, 200),
     panelDescription: text(panel.description, 2000),
+    madeInVisualize: editsInVisualize(panel),
   };
 }
 
-export function SaveActions({ paramsKey, disabled, defaultTitle, buildPanel, timeRange }: Props) {
+/** The panel carries its Visualize state, so replacing it from Visualize is a round trip. */
+function editsInVisualize(panel: Record<string, unknown>): boolean {
+  return (
+    Array.isArray(panel.targets) &&
+    panel.targets.some((t) => typeof (t as Record<string, unknown> | null)?.[VISUALIZE_SOURCE_KEY] === 'string')
+  );
+}
+
+/** Any other panel whose conversion isn't known (failed, or the link has no import marker) may lose everything. */
+const UNKNOWN_LOSS = ['The original query and panel settings (they were not read into Visualize)'];
+
+export function SaveActions({ paramsKey, disabled, defaultTitle, buildPanel, timeRange, imported, hasChart }: Props) {
   const ret = useMemo(() => readDashboardReturn(new URLSearchParams(paramsKey)), [paramsKey]);
   const retKey = ret ? `${ret.uid}:${ret.panelId}` : '';
   const [target, setTarget] = useState<{ key: string; value?: ReturnTarget; error?: string } | null>(null);
@@ -67,6 +90,9 @@ export function SaveActions({ paramsKey, disabled, defaultTitle, buildPanel, tim
   const [returning, setReturning] = useState(false);
   const [returnError, setReturnError] = useState('');
   const [confirmCancel, setConfirmCancel] = useState(false);
+  const [warnOpen, setWarnOpen] = useState(false);
+  const [openPanel, setOpenPanel] = useState(false);
+  const canView = useMemo(() => canViewDashboards(), []);
   const canSave = useMemo(() => canCreateDashboards(), []);
   // The chart as it was when the panel opened: Cancel only asks when it has changed since.
   const baseline = useRef<{ key: string; chart: string } | null>(null);
@@ -106,6 +132,13 @@ export function SaveActions({ paramsKey, disabled, defaultTitle, buildPanel, tim
 
   const loaded = target?.key === retKey ? target : null;
   const returnTarget = loaded?.value;
+  // Replacing the panel loses what the chart does not carry over: every replace goes through the
+  // warning. Fails safe: without an analysis, only a panel made in Visualize saves directly.
+  const loss = useMemo(
+    () => (imported ? lossList(imported) : returnTarget && !returnTarget.madeInVisualize ? UNKNOWN_LOSS : []),
+    [imported, returnTarget]
+  );
+  const lossy = loss.length > 0;
 
   const onCancel = () => {
     if (!ret) {
@@ -145,8 +178,21 @@ export function SaveActions({ paramsKey, disabled, defaultTitle, buildPanel, tim
     }
   };
 
+  const requestReturn = () => {
+    if (lossy) {
+      setWarnOpen(true);
+    } else {
+      void onSaveAndReturn();
+    }
+  };
+
   return (
     <>
+      {canView && (
+        <Button size="sm" variant="secondary" icon="folder-open" onClick={() => setOpenPanel(true)}>
+          Open panel
+        </Button>
+      )}
       <Button size="sm" variant="secondary" icon="share-alt" onClick={() => setShareOpen(true)} disabled={disabled}>
         Share
       </Button>
@@ -167,7 +213,7 @@ export function SaveActions({ paramsKey, disabled, defaultTitle, buildPanel, tim
           <Button
             size="sm"
             icon="save"
-            onClick={onSaveAndReturn}
+            onClick={requestReturn}
             disabled={disabled || !returnTarget || !canSave || returning}
             tooltip={
               loaded?.error
@@ -195,7 +241,53 @@ export function SaveActions({ paramsKey, disabled, defaultTitle, buildPanel, tim
         returnTo={returnTarget}
         startAsNew={saveOpen === 'new'}
         initialError={saveOpen === 'return' ? returnError : ''}
+        confirmLoss={lossy ? loss : undefined}
+        preferSameDashboard={lossy}
       />
+      <OpenPanelModal isOpen={openPanel} onDismiss={() => setOpenPanel(false)} hasChart={Boolean(hasChart)} />
+      <Modal
+        title="Replace the original panel?"
+        isOpen={warnOpen}
+        onDismiss={() => setWarnOpen(false)}
+        
+      >
+        <p>
+          Visualize cannot carry everything from this panel over. Replacing it on the dashboard
+          {returnTarget ? ` "${returnTarget.dashboardTitle}"` : ''} permanently removes from the panel:
+        </p>
+        <ul aria-label="What will be lost">
+          {loss.map((l, i) => (
+            <li key={i}>{l}</li>
+          ))}
+        </ul>
+        <p>
+          Save as new panel adds the chart to the same dashboard and leaves the original panel as it is.
+          {versionNote ? ` ${versionNote}` : ''}
+        </p>
+        <Modal.ButtonRow>
+          <Button variant="secondary" fill="outline" onClick={() => setWarnOpen(false)}>
+            Cancel
+          </Button>
+          <Button
+            variant="destructive"
+            onClick={() => {
+              setWarnOpen(false);
+              void onSaveAndReturn();
+            }}
+          >
+            Replace anyway
+          </Button>
+          <Button
+            variant="primary"
+            onClick={() => {
+              setWarnOpen(false);
+              setSaveOpen('new');
+            }}
+          >
+            Save as new panel
+          </Button>
+        </Modal.ButtonRow>
+      </Modal>
       <ConfirmModal
         isOpen={confirmCancel}
         title="Leave with unsaved changes?"

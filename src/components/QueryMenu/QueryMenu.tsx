@@ -1,13 +1,13 @@
 /**
  * Query menu (DISC-SEARCH-03): the ⋮ button left of the query input. Apply to all (enable /
  * disable / pin / unpin / invert every filter), Clear all (query + filters), Load query, Save query
- * (query + optional filters + optional time range), Manage saved queries, and the query language
- * (KQL; Lucene is listed but not supported).
+ * (query + optional filters + optional time range) and Manage saved queries. There is no query
+ * language switch: queries are always KQL (Lucene is not implemented).
  */
 
 import React, { useState } from 'react';
 import { css } from '@emotion/css';
-import { dateTime, GrafanaTheme2, rangeUtil, TimeRange } from '@grafana/data';
+import { dateTime, GrafanaTheme2, TimeRange } from '@grafana/data';
 import {
   Button,
   ConfirmModal,
@@ -22,6 +22,7 @@ import {
   useStyles2,
 } from '@grafana/ui';
 import { FilterPill } from '../../types';
+import { resolveRange } from '../../utils/timeZone';
 import {
   addSavedQuery,
   deleteSavedQuery,
@@ -79,7 +80,7 @@ function rawBound(raw: unknown, resolved: { valueOf(): number }): string {
 export function toTimeRange(t: { from: string; to: string }): TimeRange | undefined {
   try {
     const toRaw = (v: string) => (v.startsWith('now') ? v : dateTime(Number(v)));
-    const range = rangeUtil.convertRawToRange({ from: toRaw(t.from), to: toRaw(t.to) });
+    const range = resolveRange({ from: toRaw(t.from), to: toRaw(t.to) });
     return range.from.isValid() && range.to.isValid() ? range : undefined;
   } catch {
     return undefined;
@@ -179,17 +180,6 @@ export function QueryMenu({
           disabled={saved.length === 0}
           onClick={() => setManageOpen(true)}
         />
-        <Menu.Divider />
-        <Menu.Group label="Language">
-          <Menu.Item label="KQL" ariaChecked={true} role="menuitemradio" icon="check" />
-          <Menu.Item
-            label="Lucene"
-            ariaChecked={false}
-            role="menuitemradio"
-            description="Not supported — queries use KQL"
-            disabled
-          />
-        </Menu.Group>
       </Menu>
     );
   };

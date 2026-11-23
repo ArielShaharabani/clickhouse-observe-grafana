@@ -32,6 +32,7 @@ import { tableColumns, tableOverrides } from '../tableChart';
 import { autoAxisTitles, withLensStyle } from './styleConfig';
 import { LayerData, resolveLayers } from '../layers';
 import { withReferenceThresholds } from './layerConfig';
+import { useTimeZoneSettings } from '../../utils/timeZone';
 
 interface PanelSpec {
   pluginId: string;
@@ -352,6 +353,7 @@ export function gaugeColumns(n: number, width: number, height: number): number {
  * row's gauges to fill it, so the same value would look bigger there.
  */
 function GaugeGrid({ state, result, timeRange }: { state: LensState; result: LensResult; timeRange: TimeRange }) {
+  const { timeZone } = useTimeZoneSettings();
   const ref = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ width: 0, height: 0 });
   useEffect(() => {
@@ -405,7 +407,7 @@ function GaugeGrid({ state, result, timeRange }: { state: LensState; result: Len
                 }}
                 options={spec.options}
                 fieldConfig={spec.fieldConfig as FieldConfigSource}
-                timeZone="browser"
+                timeZone={timeZone}
               />
               {/* Grafana hides a lone gauge's name: the value it is for goes underneath. */}
               {fields.length > 1 && (
@@ -422,6 +424,7 @@ function GaugeGrid({ state, result, timeRange }: { state: LensState; result: Len
 
 /** Metric / Table / Pie through Grafana's own panels. */
 function PanelChart({ state, result, timeRange }: { state: LensState; result: LensResult; timeRange: TimeRange }) {
+  const { timeZone } = useTimeZoneSettings();
   const ref = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ width: 0, height: 0 });
   useEffect(() => {
@@ -476,7 +479,7 @@ function PanelChart({ state, result, timeRange }: { state: LensState; result: Le
             data={data}
             options={spec.options}
             fieldConfig={spec.fieldConfig as FieldConfigSource}
-            timeZone="browser"
+            timeZone={timeZone}
           />
         </div>
       )}

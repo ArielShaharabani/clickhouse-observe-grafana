@@ -34,3 +34,13 @@ export function canCreateAlertRules(): boolean {
   }
   return user.orgRole !== 'Viewer' && user.orgRole !== '';
 }
+
+/** True when the user may read dashboards (`dashboards:read`; every signed-in user otherwise). */
+export function canViewDashboards(): boolean {
+  const user = config.bootData?.user;
+  if (!user) {
+    return false;
+  }
+  const perms = (user as unknown as { permissions?: Record<string, boolean> }).permissions;
+  return perms && 'dashboards:read' in perms ? Boolean(perms['dashboards:read']) : true;
+}

@@ -7,7 +7,8 @@ import { ColumnHeaderMenu, ColumnMenuItem } from './ColumnHeaderMenu';
 import { MAX_COLUMN_WIDTH, MIN_COLUMN_WIDTH } from '../data/columns';
 import { DEFAULT_GRID_DISPLAY, GridDisplay } from './GridDisplayOptions';
 import { css, cx } from '@emotion/css';
-import { GrafanaTheme2, DateTime, dateTimeFormat, toUtc } from '@grafana/data';
+import { GrafanaTheme2, DateTime, toUtc } from '@grafana/data';
+import { formatInZone, useTimeZoneSettings } from '../utils/timeZone';
 import { Icon, IconButton, LoadingPlaceholder, EmptyState, useStyles2 } from '@grafana/ui';
 import { FilterPill, LogRow, SelectedColumn } from '../types';
 import { FIELD_DRAG_MIME, SEVERITY_COLORS } from '../constants';
@@ -80,7 +81,7 @@ export function severityColor(severity: unknown): string {
   return SEVERITY_COLORS[s] ?? SEVERITY_COLORS['unknown'];
 }
 
-const TS_FORMAT = { format: 'YYYY-MM-DD HH:mm:ss.SSS', timeZone: 'browser' } as const;
+const TS_FORMAT = 'YYYY-MM-DD HH:mm:ss.SSS';
 
 /** Shared with LogDetailDrawer's header summary. */
 export function formatTimestamp(ts: unknown): string {
@@ -88,15 +89,15 @@ export function formatTimestamp(ts: unknown): string {
     return '';
   }
   if (typeof ts === 'object' && ts !== null && 'valueOf' in ts) {
-    return dateTimeFormat((ts as DateTime).valueOf(), TS_FORMAT);
+    return formatInZone((ts as DateTime).valueOf(), TS_FORMAT);
   }
   if (typeof ts === 'number') {
-    return dateTimeFormat(ts, TS_FORMAT);
+    return formatInZone(ts, TS_FORMAT);
   }
   // Raw string from ClickHouse (e.g. "2026-06-29 06:00:00") — parse as UTC, display local.
   const ms = toUtc(String(ts)).valueOf();
   if (!isNaN(ms)) {
-    return dateTimeFormat(ms, TS_FORMAT);
+    return formatInZone(ms, TS_FORMAT);
   }
   return String(ts);
 }
@@ -199,6 +200,7 @@ export function LogsTable({
   onPageStep,
   anchorRow,
 }: LogsTableProps) {
+  useTimeZoneSettings(); // cells format in the chosen zone: re-render when it changes
   const columns = useMemo(() => (columnsProp.length === 0 ? [SUMMARY_COLUMN] : columnsProp), [columnsProp]);
   const wrap = display.bodyLines === 'auto';
   const bodyLines = display.bodyLines === 'auto' ? 0 : display.bodyLines;
@@ -873,7 +875,9 @@ const getStyles = (theme: GrafanaTheme2) => ({
    *  one, distinct from tableWrapperDragOver's whole-table cue. */
   fieldDropTarget: css`
     box-shadow: inset 2px 0 0 0 ${theme.colors.primary.main};
-    background: ${theme.colors.primary.transparent};
+    /* Tint as an image layer over the cell's own opaque background: on a sticky <th> a bare
+       translucent background would let scrolled rows show through. */
+    background-image: linear-gradient(${theme.colors.primary.transparent}, ${theme.colors.primary.transparent});
   `,
   table: css`
     width: 100%;
@@ -902,16 +906,17 @@ const getStyles = (theme: GrafanaTheme2) => ({
     white-space: nowrap;
     position: sticky;
     top: 0;
-    // Above row content (rows have no explicit z-index / are auto-stacked) and above dataTd's
-    // hover box-shadow, but below cellToolbar's z-index:5 and FieldSidebar's Portal popovers —
-    // just needs to reliably win against the table body, not the whole page's stacking order.
-    z-index: 3;
+    // Above row content, dataTd's hover box-shadow and cellToolbar (z-index:5, which hangs 14px
+    // above its cell and would otherwise paint over the header while rows scroll under it), but
+    // below FieldSidebar's Portal popovers.
+    z-index: 6;
   `,
   /** Hover feedback only for real data-column headers — the leading checkbox/expand-chevron
    *  header cells aren't interactive and shouldn't visually react on hover. */
   dataTh: css`
     &:hover {
-      background: ${theme.colors.action.hover};
+      /* Image layer over the th's opaque background (see fieldDropTarget). */
+      background-image: linear-gradient(${theme.colors.action.hover}, ${theme.colors.action.hover});
     }
   `,
   thDraggable: css`
@@ -922,7 +927,7 @@ const getStyles = (theme: GrafanaTheme2) => ({
   `,
   thDragOver: css`
     box-shadow: inset 2px 0 0 0 ${theme.colors.primary.main};
-    background: ${theme.colors.action.hover};
+    background-image: linear-gradient(${theme.colors.action.hover}, ${theme.colors.action.hover});
   `,
   dragHandle: css`
     flex-shrink: 0;

@@ -564,3 +564,31 @@ LENS-DATAVIEW acceptance:
 | Case | Status |
 | --- | --- |
 
+## Round 6 (v0.79.0)
+
+### R6-PANELS
+
+| Check | Where | Result |
+|---|---|---|
+| Tokenizer, parser rejects, importer (supported, partial, unsupported, hostile) | src/lens/__tests__/panelImport.test.ts | jest |
+| Replace warning on every save path, link shape | src/lens/__tests__/replaceWarning.test.tsx | jest |
+| Menu → import → Save and return / Save as new / Replace anyway / Open panel | tests/features/r6-panels.spec.ts | see report |
+
+### R6-POPOVER
+
+- tests/features/r6-popovers.spec.ts: run by the author on the r6-popover container; coordinator to rerun.
+
+### R6-SEC
+
+Full jest after the dependency update: 143 suites, 1957 tests green. After the code fixes: sql + data suites 883 green. typecheck 0 errors, lint 0 errors (27 pre-existing warnings), build green. e2e: none affected (not run).
+
+### R6-TZ
+
+- jest: `src/utils/__tests__/timeZone.test.ts` (store, persistence, validation, formatting, ticks, DST ranges, fiscal).
+- e2e `tests/features/r6-timezone.spec.ts`: see run notes in the final report.
+
+### R6-UI
+
+- e2e disc-search-03 (language section removed), disc-nav-01 / r5-tabs unchanged expectations: not run (coordinator).
+
+e2e: r6-view-switch, r6-remove-y, r6-timezone, r6-popovers, r6-panels, disc-nav-01.
