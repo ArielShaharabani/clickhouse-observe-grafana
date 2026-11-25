@@ -23,11 +23,12 @@ describe('views from any store have one shape', () => {
 
 describe('prune hints', () => {
   it('round-trips, clears, and rejects anything but an identifier', () => {
+    expect(loadPruneHint('k')).toBeUndefined();
     savePruneHint('k', { column: 'day', widenSeconds: 172800 });
     expect(loadPruneHint('k')).toEqual({ column: 'day', widenSeconds: 172800 });
     savePruneHint('k', null);
     expect(loadPruneHint('k')).toBeNull();
     savePruneHint('k', { column: '1=1 OR x', widenSeconds: 1 });
-    expect(loadPruneHint('k')).toBeNull();
+    expect(loadPruneHint('k')).toBeUndefined();
   });
 });

@@ -69,6 +69,9 @@ export const DataViewContext = createContext<DataViewContextValue>({
 // `props.meta.jsonData` is unset — otherwise the useMemo below would never hit its cache.
 const EMPTY_JSON_DATA: AppJsonData = {};
 
+/** Longest the first page load waits for the table's columns. */
+const PRUNE_WAIT_MS = 2000;
+
 function App(props: AppRootProps<AppJsonData>) {
   const jsonData = props.meta.jsonData ?? EMPTY_JSON_DATA;
 
@@ -188,7 +191,7 @@ function App(props: AppRootProps<AppJsonData>) {
   // is used (so the first query is pruned and not re-run); never the view's saved name, whose
   // truncation is unknown then and could drop rows. '-' keeps pruning off. Every query-building consumer reads SourceConfig through
   // SourceConfigContext below, so this is the one place it needs to be applied.
-  const { detectedPrune } = useFieldDiscovery(rawSourceConfig, discoveryTimeRange, { columnsOnly: true });
+  const { detectedPrune, loading: pruneLoading } = useFieldDiscovery(rawSourceConfig, discoveryTimeRange, { columnsOnly: true });
   const saved = rawSourceConfig.columns.partitionTimestamp;
   const hintKey = pruneHintKey(rawSourceConfig);
   const hint = useMemo(() => loadPruneHint(hintKey), [hintKey]);
@@ -200,6 +203,19 @@ function App(props: AppRootProps<AppJsonData>) {
   const prune = saved === '-' ? null : detectedPrune === undefined ? hint : detectedPrune;
   const pruneColumn = saved === '-' ? saved : (prune?.column ?? '');
   const pruneWiden = prune?.widenSeconds;
+  // A table's first ever visit waits for that one metadata lookup (briefly) before any page mounts:
+  // a later detection would re-run the first queries. Latched, so a view switch never unmounts a page.
+  const [pruneWaitOver, setPruneWaitOver] = useState(false);
+  const pruneKnown =
+    saved === '-' || prune !== undefined || !pruneLoading || !rawSourceConfig.datasourceUid || !rawSourceConfig.columns.timestamp;
+  useEffect(() => {
+    if (pruneWaitOver) {
+      return;
+    }
+    const t = window.setTimeout(() => setPruneWaitOver(true), pruneKnown ? 0 : PRUNE_WAIT_MS);
+    return () => window.clearTimeout(t);
+  }, [pruneKnown, pruneWaitOver]);
+  const pagesReady = pruneKnown || pruneWaitOver;
   const sourceConfig: SourceConfig = useMemo(
     () =>
       pruneColumn === rawSourceConfig.columns.partitionTimestamp && pruneWiden === undefined
@@ -261,6 +277,8 @@ function App(props: AppRootProps<AppJsonData>) {
               onChoose={handleTraceViewChoice}
               onDismiss={handleTraceViewDismiss}
             />
+          ) : !pagesReady ? (
+            <LoadingPlaceholder text="Loading…" />
           ) : (
             <Suspense fallback={<LoadingPlaceholder text="Loading…" />}>
               <AppRoutes />

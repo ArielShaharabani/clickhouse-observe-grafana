@@ -8,7 +8,8 @@ import { PruneColumn } from '../sql/pruneColumn';
 const KEY = 'poortuna-clickhouse-observe:prune-hints';
 const MAX_HINTS = 100;
 
-type Hints = Record<string, PruneColumn>;
+/** null = the table was checked and has none. */
+type Hints = Record<string, PruneColumn | null>;
 
 export function pruneHintKey(c: SourceConfig): string {
   return [c.datasourceUid, c.database, c.logsTable, c.columns.timestamp, c.columns.partitionTimestamp].join('\u0000');
@@ -23,25 +24,27 @@ function read(): Hints {
   }
 }
 
-export function loadPruneHint(key: string): PruneColumn | null {
+/** undefined = nothing known about the table yet. */
+export function loadPruneHint(key: string): PruneColumn | null | undefined {
   const h = read()[key];
+  if (h === null) {
+    return null;
+  }
   // Goes into SQL: a plain identifier and a whole number only.
   return h && /^[A-Za-z_][A-Za-z0-9_]*$/.test(String(h.column)) && Number.isInteger(h.widenSeconds) && h.widenSeconds > 0
     ? { column: h.column, widenSeconds: h.widenSeconds }
-    : null;
+    : undefined;
 }
 
 export function savePruneHint(key: string, prune: PruneColumn | null): void {
   const hints = read();
   const prev = hints[key];
-  if (prune ? prev?.column === prune.column && prev?.widenSeconds === prune.widenSeconds : !prev) {
+  if (prune ? prev?.column === prune.column && prev?.widenSeconds === prune.widenSeconds : prev === null) {
     return;
   }
   delete hints[key];
   const entries = Object.entries(hints);
-  if (prune) {
-    entries.push([key, prune]);
-  }
+  entries.push([key, prune]);
   try {
     localStorage.setItem(KEY, JSON.stringify(Object.fromEntries(entries.slice(-MAX_HINTS))));
   } catch {
