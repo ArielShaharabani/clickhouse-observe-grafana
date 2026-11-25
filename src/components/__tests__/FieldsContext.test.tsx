@@ -356,7 +356,7 @@ describe('useFieldDiscovery — detectedPartitionTimestamp', () => {
 
     await waitFor(() => expect(result.current.loading).toBe(false));
 
-    expect(result.current.detectedPartitionTimestamp).toBe('TimestampTime');
+    expect(result.current.detectedPrune).toEqual({ column: 'TimestampTime', widenSeconds: 172800 });
   });
 
   it('never reports the fields or prune column of the previous table after a switch (round 6 #1)', async () => {
@@ -389,10 +389,10 @@ describe('useFieldDiscovery — detectedPartitionTimestamp', () => {
       ({ table }) => useFieldDiscovery({ ...config, logsTable: table, columns: OTEL_COLUMN_MAPPING }, timeRange),
       { initialProps: { table: 'switch_a' } }
     );
-    await waitFor(() => expect(result.current.detectedPartitionTimestamp).toBe('TimestampTime'));
+    await waitFor(() => expect(result.current.detectedPrune).toEqual({ column: 'TimestampTime', widenSeconds: 172800 }));
 
     rerender({ table: 'switch_b' });
-    expect(result.current.detectedPartitionTimestamp).toBe('');
+    expect(result.current.detectedPrune).toBeUndefined();
     expect(result.current.fields).toEqual([]);
     expect(result.current.loading).toBe(true);
 
@@ -402,7 +402,7 @@ describe('useFieldDiscovery — detectedPartitionTimestamp', () => {
     await waitFor(() => expect(result.current.error).toContain('no access'));
     expect(result.current.loading).toBe(false);
     expect(result.current.fields).toEqual([]);
-    expect(result.current.detectedPartitionTimestamp).toBe('');
+    expect(result.current.detectedPrune).toBeUndefined();
   });
 
   it('detects nothing when no column qualifies (e.g. the mapped timestamp is itself the sort key)', async () => {
@@ -429,7 +429,7 @@ describe('useFieldDiscovery — detectedPartitionTimestamp', () => {
 
     await waitFor(() => expect(result.current.loading).toBe(false));
 
-    expect(result.current.detectedPartitionTimestamp).toBe('');
+    expect(result.current.detectedPrune).toBeNull();
   });
 });
 

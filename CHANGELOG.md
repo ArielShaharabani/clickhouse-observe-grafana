@@ -10,6 +10,18 @@ Versions track the plugin's release history. `Unreleased` collects commits not y
 
 ---
 
+## [0.81.0] — 2026-11-25
+
+- Discover: the histogram is hidden when nothing matches. A histogram query that failed or was cancelled says so with Retry instead of "No events", and the timeout message shows the view's own limit.
+- Shared data views are made with the same dialog as personal ones: tuple elements and JSON paths in every mapping, pinned columns, database / table lists, query settings. The timeout field can be cleared and retyped.
+- Fixed: tuple elements with quoted names (`service.name`) were listed as `resource.1`.
+- Fixed: editing a data view could lose its pinned columns while fields were loading; one malformed personal view hid all of them.
+- Fixed: the "data view isn't available in this browser" notice took half of the Discover page; opening such a link no longer replaces the viewer's remembered data view.
+- The partition / index time column is always inferred and no longer asked for. Plain `Date` columns are detected, and the bounds are widened by the column's granularity: a hand-set `Date` column silently dropped rows.
+- Visualize: the Quick function / Formula toggle no longer stretches over the panel.
+
+---
+
 ## [0.80.0] — 2026-11-23
 
 - Discover: opening a document keeps the field list open, and the document panel pushes the histogram and grid aside instead of covering them (as Kibana). On pages up to 1100 px wide, or expanded, it still goes over them.

@@ -36,18 +36,25 @@ import { epochGuesser, NO_TIME_VALUE, schemaTimeRange, TimeFieldSelect } from '.
 interface CreateDataViewModalProps {
   isOpen: boolean;
   onDismiss: () => void;
-  /** When set, the modal edits this personal view in place (jumps straight to the column-mapping
-   *  step, pre-filled) instead of creating a new one. Only ever passed a personal view — shared
-   *  views are admin-managed via plugin config, matching the existing delete-personal-view-only
-   *  pattern in DataViewPicker. */
+  /** When set, the modal edits this view in place (jumps straight to the column-mapping step,
+   *  pre-filled) instead of creating a new one. */
   editingView?: DataView;
+  /** Where the result goes. Default: the browser's personal views. The Configuration page passes its
+   *  own, so shared and personal views are made by the same form. */
+  onSubmit?: (values: DataViewValues) => void;
+  submitLabel?: string;
 }
+
+export type DataViewValues = Omit<DataView, 'id' | 'createdAt' | 'origin'>;
+
+/** The view's query settings as typed in the form, for the form's own discovery queries. */
+type FormSettings = Pick<SourceConfig, 'sequentialConsistency' | 'queryTimeoutSeconds' | 'extraQuerySettings'>;
 
 const NO_BODY_VALUE = '__no_body__';
 
 type Step = 'location' | 'columns';
 
-export function CreateDataViewModal({ isOpen, onDismiss, editingView }: CreateDataViewModalProps) {
+export function CreateDataViewModal({ isOpen, onDismiss, editingView, onSubmit, submitLabel }: CreateDataViewModalProps) {
   const styles = useStyles2(getStyles);
   const { createPersonalView, updatePersonalView, setActiveViewId } = useContext(DataViewContext);
   const aiCfg = useContext(AiConfigContext);
@@ -103,7 +110,8 @@ export function CreateDataViewModal({ isOpen, onDismiss, editingView }: CreateDa
   // view never has to look at this; it exists for the rare case a personal view points at a
   // multi-replica cluster with unusual latency/consistency needs.
   const [sequentialConsistency, setSequentialConsistency] = useState(true);
-  const [queryTimeoutSeconds, setQueryTimeoutSeconds] = useState(DEFAULT_QUERY_TIMEOUT_SECONDS);
+  // As typed; empty = the default (so the field can be cleared and retyped).
+  const [timeoutText, setTimeoutText] = useState('');
   const [extraQuerySettings, setExtraQuerySettings] = useState('');
   const [clusterName, setClusterName] = useState('');
   const [showQuerySettings, setShowQuerySettings] = useState(false);
@@ -119,6 +127,12 @@ export function CreateDataViewModal({ isOpen, onDismiss, editingView }: CreateDa
   // Guards the async JSON-path scan in goToColumnsStepFor against a stale response landing after
   // the user has already switched tables — same pattern as FieldsContext's runRef.
   const columnsRunRef = useRef(0);
+  // Table the mapping on screen belongs to: going Back and Next without changing it keeps the mapping.
+  const columnsFor = useRef('');
+  // Latest database / table list request: an older answer must not replace a newer selection's list.
+  const dbRun = useRef(0);
+  const tableRun = useRef(0);
+  const timeoutSeconds = Number(timeoutText) > 0 ? Number(timeoutText) : undefined;
 
   const resetAll = useCallback(() => {
     setStep('location');
@@ -139,8 +153,10 @@ export function CreateDataViewModal({ isOpen, onDismiss, editingView }: CreateDa
     setPinnedIds([]);
     setShowPinned(false);
     setSequentialConsistency(true);
-    setQueryTimeoutSeconds(DEFAULT_QUERY_TIMEOUT_SECONDS);
+    setTimeoutText('');
     setExtraQuerySettings('');
+    setClusterName('');
+    columnsFor.current = '';
     setShowQuerySettings(false);
     setShowAdvancedSection(false);
   }, []);
@@ -150,8 +166,17 @@ export function CreateDataViewModal({ isOpen, onDismiss, editingView }: CreateDa
   // JSON-path leaves; Map keys stay on-demand). Early-returns internally when datasourceUid is empty, so this
   // is a no-op until step 1 is complete.
   const pinnableFieldsConfig: SourceConfig = useMemo(
-    () => ({ ...DEFAULT_SOURCE_CONFIG, datasourceUid, database, logsTable, columns: mapping }),
-    [datasourceUid, database, logsTable, mapping]
+    () => ({
+      ...DEFAULT_SOURCE_CONFIG,
+      datasourceUid,
+      // Only once the columns step is reached: a table name still being chosen is not discovered.
+      ...(step === 'columns' ? { database, logsTable } : { datasourceUid: '' }),
+      columns: mapping,
+      sequentialConsistency,
+      queryTimeoutSeconds: timeoutSeconds,
+      extraQuerySettings,
+    }),
+    [step, datasourceUid, database, logsTable, mapping, sequentialConsistency, timeoutSeconds, extraQuerySettings]
   );
   const { fields: pinnableFields } = useFieldDiscovery(pinnableFieldsConfig, pinnedFieldsTimeRange);
   // Core columns (Time/Level/Service/Message) are always shown and never removable — offering them
@@ -162,10 +187,14 @@ export function CreateDataViewModal({ isOpen, onDismiss, editingView }: CreateDa
   );
   const pinnableOptions: Array<SelectableValue<string>> = useMemo(
     () =>
-      pinnableFields
-        .filter((f) => !coreExprs.has(f.sqlExpr))
-        .map((f) => ({ label: f.displayName, value: f.id })),
-    [pinnableFields, coreExprs]
+      [
+        ...pinnableFields.filter((f) => !coreExprs.has(f.sqlExpr)).map((f) => ({ label: f.displayName, value: f.id })),
+        // Saved pins discovery has not (or no longer) found stay listed, so editing can't lose them.
+        ...(editingView?.pinnedColumns ?? [])
+          .filter((c) => !pinnableFields.some((f) => f.id === c.id))
+          .map((c) => ({ label: c.displayName, value: c.id })),
+      ],
+    [pinnableFields, coreExprs, editingView]
   );
 
   // Reset on open/close. isOpen is an external (parent-controlled) signal, so re-deriving
@@ -188,10 +217,10 @@ export function CreateDataViewModal({ isOpen, onDismiss, editingView }: CreateDa
       setName(editingView.name);
       setPinnedIds((editingView.pinnedColumns ?? []).map((col) => col.id));
       setSequentialConsistency(editingView.sequentialConsistency ?? true);
-      setQueryTimeoutSeconds(editingView.queryTimeoutSeconds ?? DEFAULT_QUERY_TIMEOUT_SECONDS);
+      setTimeoutText(editingView.queryTimeoutSeconds ? String(editingView.queryTimeoutSeconds) : '');
       setExtraQuerySettings(editingView.extraQuerySettings ?? '');
       setClusterName(editingView.clusterName ?? '');
-      goToColumnsStepFor(editingView.datasourceUid, editingView.database, editingView.logsTable, false);
+      goToColumnsStepFor(editingView.datasourceUid, editingView.database, editingView.logsTable, false, editingView);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, editingView, resetAll]);
@@ -201,8 +230,18 @@ export function CreateDataViewModal({ isOpen, onDismiss, editingView }: CreateDa
     setDatasourceUid(uid);
     setDatabase('');
     setLogsTable('');
-    setDbOptions([]);
     setTableOptions([]);
+    await loadDatabases(uid);
+  }
+
+  async function loadDatabases(uid: string) {
+    const run = ++dbRun.current;
+    // Tables still loading belong to the previous datasource.
+    if (uid !== datasourceUid) {
+      tableRun.current++;
+      setLoadingTables(false);
+    }
+    setDbOptions([]);
     if (!uid) {
       return;
     }
@@ -218,11 +257,17 @@ export function CreateDataViewModal({ isOpen, onDismiss, editingView }: CreateDa
         const n = String(r['name'] ?? '');
         return { label: n, value: n };
       }).filter((o) => o.value);
-      setDbOptions(opts);
+      if (dbRun.current === run) {
+        setDbOptions(opts);
+      }
     } catch (e) {
-      setError(`Failed to load databases: ${errMsg(e)}`);
+      if (dbRun.current === run) {
+        setError(`Failed to load databases: ${errMsg(e)}`);
+      }
     } finally {
-      setLoadingDbs(false);
+      if (dbRun.current === run) {
+        setLoadingDbs(false);
+      }
     }
   }
 
@@ -230,6 +275,11 @@ export function CreateDataViewModal({ isOpen, onDismiss, editingView }: CreateDa
   async function onDatabaseChange(db: string) {
     setDatabase(db);
     setLogsTable('');
+    await loadTables(db);
+  }
+
+  async function loadTables(db: string) {
+    const run = ++tableRun.current;
     setTableOptions([]);
     if (!db || !datasourceUid) {
       return;
@@ -246,11 +296,17 @@ export function CreateDataViewModal({ isOpen, onDismiss, editingView }: CreateDa
         const n = String(r['name'] ?? '');
         return { label: n, value: n };
       }).filter((o) => o.value);
-      setTableOptions(opts);
+      if (tableRun.current === run) {
+        setTableOptions(opts);
+      }
     } catch (e) {
-      setError(`Failed to load tables: ${errMsg(e)}`);
+      if (tableRun.current === run) {
+        setError(`Failed to load tables: ${errMsg(e)}`);
+      }
     } finally {
-      setLoadingTables(false);
+      if (tableRun.current === run) {
+        setLoadingTables(false);
+      }
     }
   }
 
@@ -258,18 +314,40 @@ export function CreateDataViewModal({ isOpen, onDismiss, editingView }: CreateDa
   // "Next →" button (fresh view, resets mapping) and the edit-view effect above (pre-fills
   // mapping from the view being edited instead of resetting it) — the only difference is what
   // happens to mapping/name after the columns load, controlled by `resetMapping`.
-  async function goToColumnsStepFor(uid: string, db: string, table: string, resetMapping = true) {
+  async function goToColumnsStepFor(uid: string, db: string, table: string, resetMapping: boolean, settings: FormSettings) {
     if (!uid || !db || !table) {
       return;
     }
     setError('');
     setLoadingCols(true);
     setStep('columns');
+    columnsFor.current = [uid, db, table].join('\u0000');
+    if (resetMapping) {
+      // Up front: a failed column load must not leave the previous table's mapping and columns in place.
+      applyCandidates([]);
+      setApplyOtel(false);
+      setMapping({ ...EMPTY_COLUMN_MAPPING });
+      setTimestampField(undefined);
+      setTimestampFormat('native');
+      setBodyField(undefined);
+      setPinnedIds([]);
+      // A view being edited keeps its name when it is pointed at another table.
+      setName((prev) => (editingView && prev ? prev : `${db}.${table}`));
+    }
+    const base: SourceConfig = {
+      ...DEFAULT_SOURCE_CONFIG,
+      datasourceUid: uid,
+      database: db,
+      logsTable: table,
+      sequentialConsistency: settings.sequentialConsistency,
+      queryTimeoutSeconds: settings.queryTimeoutSeconds,
+      extraQuerySettings: settings.extraQuerySettings,
+    };
     const runId = ++columnsRunRef.current;
     try {
       const rows = await runQueryRows({
         datasourceUid: uid,
-        sql: buildColumnsQuery({ ...DEFAULT_SOURCE_CONFIG, datasourceUid: uid, database: db }, table),
+        sql: buildColumnsQuery(base, table),
         timeRange: schemaTimeRange(),
         op: 'wizardColumns',
       });
@@ -283,28 +361,12 @@ export function CreateDataViewModal({ isOpen, onDismiss, editingView }: CreateDa
       // Tuple container column. JSON leaves fill in a moment later once the scan below resolves.
       applyCandidates(expandColumnCandidates(rawCols));
 
-      if (resetMapping) {
-        // No auto-inference — leave mapping blank. User maps columns by hand or ticks the OTel checkbox.
-        setApplyOtel(false);
-        setMapping({ ...EMPTY_COLUMN_MAPPING });
-        setTimestampField(undefined);
-        setTimestampFormat('native');
-        setBodyField(undefined);
-        setName(`${db}.${table}`);
-      }
-
       // JSON path discovery — non-blocking: fires after the step has already rendered with the
       // tuple-expanded (but still JSON-container) candidate list, and doesn't hold up loadingCols.
       // The query itself is answered from part metadata (see buildJsonPathsQuery); worst case on an
       // older server that lacks that optimization is the shared query timeout, not a modal freeze.
       const jsonCols = rawCols.filter((c) => inferFieldType(c.type) === 'json').map((c) => c.name);
       if (jsonCols.length > 0) {
-        const scanCfg: SourceConfig = {
-          ...DEFAULT_SOURCE_CONFIG,
-          datasourceUid: uid,
-          database: db,
-          logsTable: table,
-        };
         // Types come from each column's own declared JSON(...) paths, not from the query — the
         // typed variant of distinctJSONPaths isn't optimized, so asking ClickHouse for them would
         // cost a full column scan. Dynamic paths stay untyped ('').
@@ -313,7 +375,7 @@ export function CreateDataViewModal({ isOpen, onDismiss, editingView }: CreateDa
           try {
             const pathRows = await runQueryRows({
               datasourceUid: uid,
-              sql: buildJsonPathsQuery(scanCfg, jsonCol, { table }),
+              sql: buildJsonPathsQuery(base, jsonCol, { table }),
               timeRange: schemaTimeRange(),
               op: 'wizardJsonPaths',
             });
@@ -360,7 +422,23 @@ export function CreateDataViewModal({ isOpen, onDismiss, editingView }: CreateDa
   }
 
   function goToColumnsStep() {
-    return goToColumnsStepFor(datasourceUid, database, logsTable);
+    const changed = columnsFor.current !== [datasourceUid, database, logsTable].join('\u0000');
+    return goToColumnsStepFor(datasourceUid, database, logsTable, changed, {
+      sequentialConsistency,
+      queryTimeoutSeconds: timeoutSeconds,
+      extraQuerySettings,
+    });
+  }
+
+  /** Back to the location step; an edited view comes in without its database / table lists. */
+  function backToLocation() {
+    setStep('location');
+    if (dbOptions.length === 0) {
+      loadDatabases(datasourceUid);
+    }
+    if (tableOptions.length === 0) {
+      loadTables(database);
+    }
   }
 
   function onTimestampChange(v: string, format: TimestampFormat) {
@@ -443,10 +521,12 @@ export function CreateDataViewModal({ isOpen, onDismiss, editingView }: CreateDa
       // updatePersonalView does a shallow `{...prev, ...updates}` merge, which only overwrites
       // keys that appear in `updates`.
       const pinnedColumns: SelectedColumn[] = pinnedIds
-        .map((id) => pinnableFields.find((f) => f.id === id))
-        .filter((f): f is NonNullable<typeof f> => Boolean(f))
-        .map(fieldToColumn);
-      const values = {
+        .map((id) => {
+          const f = pinnableFields.find((p) => p.id === id);
+          return f ? fieldToColumn(f) : editingView?.pinnedColumns?.find((c) => c.id === id);
+        })
+        .filter((c): c is SelectedColumn => Boolean(c));
+      const values: DataViewValues = {
         datasourceUid,
         database,
         logsTable,
@@ -457,12 +537,13 @@ export function CreateDataViewModal({ isOpen, onDismiss, editingView }: CreateDa
         name: name.trim() || `${database}.${logsTable}`,
         pinnedColumns: pinnedColumns.length > 0 ? pinnedColumns : undefined,
         sequentialConsistency,
-        queryTimeoutSeconds:
-          queryTimeoutSeconds !== DEFAULT_QUERY_TIMEOUT_SECONDS ? queryTimeoutSeconds : undefined,
+        queryTimeoutSeconds: timeoutSeconds !== DEFAULT_QUERY_TIMEOUT_SECONDS ? timeoutSeconds : undefined,
         extraQuerySettings: extraQuerySettings.trim() || undefined,
         clusterName: clusterName.trim() || undefined,
       };
-      if (editingView) {
+      if (onSubmit) {
+        onSubmit(values);
+      } else if (editingView) {
         updatePersonalView(editingView.id, values);
         setActiveViewId(editingView.id);
       } else {
@@ -481,6 +562,10 @@ export function CreateDataViewModal({ isOpen, onDismiss, editingView }: CreateDa
   const bodySelectOptions: Array<SelectableValue<string>> = [
     { label: '— (none)', value: NO_BODY_VALUE },
     ...allColumnOptions.map((o) => ({ label: o.label ?? o.value ?? '', value: o.value ?? '' })),
+    // A typed or saved name the list doesn't have (columns not loaded).
+    ...(bodyField && bodyField !== NO_BODY_VALUE && !allColumnOptions.some((o) => o.value === bodyField)
+      ? [{ label: bodyField, value: bodyField }]
+      : []),
   ];
 
   const canProceed = Boolean(datasourceUid && database && logsTable);
@@ -612,6 +697,7 @@ export function CreateDataViewModal({ isOpen, onDismiss, editingView }: CreateDa
                 timestamp={timestampField === undefined ? undefined : timestampField === NO_TIME_VALUE ? '' : timestampField}
                 format={timestampFormat}
                 onChange={onTimestampChange}
+                allowCustomValue={tableColumns.length === 0}
                 guessEpoch={epochGuesser(
                   { ...DEFAULT_SOURCE_CONFIG, datasourceUid, database, sequentialConsistency },
                   logsTable
@@ -624,6 +710,8 @@ export function CreateDataViewModal({ isOpen, onDismiss, editingView }: CreateDa
                   value={bodyField}
                   options={bodySelectOptions}
                   onChange={(opt) => onBodyChange(opt.value ?? NO_BODY_VALUE)}
+                  allowCustomValue={tableColumns.length === 0}
+                  onCreateOption={(v) => onBodyChange(v.trim() || NO_BODY_VALUE)}
                   placeholder="Select body column…"
                 />
               </Field>
@@ -713,11 +801,10 @@ export function CreateDataViewModal({ isOpen, onDismiss, editingView }: CreateDa
                         <Input
                           width={15}
                           type="number"
-                          value={queryTimeoutSeconds}
-                          onChange={(e: ChangeEvent<HTMLInputElement>) => {
-                            const n = Number(e.target.value);
-                            setQueryTimeoutSeconds(Number.isFinite(n) && n > 0 ? n : DEFAULT_QUERY_TIMEOUT_SECONDS);
-                          }}
+                          min={1}
+                          value={timeoutText}
+                          placeholder={String(DEFAULT_QUERY_TIMEOUT_SECONDS)}
+                          onChange={(e: ChangeEvent<HTMLInputElement>) => setTimeoutText(e.target.value)}
                         />
                       </Field>
 
@@ -759,7 +846,7 @@ export function CreateDataViewModal({ isOpen, onDismiss, editingView }: CreateDa
               </Field>
 
               <div className={styles.footerRowBetween}>
-                <Button variant="secondary" onClick={() => setStep('location')}>
+                <Button variant="secondary" onClick={backToLocation}>
                   ← Back
                 </Button>
                 <div className={styles.footerRowGroup}>
@@ -769,7 +856,7 @@ export function CreateDataViewModal({ isOpen, onDismiss, editingView }: CreateDa
                     disabled={!canSave || saving}
                     onClick={handleSave}
                   >
-                    {saving ? 'Saving…' : editingView ? 'Save changes' : 'Save data view'}
+                    {saving ? 'Saving…' : (submitLabel ?? (editingView ? 'Save changes' : 'Save data view'))}
                   </Button>
                 </div>
               </div>

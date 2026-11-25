@@ -144,6 +144,8 @@ export function DimensionEditor({
       {dim.kind !== 'metric' && <BucketFunctions dim={dim} fields={fields} onChange={onChange} />}
 
       {dim.kind === 'metric' && (
+        // Wrapped: `fullWidth` sets flex-grow, which would stretch the toggle down this flex column.
+        <div>
         <RadioButtonGroup<'quick' | 'formula'>
           aria-label="Metric mode"
           size="sm"
@@ -164,6 +166,7 @@ export function DimensionEditor({
             }
           }}
         />
+        </div>
       )}
 
       {dim.kind === 'metric' && dim.op === 'formula' && (

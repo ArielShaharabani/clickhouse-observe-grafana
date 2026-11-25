@@ -9,6 +9,7 @@
  */
 
 import { inferFieldType, parseTupleElements } from '../sql/fieldModel';
+import { quoteDottedPath } from '../sql/queryBuilder';
 import { TableColumn } from './columnGuess';
 
 export interface JsonPathsByColumn {
@@ -42,7 +43,7 @@ export function expandColumnCandidates(
 
     if (type === 'tuple') {
       for (const leaf of parseTupleElements(col.type)) {
-        result.push({ name: `${col.name}.${leaf.name}`, type: leaf.type });
+        result.push({ name: quoteDottedPath(col.name, leaf.name), type: leaf.type });
       }
       continue;
     }
@@ -56,7 +57,7 @@ export function expandColumnCandidates(
             continue; // dynamic paths can repeat with different observed types — first-seen wins
           }
           seen.add(path);
-          result.push({ name: `${col.name}.${path}`, type: chType });
+          result.push({ name: quoteDottedPath(col.name, path), type: chType });
         }
         continue;
       }

@@ -1,7 +1,7 @@
 import { SourceConfig } from '../types';
 import { configSettingsFragments, queryTimeoutFragments, withSettings } from './settings';
 import { timeExpr } from './timeExpr';
-import { coarsePrunePredicate, quoteString, tableRef } from './queryBuilder';
+import { coarsePrunePredicate, pruneBetween, quoteString, tableRef } from './queryBuilder';
 
 /**
  * Execution guardrail for field-discovery scans (Map keys / JSON paths) — these queries scan
@@ -81,19 +81,15 @@ export function buildDiscoveryWindowConditions(config: SourceConfig, window: Dis
     return [];
   }
   const ts = timeExpr(config);
-  const p = config.columns.partitionTimestamp;
-  const hasP = !!p && p !== '-';
   if (window === 'range') {
     const coarse = coarsePrunePredicate(config);
     return [`${ts} >= $__fromTime AND ${ts} <= $__toTime`, ...(coarse ? [coarse] : [])];
   }
-  // The coarse column can truncate below the fine one by up to a day, so give it one extra day.
   const interval = window === 'recent' ? `${DISCOVERY_RECENT_HOURS} HOUR` : `${DISCOVERY_FALLBACK_DAYS} DAY`;
-  const coarseInterval =
-    window === 'recent' ? `${DISCOVERY_RECENT_HOURS + 24} HOUR` : `${DISCOVERY_FALLBACK_DAYS + 1} DAY`;
+  const coarse = pruneBetween(config, `$__toTime - INTERVAL ${interval}`, '$__toTime');
   return [
     `${ts} >= $__toTime - INTERVAL ${interval} AND ${ts} <= $__toTime`,
-    ...(hasP ? [`${p} >= $__toTime - INTERVAL ${coarseInterval} AND ${p} <= $__toTime + INTERVAL 1 SECOND`] : []),
+    ...(coarse ? [coarse] : []),
   ];
 }
 

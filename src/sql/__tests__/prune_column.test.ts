@@ -50,7 +50,7 @@ describe('isMonotonicWrapperOf', () => {
 describe('detectPruneColumn', () => {
   it('detects a toDate(...) partition-key column derived from the mapped timestamp', () => {
     const columns = [col({})];
-    expect(detectPruneColumn(columns, 'Timestamp')).toBe('TimestampTime');
+    expect(detectPruneColumn(columns, 'Timestamp')?.column).toBe('TimestampTime');
   });
 
   it('returns null when no timestamp is mapped', () => {
@@ -65,7 +65,10 @@ describe('detectPruneColumn', () => {
   });
 
   it('rejects a column with no partition/primary-key membership', () => {
-    const columns = [col({ isInPartitionKey: false, isInPrimaryKey: false })];
+    const columns = [
+      col({ name: 'Key', defaultKind: '', defaultExpression: '' }),
+      col({ isInPartitionKey: false, isInPrimaryKey: false }),
+    ];
     expect(detectPruneColumn(columns, 'Timestamp')).toBeNull();
   });
 
@@ -86,7 +89,7 @@ describe('detectPruneColumn', () => {
 
   it('accepts a MATERIALIZED column the same as a DEFAULT one', () => {
     const columns = [col({ defaultKind: 'MATERIALIZED' })];
-    expect(detectPruneColumn(columns, 'Timestamp')).toBe('TimestampTime');
+    expect(detectPruneColumn(columns, 'Timestamp')?.column).toBe('TimestampTime');
   });
 
   it('prefers a partition-key member over a primary-key-only candidate', () => {
@@ -94,7 +97,7 @@ describe('detectPruneColumn', () => {
       col({ name: 'SortKeyOnly', isInPartitionKey: false, isInPrimaryKey: true, position: 2 }),
       col({ name: 'PartitionKeyCol', isInPartitionKey: true, isInPrimaryKey: false, position: 3 }),
     ];
-    expect(detectPruneColumn(columns, 'Timestamp')).toBe('PartitionKeyCol');
+    expect(detectPruneColumn(columns, 'Timestamp')?.column).toBe('PartitionKeyCol');
   });
 
   it('ties broken by position (lower wins) among equally-qualified candidates', () => {
@@ -102,7 +105,7 @@ describe('detectPruneColumn', () => {
       col({ name: 'Later', position: 5 }),
       col({ name: 'Earlier', position: 1 }),
     ];
-    expect(detectPruneColumn(columns, 'Timestamp')).toBe('Earlier');
+    expect(detectPruneColumn(columns, 'Timestamp')?.column).toBe('Earlier');
   });
 
   it('never selects the mapped timestamp column itself as its own prune column', () => {
@@ -126,5 +129,27 @@ describe('detectPruneColumn', () => {
       const d = new Date(t);
       expect(f(d).getTime()).toBeLessThanOrEqual(d.getTime());
     });
+  });
+
+  it('detects a plain Date column, widened by whole days (a Date compares as midnight)', () => {
+    expect(detectPruneColumn([col({ name: 'day', type: 'Date' })], 'Timestamp')).toEqual({ column: 'day', widenSeconds: 172800 });
+  });
+
+  it('widens by the truncation unit', () => {
+    const widen = (defaultExpression: string) =>
+      detectPruneColumn([col({ type: 'DateTime', defaultExpression })], 'Timestamp')?.widenSeconds;
+    expect(widen('toDateTime(Timestamp)')).toBe(1);
+    expect(widen('toStartOfMinute(Timestamp)')).toBe(60);
+    expect(widen('toStartOfHour(Timestamp)')).toBe(3600);
+    expect(widen('toStartOfDay(Timestamp)')).toBe(172800);
+  });
+
+  it('keeps a saved column only where the table reports no keys (a view)', () => {
+    const plain = { defaultKind: '', defaultExpression: '', isInPartitionKey: false, isInPrimaryKey: false };
+    const view = [col({ ...plain, name: 'Timestamp', type: 'DateTime64(9)' }), col({ ...plain, name: 'T2', type: 'DateTime' })];
+    expect(detectPruneColumn(view, 'Timestamp', 'T2')).toEqual({ column: 'T2', widenSeconds: 172800 });
+    expect(detectPruneColumn(view, 'Timestamp', 'Gone')).toBeNull();
+    const table = [...view, col({ ...plain, name: 'id', type: 'UInt64', isInPrimaryKey: true })];
+    expect(detectPruneColumn(table, 'Timestamp', 'T2')).toBeNull();
   });
 });

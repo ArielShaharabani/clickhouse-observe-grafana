@@ -26,6 +26,7 @@ import {
 import { decodeLogsState } from '../../data/urlState';
 import { getRememberedView, rememberView, resolveTraceLanding, TraceLanding } from '../../data/traceViewChoice';
 import { TraceViewPickerModal } from '../TraceViewPickerModal';
+import { loadPruneHint, pruneHintKey, savePruneHint } from '../../data/pruneHints';
 import { cleanDefaultTimeRange, DefaultTimeRangeContext } from '../../utils/defaultTimeRange';
 
 // Visualize is its own chunk: Discover users never pay for it.
@@ -67,6 +68,9 @@ export const DataViewContext = createContext<DataViewContextValue>({
 // Stable fallback so `jsonData` doesn't get a fresh object identity every render when
 // `props.meta.jsonData` is unset — otherwise the useMemo below would never hit its cache.
 const EMPTY_JSON_DATA: AppJsonData = {};
+
+/** Longest the first page load waits for the table's columns. */
+const PRUNE_WAIT_MS = 2000;
 
 function App(props: AppRootProps<AppJsonData>) {
   const jsonData = props.meta.jsonData ?? EMPTY_JSON_DATA;
@@ -182,27 +186,47 @@ function App(props: AppRootProps<AppJsonData>) {
   // exists to give useFieldDiscovery a TimeRange argument; a fresh object every render would churn
   // its coarse-bucket effect dependency for no reason.
   const [discoveryTimeRange] = useState(() => getDefaultTimeRange());
-  // Runtime fallback so an already-persisted view benefits from index pruning (item 0) without
-  // being re-saved: useFieldDiscovery detects a coarse prune column from system.columns' widened
-  // metadata (see sql/pruneColumn.ts); if this view never explicitly configured
-  // columns.partitionTimestamp ('' = auto-detect), fill in whatever was detected. An explicit
-  // '-' (off) or a literal column name from the persisted view always wins over detection.
-  // Every query-building consumer reads SourceConfig through SourceConfigContext below, so this is
-  // the one place this fallback needs to be applied.
-  const { detectedPartitionTimestamp } = useFieldDiscovery(rawSourceConfig, discoveryTimeRange, { columnsOnly: true });
-  const sourceConfig: SourceConfig = useMemo(() => {
-    if (rawSourceConfig.columns.partitionTimestamp) {
-      // Already explicit (a real column name, or '-' for off) — never overridden by detection.
-      return rawSourceConfig;
+  // The coarse index-pruning column is inferred (useFieldDiscovery + sql/pruneColumn.ts), not
+  // configured. Until the table's columns are known, what was detected for it last time in this browser
+  // is used (so the first query is pruned and not re-run); never the view's saved name, whose
+  // truncation is unknown then and could drop rows. '-' keeps pruning off. Every query-building consumer reads SourceConfig through
+  // SourceConfigContext below, so this is the one place it needs to be applied.
+  const { detectedPrune, loading: pruneLoading } = useFieldDiscovery(rawSourceConfig, discoveryTimeRange, { columnsOnly: true });
+  const saved = rawSourceConfig.columns.partitionTimestamp;
+  const hintKey = pruneHintKey(rawSourceConfig);
+  const hint = useMemo(() => loadPruneHint(hintKey), [hintKey]);
+  useEffect(() => {
+    if (detectedPrune !== undefined) {
+      savePruneHint(hintKey, detectedPrune);
     }
-    if (!detectedPartitionTimestamp) {
-      return rawSourceConfig;
+  }, [hintKey, detectedPrune]);
+  const prune = saved === '-' ? null : detectedPrune === undefined ? hint : detectedPrune;
+  const pruneColumn = saved === '-' ? saved : (prune?.column ?? '');
+  const pruneWiden = prune?.widenSeconds;
+  // A table's first ever visit waits for that one metadata lookup (briefly) before any page mounts:
+  // a later detection would re-run the first queries. Latched, so a view switch never unmounts a page.
+  const [pruneWaitOver, setPruneWaitOver] = useState(false);
+  const pruneKnown =
+    saved === '-' || prune !== undefined || !pruneLoading || !rawSourceConfig.datasourceUid || !rawSourceConfig.columns.timestamp;
+  useEffect(() => {
+    if (pruneWaitOver) {
+      return;
     }
-    return {
-      ...rawSourceConfig,
-      columns: { ...rawSourceConfig.columns, partitionTimestamp: detectedPartitionTimestamp },
-    };
-  }, [rawSourceConfig, detectedPartitionTimestamp]);
+    const t = window.setTimeout(() => setPruneWaitOver(true), pruneKnown ? 0 : PRUNE_WAIT_MS);
+    return () => window.clearTimeout(t);
+  }, [pruneKnown, pruneWaitOver]);
+  const pagesReady = pruneKnown || pruneWaitOver;
+  const sourceConfig: SourceConfig = useMemo(
+    () =>
+      pruneColumn === rawSourceConfig.columns.partitionTimestamp && pruneWiden === undefined
+        ? rawSourceConfig
+        : {
+            ...rawSourceConfig,
+            pruneWidenSeconds: pruneWiden,
+            columns: { ...rawSourceConfig.columns, partitionTimestamp: pruneColumn },
+          },
+    [rawSourceConfig, pruneColumn, pruneWiden]
+  );
 
   // Diagnostics' server-side enrichment tier (see diag/autoEnrich.ts) is wired once here, at the
   // top of the app, rather than inside LogsExplorer — capture must happen regardless of which page
@@ -253,6 +277,8 @@ function App(props: AppRootProps<AppJsonData>) {
               onChoose={handleTraceViewChoice}
               onDismiss={handleTraceViewDismiss}
             />
+          ) : !pagesReady ? (
+            <LoadingPlaceholder text="Loading…" />
           ) : (
             <Suspense fallback={<LoadingPlaceholder text="Loading…" />}>
               <AppRoutes />

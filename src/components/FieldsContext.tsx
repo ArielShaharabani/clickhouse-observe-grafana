@@ -6,7 +6,7 @@ import { jsonPathField, parseJsonPathTypes } from '../sql/jsonPaths';
 import { hasFreshMetadata, invalidateMetadata, loadMetadata } from '../sql/metadataCache';
 import { quoteDottedPath } from '../sql/queryBuilder';
 import { buildSkipIndicesQuery, parseTextIndexes, TextIndexInfo } from '../sql/textIndex';
-import { detectPruneColumn, PruneCandidateColumn } from '../sql/pruneColumn';
+import { detectPruneColumn, PruneCandidateColumn, PruneColumn } from '../sql/pruneColumn';
 import { runQueryRows } from '../data/runQuery';
 import { SourceConfig } from '../types';
 import { errMsg } from '../errMsg';
@@ -237,6 +237,11 @@ const EMPTY_FIELDS_CONTEXT: FieldsContextValue = {
 // Exported (not just useFields()) so pages that need the same discovered fields for query
 // building — not just for descendant consumers like FieldSidebar/SearchBar — can call
 // useFieldDiscovery() once and hand the value to <FieldsContext.Provider> directly.
+/** What a detected prune column belongs to. */
+function pruneKey(tableKey: string, config: SourceConfig): string {
+  return `${tableKey}:${config.columns.timestamp}:${config.columns.partitionTimestamp}`;
+}
+
 export const FieldsContext = createContext<FieldsContextValue>(EMPTY_FIELDS_CONTEXT);
 
 export function useFields(): FieldsContextValue {
@@ -249,7 +254,7 @@ export interface FieldDiscoveryOpts {
   /**
    * Phase A + B only (columns and the prune-column detection): no JSON-path or Map-key discovery,
    * no re-run on time range changes. For App.tsx's bootstrap, which only needs
-   * `detectedPartitionTimestamp` — the page's own discovery shares the same `system.columns`
+   * `detectedPrune` — the page's own discovery shares the same `system.columns`
    * request through the metadata layer and owns the field lists.
    */
   columnsOnly?: boolean;
@@ -262,12 +267,10 @@ export interface FieldDiscoveryOpts {
 
 export interface FieldDiscoveryResult extends FieldsContextValue {
   /**
-   * Auto-detected coarse index-pruning column for `config.columns.timestamp` (see
-   * sql/pruneColumn.ts), or `''` when none qualifies. App.tsx reads this to fill in
-   * `columns.partitionTimestamp` at runtime when the persisted value is `''` (auto-detect) — see
-   * SourceConfigContext's doc comment — so already-saved views benefit without re-saving.
+   * Coarse index-pruning column inferred for `config.columns.timestamp` (see sql/pruneColumn.ts):
+   * null when the table has none, undefined while the columns are not known yet.
    */
-  detectedPartitionTimestamp: string;
+  detectedPrune: PruneColumn | null | undefined;
   /**
    * `discoveryKey` of the table `fields` were discovered for ('' before the first result). After a
    * data view switch, `fields` still holds the previous table's fields until the new discovery
@@ -304,10 +307,13 @@ export function useFieldDiscovery(
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   // Keyed by table + time column: a prune column detected for another view must never reach this one.
-  const [detected, setDetected] = useState({ key: '', column: '' });
+  const [detected, setDetected] = useState<{ key: string; prune: PruneColumn | null }>({ key: '', prune: null });
   const [fieldsFor, setFieldsFor] = useState('');
   const [textIndexes, setTextIndexes] = useState<TextIndexInfo[]>([]);
   const runRef = useRef(0);
+
+  // Only the bootstrap reads the prune column; a page's config already carries the resolved one.
+  const savedPrune = columnsOnly ? config.columns.partitionTimestamp : '';
 
   const bucket = useMemo(() => (columnsOnly ? '' : coarseTimeBucket(timeRange)), [timeRange, columnsOnly]);
 
@@ -391,7 +397,7 @@ export function useFieldDiscovery(
       }
     }
 
-    const pruneColumn = detectPruneColumn(rawColumns, config.columns.timestamp) ?? '';
+    const pruneColumn = detectPruneColumn(rawColumns, config.columns.timestamp, config.columns.partitionTimestamp);
 
     // Publish what's already known before Phase C runs, so the sidebar paints immediately instead
     // of waiting on a round-trip per JSON column. `loading` deliberately stays true until Phase C
@@ -402,7 +408,7 @@ export function useFieldDiscovery(
     setFields([...columns, ...tupleFields]);
     setFieldsFor(cKey);
     setError(null);
-    setDetected({ key: `${cKey}:${config.columns.timestamp}`, column: pruneColumn });
+    setDetected({ key: pruneKey(cKey, config), prune: pruneColumn });
     if (columnsOnly) {
       setLoading(false);
       return;
@@ -528,7 +534,7 @@ export function useFieldDiscovery(
       run.current++;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [config.datasourceUid, config.database, resolvedTable, bucket, config.columns.timestamp]);
+  }, [config.datasourceUid, config.database, resolvedTable, bucket, config.columns.timestamp, savedPrune]);
 
   // After a table switch the state still holds the previous table's discovery until the new one
   // publishes: report "loading, nothing known" instead, so no query mixes the two tables.
@@ -540,7 +546,7 @@ export function useFieldDiscovery(
     loading: stale || loading,
     error: stale ? null : error,
     refresh,
-    detectedPartitionTimestamp: detected.key === `${key}:${config.columns.timestamp}` ? detected.column : '',
+    detectedPrune: detected.key === pruneKey(key, config) ? detected.prune : undefined,
     fieldsFor,
   };
 }

@@ -4,27 +4,23 @@
  * Users can also create personal (per-browser) views from the Discover header.
  */
 
-import React, { ChangeEvent, useMemo, useState } from 'react';
+import React, { ChangeEvent, useState } from 'react';
 import { lastValueFrom } from 'rxjs';
 import { css } from '@emotion/css';
 import { AppPluginMeta, GrafanaTheme2, PluginConfigPageProps, PluginMeta } from '@grafana/data';
-import { getBackendSrv, getDataSourceSrv } from '@grafana/runtime';
-import { Alert, Button, Field, FieldSet, Input, Select, Switch, useStyles2 } from '@grafana/ui';
+import { getBackendSrv } from '@grafana/runtime';
+import { Alert, Button, Field, FieldSet, Input, Switch, useStyles2 } from '@grafana/ui';
 import { EditLinksSection } from './EditLinksSection';
-import { applyOtelPreset } from '../../sql/schema';
-import { DEFAULT_QUERY_TIMEOUT_SECONDS } from '../../sql/settings';
 import { errMsg } from '../../errMsg';
 import {
   AiProviderConfig,
   AppJsonData,
   DataView,
-  DEFAULT_SOURCE_CONFIG,
-  EMPTY_COLUMN_MAPPING,
 } from '../../types';
 import { migrateLegacyConfig } from '../../data/dataViews';
 import { cleanDefaultTimeRange } from '../../utils/defaultTimeRange';
-import { ColumnMappingForm } from '../ColumnMappingForm';
-import { epochGuesser, TimeFieldSelect, useTableColumns } from '../DataViewPicker/TimeFieldSelect';
+import { AiConfigContext } from '../App/App';
+import { CreateDataViewModal, DataViewValues } from '../DataViewPicker/CreateDataViewModal';
 
 export interface AppConfigProps extends PluginConfigPageProps<AppPluginMeta<AppJsonData>> {}
 
@@ -34,7 +30,9 @@ const AppConfig = ({ plugin }: AppConfigProps) => {
 
   // On first load, migrate legacy sourceConfig → dataViews if needed.
   const [views, setViews] = useState<DataView[]>(() => migrateLegacyConfig(jsonData ?? {}));
-  const [editingId, setEditingId] = useState<string | null>(null);
+  // The view open in the dialog ('new' = being created).
+  const [editing, setEditing] = useState<DataView | 'new' | null>(null);
+  const [unsaved, setUnsaved] = useState(false);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [saveError, setSaveError] = useState('');
 
@@ -51,39 +49,27 @@ const AppConfig = ({ plugin }: AppConfigProps) => {
     setAi((prev) => ({ ...prev, ...patch }));
   }
 
-  // Datasource list is read synchronously from getDataSourceSrv() (no fetch), so it's
-  // lazy-initialized here instead of populated from an effect.
-  const [dsOptions] = useState<Array<{ label: string; value: string }>>(() => {
-    try {
-      const list = getDataSourceSrv().getList();
-      const ch = list.filter((ds) => (ds.type ?? '').toLowerCase().includes('clickhouse'));
-      return ch.map((ds) => ({ label: ds.name, value: ds.uid ?? ds.name }));
-    } catch {
-      return [];
+  function submitView(values: DataViewValues) {
+    setUnsaved(true);
+    if (editing && editing !== 'new') {
+      const { id } = editing;
+      setViews((prev) => prev.map((v) => (v.id === id ? { ...v, ...values } : v)));
+      return;
     }
-  });
-
-  function patchView(id: string, patch: Partial<DataView>) {
-    setViews((prev) => prev.map((v) => (v.id === id ? { ...v, ...patch } : v)));
-  }
-
-  function addView() {
-    const newView: DataView = {
-      ...DEFAULT_SOURCE_CONFIG,
-      id: `shared_${Date.now()}_${Math.random().toString(36).slice(2, 5)}`,
-      name: 'New view',
-      origin: 'shared',
-      createdAt: new Date().toISOString(),
-    };
-    setViews((prev) => [...prev, newView]);
-    setEditingId(newView.id);
+    setViews((prev) => [
+      ...prev,
+      {
+        ...values,
+        id: `shared_${Date.now()}_${Math.random().toString(36).slice(2, 5)}`,
+        origin: 'shared',
+        createdAt: new Date().toISOString(),
+      },
+    ]);
   }
 
   function deleteView(id: string) {
     setViews((prev) => prev.filter((v) => v.id !== id));
-    if (editingId === id) {
-      setEditingId(null);
-    }
+    setUnsaved(true);
   }
 
   const onSave = async () => {
@@ -108,7 +94,7 @@ const AppConfig = ({ plugin }: AppConfigProps) => {
     <div className={styles.page}>
       <div className={styles.viewListHeader}>
         <h3 className={styles.sectionTitle}>Shared Data Views</h3>
-        <Button variant="secondary" size="sm" icon="plus" onClick={addView}>
+        <Button variant="secondary" size="sm" icon="plus" onClick={() => setEditing('new')}>
           Add view
         </Button>
       </div>
@@ -122,7 +108,7 @@ const AppConfig = ({ plugin }: AppConfigProps) => {
 
       <div className={styles.viewList}>
         {views.map((v) => (
-          <div key={v.id} className={`${styles.viewCard} ${editingId === v.id ? styles.viewCardActive : ''}`}>
+          <div key={v.id} className={styles.viewCard}>
             <div className={styles.viewCardHeader}>
               <span className={styles.viewCardName}>{v.name || '(unnamed)'}</span>
               <span className={styles.viewCardSub}>{v.database}.{v.logsTable}</span>
@@ -130,9 +116,9 @@ const AppConfig = ({ plugin }: AppConfigProps) => {
                 <Button
                   size="sm"
                   variant="secondary"
-                  onClick={() => setEditingId(editingId === v.id ? null : v.id)}
+                  onClick={() => setEditing(v)}
                 >
-                  {editingId === v.id ? 'Collapse' : 'Edit'}
+                  Edit
                 </Button>
                 <Button size="sm" variant="destructive" fill="text" onClick={() => deleteView(v.id)}>
                   Delete
@@ -140,111 +126,19 @@ const AppConfig = ({ plugin }: AppConfigProps) => {
               </div>
             </div>
 
-            {editingId === v.id && (
-              <div className={styles.viewEditor}>
-                <Field label="Name">
-                  <Input
-                    width={30}
-                    value={v.name}
-                    onChange={(e: ChangeEvent<HTMLInputElement>) =>
-                      patchView(v.id, { name: e.target.value })
-                    }
-                    placeholder="My logs view"
-                  />
-                </Field>
-
-                <Field label="ClickHouse datasource">
-                  <Select
-                    width={30}
-                    value={v.datasourceUid}
-                    options={dsOptions}
-                    onChange={(opt) => patchView(v.id, { datasourceUid: opt.value ?? '' })}
-                    placeholder="Select datasource…"
-                  />
-                </Field>
-
-                <Field label="Database">
-                  <Input
-                    width={30}
-                    value={v.database}
-                    onChange={(e: ChangeEvent<HTMLInputElement>) =>
-                      patchView(v.id, { database: e.target.value.trim() })
-                    }
-                    placeholder="default"
-                  />
-                </Field>
-
-                <Field label="Logs table">
-                  <Input
-                    width={30}
-                    value={v.logsTable}
-                    onChange={(e: ChangeEvent<HTMLInputElement>) =>
-                      patchView(v.id, { logsTable: e.target.value.trim() })
-                    }
-                    placeholder="otel_logs"
-                  />
-                </Field>
-
-                <Field
-                  label="Sequential consistency"
-                  description="Makes each replica catch up before answering, so a load-balanced cluster can't return stale rows. Costs one Keeper round-trip per query. Turn off for single-node."
-                >
-                  <Switch
-                    value={v.sequentialConsistency ?? true}
-                    onChange={(e) => patchView(v.id, { sequentialConsistency: e.currentTarget.checked })}
-                  />
-                </Field>
-
-                <Field
-                  label="Query timeout (seconds)"
-                  description={`Every query for this view is capped at this many seconds (ClickHouse max_execution_time, throw-on-timeout). Defaults to ${DEFAULT_QUERY_TIMEOUT_SECONDS}s — deliberately below a typical reverse-proxy's own hard timeout (e.g. a 30s OpenShift Route) so ClickHouse's own failure wins the race instead of the proxy killing the connection and Grafana surfacing an opaque 502/504.`}
-                >
-                  <Input
-                    width={15}
-                    type="number"
-                    value={v.queryTimeoutSeconds ?? DEFAULT_QUERY_TIMEOUT_SECONDS}
-                    onChange={(e: ChangeEvent<HTMLInputElement>) => {
-                      const n = Number(e.target.value);
-                      patchView(v.id, { queryTimeoutSeconds: Number.isFinite(n) && n > 0 ? n : undefined });
-                    }}
-                  />
-                </Field>
-
-                <Field
-                  label="Additional query SETTINGS"
-                  description="Appended to every query for this view. Comma-separated. Overrides the defaults above (including the query timeout above), except timeout_overflow_mode / read_overflow_mode / result_overflow_mode / group_by_overflow_mode, which every query builder in this plugin deliberately pins to a loud-failure mode — a 'break'/'any' override there is ignored rather than silently truncating results."
-                >
-                  <Input
-                    width={50}
-                    value={v.extraQuerySettings ?? ''}
-                    onChange={(e: ChangeEvent<HTMLInputElement>) =>
-                      patchView(v.id, { extraQuerySettings: e.target.value })
-                    }
-                    placeholder="max_replica_delay_for_distributed_queries = 30"
-                  />
-                </Field>
-
-                <Field
-                  label="Cluster name (for diagnostics)"
-                  description="Only used by the Inspect drawer's optional server-side enrichment tier (off by default — see the toggle in the drawer). When set, its system.query_log lookup reads via clusterAllReplicas(<name>, system.query_log) so it finds a query's stats regardless of which replica answered. Leave blank for a single node or a non-distributed setup."
-                >
-                  <Input
-                    width={30}
-                    value={v.clusterName ?? ''}
-                    onChange={(e: ChangeEvent<HTMLInputElement>) => patchView(v.id, { clusterName: e.target.value.trim() })}
-                    placeholder="my_cluster"
-                  />
-                </Field>
-
-                <SharedViewColumns
-                  view={v}
-                  onPatch={(patch) => patchView(v.id, patch)}
-                />
-              </div>
-            )}
           </div>
         ))}
       </div>
+
+      <AiConfigContext.Provider value={ai}>
+        <CreateDataViewModal
+          isOpen={editing !== null}
+          editingView={editing && editing !== 'new' ? editing : undefined}
+          onSubmit={submitView}
+          submitLabel="Apply"
+          onDismiss={() => setEditing(null)}
+        />
+      </AiConfigContext.Provider>
 
       <FieldSet label="Default time range">
         <div className={styles.empty}>
@@ -313,6 +207,11 @@ const AppConfig = ({ plugin }: AppConfigProps) => {
         <Button onClick={onSave} disabled={saveStatus === 'saving'} icon="save">
           {saveStatus === 'saving' ? 'Saving…' : 'Save configuration'}
         </Button>
+        {unsaved && saveStatus === 'idle' && (
+          <span className={styles.unsaved} role="status">
+            Data view changes are not saved yet
+          </span>
+        )}
       </div>
     </div>
   );
@@ -320,62 +219,12 @@ const AppConfig = ({ plugin }: AppConfigProps) => {
 
 export default AppConfig;
 
-/**
- * Column mapping of a shared view (PLAN #16d): same pickers as "Create data view" — the time field
- * (with epoch / text conversion) and every other mapping chosen from the table's real columns.
- * Falls back to typed names while the columns can't be listed (no datasource / unknown table).
- */
-function SharedViewColumns({ view, onPatch }: { view: DataView; onPatch: (patch: Partial<DataView>) => void }) {
-  const styles = useStyles2(getStyles);
-  const { columns, loading, error } = useTableColumns(view.datasourceUid, view.database, view.logsTable, true);
-  const columnOptions = useMemo(
-    () => (columns.length > 0 ? columns.map((c) => ({ label: c.name, value: c.name, description: c.type })) : undefined),
-    [columns]
-  );
-  return (
-    <FieldSet label="Column Mapping">
-      <div className={styles.columnsStatus} data-testid="shared-view-columns-status">
-        {loading
-          ? 'Loading table columns…'
-          : error
-            ? `Could not list the table's columns (${error}); type column names instead.`
-            : columns.length > 0
-              ? `${columns.length} columns in ${view.database}.${view.logsTable}.`
-              : 'Pick a datasource, database and table to choose columns from a list.'}
-      </div>
-      <TimeFieldSelect
-        columns={columns}
-        timestamp={view.columns.timestamp}
-        format={view.timestampFormat}
-        onChange={(timestamp, format) =>
-          onPatch({
-            columns: { ...view.columns, timestamp },
-            timestampFormat: timestamp && format !== 'native' ? format : undefined,
-          })
-        }
-        guessEpoch={epochGuesser(view, view.logsTable)}
-        allowCustomValue
-        width={40}
-      />
-      <ColumnMappingForm
-        value={view.columns}
-        onChange={(updated) => onPatch({ columns: updated })}
-        columnOptions={columnOptions}
-        omitKeys={['timestamp']}
-        bare
-        onApplyOtelPreset={() => {
-          const preset = applyOtelPreset(view);
-          onPatch({ logsTable: preset.logsTable, isOtel: true, columns: preset.columns, timestampFormat: undefined });
-        }}
-        onClearMapping={() =>
-          onPatch({ isOtel: false, columns: { ...EMPTY_COLUMN_MAPPING }, timestampFormat: undefined })
-        }
-      />
-    </FieldSet>
-  );
-}
-
 const getStyles = (theme: GrafanaTheme2) => ({
+  unsaved: css`
+    margin-left: ${theme.spacing(1.5)};
+    color: ${theme.colors.warning.text};
+    font-size: ${theme.typography.bodySmall.fontSize};
+  `,
   page: css`
     max-width: 780px;
     padding: ${theme.spacing(2)};
@@ -411,9 +260,6 @@ const getStyles = (theme: GrafanaTheme2) => ({
     border-radius: ${theme.shape.radius.default};
     overflow: hidden;
   `,
-  viewCardActive: css`
-    border-color: ${theme.colors.primary.border};
-  `,
   viewCardHeader: css`
     display: flex;
     align-items: center;
@@ -435,15 +281,6 @@ const getStyles = (theme: GrafanaTheme2) => ({
     display: flex;
     gap: ${theme.spacing(0.5)};
     margin-left: auto;
-  `,
-  viewEditor: css`
-    padding: ${theme.spacing(2)};
-    background: ${theme.colors.background.primary};
-  `,
-  columnsStatus: css`
-    color: ${theme.colors.text.secondary};
-    font-size: ${theme.typography.bodySmall.fontSize};
-    margin-bottom: ${theme.spacing(1.5)};
   `,
   footer: css`
     margin-top: ${theme.spacing(3)};

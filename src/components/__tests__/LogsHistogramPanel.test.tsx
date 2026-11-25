@@ -94,3 +94,30 @@ describe('histogram resize handle', () => {
     expect(screen.queryByRole('separator')).toBeNull();
   });
 });
+
+describe('LogsHistogramPanel without bars', () => {
+  const none = { volumeData: [{ time: Date.UTC(2026, 0, 5), levels: {} }], totalEvents: 0 };
+
+  it('is hidden when nothing matched, also while that empty search refreshes', () => {
+    const { container, rerender } = render(panel(false, { ...none, volStatus: 'done' }));
+    expect(container).toBeEmptyDOMElement();
+    rerender(panel(false, { ...none, volStatus: 'done', volLoading: true }));
+    expect(container).toBeEmptyDOMElement();
+  });
+
+  it('shows loading before the first answer', () => {
+    render(panel(false, { ...none, volStatus: 'pending' }));
+    expect(screen.getByText('Loading…')).toBeInTheDocument();
+  });
+
+  it.each([
+    [{ volStatus: 'error' }, /could not be loaded/],
+    [{ volStatus: 'done', hasRows: true }, /no data for these results yet/],
+  ])('offers a retry: %p', (extra, text) => {
+    const onRetry = jest.fn();
+    render(panel(false, { ...none, ...extra, onRetry }));
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    expect(screen.getByText(text)).toBeInTheDocument();
+    expect(onRetry).toHaveBeenCalled();
+  });
+});

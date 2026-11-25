@@ -561,6 +561,7 @@ export function LensPage({ tabStrip, onTitle, onLeave }: LensPageProps = {}) {
     // The compiled time conditions depend on these (the prune column may be detected later).
     config.columns.timestamp,
     config.columns.partitionTimestamp,
+    config.pruneWidenSeconds,
     search,
     filters,
     timeRange.from.valueOf(),

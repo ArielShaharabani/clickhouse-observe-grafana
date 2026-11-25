@@ -440,27 +440,26 @@ export function buildSearchClause(search: string, config: SourceConfig, index?: 
  * already keeps (`ts BETWEEN from AND to`):
  *   - upper bound: `f` truncates, so `P = f(ts) <= ts <= to`, i.e. `P <= to` always holds — never
  *     needs widening at all (the `+ 1 SECOND` below is symmetry/margin, not load-bearing).
- *   - lower bound: `f` is monotonic non-decreasing, so `ts >= from ⇒ P = f(ts) >= f(from)`. `f`
- *     truncates, so `f(from) <= from` — `f(from)` can sit below `from` by up to one truncation
- *     unit (e.g. up to ~1 day for toDate). `from - 1 SECOND` is therefore not a general proof for
- *     every whitelisted wrapper — it is deliberately *not* relied on as one: this predicate is
- *     ANDed with the fine predicate, never replacing it, so a coarse lower bound that's slightly
- *     too tight would only risk pruning too much, which the fine predicate can't rescue. The 1
- *     second margin exists only to absorb boundary/rounding jitter for second-granularity `f`
- *     (toDateTime/toStartOfSecond); a day-granularity `f` (toDate) is still safe because ClickHouse
- *     evaluates a MinMax/partition predicate against the *stored* coarse value's actual min/max per
- *     part, not by re-deriving `f(from)` symbolically — a part containing any row with
- *     `ts >= from` necessarily also contains a `P` value `>= f(from)`, i.e. within that part's own
- *     `[min(P), max(P)]` range, which the index check compares directly, not against `from - 1s`.
+ *   - lower bound: `f` is monotonic non-decreasing, so `ts >= from` implies `P >= f(from)`, and
+ *     `f(from)` sits below `from` by at most one truncation unit. The bound is therefore widened by
+ *     that unit (`config.pruneWidenSeconds`: 1 s for toDateTime, an hour for toStartOfHour, two days
+ *     for a `Date`, which ClickHouse compares as midnight in the server's zone). The predicate is a
+ *     real row filter, so a bound that is too tight would drop rows, not just prune less.
  * This is why pruneColumn.ts requires the whitelist (rather than accepting any DEFAULT/
  * MATERIALIZED expression) and why this predicate is additive, never a replacement.
  */
 export function coarsePrunePredicate(config: SourceConfig): string | null {
+  return pruneBetween(config, '$__fromTime', '$__toTime');
+}
+
+/** `P` within [from, to] (SQL time expressions; null = open side), widened; null without a prune column. */
+export function pruneBetween(config: SourceConfig, from: string | null, to: string | null): string | null {
   const p = config.columns.partitionTimestamp;
   if (!p || p === '-') {
     return null;
   }
-  return `${p} >= $__fromTime - INTERVAL 1 SECOND AND ${p} <= $__toTime + INTERVAL 1 SECOND`;
+  const widen = `INTERVAL ${config.pruneWidenSeconds ?? 1} SECOND`;
+  return [from && `${p} >= ${from} - ${widen}`, to && `${p} <= ${to} + ${widen}`].filter(Boolean).join(' AND ') || null;
 }
 
 /** Build the WHERE conditions shared across logs, volume, and field-stats queries. */
@@ -683,9 +682,7 @@ function detailRowConditions(config: SourceConfig, row: Record<string, unknown>)
     `${ts} >= fromUnixTimestamp64Milli(${tsMs})`,
     `${ts} < fromUnixTimestamp64Milli(${tsMs + 1})`,
   ];
-  const coarse = config.columns.partitionTimestamp && config.columns.partitionTimestamp !== '-'
-    ? `${config.columns.partitionTimestamp} >= fromUnixTimestamp64Milli(${tsMs}) - INTERVAL 1 SECOND AND ${config.columns.partitionTimestamp} <= fromUnixTimestamp64Milli(${tsMs + 1}) + INTERVAL 1 SECOND`
-    : null;
+  const coarse = pruneBetween(config, `fromUnixTimestamp64Milli(${tsMs})`, `fromUnixTimestamp64Milli(${tsMs + 1})`);
   if (coarse) {
     conditions.push(coarse);
   }
@@ -1092,9 +1089,9 @@ export function buildDocumentByAnchorQuery(config: SourceConfig, anchor: Context
   const ts = timeExpr(config);
   const at = `fromUnixTimestamp64Nano(${anchor.ns})`;
   const conditions = [`${ts} = ${at}`, `${contextIdExpr(config)} = ${anchor.id}`];
-  const prune = c.partitionTimestamp && c.partitionTimestamp !== '-' ? c.partitionTimestamp : '';
+  const prune = pruneBetween(config, at, at);
   if (prune) {
-    conditions.push(`${prune} >= ${at} - INTERVAL 1 SECOND AND ${prune} <= ${at} + INTERVAL 1 SECOND`);
+    conditions.push(prune);
   }
   const convertedTime = isConvertedTimestamp(config) ? [`${ts} AS ${CORE_ALIAS.timestamp}`] : [];
   return withSettings(
@@ -1150,29 +1147,29 @@ export function buildSurroundingDocsQuery(
   const ts = timeExpr(config);
   const at = `fromUnixTimestamp64Nano(${anchor.ns})`;
   const idExpr = contextIdExpr(config);
-  const prune = c.partitionTimestamp && c.partitionTimestamp !== '-' ? c.partitionTimestamp : '';
+  const prune = pruneBetween(config, opts.direction === 'older' ? null : at, opts.direction === 'newer' ? null : at);
   const conditions: string[] = [];
   let order: string | null = null;
   let limit = 1;
   if (opts.direction === 'anchor') {
     conditions.push(`${ts} = ${at}`, `${idExpr} = ${anchor.id}`);
     if (prune) {
-      conditions.push(`${prune} >= ${at} - INTERVAL 1 SECOND AND ${prune} <= ${at} + INTERVAL 1 SECOND`);
+      conditions.push(prune);
     }
   } else {
     const newer = opts.direction === 'newer';
     const cmp = newer ? '>' : '<';
     conditions.push(`${ts} ${cmp}= ${at}`, `(${ts}, ${idExpr}) ${cmp} (${at}, ${anchor.id})`);
     if (prune) {
-      conditions.push(newer ? `${prune} >= ${at} - INTERVAL 1 SECOND` : `${prune} <= ${at} + INTERVAL 1 SECOND`);
+      conditions.push(prune);
     }
     const w = opts.windowSec;
     if (typeof w === 'number' && Number.isInteger(w) && w > 0) {
       conditions.push(newer ? `${ts} <= ${at} + INTERVAL ${w} SECOND` : `${ts} >= ${at} - INTERVAL ${w} SECOND`);
       if (prune) {
-        conditions.push(
-          newer ? `${prune} <= ${at} + INTERVAL ${w + 1} SECOND` : `${prune} >= ${at} - INTERVAL ${w + 1} SECOND`
-        );
+        const p = c.partitionTimestamp;
+        const far = w + (config.pruneWidenSeconds ?? 1);
+        conditions.push(newer ? `${p} <= ${at} + INTERVAL ${far} SECOND` : `${p} >= ${at} - INTERVAL ${far} SECOND`);
       }
     }
     const dir = newer ? 'ASC' : 'DESC';

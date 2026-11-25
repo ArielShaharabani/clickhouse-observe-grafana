@@ -32,8 +32,16 @@ describe('expandColumnCandidates — Tuple', () => {
   it('expands an unnamed tuple using positional names', () => {
     const cols: TableColumn[] = [{ name: 't', type: 'Tuple(String, Int64)' }];
     expect(expandColumnCandidates(cols)).toEqual([
-      { name: 't.1', type: 'String' },
-      { name: 't.2', type: 'Int64' },
+      { name: 't."1"', type: 'String' },
+      { name: 't."2"', type: 'Int64' },
+    ]);
+  });
+
+  it('reads backtick-quoted element names (`service.name`) and quotes odd ones', () => {
+    const cols: TableColumn[] = [{ name: 'resource', type: 'Tuple(`service.name` String, `user-id` UInt8)' }];
+    expect(expandColumnCandidates(cols)).toEqual([
+      { name: 'resource.service.name', type: 'String' },
+      { name: 'resource."user-id"', type: 'UInt8' },
     ]);
   });
 
