@@ -9,6 +9,8 @@ test('search field names and filter by type with counts', async ({ page }) => {
   await logs.open();
   const available = page.getByRole('region', { name: 'Available fields' });
   await expect(available.getByTitle('ServiceName', { exact: true })).toBeVisible();
+  // JSON paths arrive after the columns; the type counts below include them.
+  await expect(available.getByTitle('Payload.user.id', { exact: true })).toBeAttached();
 
   await page.getByRole('button', { name: 'Filter by field type' }).click();
   const numberCount = Number(
