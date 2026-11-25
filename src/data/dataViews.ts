@@ -1,12 +1,27 @@
-import { DataView, AppJsonData } from '../types';
+import { DataView, AppJsonData, EMPTY_COLUMN_MAPPING } from '../types';
 
 const PERSONAL_VIEWS_KEY = 'poortuna-clickhouse-observe:data-views';
 const ACTIVE_VIEW_KEY = 'poortuna-clickhouse-observe:active-data-view';
 
+/**
+ * One shape for every view, whichever store it came from (hand-written provisioning, plugin
+ * settings, local storage): every column key present, a usable timeout or the default.
+ */
+function normalizeView(view: DataView, origin: DataView['origin']): DataView {
+  const timeout = Number(view.queryTimeoutSeconds);
+  const out: DataView = { ...view, origin, columns: { ...EMPTY_COLUMN_MAPPING, ...view.columns } };
+  if (Number.isFinite(timeout) && timeout > 0) {
+    out.queryTimeoutSeconds = timeout;
+  } else {
+    delete out.queryTimeoutSeconds;
+  }
+  return out;
+}
+
 function readAll(): DataView[] {
   try {
     const raw = localStorage.getItem(PERSONAL_VIEWS_KEY);
-    return raw ? (JSON.parse(raw) as DataView[]) : [];
+    return raw ? (JSON.parse(raw) as DataView[]).map((v) => normalizeView(v, 'personal')) : [];
   } catch {
     return [];
   }
@@ -80,7 +95,7 @@ export function persistActiveViewId(id: string): void {
  */
 export function migrateLegacyConfig(jsonData: AppJsonData): DataView[] {
   if (jsonData.dataViews && jsonData.dataViews.length > 0) {
-    return jsonData.dataViews;
+    return jsonData.dataViews.map((v) => normalizeView(v, 'shared'));
   }
   if (!jsonData.sourceConfig?.datasourceUid) {
     return [];
@@ -93,5 +108,5 @@ export function migrateLegacyConfig(jsonData: AppJsonData): DataView[] {
     origin: 'shared',
     createdAt: new Date().toISOString(),
   };
-  return [view];
+  return [normalizeView(view, 'shared')];
 }

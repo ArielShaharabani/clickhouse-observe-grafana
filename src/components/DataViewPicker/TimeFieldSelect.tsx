@@ -6,14 +6,12 @@
  * text columns read through a conversion (epoch unit / date parsing, see src/sql/timeExpr.ts). A
  * converted choice is flagged here, since ClickHouse then converts the value on every row.
  */
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef } from 'react';
 import { css } from '@emotion/css';
 import { dateTime, GrafanaTheme2, SelectableValue, TimeRange } from '@grafana/data';
 import { Field, Select, useStyles2 } from '@grafana/ui';
-import { DEFAULT_SOURCE_CONFIG, SourceConfig, TimestampFormat } from '../../types';
+import { SourceConfig, TimestampFormat } from '../../types';
 import { runQueryRows } from '../../data/runQuery';
-import { buildColumnsQuery } from '../../sql/introspection';
-import { errMsg } from '../../errMsg';
 import {
   buildTimeSampleQuery,
   CONVERTED_TIME_NOTE,
@@ -199,54 +197,4 @@ export function epochGuesser(config: SourceConfig, table: string) {
 export function schemaTimeRange(): TimeRange {
   const now = Date.now();
   return { from: dateTime(now - 3600 * 1000), to: dateTime(now), raw: { from: 'now-1h', to: 'now' } };
-}
-
-/**
- * Columns (name + type) of `database.table` on the datasource, for the Configuration page's
- * shared views (typed database / table names, so the lookup waits for typing to settle).
- */
-export function useTableColumns(datasourceUid: string, database: string, table: string, enabled: boolean) {
-  const [state, setState] = useState<{ key: string; columns: TimeFieldColumn[]; error: string }>({
-    key: '',
-    columns: [],
-    error: '',
-  });
-  const key = enabled && datasourceUid && database && table ? `${datasourceUid}\u0000${database}\u0000${table}` : '';
-  useEffect(() => {
-    if (!key) {
-      return;
-    }
-    let cancelled = false;
-    const timer = setTimeout(() => {
-      runQueryRows({
-        datasourceUid,
-        sql: buildColumnsQuery({ ...DEFAULT_SOURCE_CONFIG, datasourceUid, database }, table),
-        timeRange: schemaTimeRange(),
-        op: 'wizardColumns',
-      })
-        .then((rows) => {
-          if (!cancelled) {
-            const columns = rows
-              .map((r) => ({ name: String(r['name'] ?? ''), type: String(r['type'] ?? '') }))
-              .filter((c) => c.name);
-            setState({ key, columns, error: '' });
-          }
-        })
-        .catch((e) => {
-          if (!cancelled) {
-            setState({ key, columns: [], error: errMsg(e) });
-          }
-        });
-    }, 400);
-    return () => {
-      cancelled = true;
-      clearTimeout(timer);
-    };
-  }, [key, datasourceUid, database, table]);
-  const current = state.key === key && key !== '';
-  return {
-    columns: current ? state.columns : [],
-    error: current ? state.error : '',
-    loading: key !== '' && !current,
-  };
 }

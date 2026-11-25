@@ -12,11 +12,13 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { css } from '@emotion/css';
 import { GrafanaTheme2, TimeRange, TimeZone } from '@grafana/data';
 import { formatInZone, useTimeZoneSettings } from '../utils/timeZone';
-import { Icon, IconButton, LinkButton, useStyles2 } from '@grafana/ui';
+import { Button, Icon, IconButton, LinkButton, useStyles2 } from '@grafana/ui';
 import { BreakdownSel, FilterPill, IntervalMode, VolumeDataPoint } from '../types';
 import { VolumeHistogram, ResolvedInterval, HistogramColorMode, isCalendarUnit } from './VolumeHistogram';
 import { IntervalPicker } from './HistogramControls/IntervalPicker';
 import { BreakdownPicker } from './HistogramControls/BreakdownPicker';
+
+export type VolumeStatus = 'pending' | 'done' | 'error';
 
 interface LogsHistogramPanelProps {
   hasTime: boolean;
@@ -28,6 +30,11 @@ interface LogsHistogramPanelProps {
   onBreakdownChange: (b: BreakdownSel) => void;
   volumeData: VolumeDataPoint[];
   volLoading: boolean;
+  /** How the last histogram query ended ('pending' before the first answer). */
+  volStatus?: VolumeStatus;
+  /** The document list has rows for this search. */
+  hasRows?: boolean;
+  onRetry?: () => void;
   totalEvents: number;
   resolvedInterval: ResolvedInterval;
   onSelectRange: (fromMs: number, toMs: number) => void;
@@ -115,6 +122,9 @@ export function LogsHistogramPanel({
   onBreakdownChange,
   volumeData,
   volLoading,
+  volStatus = 'done',
+  hasRows = false,
+  onRetry,
   totalEvents,
   resolvedInterval,
   onSelectRange,
@@ -196,6 +206,12 @@ export function LogsHistogramPanel({
   if (!hasTime) {
     return null;
   }
+  const hasBars = volumeData.length > 0 && totalEvents > 0;
+  // Nothing matched: no chart (Kibana hides it too); the results area says so. It stays hidden while
+  // an empty search refreshes.
+  if (volStatus === 'done' && !hasBars && !hasRows && !invalidQuery) {
+    return null;
+  }
 
   return (
     <div className={styles.histogramPanel}>
@@ -241,7 +257,7 @@ export function LogsHistogramPanel({
         </div>
       ) : (
         !collapsed &&
-        (volumeData.length > 0 && (totalEvents > 0 || volLoading) ? (
+        (hasBars ? (
           <>
             <VolumeHistogram
               data={volumeData}
@@ -273,7 +289,18 @@ export function LogsHistogramPanel({
           </>
         ) : (
           <div className={styles.histogramEmpty} style={{ height: chartHeight }}>
-            {volLoading ? 'Loading…' : 'No events in selected time range'}
+            {volLoading || volStatus === 'pending' ? (
+              'Loading…'
+            ) : (
+              <span role="status">
+                The histogram could not be loaded
+                {onRetry && (
+                  <Button size="sm" variant="secondary" fill="text" onClick={onRetry}>
+                    Retry
+                  </Button>
+                )}
+              </span>
+            )}
           </div>
         ))
       )}

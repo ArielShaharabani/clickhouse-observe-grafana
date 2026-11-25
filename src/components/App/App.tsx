@@ -182,27 +182,27 @@ function App(props: AppRootProps<AppJsonData>) {
   // exists to give useFieldDiscovery a TimeRange argument; a fresh object every render would churn
   // its coarse-bucket effect dependency for no reason.
   const [discoveryTimeRange] = useState(() => getDefaultTimeRange());
-  // Runtime fallback so an already-persisted view benefits from index pruning (item 0) without
-  // being re-saved: useFieldDiscovery detects a coarse prune column from system.columns' widened
-  // metadata (see sql/pruneColumn.ts); if this view never explicitly configured
-  // columns.partitionTimestamp ('' = auto-detect), fill in whatever was detected. An explicit
-  // '-' (off) or a literal column name from the persisted view always wins over detection.
-  // Every query-building consumer reads SourceConfig through SourceConfigContext below, so this is
-  // the one place this fallback needs to be applied.
-  const { detectedPartitionTimestamp } = useFieldDiscovery(rawSourceConfig, discoveryTimeRange, { columnsOnly: true });
-  const sourceConfig: SourceConfig = useMemo(() => {
-    if (rawSourceConfig.columns.partitionTimestamp) {
-      // Already explicit (a real column name, or '-' for off) — never overridden by detection.
-      return rawSourceConfig;
-    }
-    if (!detectedPartitionTimestamp) {
-      return rawSourceConfig;
-    }
-    return {
-      ...rawSourceConfig,
-      columns: { ...rawSourceConfig.columns, partitionTimestamp: detectedPartitionTimestamp },
-    };
-  }, [rawSourceConfig, detectedPartitionTimestamp]);
+  // The coarse index-pruning column is inferred (useFieldDiscovery + sql/pruneColumn.ts), not
+  // configured. Until the table's columns are known the view's saved value (from older versions) is
+  // used as is; '-' keeps pruning off. Every query-building consumer reads SourceConfig through
+  // SourceConfigContext below, so this is the one place it needs to be applied.
+  const { detectedPrune } = useFieldDiscovery(rawSourceConfig, discoveryTimeRange, { columnsOnly: true });
+  const saved = rawSourceConfig.columns.partitionTimestamp;
+  const pruneColumn = saved === '-' || detectedPrune === undefined ? saved : (detectedPrune?.column ?? '');
+  // 1 s (the builders' default) stays unset, so a correct saved value never re-runs the first query.
+  const pruneWiden =
+    saved !== '-' && detectedPrune && detectedPrune.widenSeconds > 1 ? detectedPrune.widenSeconds : undefined;
+  const sourceConfig: SourceConfig = useMemo(
+    () =>
+      pruneColumn === rawSourceConfig.columns.partitionTimestamp && pruneWiden === undefined
+        ? rawSourceConfig
+        : {
+            ...rawSourceConfig,
+            pruneWidenSeconds: pruneWiden,
+            columns: { ...rawSourceConfig.columns, partitionTimestamp: pruneColumn },
+          },
+    [rawSourceConfig, pruneColumn, pruneWiden]
+  );
 
   // Diagnostics' server-side enrichment tier (see diag/autoEnrich.ts) is wired once here, at the
   // top of the app, rather than inside LogsExplorer — capture must happen regardless of which page

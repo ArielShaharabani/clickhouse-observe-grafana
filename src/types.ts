@@ -14,10 +14,10 @@ export interface ColumnMapping {
   /**
    * Coarse partition/primary-key-member time column used purely for index-pruning predicates
    * (see sql/pruneColumn.ts + queryBuilder.ts's buildWhereConditions) — never used to select or
-   * filter data on its own. `''` = auto-detect (App.tsx fills in whatever useFieldDiscovery
-   * detects from system.columns at runtime, so already-persisted views benefit without
-   * re-saving); `'-'` = explicitly off (no coarse predicate emitted, even if one would auto-
-   * detect); any other value = use that column name literally.
+   * filter data on its own. Inferred: App.tsx fills in what useFieldDiscovery detects from
+   * system.columns. No form sets it any more; a value saved by an older version is only a starting
+   * point until detection answers (and the fallback where the table reports no keys, e.g. a view),
+   * and `'-'` still means off.
    */
   partitionTimestamp: string;
 }
@@ -29,7 +29,7 @@ export const OTEL_COLUMN_MAPPING: ColumnMapping = {
   traceId: 'TraceId',
   serviceName: 'ServiceName',
   spanAttributes: 'SpanAttributes',
-  partitionTimestamp: 'TimestampTime',
+  partitionTimestamp: '',
 };
 
 export const EMPTY_COLUMN_MAPPING: ColumnMapping = {
@@ -50,6 +50,8 @@ export const EMPTY_COLUMN_MAPPING: ColumnMapping = {
 export type TimestampFormat = 'native' | 'epoch_s' | 'epoch_ms' | 'epoch_us' | 'epoch_ns' | 'string';
 
 export interface SourceConfig {
+  /** Runtime only (App.tsx): widening of the `columns.partitionTimestamp` predicate, see sql/pruneColumn.ts. */
+  pruneWidenSeconds?: number;
   datasourceUid: string;
   database: string;
   logsTable: string;

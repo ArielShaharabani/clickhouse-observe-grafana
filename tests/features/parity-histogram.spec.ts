@@ -150,7 +150,7 @@ test('the axis date line never overlaps the row-count caption (detail panel open
   // 0 rows: an empty week before the fixture. The empty state replaces the chart and its
   // caption (PARITY-FIELDS), so there is nothing left to overlap.
   await logs.open({ from: String(FIXTURE.from - 7 * 24 * H), to: String(FIXTURE.from - 1000) });
-  await expect(page.getByText('No events in selected time range')).toBeVisible();
+  await expect(page.getByText('No results match your search criteria')).toBeVisible();
   await expect(logs.rowCount).toHaveCount(0);
   await expect(page.getByTestId('histogram-x-axis')).toHaveCount(0);
   // Detail panel open (narrower chart).

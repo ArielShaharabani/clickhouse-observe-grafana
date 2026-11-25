@@ -16,7 +16,8 @@ import { LogDetailDrawer } from '../components/LogDetailDrawer';
 import { useTraceExploreLink } from '../components/useTraceExploreLink';
 import { CompareLogsModal } from '../components/CompareLogsModal';
 import { resolveInterval, ResolvedInterval, fillEmptyBuckets } from '../components/VolumeHistogram';
-import { LogsHistogramPanel } from '../components/LogsHistogramPanel';
+import { DEFAULT_QUERY_TIMEOUT_SECONDS } from '../sql/settings';
+import { LogsHistogramPanel, VolumeStatus } from '../components/LogsHistogramPanel';
 import { FieldSidebar, fieldToColumn } from '../components/FieldSidebar/FieldSidebar';
 import { discoveryKey, FieldsContext, useFieldDiscovery } from '../components/FieldsContext';
 import { PaginationBar } from '../components/PaginationBar';
@@ -208,6 +209,8 @@ export function LogsExplorer({ tabId, tabStrip, onTitle }: LogsExplorerProps = {
   // the histogram appear to reload, and so the histogram can show its own stale-data overlay
   // instead of silently keeping old bars during an actual volume refetch.
   const [volLoading, setVolLoading] = useState(false);
+  // How the last histogram run ended: an empty answer hides the chart, a failure does not.
+  const [volStatus, setVolStatus] = useState<VolumeStatus>('pending');
   // Matching documents of a data view without a time field (no histogram to count from).
   const [noTimeCount, setNoTimeCount] = useState<{ sql: string; count: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -354,8 +357,9 @@ export function LogsExplorer({ tabId, tabStrip, onTitle }: LogsExplorerProps = {
       prevViewId.current = initialUrlState.viewId;
       if (views.some((v) => v.id === initialUrlState.viewId)) {
         pendingUrlViewRef.current = initialUrlState.viewId;
-      }
+        // Only a view that exists: a missing one must not replace the viewer's remembered view.
       setActiveViewId(initialUrlState.viewId);
+    }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -387,6 +391,10 @@ export function LogsExplorer({ tabId, tabStrip, onTitle }: LogsExplorerProps = {
       setInvalidQuery(null);
       setRows([]);
       setVolumeData([]);
+      setVolStatus('pending');
+      if (prevViewId.current !== missingLinkView) {
+        setMissingLinkView(undefined);
+      }
       setSelectedRow(null);
       didReconcileForDiscoveryRef.current = false;
     }
@@ -882,18 +890,20 @@ export function LogsExplorer({ tabId, tabStrip, onTitle }: LogsExplorerProps = {
         .sort(([a], [b]) => a - b)
         .map(([time, levels]) => ({ time, levels }));
       setVolumeData(fillEmptyBuckets(volPoints, resolved, timeRange));
+      setVolStatus('done');
     } catch (err) {
       if (volRunRef.current === runId) {
         // Also clear volumeData: a failed refetch must not leave the previous time range's bars
         // on screen under a new range/filter — that reads as a (wrong) real answer, not an error.
         setVolumeData([]);
+        setVolStatus('error');
         const rawMsg = errMsg(err);
         // ClickHouse's timeout_overflow_mode = 'throw' (see VOLUME_QUERY_SETTINGS) surfaces as
         // this substring — reword it into something the user can act on instead of a raw
         // ClickHouse error string.
         setVolError(
           /timeout exceeded|TIMEOUT_EXCEEDED/i.test(rawMsg)
-            ? 'Histogram query exceeded its 60s budget — narrow the time range or choose a coarser interval.'
+            ? `Histogram query exceeded its ${config.queryTimeoutSeconds ?? DEFAULT_QUERY_TIMEOUT_SECONDS}s budget — narrow the time range or choose a coarser interval.`
             : rawMsg
         );
       }
@@ -926,6 +936,7 @@ export function LogsExplorer({ tabId, tabStrip, onTitle }: LogsExplorerProps = {
     volAbortRef.current?.abort();
     setLoading(false);
     setVolLoading(false);
+    setVolStatus((s) => (s === 'pending' ? 'error' : s));
   }, []);
   // R5-TABS: switching session tabs (or leaving Discover) remounts this page; stop its queries so
   // a slow tab can't hold Grafana's few concurrent query slots and stall the next one.
@@ -1741,6 +1752,7 @@ export function LogsExplorer({ tabId, tabStrip, onTitle }: LogsExplorerProps = {
 
         {missingLinkView && (
           <Alert
+            className={styles.notice}
             severity="warning"
             title="This link's data view isn't available in this browser"
             onRemove={() => setMissingLinkView(undefined)}
@@ -1850,6 +1862,9 @@ export function LogsExplorer({ tabId, tabStrip, onTitle }: LogsExplorerProps = {
                   onBreakdownChange={chooseBreakdown}
                   volumeData={volumeData}
                   volLoading={volLoading}
+                  volStatus={volStatus}
+                  hasRows={!loading && rows.length > 0 && !fetchState.useRawSql}
+                  onRetry={() => latestExecuteQuery.current('Retry')}
                   totalEvents={totalEvents}
                   resolvedInterval={resolvedInterval}
                   onSelectRange={onHistogramSelectRange}
@@ -2072,6 +2087,11 @@ const getStyles = (theme: GrafanaTheme2) => ({
     align-items: center;
     gap: ${theme.spacing(1)};
     flex-shrink: 0;
+  `,
+  // Alert grows by default, which would take half of this full-height column.
+  notice: css`
+    flex: 0 0 auto;
+    margin-bottom: 0;
   `,
   pills: css`
     min-height: 0;

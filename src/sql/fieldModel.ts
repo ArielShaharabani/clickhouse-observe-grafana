@@ -125,9 +125,10 @@ function parseTupleLevel(chType: string): Array<{ name: string; type: string }> 
       // unnamed element's type never has that identifier-then-space shape at its very start
       // (e.g. "Nullable(String)" has no space before its "(") — so this correctly falls through
       // to the positional case for unnamed elements.
-      const nameMatch = /^([A-Za-z_][A-Za-z0-9_]*)\s+(.+)$/.exec(trimmed);
+      // ClickHouse backtick-quotes names that are not bare identifiers (`service.name` String).
+      const nameMatch = /^([A-Za-z_][A-Za-z0-9_]*|`(?:[^`\\]|``|\\.)+`)\s+(.+)$/s.exec(trimmed);
       if (nameMatch) {
-        return { name: nameMatch[1], type: nameMatch[2].trim() };
+        return { name: unquoteIdent(nameMatch[1]), type: nameMatch[2].trim() };
       }
       return { name: String(i + 1), type: trimmed };
     })

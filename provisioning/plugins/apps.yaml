@@ -31,7 +31,6 @@ apps:
             traceId: TraceId
             serviceName: ServiceName
             spanAttributes: ''
-            partitionTimestamp: TimestampTime
         - id: otel-demo
           name: OTel demo logs
           origin: shared

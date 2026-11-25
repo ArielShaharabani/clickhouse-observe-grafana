@@ -99,28 +99,31 @@ test('edit a personal view: switch the time field, the epoch unit is guessed and
   expect(edited.timestampFormat).toBe('epoch_ms');
 });
 
-test('Configuration page: shared views map columns from the table, time field with conversion', async ({
-  appConfigPage,
-  page,
-}) => {
+test('Configuration page: shared views use the same dialog as personal views', async ({ appConfigPage, page }) => {
   const card = page.locator('div').filter({ has: page.getByText('Spec fixture logs', { exact: true }) }).filter({
     has: page.getByRole('button', { name: 'Edit' }),
   });
   await card.last().getByRole('button', { name: 'Edit' }).click();
-  const status = page.getByTestId('shared-view-columns-status');
-  await expect(status).toContainText('columns in default.spec_logs.');
+  const dialog = page.getByRole('dialog');
   // The time field is a native DateTime column: no conversion flagged.
-  await expect(page.getByTestId('converted-time-note')).toHaveCount(0);
+  await expect(dialog.getByLabel('Timestamp field')).toBeVisible();
+  await expect(dialog.getByTestId('converted-time-note')).toHaveCount(0);
 
-  // Point the view at the epoch table: its number / text columns become time field candidates.
-  const table = page.getByPlaceholder('otel_logs');
-  await table.fill('spec_logs_epoch');
-  await expect(status).toContainText('columns in default.spec_logs_epoch.');
-  await page.getByLabel('Timestamp field').click();
-  await expect(page.getByRole('option', { name: /^ts_ns/ })).toBeVisible();
-  await page.getByRole('option', { name: /^ts_text/ }).click();
-  await expect(page.getByTestId('converted-time-note')).toContainText('Text date');
-  // Other mappings are picked from the table's columns too.
-  await expect(page.getByText('Log body / message column')).toBeVisible();
+  // The inferred partition / index column is not asked for.
+  await dialog.getByRole('button', { name: /Advanced/ }).click();
+  await dialog.getByRole('button', { name: /Column mapping/ }).click();
+  await expect(dialog.getByText('Trace ID column')).toBeVisible();
+  await expect(dialog.getByText(/Partition\/index/)).toHaveCount(0);
+
+  // The timeout can be cleared and retyped.
+  await dialog.getByRole('button', { name: /Query settings/ }).click();
+  const timeout = dialog.getByPlaceholder('25');
+  await timeout.fill('40');
+  await timeout.fill('');
+  await expect(timeout).toHaveValue('');
+
+  // Apply keeps the edit on the page until the configuration is saved.
+  await dialog.getByRole('button', { name: 'Apply' }).click();
+  await expect(page.getByText('Data view changes are not saved yet')).toBeVisible();
   // Nothing saved: leaving the page discards the edit (other suites rely on the provisioned view).
 });

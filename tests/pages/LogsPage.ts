@@ -57,7 +57,7 @@ export class LogsPage {
   async expectRowCount(n: number) {
     if (n === 0) {
       // No caption at zero rows: the histogram says so and the grid shows the no-results help.
-      await expect(this.page.getByText('No events in selected time range')).toBeVisible();
+      await expect(this.page.getByText('No results match your search criteria')).toBeVisible();
       await expect(this.page.getByText('0 rows loaded')).toBeVisible();
       return;
     }

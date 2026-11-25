@@ -170,11 +170,12 @@ describe('time-bounded map-key samples', () => {
     expect(wide).toContain('$__toTime - INTERVAL 7 DAY');
   });
 
-  it('the recent window is the last hour of the range with a day-padded partition bound', () => {
-    const recent = buildDiscoveryWindowConditions(config, 'recent').join(' ');
+  it('the recent window is the last hour of the range with a partition bound padded by the column granularity', () => {
+    const daily = { ...config, pruneWidenSeconds: 172800, columns: { ...config.columns, partitionTimestamp: 'Day' } };
+    const recent = buildDiscoveryWindowConditions(daily, 'recent').join(' ');
     expect(recent).toContain('$__toTime - INTERVAL 1 HOUR');
     expect(recent).not.toContain('$__fromTime');
-    expect(recent).toContain('$__toTime - INTERVAL 25 HOUR');
+    expect(recent).toContain('Day >= $__toTime - INTERVAL 1 HOUR - INTERVAL 172800 SECOND');
   });
 
   it('windows run recent -> range -> wide, skipping the ones the range already covers', () => {

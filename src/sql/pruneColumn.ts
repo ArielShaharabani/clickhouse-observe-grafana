@@ -26,7 +26,26 @@ export interface PruneCandidateColumn {
   position: number;
 }
 
-const TIME_TYPE_RE = /^(Date32?|DateTime|DateTime64)(\(.*\))?$/;
+export interface PruneColumn {
+  column: string;
+  /** Seconds the predicate on `column` is widened by on each side, so truncation never drops a row. */
+  widenSeconds: number;
+}
+
+/** A `Date` is compared as midnight in the server's zone: one truncated day plus any zone offset. */
+const DAY_WIDEN_SECONDS = 2 * 86_400;
+
+function widenSecondsFor(type: string, defaultExpression: string): number {
+  if (/^Date(32)?$/.test(type) || /\b(toDate|toStartOfDay)\(/.test(defaultExpression)) {
+    return DAY_WIDEN_SECONDS;
+  }
+  if (/\btoStartOfHour\(/.test(defaultExpression)) {
+    return 3600;
+  }
+  return /\btoStartOfMinute\(/.test(defaultExpression) ? 60 : 1;
+}
+
+const TIME_TYPE_RE = /^(Date|Date32|DateTime|DateTime64)(\(.*\))?$/;
 
 /** Wrappers whose output is provably monotonic non-decreasing and truncating over their single
  *  time-typed argument — each takes exactly the mapped timestamp column as its only "time" arg. */
@@ -79,26 +98,35 @@ export function isMonotonicWrapperOf(defaultExpression: string, tsColumn: string
  * the mapped timestamp is itself the sort key, as on `default.eval_otel`) — callers must emit
  * today's SQL unchanged in that case. Prefers a partition-key member over a primary-key-only one;
  * ties broken by `position` (lower wins), matching column declaration order.
+ *
+ * Views and Distributed tables report no keys in system.columns: there, a column with the same
+ * proof is used without key membership, and else `saved` (a column name an older version stored in
+ * the data view, when the user could type one) if the table has it.
  */
 export function detectPruneColumn(
   columns: PruneCandidateColumn[],
-  mappedTimestamp: string
-): string | null {
+  mappedTimestamp: string,
+  saved = ''
+): PruneColumn | null {
   if (!mappedTimestamp) {
     return null;
   }
 
+  const noKeyInfo = !columns.some((c) => c.isInPartitionKey || c.isInPrimaryKey);
   const candidates = columns.filter(
     (c) =>
       c.name !== mappedTimestamp &&
       TIME_TYPE_RE.test(c.type) &&
-      (c.isInPartitionKey || c.isInPrimaryKey) &&
+      (noKeyInfo || c.isInPartitionKey || c.isInPrimaryKey) &&
       (c.defaultKind === 'DEFAULT' || c.defaultKind === 'MATERIALIZED') &&
       isMonotonicWrapperOf(c.defaultExpression, mappedTimestamp)
   );
 
   if (candidates.length === 0) {
-    return null;
+    const kept = noKeyInfo
+      ? columns.find((c) => c.name === saved && c.name !== mappedTimestamp && TIME_TYPE_RE.test(c.type))
+      : undefined;
+    return kept ? { column: kept.name, widenSeconds: widenSecondsFor(kept.type, '') } : null;
   }
 
   candidates.sort((a, b) => {
@@ -108,5 +136,6 @@ export function detectPruneColumn(
     return a.position - b.position;
   });
 
-  return candidates[0].name;
+  const best = candidates[0];
+  return { column: best.name, widenSeconds: widenSecondsFor(best.type, best.defaultExpression) };
 }

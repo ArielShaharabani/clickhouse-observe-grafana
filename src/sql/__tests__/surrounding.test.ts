@@ -20,7 +20,7 @@ const cfg: SourceConfig = {
   logsTable: 'spec_logs',
   isOtel: true,
   sequentialConsistency: false,
-  columns: { ...OTEL_COLUMN_MAPPING, spanAttributes: '' },
+  columns: { ...OTEL_COLUMN_MAPPING, spanAttributes: '', partitionTimestamp: 'TimestampTime' },
 };
 const ANCHOR = { ns: '1767603630000000000', id: '15918698468527039780' };
 const ID = 'cityHash64(Timestamp, Body, SeverityText, TraceId, ServiceName)';
