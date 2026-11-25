@@ -816,6 +816,7 @@ export function LogsExplorer({ tabId, tabStrip, onTitle }: LogsExplorerProps = {
   const fetchVolume = useCallback(async () => {
     if (!config.datasourceUid || !caps.hasTime) {
       setVolumeData([]);
+      setVolStatus('done');
       setVolError(null);
       if (config.datasourceUid && config.logsTable) {
         // No time field: one count() for "Documents (N)" instead of a histogram.

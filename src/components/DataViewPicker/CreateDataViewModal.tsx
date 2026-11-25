@@ -129,6 +129,9 @@ export function CreateDataViewModal({ isOpen, onDismiss, editingView, onSubmit, 
   const columnsRunRef = useRef(0);
   // Table the mapping on screen belongs to: going Back and Next without changing it keeps the mapping.
   const columnsFor = useRef('');
+  // Latest database / table list request: an older answer must not replace a newer selection's list.
+  const dbRun = useRef(0);
+  const tableRun = useRef(0);
   const timeoutSeconds = Number(timeoutText) > 0 ? Number(timeoutText) : undefined;
 
   const resetAll = useCallback(() => {
@@ -232,6 +235,12 @@ export function CreateDataViewModal({ isOpen, onDismiss, editingView, onSubmit, 
   }
 
   async function loadDatabases(uid: string) {
+    const run = ++dbRun.current;
+    // Tables still loading belong to the previous datasource.
+    if (uid !== datasourceUid) {
+      tableRun.current++;
+      setLoadingTables(false);
+    }
     setDbOptions([]);
     if (!uid) {
       return;
@@ -248,11 +257,17 @@ export function CreateDataViewModal({ isOpen, onDismiss, editingView, onSubmit, 
         const n = String(r['name'] ?? '');
         return { label: n, value: n };
       }).filter((o) => o.value);
-      setDbOptions(opts);
+      if (dbRun.current === run) {
+        setDbOptions(opts);
+      }
     } catch (e) {
-      setError(`Failed to load databases: ${errMsg(e)}`);
+      if (dbRun.current === run) {
+        setError(`Failed to load databases: ${errMsg(e)}`);
+      }
     } finally {
-      setLoadingDbs(false);
+      if (dbRun.current === run) {
+        setLoadingDbs(false);
+      }
     }
   }
 
@@ -264,6 +279,7 @@ export function CreateDataViewModal({ isOpen, onDismiss, editingView, onSubmit, 
   }
 
   async function loadTables(db: string) {
+    const run = ++tableRun.current;
     setTableOptions([]);
     if (!db || !datasourceUid) {
       return;
@@ -280,11 +296,17 @@ export function CreateDataViewModal({ isOpen, onDismiss, editingView, onSubmit, 
         const n = String(r['name'] ?? '');
         return { label: n, value: n };
       }).filter((o) => o.value);
-      setTableOptions(opts);
+      if (tableRun.current === run) {
+        setTableOptions(opts);
+      }
     } catch (e) {
-      setError(`Failed to load tables: ${errMsg(e)}`);
+      if (tableRun.current === run) {
+        setError(`Failed to load tables: ${errMsg(e)}`);
+      }
     } finally {
-      setLoadingTables(false);
+      if (tableRun.current === run) {
+        setLoadingTables(false);
+      }
     }
   }
 
@@ -300,6 +322,18 @@ export function CreateDataViewModal({ isOpen, onDismiss, editingView, onSubmit, 
     setLoadingCols(true);
     setStep('columns');
     columnsFor.current = [uid, db, table].join('\u0000');
+    if (resetMapping) {
+      // Up front: a failed column load must not leave the previous table's mapping and columns in place.
+      applyCandidates([]);
+      setApplyOtel(false);
+      setMapping({ ...EMPTY_COLUMN_MAPPING });
+      setTimestampField(undefined);
+      setTimestampFormat('native');
+      setBodyField(undefined);
+      setPinnedIds([]);
+      // A view being edited keeps its name when it is pointed at another table.
+      setName((prev) => (editingView && prev ? prev : `${db}.${table}`));
+    }
     const base: SourceConfig = {
       ...DEFAULT_SOURCE_CONFIG,
       datasourceUid: uid,
@@ -326,18 +360,6 @@ export function CreateDataViewModal({ isOpen, onDismiss, editingView, onSubmit, 
       // step renders with tuple leaves (e.g. "trace.id") already in place instead of the whole
       // Tuple container column. JSON leaves fill in a moment later once the scan below resolves.
       applyCandidates(expandColumnCandidates(rawCols));
-
-      if (resetMapping) {
-        // No auto-inference — leave mapping blank. User maps columns by hand or ticks the OTel checkbox.
-        setApplyOtel(false);
-        setMapping({ ...EMPTY_COLUMN_MAPPING });
-        setTimestampField(undefined);
-        setTimestampFormat('native');
-        setBodyField(undefined);
-        setPinnedIds([]);
-        // A view being edited keeps its name when it is pointed at another table.
-        setName((prev) => (editingView && prev ? prev : `${db}.${table}`));
-      }
 
       // JSON path discovery — non-blocking: fires after the step has already rendered with the
       // tuple-expanded (but still JSON-container) candidate list, and doesn't hold up loadingCols.
@@ -540,6 +562,10 @@ export function CreateDataViewModal({ isOpen, onDismiss, editingView, onSubmit, 
   const bodySelectOptions: Array<SelectableValue<string>> = [
     { label: '— (none)', value: NO_BODY_VALUE },
     ...allColumnOptions.map((o) => ({ label: o.label ?? o.value ?? '', value: o.value ?? '' })),
+    // A typed or saved name the list doesn't have (columns not loaded).
+    ...(bodyField && bodyField !== NO_BODY_VALUE && !allColumnOptions.some((o) => o.value === bodyField)
+      ? [{ label: bodyField, value: bodyField }]
+      : []),
   ];
 
   const canProceed = Boolean(datasourceUid && database && logsTable);
@@ -671,6 +697,7 @@ export function CreateDataViewModal({ isOpen, onDismiss, editingView, onSubmit, 
                 timestamp={timestampField === undefined ? undefined : timestampField === NO_TIME_VALUE ? '' : timestampField}
                 format={timestampFormat}
                 onChange={onTimestampChange}
+                allowCustomValue={tableColumns.length === 0}
                 guessEpoch={epochGuesser(
                   { ...DEFAULT_SOURCE_CONFIG, datasourceUid, database, sequentialConsistency },
                   logsTable
@@ -683,6 +710,8 @@ export function CreateDataViewModal({ isOpen, onDismiss, editingView, onSubmit, 
                   value={bodyField}
                   options={bodySelectOptions}
                   onChange={(opt) => onBodyChange(opt.value ?? NO_BODY_VALUE)}
+                  allowCustomValue={tableColumns.length === 0}
+                  onCreateOption={(v) => onBodyChange(v.trim() || NO_BODY_VALUE)}
                   placeholder="Select body column…"
                 />
               </Field>

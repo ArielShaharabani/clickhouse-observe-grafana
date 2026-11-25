@@ -26,6 +26,7 @@ import {
 import { decodeLogsState } from '../../data/urlState';
 import { getRememberedView, rememberView, resolveTraceLanding, TraceLanding } from '../../data/traceViewChoice';
 import { TraceViewPickerModal } from '../TraceViewPickerModal';
+import { loadPruneHint, pruneHintKey, savePruneHint } from '../../data/pruneHints';
 import { cleanDefaultTimeRange, DefaultTimeRangeContext } from '../../utils/defaultTimeRange';
 
 // Visualize is its own chunk: Discover users never pay for it.
@@ -183,15 +184,22 @@ function App(props: AppRootProps<AppJsonData>) {
   // its coarse-bucket effect dependency for no reason.
   const [discoveryTimeRange] = useState(() => getDefaultTimeRange());
   // The coarse index-pruning column is inferred (useFieldDiscovery + sql/pruneColumn.ts), not
-  // configured. Until the table's columns are known the view's saved value (from older versions) is
-  // used as is; '-' keeps pruning off. Every query-building consumer reads SourceConfig through
+  // configured. Until the table's columns are known, what was detected for it last time in this browser
+  // is used (so the first query is pruned and not re-run); never the view's saved name, whose
+  // truncation is unknown then and could drop rows. '-' keeps pruning off. Every query-building consumer reads SourceConfig through
   // SourceConfigContext below, so this is the one place it needs to be applied.
   const { detectedPrune } = useFieldDiscovery(rawSourceConfig, discoveryTimeRange, { columnsOnly: true });
   const saved = rawSourceConfig.columns.partitionTimestamp;
-  const pruneColumn = saved === '-' || detectedPrune === undefined ? saved : (detectedPrune?.column ?? '');
-  // 1 s (the builders' default) stays unset, so a correct saved value never re-runs the first query.
-  const pruneWiden =
-    saved !== '-' && detectedPrune && detectedPrune.widenSeconds > 1 ? detectedPrune.widenSeconds : undefined;
+  const hintKey = pruneHintKey(rawSourceConfig);
+  const hint = useMemo(() => loadPruneHint(hintKey), [hintKey]);
+  useEffect(() => {
+    if (detectedPrune !== undefined) {
+      savePruneHint(hintKey, detectedPrune);
+    }
+  }, [hintKey, detectedPrune]);
+  const prune = saved === '-' ? null : detectedPrune === undefined ? hint : detectedPrune;
+  const pruneColumn = saved === '-' ? saved : (prune?.column ?? '');
+  const pruneWiden = prune?.widenSeconds;
   const sourceConfig: SourceConfig = useMemo(
     () =>
       pruneColumn === rawSourceConfig.columns.partitionTimestamp && pruneWiden === undefined

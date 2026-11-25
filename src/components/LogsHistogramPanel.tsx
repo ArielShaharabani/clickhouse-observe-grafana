@@ -293,7 +293,7 @@ export function LogsHistogramPanel({
               'Loading…'
             ) : (
               <span role="status">
-                The histogram could not be loaded
+                {volStatus === 'error' ? 'The histogram could not be loaded' : 'The histogram has no data for these results yet'}
                 {onRetry && (
                   <Button size="sm" variant="secondary" fill="text" onClick={onRetry}>
                     Retry

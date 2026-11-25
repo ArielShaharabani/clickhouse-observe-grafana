@@ -126,7 +126,8 @@ export function detectPruneColumn(
     const kept = noKeyInfo
       ? columns.find((c) => c.name === saved && c.name !== mappedTimestamp && TIME_TYPE_RE.test(c.type))
       : undefined;
-    return kept ? { column: kept.name, widenSeconds: widenSecondsFor(kept.type, '') } : null;
+    // Its truncation is unknown here: the widest margin.
+    return kept ? { column: kept.name, widenSeconds: DAY_WIDEN_SECONDS } : null;
   }
 
   candidates.sort((a, b) => {

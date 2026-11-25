@@ -18,10 +18,16 @@ function normalizeView(view: DataView, origin: DataView['origin']): DataView {
   return out;
 }
 
+/** One malformed entry must not cost the other views. */
+function isView(v: unknown): v is DataView {
+  return Boolean(v) && typeof v === 'object' && typeof (v as DataView).id === 'string';
+}
+
 function readAll(): DataView[] {
   try {
     const raw = localStorage.getItem(PERSONAL_VIEWS_KEY);
-    return raw ? (JSON.parse(raw) as DataView[]).map((v) => normalizeView(v, 'personal')) : [];
+    const stored: unknown = raw ? JSON.parse(raw) : [];
+    return Array.isArray(stored) ? stored.filter(isView).map((v) => normalizeView(v, 'personal')) : [];
   } catch {
     return [];
   }
@@ -95,7 +101,7 @@ export function persistActiveViewId(id: string): void {
  */
 export function migrateLegacyConfig(jsonData: AppJsonData): DataView[] {
   if (jsonData.dataViews && jsonData.dataViews.length > 0) {
-    return jsonData.dataViews.map((v) => normalizeView(v, 'shared'));
+    return jsonData.dataViews.filter(isView).map((v) => normalizeView(v, 'shared'));
   }
   if (!jsonData.sourceConfig?.datasourceUid) {
     return [];

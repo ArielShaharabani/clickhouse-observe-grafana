@@ -147,7 +147,7 @@ describe('detectPruneColumn', () => {
   it('keeps a saved column only where the table reports no keys (a view)', () => {
     const plain = { defaultKind: '', defaultExpression: '', isInPartitionKey: false, isInPrimaryKey: false };
     const view = [col({ ...plain, name: 'Timestamp', type: 'DateTime64(9)' }), col({ ...plain, name: 'T2', type: 'DateTime' })];
-    expect(detectPruneColumn(view, 'Timestamp', 'T2')).toEqual({ column: 'T2', widenSeconds: 1 });
+    expect(detectPruneColumn(view, 'Timestamp', 'T2')).toEqual({ column: 'T2', widenSeconds: 172800 });
     expect(detectPruneColumn(view, 'Timestamp', 'Gone')).toBeNull();
     const table = [...view, col({ ...plain, name: 'id', type: 'UInt64', isInPrimaryKey: true })];
     expect(detectPruneColumn(table, 'Timestamp', 'T2')).toBeNull();

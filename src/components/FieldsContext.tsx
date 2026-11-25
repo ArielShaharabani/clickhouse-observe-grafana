@@ -237,6 +237,11 @@ const EMPTY_FIELDS_CONTEXT: FieldsContextValue = {
 // Exported (not just useFields()) so pages that need the same discovered fields for query
 // building — not just for descendant consumers like FieldSidebar/SearchBar — can call
 // useFieldDiscovery() once and hand the value to <FieldsContext.Provider> directly.
+/** What a detected prune column belongs to. */
+function pruneKey(tableKey: string, config: SourceConfig): string {
+  return `${tableKey}:${config.columns.timestamp}:${config.columns.partitionTimestamp}`;
+}
+
 export const FieldsContext = createContext<FieldsContextValue>(EMPTY_FIELDS_CONTEXT);
 
 export function useFields(): FieldsContextValue {
@@ -306,6 +311,9 @@ export function useFieldDiscovery(
   const [fieldsFor, setFieldsFor] = useState('');
   const [textIndexes, setTextIndexes] = useState<TextIndexInfo[]>([]);
   const runRef = useRef(0);
+
+  // Only the bootstrap reads the prune column; a page's config already carries the resolved one.
+  const savedPrune = columnsOnly ? config.columns.partitionTimestamp : '';
 
   const bucket = useMemo(() => (columnsOnly ? '' : coarseTimeBucket(timeRange)), [timeRange, columnsOnly]);
 
@@ -400,7 +408,7 @@ export function useFieldDiscovery(
     setFields([...columns, ...tupleFields]);
     setFieldsFor(cKey);
     setError(null);
-    setDetected({ key: `${cKey}:${config.columns.timestamp}`, prune: pruneColumn });
+    setDetected({ key: pruneKey(cKey, config), prune: pruneColumn });
     if (columnsOnly) {
       setLoading(false);
       return;
@@ -526,7 +534,7 @@ export function useFieldDiscovery(
       run.current++;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [config.datasourceUid, config.database, resolvedTable, bucket, config.columns.timestamp]);
+  }, [config.datasourceUid, config.database, resolvedTable, bucket, config.columns.timestamp, savedPrune]);
 
   // After a table switch the state still holds the previous table's discovery until the new one
   // publishes: report "loading, nothing known" instead, so no query mixes the two tables.
@@ -538,7 +546,7 @@ export function useFieldDiscovery(
     loading: stale || loading,
     error: stale ? null : error,
     refresh,
-    detectedPrune: detected.key === `${key}:${config.columns.timestamp}` ? detected.prune : undefined,
+    detectedPrune: detected.key === pruneKey(key, config) ? detected.prune : undefined,
     fieldsFor,
   };
 }

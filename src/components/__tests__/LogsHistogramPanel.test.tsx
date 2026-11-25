@@ -110,11 +110,14 @@ describe('LogsHistogramPanel without bars', () => {
     expect(screen.getByText('Loading…')).toBeInTheDocument();
   });
 
-  it.each([{ volStatus: 'error' }, { volStatus: 'done', hasRows: true }])('says it failed instead of "no data": %p', (extra) => {
+  it.each([
+    [{ volStatus: 'error' }, /could not be loaded/],
+    [{ volStatus: 'done', hasRows: true }, /no data for these results yet/],
+  ])('offers a retry: %p', (extra, text) => {
     const onRetry = jest.fn();
     render(panel(false, { ...none, ...extra, onRetry }));
     fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
-    expect(screen.getByText(/could not be loaded/)).toBeInTheDocument();
+    expect(screen.getByText(text)).toBeInTheDocument();
     expect(onRetry).toHaveBeenCalled();
   });
 });
